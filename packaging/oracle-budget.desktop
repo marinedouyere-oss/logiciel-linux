@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Oracle Budget
+Comment=Suivi de budget personnel, synchronisé avec l'appli Android Oracle
+Exec=oracle-budget
+Terminal=false
+Categories=Office;Finance;
