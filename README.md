@@ -117,3 +117,16 @@ coupe-controle
 Dans la fenêtre : sélectionnez le fichier STRAT et la liste de coupe,
 cliquez sur **Lancer le contrôle**, puis exportez le rapport détaillé en
 Excel si besoin.
+
+### Version web autonome (Windows, sans Python)
+
+`coupe_controle/web/index.html` est une réimplémentation en HTML/JavaScript
+de ce même contrôle (mêmes règles de rapprochement, mêmes couleurs, même
+export Excel), pour les postes Windows où l'on ne veut pas installer Python.
+
+- C'est un **fichier unique** (bibliothèque de lecture/écriture Excel
+  incluse) : il suffit de le copier sur le poste Windows et de faire un
+  double-clic pour l'ouvrir dans le navigateur (Edge, Chrome, Firefox…).
+- Tout se passe **localement dans le navigateur** : les fichiers STRAT et
+  Cutrite ne sont jamais envoyés sur un serveur.
+- Fonctionne **entièrement hors-ligne**, sans connexion internet.
