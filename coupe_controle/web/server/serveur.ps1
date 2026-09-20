@@ -1,15 +1,14 @@
 # Petit serveur HTTP local pour Sentinelle, sans rien à installer :
 # PowerShell est déjà présent sur Windows. Sert le dossier parent
-# (coupe_controle/web/) sur http://localhost ET sur le réseau local (pour
-# un téléphone sur le même Wi-Fi), ce qui est nécessaire pour que le PWA
-# (installation, service worker, mode hors-ligne) fonctionne — les
-# navigateurs bloquent ça sur un fichier ouvert en file://.
+# (coupe_controle/web/) sur http://localhost, ce qui est nécessaire pour
+# que le PWA (installation, service worker, mode hors-ligne) fonctionne —
+# les navigateurs bloquent ça sur un fichier ouvert en file://.
 #
-# Écouter sur le réseau local (pas juste "localhost") demande les droits
-# administrateur sous Windows : si ce script échoue avec une erreur
-# "Accès refusé", relancez lancer_sentinelle.bat en clic droit →
-# "Exécuter en tant qu'administrateur" (une fois suffit généralement pour
-# la session en cours).
+# N'écoute QUE sur cette machine (localhost) : aucune autre machine ni
+# appareil (téléphone y compris) ne peut s'y connecter, par choix — pas
+# de connexion ni de synchronisation entre appareils. Pour utiliser
+# Sentinelle sur un téléphone, copiez le fichier index.html dessus
+# séparément (USB, e-mail...) et ouvrez-le directement dans Chrome.
 
 $Port = 8080
 $Racine = Split-Path -Parent $PSScriptRoot
@@ -26,49 +25,25 @@ $mimeTypes = @{
 }
 
 $listener = New-Object System.Net.HttpListener
-$prefix = "http://+:$Port/"
+$prefix = "http://localhost:$Port/"
 
 try {
     $listener.Prefixes.Add($prefix)
     $listener.Start()
 } catch {
-    Write-Host "Impossible d'ouvrir Sentinelle au réseau local (http://+:$Port/)."
-    Write-Host "Cause probable : droits administrateur manquants."
-    Write-Host ""
-    Write-Host "-> Fermez cette fenêtre, puis clic droit sur lancer_sentinelle.bat"
-    Write-Host "   et choisissez « Exécuter en tant qu'administrateur »."
-    Write-Host ""
-    Write-Host "Détail technique : $($_.Exception.Message)"
+    Write-Host "Impossible de démarrer le serveur sur $prefix"
+    Write-Host "Le port $Port est peut-être déjà utilisé par un autre programme."
+    Write-Host $_.Exception.Message
     Read-Host "Appuyez sur Entrée pour fermer"
     exit 1
 }
 
-$urlLocale = "http://localhost:$Port/"
-
-$adressesLAN = @()
-try {
-    $adressesLAN = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop |
-        Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } |
-        Select-Object -ExpandProperty IPAddress
-} catch {
-    # Get-NetIPAddress indisponible (ancien Windows) : on continue sans la liste réseau.
-}
-
-Write-Host "Sentinelle est servi :"
-Write-Host "  - Sur ce PC          : $urlLocale"
-foreach ($ip in $adressesLAN) {
-    Write-Host "  - Réseau local (Wi-Fi) : http://${ip}:$Port/  <- à taper sur le téléphone (même Wi-Fi)"
-}
-Write-Host ""
-Write-Host "Sur le téléphone : ouvrez cette adresse réseau local dans Chrome, puis"
-Write-Host "menu (⋮) -> « Installer l'application » ou « Ajouter à l'écran d'accueil »."
-Write-Host "Une fois installée, l'appli fonctionne ensuite sans Wi-Fi ni PC."
-Write-Host ""
-Write-Host "Laissez cette fenêtre ouverte pendant l'utilisation depuis ce PC."
+Write-Host "Sentinelle est servi sur $prefix (accessible uniquement depuis ce PC)."
+Write-Host "Laissez cette fenêtre ouverte pendant l'utilisation."
 Write-Host "Pour arrêter : fermez cette fenêtre ou appuyez sur Ctrl+C."
 Write-Host ""
 
-Start-Process $urlLocale
+Start-Process $prefix
 
 try {
     while ($listener.IsListening) {
