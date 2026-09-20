@@ -860,7 +860,12 @@ function lireCoupe(workbook, clesStrat, qteAttendueParCle) {
   const ecartsGrainMatching = detecterEcartsGrainMatching(pieces, colGrain, compteur);
   const nbUnitaires = compterUnitaires(pieces, colGrain, compteur);
 
-  return { compteur, incoherences: [...incoherencesReserve, ...ecartsGrainMatching], nbUnitaires };
+  return {
+    compteur,
+    incoherences: [...incoherencesReserve, ...ecartsGrainMatching],
+    nbUnitaires,
+    nbPiecesTrouvees: compteur.size,
+  };
 }
 
 function lireGrainMatching(workbook, clesStrat) {
@@ -1325,10 +1330,17 @@ function trierEtRedessinerPaire(paire, div) {
   dessinerTablePaire(div, copie);
 }
 
-function afficherRapportPaire(div, rapport, incoherences, nbUnitaires) {
+function afficherRapportPaire(div, rapport, incoherences, nbUnitaires, nbPiecesTrouvees) {
   const resume = div.querySelector(".resume");
-  const suffixeUnitaires =
-    nbUnitaires !== null && nbUnitaires !== undefined ? `, dont ${nbUnitaires} unitaire(s) (sans grain matching)` : "";
+  let suffixeUnitaires = "";
+  if (nbUnitaires !== null && nbUnitaires !== undefined && nbPiecesTrouvees) {
+    const pourcentage = ((nbUnitaires / nbPiecesTrouvees) * 100).toFixed(1).replace(".", ",");
+    const nbGrainMatching = nbPiecesTrouvees - nbUnitaires;
+    const pourcentageGrain = ((nbGrainMatching / nbPiecesTrouvees) * 100).toFixed(1).replace(".", ",");
+    suffixeUnitaires =
+      `, dont ${nbUnitaires} unitaire(s) sans grain matching (${pourcentage} %) / ` +
+      `${nbGrainMatching} avec grain matching (${pourcentageGrain} %)`;
+  }
   if (rapport.nbAnomalies === 0) {
     resume.style.color = "var(--ok-text)";
     resume.textContent = `✔ Tout est correct — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées${suffixeUnitaires}.`;
@@ -1566,9 +1578,15 @@ async function lancerControlePaire(index, paire) {
     majProgress(paire, "⏳", "lecture de la liste de coupe (Cutrite)…");
     await tick();
     const wbCoupe = await chargerClasseur(fichierCoupe);
-    const { compteur: trouveParCle, incoherences, nbUnitaires } = lireCoupe(wbCoupe, paire.clesStrat, qteAttendueParCle);
+    const {
+      compteur: trouveParCle,
+      incoherences,
+      nbUnitaires,
+      nbPiecesTrouvees,
+    } = lireCoupe(wbCoupe, paire.clesStrat, qteAttendueParCle);
     paire.incoherences = incoherences;
     paire.nbUnitaires = nbUnitaires;
+    paire.nbPiecesTrouvees = nbPiecesTrouvees;
 
     majProgress(paire, "⏳", "comparaison en cours…");
     await tick();
@@ -1601,7 +1619,7 @@ function afficherResultatPaire(index, paire) {
   if (!paire.rapport) return;
   const panneau = creerPanneauResultat(index, paire);
   resultatsContainer.appendChild(panneau);
-  afficherRapportPaire(panneau, paire.rapport, paire.incoherences, paire.nbUnitaires);
+  afficherRapportPaire(panneau, paire.rapport, paire.incoherences, paire.nbUnitaires, paire.nbPiecesTrouvees);
 }
 
 async function lancerTousLesControles() {

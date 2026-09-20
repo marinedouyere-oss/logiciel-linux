@@ -58,6 +58,7 @@ class MainWindow(QMainWindow):
 
         self.rapport: RapportComparaison | None = None
         self.nb_unitaires: int | None = None
+        self.nb_pieces_trouvees: int = 0
         self.cles_strat: set[str] = set()
 
         central = QWidget()
@@ -134,6 +135,7 @@ class MainWindow(QMainWindow):
             qte_attendue_par_cle = {l.cle: l.qte_attendue for l in lignes_strat}
             trouve_par_cle, incoherences, nb_unitaires = lire_coupe(chemin_coupe, cles_strat, qte_attendue_par_cle)
             self.nb_unitaires = nb_unitaires
+            self.nb_pieces_trouvees = len(trouve_par_cle)
         except (StratFormatError, CoupeFormatError) as erreur:
             QMessageBox.critical(self, "Erreur de lecture", str(erreur))
             return
@@ -170,9 +172,15 @@ class MainWindow(QMainWindow):
         self.bouton_export.setEnabled(True)
 
     def _afficher_rapport(self, rapport: RapportComparaison) -> None:
-        suffixe_unitaires = (
-            f", dont {self.nb_unitaires} unitaire(s) (sans grain matching)" if self.nb_unitaires is not None else ""
-        )
+        suffixe_unitaires = ""
+        if self.nb_unitaires is not None and self.nb_pieces_trouvees:
+            pourcentage = self.nb_unitaires / self.nb_pieces_trouvees * 100
+            nb_grain_matching = self.nb_pieces_trouvees - self.nb_unitaires
+            pourcentage_grain = nb_grain_matching / self.nb_pieces_trouvees * 100
+            suffixe_unitaires = (
+                f", dont {self.nb_unitaires} unitaire(s) sans grain matching ({pourcentage:.1f} %) / "
+                f"{nb_grain_matching} avec grain matching ({pourcentage_grain:.1f} %)"
+            )
         if rapport.nb_anomalies == 0:
             self.label_resume.setStyleSheet("font-weight: bold; padding: 6px; color: #2e7d32;")
             self.label_resume.setText(
