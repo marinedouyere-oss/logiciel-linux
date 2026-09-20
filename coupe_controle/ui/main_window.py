@@ -112,8 +112,8 @@ class MainWindow(QMainWindow):
 
         try:
             lignes_strat = lire_strat(chemin_strat)
-            article_par_cle = {l.cle: l.article for l in lignes_strat}
-            trouve_par_cle = lire_coupe(chemin_coupe, article_par_cle)
+            cles_strat = {l.cle for l in lignes_strat}
+            trouve_par_cle = lire_coupe(chemin_coupe, cles_strat)
         except (StratFormatError, CoupeFormatError) as erreur:
             QMessageBox.critical(self, "Erreur de lecture", str(erreur))
             return

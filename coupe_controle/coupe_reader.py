@@ -9,29 +9,18 @@ import openpyxl
 # exploitables : sa mise en page peut légèrement varier d'une semaine à
 # l'autre selon les options d'export. On détecte donc les colonnes utiles par
 # leur contenu plutôt que par leur position :
-#   - la colonne "clé" contient les mêmes clés commande+ligne que le fichier
-#     de lancement (ex. "CVC26070953004") ;
-#   - la colonne "matériau" contient le code du support (ex. "SAG10HYBR"), ou
-#     "PROTECTION" pour les panneaux de protection, qui ne sont pas des
-#     pièces client et doivent être exclus, comme dans le fichier de
-#     lancement ;
-#   - la colonne "désignation" contient le code article pour une vraie pièce
-#     client, mais un nom généré par Cutrite (ex. "L0433", "T1/1") pour une
-#     chute réutilisable de panneau : celle-ci reprend pourtant la clé
-#     commande+ligne de la pièce dont elle provient (pour la traçabilité), ce
-#     qui la rendrait faussement comptée si on ne se fiait qu'à la clé. On ne
-#     compte donc une ligne que si sa désignation correspond à l'article
-#     attendu pour cette clé dans le fichier de lancement.
+#   - la colonne "clé" (num commande+ligne) contient les mêmes clés que le
+#     fichier de lancement (ex. "CVC26070953004") ;
+#   - la colonne "matériau" (codes matériaux) contient le code du support
+#     (ex. "SAG10HYBR"), ou "PROTECTION" pour les panneaux de protection, qui
+#     ne sont pas des pièces client et doivent être exclus, comme dans le
+#     fichier de lancement.
+# Une pièce est comptée dès que sa clé commande+ligne est renseignée et que
+# son matériau n'est pas "PROTECTION".
 COLONNE_CLE_PAR_DEFAUT = 15  # colonne P
 COLONNE_MATERIAU_PAR_DEFAUT = 1  # colonne B
-COLONNE_DESIGNATION_PAR_DEFAUT = 0  # colonne A
 
 MATERIAUX_EXCLUS = {"PROTECTION"}
-
-# Une colonne n'est retenue comme candidate "désignation/article" que si elle
-# correspond à l'article attendu sur une part significative des lignes ayant
-# une clé connue (sinon c'est une colonne sans rapport).
-SEUIL_CANDIDAT_DESIGNATION = 0.3
 
 
 class CoupeFormatError(ValueError):
@@ -74,47 +63,9 @@ def _detecter_colonne_materiau(lignes: list[tuple]) -> int | None:
     return meilleur_index
 
 
-def _detecter_colonne_designation(lignes: list[tuple], col_cle: int, article_par_cle: dict[str, str]) -> int | None:
-    if not article_par_cle:
-        return None
-
-    nb_colonnes = max((len(ligne) for ligne in lignes), default=0)
-    correspondances: Counter = Counter()
-    total_avec_cle = 0
-
-    for ligne in lignes:
-        if col_cle >= len(ligne) or ligne[col_cle] is None:
-            continue
-        article_attendu = article_par_cle.get(str(ligne[col_cle]).strip())
-        if article_attendu is None:
-            continue
-        total_avec_cle += 1
-        for col in range(nb_colonnes):
-            if col < len(ligne) and ligne[col] is not None and str(ligne[col]).strip().upper() == article_attendu:
-                correspondances[col] += 1
-
-    if total_avec_cle == 0:
-        return None
-
-    candidats = [
-        col for col, score in correspondances.items() if score >= SEUIL_CANDIDAT_DESIGNATION * total_avec_cle
-    ]
-    if not candidats:
-        return None
-
-    # La colonne "désignation" est celle qui correspond le moins souvent à
-    # l'article attendu : la colonne de référence (toujours recopiée, même
-    # sur une chute) obtient le score le plus haut, tandis que la
-    # désignation réelle diverge sur les chutes portant la clé d'une pièce.
-    return min(candidats, key=lambda col: correspondances[col])
-
-
-def lire_coupe(chemin: str | Path, article_par_cle: dict[str, str]) -> Counter:
-    """Compte, pour chaque clé commande+ligne, le nombre de pièces client
-    réellement débitées dans la liste de coupe Cutrite. Sont exclus : les
-    chutes/restes de panneau sans référence client, les panneaux de
-    protection, et les chutes réutilisables qui reprennent la clé d'une
-    pièce sans être elles-mêmes cette pièce."""
+def lire_coupe(chemin: str | Path, cles_strat: set[str]) -> Counter:
+    """Compte, pour chaque clé commande+ligne, le nombre de pièces dans la
+    liste de coupe Cutrite (panneaux de protection exclus)."""
 
     chemin = Path(chemin)
     classeur = openpyxl.load_workbook(chemin, data_only=True, read_only=True)
@@ -124,7 +75,6 @@ def lire_coupe(chemin: str | Path, article_par_cle: dict[str, str]) -> Counter:
     if not lignes:
         raise CoupeFormatError("Le fichier de la liste de coupe est vide.")
 
-    cles_strat = set(article_par_cle)
     donnees = lignes[1:]
 
     col_cle = _detecter_colonne_cle(donnees, cles_strat)
@@ -134,11 +84,6 @@ def lire_coupe(chemin: str | Path, article_par_cle: dict[str, str]) -> Counter:
     col_materiau = _detecter_colonne_materiau(donnees)
     if col_materiau is None:
         col_materiau = COLONNE_MATERIAU_PAR_DEFAUT
-
-    article_par_cle_normalise = {cle: article.strip().upper() for cle, article in article_par_cle.items()}
-    col_designation = _detecter_colonne_designation(donnees, col_cle, article_par_cle_normalise)
-    if col_designation is None:
-        col_designation = COLONNE_DESIGNATION_PAR_DEFAUT
 
     compteur: Counter = Counter()
     for ligne in donnees:
@@ -152,12 +97,6 @@ def lire_coupe(chemin: str | Path, article_par_cle: dict[str, str]) -> Counter:
         materiau = ligne[col_materiau] if col_materiau < len(ligne) else None
         if materiau is not None and str(materiau).strip().upper() in MATERIAUX_EXCLUS:
             continue
-
-        article_attendu = article_par_cle_normalise.get(cle)
-        if article_attendu is not None:
-            designation = ligne[col_designation] if col_designation < len(ligne) else None
-            if designation is None or str(designation).strip().upper() != article_attendu:
-                continue
 
         compteur[cle] += 1
 
