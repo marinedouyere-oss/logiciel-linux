@@ -1347,7 +1347,14 @@ async function rechercherGrainMatchingGlobal() {
       const wbCoupe = await chargerClasseur(fichierCoupe);
       const grainParCle = lireGrainMatching(wbCoupe, paire.clesStrat);
       if (grainParCle.has(cle)) {
-        trouvailles.push({ paire, valeurs: grainParCle.get(cle) });
+        let quantite = null;
+        try {
+          const { compteur } = lireCoupe(wbCoupe, paire.clesStrat, paire.qteAttendueParCle || new Map());
+          quantite = compteur.has(cle) ? compteur.get(cle) : null;
+        } catch (_erreurComptage) {
+          quantite = null; // le grain matching reste affiché même si le comptage global échoue
+        }
+        trouvailles.push({ paire, valeurs: grainParCle.get(cle), quantite });
       }
     } catch (erreur) {
       erreurs.push(`${paire.nom} : ${erreur && erreur.message ? erreur.message : erreur}`);
@@ -1360,9 +1367,10 @@ async function rechercherGrainMatchingGlobal() {
   } else {
     zone.style.color = "var(--ok-text)";
     zone.innerHTML = trouvailles
-      .map(({ paire, valeurs }) => {
+      .map(({ paire, valeurs, quantite }) => {
         const detail = valeurs.length === 0 ? "Unitaire (pas de grain matching)" : `grain matching : ${valeurs.join(", ")}`;
-        return `<div><strong>${cle}</strong> — ${paire.nom} → ${detail}</div>`;
+        const quantiteTexte = quantite !== null ? ` — ${quantite} pièce(s) trouvée(s)` : "";
+        return `<div><strong>${cle}</strong> — ${paire.nom} → ${detail}${quantiteTexte}</div>`;
       })
       .join("");
   }
@@ -1485,6 +1493,7 @@ async function lancerControlePaire(index, paire) {
     const lignesStrat = lireStrat(wbStrat);
     paire.clesStrat = new Set(lignesStrat.map((l) => l.cle));
     const qteAttendueParCle = new Map(lignesStrat.map((l) => [l.cle, l.qte_attendue]));
+    paire.qteAttendueParCle = qteAttendueParCle; // réutilisé par la recherche globale pour détecter la colonne quantité
 
     majProgress(paire, "⏳", "lecture de la liste de coupe (Cutrite)…");
     await tick();
