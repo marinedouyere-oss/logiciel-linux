@@ -76,6 +76,20 @@
     margin-bottom: 10px;
   }
   .paire-entete strong { font-size: 0.95rem; }
+  .paire-go-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 10px; }
+  .btn-bilan { font-size: 0.82rem; padding: 8px 14px; }
+  .btn-go {
+    background: #2e7d32;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 8px 24px;
+  }
+  .btn-go:hover:not(:disabled) { background: #1b5e20; }
+  @keyframes flash-bilan {
+    0%, 100% { box-shadow: none; }
+    25%, 75% { box-shadow: 0 0 0 3px #1565c0; }
+  }
+  .panneau.mis-en-avant { animation: flash-bilan 1.2s ease-in-out; }
   .btn-retirer {
     background: transparent;
     color: #c62828;
@@ -943,8 +957,14 @@ function redessinerPaires() {
             <label for="coupe-${paire.id}">Liste de coupe (Cutrite) :</label>
             <input type="file" id="coupe-${paire.id}" accept=".xlsx,.xlsm">
           </div>
+          <div class="paire-go-row">
+            <button type="button" class="btn-bilan secondaire" data-action="bilan">Voir le bilan</button>
+            <button type="button" class="btn-go" data-action="go">GO</button>
+          </div>
         `;
         div.querySelector(`#strat-${paire.id}`).addEventListener("change", () => detecterSemainePaire(paire, div));
+        div.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(paire, div));
+        div.querySelector('[data-action="bilan"]').addEventListener("click", () => voirBilanPaire(paire));
         grille.appendChild(div);
       });
 
@@ -1179,6 +1199,62 @@ function majProgress(paire, icone, texte, classe) {
   ligne.querySelector(".progress-puce").textContent = icone;
   ligne.querySelector(".progress-texte").textContent = texte;
   ligne.className = "progress-ligne" + (classe ? " " + classe : "");
+}
+
+// Ajoute (ou réutilise) la ligne de progression d'une seule paire, sans
+// toucher aux lignes des autres — contrairement à creerLignesProgress()
+// qui reconstruit tout, pour le bouton GO d'une paire individuelle.
+function creerLigneProgressPourPaire(paire) {
+  const panneau = $("progressPanneau");
+  const container = $("progressContainer");
+  panneau.style.display = "block";
+  let ligne = $(`progress-${paire.id}`);
+  if (!ligne) {
+    ligne = document.createElement("div");
+    ligne.id = `progress-${paire.id}`;
+    container.appendChild(ligne);
+  }
+  ligne.className = "progress-ligne";
+  ligne.innerHTML =
+    `<span class="progress-puce">⏳</span>` +
+    `<strong>${paire.nom}</strong>` +
+    `<span class="progress-texte">en attente…</span>`;
+}
+
+// Fait défiler jusqu'au bilan d'une seule paire et le met brièvement en
+// évidence, pour le retrouver facilement même quand plusieurs bilans se
+// sont accumulés dans la page.
+function voirBilanPaire(paire) {
+  const panneau = document.querySelector(`#resultatsContainer .panneau[data-id="${paire.id}"]`);
+  if (!panneau) {
+    alert(`Aucun bilan pour "${paire.nom}" pour l'instant — lancez d'abord son contrôle (bouton GO).`);
+    return;
+  }
+  panneau.scrollIntoView({ behavior: "smooth", block: "start" });
+  panneau.classList.remove("mis-en-avant");
+  // force le redémarrage de l'animation même si on reclique juste après
+  void panneau.offsetWidth;
+  panneau.classList.add("mis-en-avant");
+}
+
+// Lance et affiche le résultat d'une seule paire (bouton GO), sans
+// attendre ni toucher aux autres paires.
+async function lancerUnePaire(paire, div) {
+  const boutonGo = div.querySelector('[data-action="go"]');
+  if (boutonGo) boutonGo.disabled = true;
+  try {
+    creerLigneProgressPourPaire(paire);
+    await tick();
+    const index = paires.indexOf(paire);
+    const resultat = await lancerControlePaire(index, paire);
+    if (resultat && resultat.erreur) {
+      alert(resultat.erreur);
+    } else if (resultat && resultat.ok) {
+      afficherResultatPaire(index, paire);
+    }
+  } finally {
+    if (boutonGo) boutonGo.disabled = false;
+  }
 }
 
 async function lancerControlePaire(index, paire) {
