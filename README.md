@@ -141,6 +141,15 @@ installer Python.
   navigateurs bloquent cette fonctionnalité sur un fichier ouvert en
   double-clic direct (`file://`), donc **le simple `index.html` reste
   disponible tel quel** pour qui préfère ne rien lancer.
+- **Installable aussi sur téléphone** (Chrome Android) : le serveur écoute
+  aussi sur le réseau local, pas seulement sur le PC. Au lancement de
+  `lancer_sentinelle.bat`, la fenêtre affiche une adresse du type
+  `http://192.168.x.x:8080/` — à ouvrir dans Chrome sur un téléphone
+  connecté au **même Wi-Fi**, puis menu (⋮) → « Installer l'application ».
+  Une fois installée, l'appli fonctionne **ensuite** sans Wi-Fi ni PC
+  (mode hors-ligne du service worker). L'écoute réseau local demande les
+  droits administrateur sous Windows (clic droit sur le `.bat` →
+  « Exécuter en tant qu'administrateur » si une erreur d'accès apparaît).
 - **5 postes fixes** pouvant être contrôlés en une seule fois : *Agglo 1er
   tour*, *Feno*, *Casse*, *Agglo 2ème tour*, *Chantiers*. Chaque poste
   débite 2 lancements en parallèle, traités comme 2 contrôles indépendants
