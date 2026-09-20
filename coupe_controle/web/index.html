@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Sentinelle — Contrôle de coupe</title>
+<!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
+     server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
+     ces balises n'ont aucun effet indésirable, l'appli continue de
+     fonctionner normalement en simple page. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="theme-color" content="#1565c0">
 <style>
   :root {
     color-scheme: light;
@@ -1659,6 +1667,15 @@ POSTES.forEach((poste) => {
   for (let i = 1; i <= nbLancements(poste); i++) nouvellePaire(poste, `Lancement ${i}`);
 });
 redessinerPaires();
+
+// N'a d'effet que servi en http(s)/localhost (ex. server/lancer_sentinelle.bat) :
+// les navigateurs bloquent les service workers sur file://, donc ouvert en
+// double-clic direct ceci échoue silencieusement sans rien casser.
+if ("serviceWorker" in navigator && (location.protocol === "http:" || location.protocol === "https:")) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
 </script>
 </body>
 </html>

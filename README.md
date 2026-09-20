@@ -125,12 +125,22 @@ HTML/JavaScript de ce même contrôle (mêmes règles de rapprochement, mêmes
 couleurs, même export Excel), pour les postes Windows où l'on ne veut pas
 installer Python.
 
-- C'est un **fichier unique** (bibliothèque de lecture/écriture Excel
-  incluse) : il suffit de le copier sur le poste Windows et de faire un
+- C'est un **fichier unique** (`index.html`, bibliothèque de lecture/écriture
+  Excel incluse) : il suffit de le copier sur le poste Windows et de faire un
   double-clic pour l'ouvrir dans le navigateur (Edge, Chrome, Firefox…).
 - Tout se passe **localement dans le navigateur** : les fichiers STRAT et
   Cutrite ne sont jamais envoyés sur un serveur.
 - Fonctionne **entièrement hors-ligne**, sans connexion internet.
+- **Installable comme une application (PWA)**, avec icône et mode hors-ligne
+  natif, en lançant `coupe_controle/web/server/lancer_sentinelle.bat`
+  (double-clic) : ça démarre un petit serveur local via PowerShell, déjà
+  présent sur Windows, sans rien à installer, puis ouvre
+  `http://localhost:8080` dans le navigateur. Le navigateur propose alors
+  d'« installer » Sentinelle (icône dans le menu Démarrer, fenêtre dédiée
+  sans barre d'adresse). C'est nécessaire pour l'installation : les
+  navigateurs bloquent cette fonctionnalité sur un fichier ouvert en
+  double-clic direct (`file://`), donc **le simple `index.html` reste
+  disponible tel quel** pour qui préfère ne rien lancer.
 - **5 postes fixes** pouvant être contrôlés en une seule fois : *Agglo 1er
   tour*, *Feno*, *Casse*, *Agglo 2ème tour*, *Chantiers*. Chaque poste
   débite 2 lancements en parallèle, traités comme 2 contrôles indépendants
