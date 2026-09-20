@@ -26,10 +26,17 @@ import openpyxl
 #     "TC" représente (une même clé peut être débitée en plusieurs fois,
 #     avec un nombre de pièces différent à chaque fois selon le nesting) :
 #     compter "1 par ligne" est donc faux dès qu'une pièce est nestée en
-#     plusieurs lots ; il faut sommer cette colonne, pas les lignes.
+#     plusieurs lots ; il faut sommer cette colonne, pas les lignes ;
+#   - certains exports marquent en plus une ligne technique supplémentaire
+#     (réserve/chute) avec le même type de trace "TC" que la vraie pièce ;
+#     une autre colonne (souvent un indicateur oui/non) permet de la
+#     repérer quand même : on cherche la colonne + valeur dont l'exclusion
+#     fait le mieux correspondre les quantités retrouvées aux quantités
+#     attendues, en plus du filtrage par type de trace.
 # Une pièce est comptée dès que sa clé commande+ligne est renseignée, que
 # son matériau n'est pas "PROTECTION", et que sa ligne est bien une trace
-# de type "TC" (quand cette information est disponible dans le fichier) ;
+# de type "TC" (quand cette information est disponible dans le fichier),
+# sans être par ailleurs marquée par le filtre supplémentaire ci-dessus ;
 # sa quantité est celle de la colonne "quantité" si elle a pu être détectée
 # avec confiance, sinon 1 par ligne (comportement précédent).
 COLONNE_CLE_PAR_DEFAUT = 15  # colonne P
@@ -148,10 +155,11 @@ def _est_ligne_piece(ligne: tuple, col_type_trace: int | None) -> bool:
     return correspondance.group(1) == TYPE_TRACE_PIECE
 
 
-def _lignes_pieces(lignes, col_cle, col_materiau, col_type_trace):
+def _lignes_pieces(lignes, col_cle, col_materiau, col_type_trace, exclusion=None):
     """Générateur des (clé, ligne) pour les lignes qui représentent une
-    pièce réelle : clé renseignée, matériau pas "PROTECTION", et ligne de
-    type "TC" (quand détectée)."""
+    pièce réelle : clé renseignée, matériau pas "PROTECTION", ligne de
+    type "TC" (quand détectée), et ne correspondant pas au filtre
+    supplémentaire `exclusion` = (colonne, valeur), quand détecté."""
     for ligne in lignes:
         if col_cle >= len(ligne) or ligne[col_cle] is None:
             continue
@@ -163,6 +171,12 @@ def _lignes_pieces(lignes, col_cle, col_materiau, col_type_trace):
 
         if not _est_ligne_piece(ligne, col_type_trace):
             continue
+
+        if exclusion is not None:
+            col_exclu, valeur_exclue = exclusion
+            if col_exclu < len(ligne) and ligne[col_exclu] is not None:
+                if str(ligne[col_exclu]).strip().upper() == valeur_exclue:
+                    continue
 
         yield cle, ligne
 
@@ -206,6 +220,74 @@ def _detecter_colonne_quantite(
     return meilleur_index if meilleur_score >= seuil else None
 
 
+def _somme_par_cle(pieces, col_quantite):
+    sommes: dict[str, float] = defaultdict(float)
+    for cle, ligne in pieces:
+        valeur = ligne[col_quantite] if col_quantite is not None and col_quantite < len(ligne) else None
+        try:
+            quantite = float(valeur) if valeur is not None else 1.0
+        except (TypeError, ValueError):
+            quantite = 1.0
+        sommes[cle] += quantite
+    return sommes
+
+
+def _detecter_exclusion_supplementaire(
+    lignes: list[tuple],
+    col_cle: int,
+    col_materiau: int,
+    col_type_trace: int | None,
+    col_quantite: int | None,
+    qte_attendue_par_cle: dict[str, float],
+) -> tuple[int, str] | None:
+    """Cherche une colonne + valeur dont l'exclusion, en plus du filtrage
+    par type de trace, améliore encore la correspondance entre quantités
+    retrouvées et quantités attendues (cas d'une ligne technique marquée
+    par erreur du même type "TC" que la vraie pièce, mais repérable par un
+    indicateur dans une autre colonne, ex. oui/non)."""
+    if not qte_attendue_par_cle:
+        return None
+
+    pieces = list(_lignes_pieces(lignes, col_cle, col_materiau, col_type_trace))
+
+    def score(sommes: dict[str, float]) -> int:
+        return sum(
+            1
+            for cle, total in sommes.items()
+            if cle in qte_attendue_par_cle and abs(total - qte_attendue_par_cle[cle]) < 1e-6
+        )
+
+    score_base = score(_somme_par_cle(pieces, col_quantite))
+
+    nb_colonnes = max((len(ligne) for _, ligne in pieces), default=0)
+    meilleur, meilleur_score = None, score_base
+    for col in range(nb_colonnes):
+        if col in (col_cle, col_materiau, col_type_trace, col_quantite):
+            continue
+        valeurs: set[str] = set()
+        for _cle, ligne in pieces:
+            if col < len(ligne) and ligne[col] is not None:
+                valeurs.add(str(ligne[col]).strip().upper())
+        valeurs.discard("")
+        # On se limite à des colonnes catégorielles (peu de valeurs
+        # distinctes) : c'est le profil attendu d'un indicateur, et ça
+        # évite de tester des colonnes de texte libre sans rapport.
+        if not (2 <= len(valeurs) <= 6):
+            continue
+        for valeur in valeurs:
+            pieces_filtrees = [
+                (cle, ligne)
+                for cle, ligne in pieces
+                if not (col < len(ligne) and ligne[col] is not None and str(ligne[col]).strip().upper() == valeur)
+            ]
+            s = score(_somme_par_cle(pieces_filtrees, col_quantite))
+            if s > meilleur_score:
+                meilleur, meilleur_score = (col, valeur), s
+
+    seuil = SEUIL_CONFIANCE_COLONNE_QUANTITE * len(qte_attendue_par_cle)
+    return meilleur if meilleur is not None and meilleur_score >= seuil else None
+
+
 def lire_coupe(chemin: str | Path, cles_strat: set[str], qte_attendue_par_cle: dict[str, float] | None = None) -> Counter:
     """Compte, pour chaque clé commande+ligne, le nombre de pièces dans la
     liste de coupe Cutrite (panneaux de protection et lignes techniques
@@ -229,9 +311,12 @@ def lire_coupe(chemin: str | Path, cles_strat: set[str], qte_attendue_par_cle: d
     col_quantite = _detecter_colonne_quantite(
         donnees, col_cle, col_materiau, col_type_trace, qte_attendue_par_cle or {}
     )
+    exclusion = _detecter_exclusion_supplementaire(
+        donnees, col_cle, col_materiau, col_type_trace, col_quantite, qte_attendue_par_cle or {}
+    )
 
     compteur: Counter = Counter()
-    for cle, ligne in _lignes_pieces(donnees, col_cle, col_materiau, col_type_trace):
+    for cle, ligne in _lignes_pieces(donnees, col_cle, col_materiau, col_type_trace, exclusion):
         quantite = 1.0
         if col_quantite is not None and col_quantite < len(ligne) and ligne[col_quantite] is not None:
             try:

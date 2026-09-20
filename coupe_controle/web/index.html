@@ -464,8 +464,9 @@ function estLignePiece(ligne, colTypeTrace) {
 }
 
 // Liste des [clé, ligne] pour les lignes qui représentent une pièce réelle
-// (clé renseignée, matériau pas "PROTECTION", type de trace "TC").
-function lignesPieces(lignes, colCle, colMateriau, colTypeTrace) {
+// (clé renseignée, matériau pas "PROTECTION", type de trace "TC", et ne
+// correspondant pas au filtre supplémentaire {col, valeur} quand détecté).
+function lignesPieces(lignes, colCle, colMateriau, colTypeTrace, exclusion) {
   const resultat = [];
   for (const ligne of lignes) {
     if (colCle >= ligne.length || ligne[colCle] === null || ligne[colCle] === undefined) continue;
@@ -477,9 +478,80 @@ function lignesPieces(lignes, colCle, colMateriau, colTypeTrace) {
     }
     if (!estLignePiece(ligne, colTypeTrace)) continue;
 
+    if (exclusion) {
+      const { col: colExclu, valeur: valeurExclue } = exclusion;
+      if (colExclu < ligne.length && ligne[colExclu] !== null && ligne[colExclu] !== undefined) {
+        if (String(ligne[colExclu]).trim().toUpperCase() === valeurExclue) continue;
+      }
+    }
+
     resultat.push([cle, ligne]);
   }
   return resultat;
+}
+
+function sommeParCle(pieces, colQuantite) {
+  const sommes = new Map();
+  for (const [cle, ligne] of pieces) {
+    const valeur = colQuantite !== null && colQuantite < ligne.length ? ligne[colQuantite] : null;
+    const n = toFloatOrNull(valeur);
+    const quantite = n === null ? 1 : n;
+    sommes.set(cle, (sommes.get(cle) || 0) + quantite);
+  }
+  return sommes;
+}
+
+function scoreCorrespondance(sommes, qteAttendueParCle) {
+  let score = 0;
+  for (const [cle, total] of sommes) {
+    const attendu = qteAttendueParCle.get(cle);
+    if (attendu !== undefined && Math.abs(total - attendu) < 1e-6) score++;
+  }
+  return score;
+}
+
+// Certains exports marquent en plus une ligne technique supplémentaire
+// (réserve/chute) avec le même type de trace "TC" que la vraie pièce.
+// On cherche une colonne + valeur (indicateur catégoriel, ex. oui/non)
+// dont l'exclusion, en plus du filtrage par type de trace, améliore
+// encore la correspondance entre quantités retrouvées et attendues.
+function detecterExclusionSupplementaire(lignes, colCle, colMateriau, colTypeTrace, colQuantite, qteAttendueParCle) {
+  if (!qteAttendueParCle || qteAttendueParCle.size === 0) return null;
+
+  const pieces = lignesPieces(lignes, colCle, colMateriau, colTypeTrace);
+  const scoreBase = scoreCorrespondance(sommeParCle(pieces, colQuantite), qteAttendueParCle);
+
+  let nbColonnes = 0;
+  for (const [, ligne] of pieces) nbColonnes = Math.max(nbColonnes, ligne.length);
+
+  let meilleur = null;
+  let meilleurScore = scoreBase;
+  for (let col = 0; col < nbColonnes; col++) {
+    if (col === colCle || col === colMateriau || col === colTypeTrace || col === colQuantite) continue;
+    const valeurs = new Set();
+    for (const [, ligne] of pieces) {
+      if (col < ligne.length && ligne[col] !== null && ligne[col] !== undefined) {
+        const v = String(ligne[col]).trim().toUpperCase();
+        if (v) valeurs.add(v);
+      }
+    }
+    if (valeurs.size < 2 || valeurs.size > 6) continue; // profil d'un indicateur catégoriel
+
+    for (const valeur of valeurs) {
+      const piecesFiltrees = pieces.filter(([, ligne]) => {
+        if (col >= ligne.length || ligne[col] === null || ligne[col] === undefined) return true;
+        return String(ligne[col]).trim().toUpperCase() !== valeur;
+      });
+      const score = scoreCorrespondance(sommeParCle(piecesFiltrees, colQuantite), qteAttendueParCle);
+      if (score > meilleurScore) {
+        meilleur = { col, valeur };
+        meilleurScore = score;
+      }
+    }
+  }
+
+  const seuil = SEUIL_CONFIANCE_COLONNE_QUANTITE * qteAttendueParCle.size;
+  return meilleur && meilleurScore >= seuil ? meilleur : null;
 }
 
 // La colonne quantité n'est adoptée que si elle explique au moins cette
@@ -533,9 +605,17 @@ function lireCoupe(workbook, clesStrat, qteAttendueParCle) {
   if (colMateriau === null) colMateriau = COLONNE_MATERIAU_PAR_DEFAUT;
   const colTypeTrace = detecterColonneTypeTrace(lignes);
   const colQuantite = detecterColonneQuantite(lignes, colCle, colMateriau, colTypeTrace, qteAttendueParCle || new Map());
+  const exclusion = detecterExclusionSupplementaire(
+    lignes,
+    colCle,
+    colMateriau,
+    colTypeTrace,
+    colQuantite,
+    qteAttendueParCle || new Map()
+  );
 
   const compteur = new Map();
-  for (const [cle, ligne] of lignesPieces(lignes, colCle, colMateriau, colTypeTrace)) {
+  for (const [cle, ligne] of lignesPieces(lignes, colCle, colMateriau, colTypeTrace, exclusion)) {
     let quantite = 1;
     if (colQuantite !== null && colQuantite < ligne.length) {
       const n = toFloatOrNull(ligne[colQuantite]);

@@ -147,3 +147,7 @@ installer Python.
   sommant la colonne quantité de la liste de coupe (détectée automatiquement
   par comparaison avec les quantités du fichier de lancement) plutôt qu'en
   comptant « 1 pièce par ligne », ce qui évite de fausses anomalies.
+- Une colonne + valeur supplémentaire (ex. un indicateur oui/non) est aussi
+  détectée automatiquement pour exclure les lignes techniques de réserve/
+  chute qui porteraient par erreur le même type de trace que la vraie
+  pièce.
