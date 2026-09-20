@@ -45,6 +45,39 @@
   }
   .panneau-recherche button { font-size: 1.05rem; padding: 12px 22px; }
   .panneau-recherche .label-recherche { font-size: 0.95rem; }
+  .resultat-recherche {
+    background: #fff;
+    border: 1px solid #c7d9ee;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 8px;
+  }
+  .resultat-recherche:last-child { margin-bottom: 0; }
+  .resultat-recherche-entete {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #eceff1;
+  }
+  .resultat-cle { font-weight: 700; font-size: 1rem; color: #1565c0; }
+  .resultat-poste { color: #555; font-size: 0.85rem; }
+  .resultat-recherche-champs { display: flex; flex-wrap: wrap; gap: 6px 28px; }
+  .resultat-champ { display: flex; flex-direction: column; gap: 2px; }
+  .resultat-champ-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; color: #888; }
+  .resultat-champ-valeur { font-size: 0.92rem; font-weight: 600; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .grain-puce {
+    display: inline-block;
+    background: #eceff1;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+  .grain-vide { color: #888; font-weight: 400; font-size: 0.88rem; }
   .poste { margin-bottom: 18px; }
   .poste-titre {
     font-size: 1rem;
@@ -1368,9 +1401,23 @@ async function rechercherGrainMatchingGlobal() {
     zone.style.color = "var(--ok-text)";
     zone.innerHTML = trouvailles
       .map(({ paire, valeurs, quantite }) => {
-        const detail = valeurs.length === 0 ? "Unitaire (pas de grain matching)" : `grain matching : ${valeurs.join(", ")}`;
-        const quantiteTexte = quantite !== null ? ` — ${quantite} pièce(s) trouvée(s)` : "";
-        return `<div><strong>${cle}</strong> — ${paire.nom} → ${detail}${quantiteTexte}</div>`;
+        const quantiteTexte = quantite !== null ? String(quantite) : "?";
+        const grainHtml =
+          valeurs.length === 0
+            ? `<span class="grain-vide">Unitaire (pas de grain matching)</span>`
+            : valeurs.map((v) => `<span class="grain-puce">${v}</span>`).join("");
+        return `
+          <div class="resultat-recherche">
+            <div class="resultat-recherche-entete">
+              <span class="resultat-cle">${cle}</span>
+              <span class="resultat-poste">${paire.nom}</span>
+            </div>
+            <div class="resultat-recherche-champs">
+              <div class="resultat-champ"><span class="resultat-champ-label">Quantité trouvée</span><span class="resultat-champ-valeur">${quantiteTexte}</span></div>
+              <div class="resultat-champ"><span class="resultat-champ-label">Grain matching</span><span class="resultat-champ-valeur">${grainHtml}</span></div>
+            </div>
+          </div>
+        `;
       })
       .join("");
   }
