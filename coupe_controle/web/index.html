@@ -1187,11 +1187,24 @@ async function lancerControlePaire(index, paire) {
   }
 }
 
+// Affiche (ou remplace) le panneau de résultat d'une seule paire, dès que
+// sa comparaison est terminée — indépendamment des autres paires en cours
+// ou pas encore traitées.
+function afficherResultatPaire(index, paire) {
+  const resultatsContainer = $("resultatsContainer");
+  const ancien = resultatsContainer.querySelector(`.panneau[data-id="${paire.id}"]`);
+  if (ancien) ancien.remove();
+  if (!paire.rapport) return;
+  const panneau = creerPanneauResultat(index, paire);
+  resultatsContainer.appendChild(panneau);
+  afficherRapportPaire(panneau, paire.rapport);
+}
+
 async function lancerTousLesControles() {
   const btn = $("btnLancerTout");
   btn.disabled = true;
   const erreurs = [];
-  const resultatsContainer = $("resultatsContainer");
+  let auMoinsUnResultat = paires.some((p) => p.rapport);
 
   try {
     creerLignesProgress();
@@ -1201,19 +1214,16 @@ async function lancerTousLesControles() {
       const paire = paires[i];
       const resultat = await lancerControlePaire(i, paire);
       if (resultat && resultat.erreur) erreurs.push(resultat.erreur);
+      if (resultat && resultat.ok) {
+        afficherResultatPaire(i, paire);
+        auMoinsUnResultat = true;
+        await tick();
+      }
     }
-
-    resultatsContainer.innerHTML = "";
-    paires.forEach((paire, index) => {
-      if (!paire.rapport) return;
-      const panneau = creerPanneauResultat(index, paire);
-      resultatsContainer.appendChild(panneau);
-      afficherRapportPaire(panneau, paire.rapport);
-    });
 
     if (erreurs.length > 0) {
       alert("Certaines paires n'ont pas pu être traitées :\n\n" + erreurs.join("\n"));
-    } else if (!paires.some((p) => p.rapport)) {
+    } else if (!auMoinsUnResultat) {
       alert("Sélectionnez au moins une paire complète (fichier de lancement + liste de coupe).");
     }
   } finally {
