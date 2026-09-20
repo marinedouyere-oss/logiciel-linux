@@ -366,6 +366,15 @@ const COLONNE_MATERIAU_PAR_DEFAUT = 1; // colonne B
 const COLONNE_GRAIN_MATCHING_PAR_DEFAUT = 27; // colonne AB
 const MOTIF_GRAIN_MATCHING = /^[A-Za-z]*\d+:\d+:\d+$/;
 
+// Certains exports Cutrite ajoutent, pour une même clé commande+ligne,
+// des lignes techniques en plus de la pièce réelle (talon/chute, bande de
+// chant...). Elles sont repérables par un code du type "P1:TC:..." dans
+// une colonne : la lettre après "T" vaut "C" (Coupe = la pièce) pour la
+// vraie pièce, et autre chose (ex. "F", "B") pour les lignes techniques à
+// exclure du comptage — sinon chaque pièce concernée est comptée deux fois.
+const MOTIF_TYPE_TRACE = /^[A-Za-z0-9]+:T([A-Z]):/;
+const TYPE_TRACE_PIECE = "C";
+
 function feuillePrincipale(workbook) {
   let meilleure = null;
   let meilleurNb = -1;
@@ -434,6 +443,26 @@ function detecterColonneGrainMatching(lignes) {
   });
 }
 
+function detecterColonneTypeTrace(lignes) {
+  return detecterColonne(lignes, (ligne, col) => {
+    if (col >= ligne.length || ligne[col] === null || ligne[col] === undefined) return 0;
+    return MOTIF_TYPE_TRACE.test(String(ligne[col]).trim()) ? 1 : 0;
+  });
+}
+
+// Renvoie false pour une ligne technique (talon/chute, bande de chant...)
+// repérée via la colonne type de trace, quand celle-ci a pu être détectée.
+// Si elle est absente du fichier, toutes les lignes sont considérées comme
+// des pièces (comportement inchangé).
+function estLignePiece(ligne, colTypeTrace) {
+  if (colTypeTrace === null || colTypeTrace >= ligne.length) return true;
+  const valeur = ligne[colTypeTrace];
+  if (valeur === null || valeur === undefined) return true;
+  const correspondance = MOTIF_TYPE_TRACE.exec(String(valeur).trim());
+  if (!correspondance) return true;
+  return correspondance[1] === TYPE_TRACE_PIECE;
+}
+
 function lireCoupe(workbook, clesStrat) {
   const lignes = chargerLignes(workbook);
 
@@ -441,6 +470,7 @@ function lireCoupe(workbook, clesStrat) {
   if (colCle === null) colCle = COLONNE_CLE_PAR_DEFAUT;
   let colMateriau = detecterColonneMateriau(lignes);
   if (colMateriau === null) colMateriau = COLONNE_MATERIAU_PAR_DEFAUT;
+  const colTypeTrace = detecterColonneTypeTrace(lignes);
 
   const compteur = new Map();
   for (const ligne of lignes) {
@@ -453,6 +483,8 @@ function lireCoupe(workbook, clesStrat) {
     if (materiau !== null && materiau !== undefined && MATERIAUX_EXCLUS.has(String(materiau).trim().toUpperCase())) {
       continue;
     }
+    if (!estLignePiece(ligne, colTypeTrace)) continue;
+
     compteur.set(cle, (compteur.get(cle) || 0) + 1);
   }
 
@@ -473,12 +505,14 @@ function lireGrainMatching(workbook, clesStrat) {
   if (colCle === null) colCle = COLONNE_CLE_PAR_DEFAUT;
   let colGrain = detecterColonneGrainMatching(lignes);
   if (colGrain === null) colGrain = COLONNE_GRAIN_MATCHING_PAR_DEFAUT;
+  const colTypeTrace = detecterColonneTypeTrace(lignes);
 
   const resultat = new Map();
   for (const ligne of lignes) {
     if (colCle >= ligne.length) continue;
     let cle = ligne[colCle];
     if (cle === null || cle === undefined) continue;
+    if (!estLignePiece(ligne, colTypeTrace)) continue;
     cle = String(cle).trim();
     if (!resultat.has(cle)) resultat.set(cle, []);
 

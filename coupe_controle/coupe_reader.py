@@ -16,9 +16,15 @@ import openpyxl
 #     (ex. "SAG10HYBR"), ou "PROTECTION" pour les panneaux de protection, qui
 #     ne sont pas des pièces client et doivent être exclus, comme dans le
 #     fichier de lancement ;
-#   - la colonne "grain matching" contient un code de type "T33:2:1".
-# Une pièce est comptée dès que sa clé commande+ligne est renseignée et que
-# son matériau n'est pas "PROTECTION".
+#   - la colonne "grain matching" contient un code de type "T33:2:1" ;
+#   - la colonne "type de trace" contient un code de type "P1:TC:..." ou
+#     "L0392:TF:...", qui distingue la pièce réellement débitée ("TC") des
+#     lignes techniques que Cutrite ajoute pour la même clé commande+ligne
+#     (talon/chute "TF", bande de chant "TB", etc.) : ces dernières ne sont
+#     pas des pièces et doublonnent le compte si on ne les exclut pas.
+# Une pièce est comptée dès que sa clé commande+ligne est renseignée, que
+# son matériau n'est pas "PROTECTION", et que sa ligne est bien une trace
+# de type "TC" (quand cette information est disponible dans le fichier).
 COLONNE_CLE_PAR_DEFAUT = 15  # colonne P
 COLONNE_MATERIAU_PAR_DEFAUT = 1  # colonne B
 COLONNE_GRAIN_MATCHING_PAR_DEFAUT = 27  # colonne AB
@@ -26,6 +32,8 @@ COLONNE_GRAIN_MATCHING_PAR_DEFAUT = 27  # colonne AB
 MATERIAUX_EXCLUS = {"PROTECTION"}
 
 MOTIF_GRAIN_MATCHING = re.compile(r"^[A-Za-z]*\d+:\d+:\d+$")
+MOTIF_TYPE_TRACE = re.compile(r"^[A-Za-z0-9]+:T([A-Z]):")
+TYPE_TRACE_PIECE = "C"
 
 
 class CoupeFormatError(ValueError):
@@ -93,9 +101,43 @@ def _detecter_colonne_grain_matching(lignes: list[tuple]) -> int | None:
     return meilleur_index
 
 
+def _detecter_colonne_type_trace(lignes: list[tuple]) -> int | None:
+    """La colonne type de trace contient un code du type "P1:TC:..." : la
+    lettre après "T" distingue la pièce ("C") des lignes techniques liées
+    (talon/chute "F", bande de chant "B"...)."""
+    nb_colonnes = max((len(ligne) for ligne in lignes), default=0)
+    meilleur_index, meilleur_score = None, 0
+    for col in range(nb_colonnes):
+        score = sum(
+            1
+            for ligne in lignes
+            if col < len(ligne) and ligne[col] is not None and MOTIF_TYPE_TRACE.match(str(ligne[col]).strip())
+        )
+        if score > meilleur_score:
+            meilleur_index, meilleur_score = col, score
+    return meilleur_index
+
+
+def _est_ligne_piece(ligne: tuple, col_type_trace: int | None) -> bool:
+    """Renvoie False pour une ligne technique (talon/chute, bande de chant...)
+    identifiée par la colonne type de trace, quand cette colonne est
+    disponible. Si elle n'a pas pu être détectée, toutes les lignes sont
+    considérées comme des pièces (comportement inchangé)."""
+    if col_type_trace is None or col_type_trace >= len(ligne):
+        return True
+    valeur = ligne[col_type_trace]
+    if valeur is None:
+        return True
+    correspondance = MOTIF_TYPE_TRACE.match(str(valeur).strip())
+    if not correspondance:
+        return True
+    return correspondance.group(1) == TYPE_TRACE_PIECE
+
+
 def lire_coupe(chemin: str | Path, cles_strat: set[str]) -> Counter:
     """Compte, pour chaque clé commande+ligne, le nombre de pièces dans la
-    liste de coupe Cutrite (panneaux de protection exclus)."""
+    liste de coupe Cutrite (panneaux de protection et lignes techniques
+    exclus)."""
 
     donnees = _charger_lignes(chemin)
 
@@ -106,6 +148,8 @@ def lire_coupe(chemin: str | Path, cles_strat: set[str]) -> Counter:
     col_materiau = _detecter_colonne_materiau(donnees)
     if col_materiau is None:
         col_materiau = COLONNE_MATERIAU_PAR_DEFAUT
+
+    col_type_trace = _detecter_colonne_type_trace(donnees)
 
     compteur: Counter = Counter()
     for ligne in donnees:
@@ -118,6 +162,9 @@ def lire_coupe(chemin: str | Path, cles_strat: set[str]) -> Counter:
 
         materiau = ligne[col_materiau] if col_materiau < len(ligne) else None
         if materiau is not None and str(materiau).strip().upper() in MATERIAUX_EXCLUS:
+            continue
+
+        if not _est_ligne_piece(ligne, col_type_trace):
             continue
 
         compteur[cle] += 1
@@ -145,12 +192,16 @@ def lire_grain_matching(chemin: str | Path, cles_strat: set[str] | None = None) 
     if col_grain is None:
         col_grain = COLONNE_GRAIN_MATCHING_PAR_DEFAUT
 
+    col_type_trace = _detecter_colonne_type_trace(donnees)
+
     resultat: dict[str, list[str]] = defaultdict(list)
     for ligne in donnees:
         if col_cle >= len(ligne):
             continue
         cle = ligne[col_cle]
         if cle is None:
+            continue
+        if not _est_ligne_piece(ligne, col_type_trace):
             continue
         cle = str(cle).strip()
         # On enregistre la clé même sans grain matching, pour distinguer une
