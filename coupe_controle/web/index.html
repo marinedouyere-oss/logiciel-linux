@@ -30,11 +30,22 @@
     padding: 16px 20px;
     margin-bottom: 16px;
   }
+  .poste { margin-bottom: 18px; }
+  .poste-titre {
+    font-size: 1rem;
+    margin: 0 0 8px;
+    padding-bottom: 4px;
+    border-bottom: 2px solid var(--border);
+  }
+  .lancement-grille {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 12px;
+  }
   .paire {
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 14px 16px;
-    margin-bottom: 12px;
     background: #fafbfc;
     position: relative;
   }
@@ -155,9 +166,10 @@
     Version web autonome (HTML) — fonctionne hors-ligne dans le navigateur, sans installer Python.
     Compare le fichier de lancement (STRAT) à la liste de coupe Cutrite, par paire. Rien n'est envoyé
     sur un serveur : les fichiers sont lus et traités entièrement dans votre navigateur.
-    5 postes fixes (Agglo 1er tour, Feno, Casse, Agglo 2ème tour, Chantiers) : remplissez
-    ceux dont vous avez besoin puis lancez le(s) contrôle(s) — les postes laissés vides sont
-    simplement ignorés.
+    5 postes fixes (Agglo 1er tour, Feno, Casse, Agglo 2ème tour, Chantiers), chacun avec
+    2 lancements traités en parallèle : chaque lancement a son propre fichier de lancement
+    (STRAT) et sa propre liste de coupe. Remplissez les cases dont vous avez besoin puis
+    lancez le(s) contrôle(s) — celles laissées vides sont simplement ignorées.
   </p>
 
   <div class="panneau">
@@ -800,19 +812,24 @@ async function exporterRapport(rapport, nomFichier) {
   URL.revokeObjectURL(url);
 }
 
-// ---- UI : 5 postes fixes, chacun avec son propre couple STRAT / coupe ----
-const NOMS_PAIRES = ["Agglo 1er tour", "Feno", "Casse", "Agglo 2ème tour", "Chantiers"];
+// ---- UI : 5 postes fixes, chacun débitant 2 lancements en parallèle ----
+// (2 lancements = 2 comparaisons indépendantes : chaque lancement a son
+// propre fichier STRAT et sa propre liste de coupe à lui comparer.)
+const POSTES = ["Agglo 1er tour", "Feno", "Casse", "Agglo 2ème tour", "Chantiers"];
+const LANCEMENTS = ["Lancement 1", "Lancement 2"];
 const $ = (id) => document.getElementById(id);
 
 let prochainId = 1;
-// Chaque paire : { id, nom, rapport, clesStrat, triColonne, triAscendant }
+// Chaque paire : { id, poste, lancementLabel, nom, rapport, clesStrat, triColonne, triAscendant }
 const paires = [];
 
-function nouvellePaire(nom) {
+function nouvellePaire(poste, lancementLabel) {
   const id = prochainId++;
   paires.push({
     id,
-    nom,
+    poste,
+    lancementLabel,
+    nom: `${poste} — ${lancementLabel}`,
     rapport: null,
     clesStrat: new Set(),
     triColonne: null,
@@ -833,24 +850,42 @@ function slug(texte) {
 function redessinerPaires() {
   const container = $("pairesContainer");
   container.innerHTML = "";
-  paires.forEach((paire) => {
-    const div = document.createElement("div");
-    div.className = "paire";
-    div.dataset.id = paire.id;
-    div.innerHTML = `
-      <div class="paire-entete">
-        <strong>${paire.nom}</strong>
-      </div>
-      <div class="ligne-fichier">
-        <label for="strat-${paire.id}">Fichier de lancement (STRAT) :</label>
-        <input type="file" id="strat-${paire.id}" accept=".xlsx,.xlsm">
-      </div>
-      <div class="ligne-fichier">
-        <label for="coupe-${paire.id}">Liste de coupe (Cutrite) :</label>
-        <input type="file" id="coupe-${paire.id}" accept=".xlsx,.xlsm">
-      </div>
-    `;
-    container.appendChild(div);
+  POSTES.forEach((poste) => {
+    const posteDiv = document.createElement("div");
+    posteDiv.className = "poste";
+
+    const titre = document.createElement("h2");
+    titre.className = "poste-titre";
+    titre.textContent = poste;
+    posteDiv.appendChild(titre);
+
+    const grille = document.createElement("div");
+    grille.className = "lancement-grille";
+
+    paires
+      .filter((paire) => paire.poste === poste)
+      .forEach((paire) => {
+        const div = document.createElement("div");
+        div.className = "paire";
+        div.dataset.id = paire.id;
+        div.innerHTML = `
+          <div class="paire-entete">
+            <strong>${paire.lancementLabel}</strong>
+          </div>
+          <div class="ligne-fichier">
+            <label for="strat-${paire.id}">Fichier de lancement (STRAT) :</label>
+            <input type="file" id="strat-${paire.id}" accept=".xlsx,.xlsm">
+          </div>
+          <div class="ligne-fichier">
+            <label for="coupe-${paire.id}">Liste de coupe (Cutrite) :</label>
+            <input type="file" id="coupe-${paire.id}" accept=".xlsx,.xlsm">
+          </div>
+        `;
+        grille.appendChild(div);
+      });
+
+    posteDiv.appendChild(grille);
+    container.appendChild(posteDiv);
   });
 }
 
@@ -1145,7 +1180,9 @@ async function lancerTousLesControles() {
 
 $("btnLancerTout").addEventListener("click", lancerTousLesControles);
 
-NOMS_PAIRES.forEach((nom) => nouvellePaire(nom));
+POSTES.forEach((poste) => {
+  LANCEMENTS.forEach((lancement) => nouvellePaire(poste, lancement));
+});
 redessinerPaires();
 </script>
 </body>

@@ -131,10 +131,12 @@ installer Python.
 - Tout se passe **localement dans le navigateur** : les fichiers STRAT et
   Cutrite ne sont jamais envoyés sur un serveur.
 - Fonctionne **entièrement hors-ligne**, sans connexion internet.
-- **5 postes fixes** pouvant être contrôlés en une seule fois (chacun avec
-  son propre fichier STRAT + sa propre liste de coupe) : *Agglo 1er tour*,
-  *Feno*, *Casse*, *Agglo 2ème tour*, *Chantiers*. Les postes laissés vides
-  sont simplement ignorés au lancement.
+- **5 postes fixes** pouvant être contrôlés en une seule fois : *Agglo 1er
+  tour*, *Feno*, *Casse*, *Agglo 2ème tour*, *Chantiers*. Chaque poste
+  débite 2 lancements en parallèle, traités comme 2 contrôles indépendants
+  (chacun avec son propre fichier STRAT et sa propre liste de coupe) — soit
+  10 comparaisons possibles en une fois. Les cases laissées vides sont
+  simplement ignorées au lancement.
 - Un panneau de **progression** affiche l'avancement poste par poste
   pendant le traitement (lecture STRAT → lecture coupe → comparaison →
   terminé/anomalies).
