@@ -32,7 +32,13 @@ import openpyxl
 #     une autre colonne (souvent un indicateur oui/non) permet de la
 #     repérer quand même : on cherche la colonne + valeur dont l'exclusion
 #     fait le mieux correspondre les quantités retrouvées aux quantités
-#     attendues, en plus du filtrage par type de trace.
+#     attendues, en plus du filtrage par type de trace ;
+#   - l'identifiant de trace (ex. "P1", "C389", avant ":TC:"/":TF:") est
+#     partagé par une pièce (ou sa ligne technique réserve/chute) et sa
+#     ligne technique associée : elles devraient avoir la même quantité,
+#     ce qui permet un contrôle de cohérence interne de la liste de coupe,
+#     indépendant de la comparaison avec le STRAT (voir
+#     detecter_incoherences_reserve).
 # Une pièce est comptée dès que sa clé commande+ligne est renseignée, que
 # son matériau n'est pas "PROTECTION", et que sa ligne est bien une trace
 # de type "TC" (quand cette information est disponible dans le fichier),
@@ -46,7 +52,9 @@ COLONNE_GRAIN_MATCHING_PAR_DEFAUT = 27  # colonne AB
 MATERIAUX_EXCLUS = {"PROTECTION"}
 
 MOTIF_GRAIN_MATCHING = re.compile(r"^[A-Za-z]*\d+:\d+:\d+$")
-MOTIF_TYPE_TRACE = re.compile(r"^[A-Za-z0-9]+:T([A-Z]):")
+# Groupe 1 : identifiant de trace (ex. "P1", "C389"). Groupe 2 : lettre de
+# type ("C" = pièce, "F"/"B" = ligne technique).
+MOTIF_TYPE_TRACE = re.compile(r"^([A-Za-z0-9]+):T([A-Z]):")
 TYPE_TRACE_PIECE = "C"
 
 # La colonne quantité n'est adoptée que si elle explique au moins cette
@@ -152,7 +160,27 @@ def _est_ligne_piece(ligne: tuple, col_type_trace: int | None) -> bool:
     correspondance = MOTIF_TYPE_TRACE.match(str(valeur).strip())
     if not correspondance:
         return True
-    return correspondance.group(1) == TYPE_TRACE_PIECE
+    return correspondance.group(2) == TYPE_TRACE_PIECE
+
+
+def _est_ligne_technique(
+    ligne: tuple, col_materiau: int, col_type_trace: int | None, exclusion: tuple[int, str] | None
+) -> bool:
+    """Renvoie True pour une ligne technique (talon/chute, bande de chant,
+    panneau de protection...) : l'inverse des critères de _lignes_pieces(),
+    mais sans exiger que la clé soit renseignée (utile pour le contrôle de
+    cohérence, qui regroupe justement ces lignes techniques)."""
+    materiau = ligne[col_materiau] if col_materiau < len(ligne) else None
+    if materiau is not None and str(materiau).strip().upper() in MATERIAUX_EXCLUS:
+        return True
+    if not _est_ligne_piece(ligne, col_type_trace):
+        return True
+    if exclusion is not None:
+        col_exclu, valeur_exclue = exclusion
+        if col_exclu < len(ligne) and ligne[col_exclu] is not None:
+            if str(ligne[col_exclu]).strip().upper() == valeur_exclue:
+                return True
+    return False
 
 
 def _lignes_pieces(lignes, col_cle, col_materiau, col_type_trace, exclusion=None):
@@ -288,13 +316,67 @@ def _detecter_exclusion_supplementaire(
     return meilleur if meilleur is not None and meilleur_score >= seuil else None
 
 
-def lire_coupe(chemin: str | Path, cles_strat: set[str], qte_attendue_par_cle: dict[str, float] | None = None) -> Counter:
+def detecter_incoherences_reserve(
+    donnees: list[tuple],
+    col_cle: int,
+    col_materiau: int,
+    col_type_trace: int | None,
+    exclusion: tuple[int, str] | None,
+    col_quantite: int | None,
+) -> list[dict]:
+    """Contrôle de cohérence interne de la liste de coupe, indépendant de
+    la comparaison avec le STRAT : les lignes techniques (réserve/chute...)
+    partageant le même identifiant de trace (ex. "C389") devraient avoir
+    la même quantité. Si ce n'est pas le cas, c'est le signe d'une
+    modification ou d'une incohérence dans le fichier de coupe lui-même —
+    même si ces lignes n'entrent pas dans le compte des pièces réelles."""
+    if col_type_trace is None:
+        return []
+
+    groupes: dict[tuple[str, str], list[float]] = defaultdict(list)
+    for ligne in donnees:
+        if col_cle >= len(ligne) or ligne[col_cle] is None:
+            continue
+        if not _est_ligne_technique(ligne, col_materiau, col_type_trace, exclusion):
+            continue
+        if col_type_trace >= len(ligne) or ligne[col_type_trace] is None:
+            continue
+
+        correspondance = MOTIF_TYPE_TRACE.match(str(ligne[col_type_trace]).strip())
+        if not correspondance:
+            continue
+
+        cle = str(ligne[col_cle]).strip()
+        prefixe = correspondance.group(1)
+        valeur = ligne[col_quantite] if col_quantite is not None and col_quantite < len(ligne) else None
+        try:
+            quantite = float(valeur) if valeur is not None else None
+        except (TypeError, ValueError):
+            quantite = None
+        if quantite is not None:
+            groupes[(cle, prefixe)].append(quantite)
+
+    incoherences = []
+    for (cle, prefixe), quantites in groupes.items():
+        distinctes = sorted(set(quantites))
+        if len(distinctes) > 1:
+            incoherences.append({"cle": cle, "id_trace": prefixe, "quantites": distinctes})
+    return incoherences
+
+
+def lire_coupe(
+    chemin: str | Path, cles_strat: set[str], qte_attendue_par_cle: dict[str, float] | None = None
+) -> tuple[Counter, list[dict]]:
     """Compte, pour chaque clé commande+ligne, le nombre de pièces dans la
     liste de coupe Cutrite (panneaux de protection et lignes techniques
     exclus). Si la colonne "quantité" par ligne peut être détectée avec
     confiance (via `qte_attendue_par_cle`), une même clé nestée en
     plusieurs lots est comptée correctement au lieu d'être sous-évaluée
-    (1 par ligne, quel que soit le nombre de pièces qu'elle représente)."""
+    (1 par ligne, quel que soit le nombre de pièces qu'elle représente).
+
+    Renvoie aussi les incohérences détectées entre lignes techniques (voir
+    detecter_incoherences_reserve) : ces dernières peuvent exister même
+    quand le compteur retourné est parfaitement cohérent avec le STRAT."""
 
     donnees = _charger_lignes(chemin)
 
@@ -331,7 +413,9 @@ def lire_coupe(chemin: str | Path, cles_strat: set[str], qte_attendue_par_cle: d
             "du fichier semble différent de celui attendu."
         )
 
-    return compteur
+    incoherences = detecter_incoherences_reserve(donnees, col_cle, col_materiau, col_type_trace, exclusion, col_quantite)
+
+    return compteur, incoherences
 
 
 def lire_grain_matching(chemin: str | Path, cles_strat: set[str] | None = None) -> dict[str, list[str]]:

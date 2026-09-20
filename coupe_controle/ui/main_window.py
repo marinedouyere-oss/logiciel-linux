@@ -131,13 +131,25 @@ class MainWindow(QMainWindow):
             cles_strat = {l.cle for l in lignes_strat}
             self.cles_strat = cles_strat
             qte_attendue_par_cle = {l.cle: l.qte_attendue for l in lignes_strat}
-            trouve_par_cle = lire_coupe(chemin_coupe, cles_strat, qte_attendue_par_cle)
+            trouve_par_cle, incoherences = lire_coupe(chemin_coupe, cles_strat, qte_attendue_par_cle)
         except (StratFormatError, CoupeFormatError) as erreur:
             QMessageBox.critical(self, "Erreur de lecture", str(erreur))
             return
         except Exception as erreur:  # noqa: BLE001 - remonter toute erreur de lecture à l'utilisateur
             QMessageBox.critical(self, "Erreur de lecture", f"Impossible de lire les fichiers :\n{erreur}")
             return
+
+        if incoherences:
+            details = "\n".join(
+                f"— Pièce {inc['cle']} (trace {inc['id_trace']}) : quantités {', '.join(str(q) for q in inc['quantites'])}"
+                for inc in incoherences
+            )
+            QMessageBox.warning(
+                self,
+                "Incohérences dans la liste de coupe",
+                "Des lignes techniques (réserve/chute) qui devraient partager la même "
+                f"quantité n'ont pas la même valeur :\n\n{details}",
+            )
 
         self.rapport = comparer(lignes_strat, trouve_par_cle)
         self._afficher_rapport(self.rapport)
