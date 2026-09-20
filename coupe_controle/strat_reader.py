@@ -15,8 +15,13 @@ COL_ARTICLE = "conf_article"
 COL_QTE = "comdet_qte"
 COL_LANCEMENT = "comprod_lancement"
 COL_CLE = "commande+ligne"
+COL_AGGLO = "agglo"
 
 REQUIRED_HEADERS = (COL_COMMANDE, COL_LIGNE, COL_ARTICLE, COL_QTE)
+
+# Un panneau de protection (support = "PROTECTION") n'est pas une pièce
+# commandée par le client : il ne doit pas être compté dans le contrôle.
+MATERIAUX_EXCLUS = {"PROTECTION"}
 
 
 class StratFormatError(ValueError):
@@ -76,6 +81,7 @@ def lire_strat(chemin: str | Path) -> list[LigneStrat]:
     idx_qte = entetes[COL_QTE]
     idx_lancement = entetes.get(COL_LANCEMENT)
     idx_cle = entetes.get(COL_CLE)
+    idx_agglo = entetes.get(COL_AGGLO)
 
     qte_par_cle: dict[str, float] = defaultdict(float)
     infos_par_cle: dict[str, tuple[str, str, str, str]] = {}
@@ -92,6 +98,10 @@ def lire_strat(chemin: str | Path) -> list[LigneStrat]:
         if commande is None:
             continue
         commande = str(commande).strip()
+
+        agglo = valeur(ligne_donnees, idx_agglo)
+        if agglo is not None and str(agglo).strip().upper() in MATERIAUX_EXCLUS:
+            continue
         numero_ligne = valeur(ligne_donnees, idx_ligne)
         article = valeur(ligne_donnees, idx_article) or ""
         qte = valeur(ligne_donnees, idx_qte) or 0
