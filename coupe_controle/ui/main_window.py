@@ -158,9 +158,13 @@ class MainWindow(QMainWindow):
                 f"({rapport.nb_ok} OK)."
             )
 
+        # Seules les anomalies sont affichées dans le tableau (les pièces OK
+        # ne le sont pas) : le résumé ci-dessus donne déjà les totaux et le
+        # nombre OK.
+        lignes_anomalies = rapport.anomalies()
         self.table.setSortingEnabled(False)
-        self.table.setRowCount(len(rapport.lignes))
-        for row, ligne in enumerate(rapport.lignes):
+        self.table.setRowCount(len(lignes_anomalies))
+        for row, ligne in enumerate(lignes_anomalies):
             valeurs = [
                 ligne.commande,
                 ligne.ligne,

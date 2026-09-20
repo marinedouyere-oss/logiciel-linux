@@ -929,11 +929,17 @@ function creerPanneauResultat(index, paire) {
   return div;
 }
 
+// Le tableau n'affiche que les anomalies (les pièces OK ne sont pas
+// affichées) : le résumé au-dessus donne déjà les totaux et le nombre OK.
+function lignesAnomalies(rapport) {
+  return rapport.lignes.filter((l) => l.statut !== "OK");
+}
+
 function dessinerTablePaire(div, lignes) {
   const tbody = div.querySelector("tbody");
   tbody.innerHTML = "";
   if (lignes.length === 0) {
-    tbody.innerHTML = '<tr><td class="vide" colspan="8">Aucune ligne.</td></tr>';
+    tbody.innerHTML = '<tr><td class="vide" colspan="8">Aucune anomalie 🎉</td></tr>';
     return;
   }
   for (const ligne of lignes) {
@@ -961,7 +967,7 @@ function dessinerTablePaire(div, lignes) {
 function trierEtRedessinerPaire(paire, div) {
   if (!paire.rapport || !paire.triColonne) return;
   const cle = paire.triColonne;
-  const copie = [...paire.rapport.lignes];
+  const copie = lignesAnomalies(paire.rapport);
   copie.sort((a, b) => {
     let av = a[cle];
     let bv = b[cle];
@@ -986,7 +992,7 @@ function afficherRapportPaire(div, rapport) {
     resume.style.color = "var(--alerte-text)";
     resume.textContent = `⚠ ${rapport.nbAnomalies} anomalie(s) — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées (${rapport.nbOk} OK).`;
   }
-  dessinerTablePaire(div, rapport.lignes);
+  dessinerTablePaire(div, lignesAnomalies(rapport));
 }
 
 async function chargerClasseur(file) {
