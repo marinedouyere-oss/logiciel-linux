@@ -142,6 +142,11 @@ class MainWindow(QMainWindow):
         if incoherences:
 
             def _decrire(inc: dict) -> str:
+                if inc.get("type") == "grain_matching":
+                    return (
+                        f"— Pièce {inc['cle']} (grain matching {inc['grain']}) : "
+                        f"{inc['nb_positions']} position(s) listée(s) mais {inc['quantite_trouvee']} pièce(s) trouvée(s)"
+                    )
                 repere = inc["id_trace"]
                 if inc.get("description"):
                     repere += f" — {inc['description']}"

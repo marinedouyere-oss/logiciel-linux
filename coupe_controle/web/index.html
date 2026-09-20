@@ -721,6 +721,40 @@ function detecterColonneQuantite(lignes, colCle, colMateriau, colTypeTrace, qteA
   return meilleurScore >= seuil ? meilleurIndex : null;
 }
 
+// Le grain matching d'une pièce liste les positions qu'elle occupe dans
+// son module/bande de calage de fil (ex. "T76:1 2 3:1" = positions
+// 1, 2, 3). Le nombre de positions listées doit correspondre à la
+// quantité réellement trouvée pour cette pièce : sur le fichier réel,
+// 321 clés sur 323 concordent exactement — un écart est donc un signal
+// fiable, même quand le total global reste correct par ailleurs (des
+// pièces peuvent manquer dans un module sans casser le compte global).
+const MOTIF_POSITIONS_GRAIN = /^[A-Za-z]*\d+:([\d ]+):\d+$/;
+
+function detecterEcartsGrainMatching(pieces, colGrain, compteur) {
+  if (colGrain === null) return [];
+  const positionsParCle = new Map();
+  for (const [cle, ligne] of pieces) {
+    if (colGrain >= ligne.length || ligne[colGrain] === null || ligne[colGrain] === undefined) continue;
+    const brut = String(ligne[colGrain]).trim();
+    const correspondance = MOTIF_POSITIONS_GRAIN.exec(brut);
+    if (!correspondance) continue;
+    if (!positionsParCle.has(cle)) positionsParCle.set(cle, { positions: new Set(), bruts: new Set() });
+    const info = positionsParCle.get(cle);
+    for (const p of correspondance[1].trim().split(/\s+/)) info.positions.add(p);
+    info.bruts.add(brut);
+  }
+
+  const ecarts = [];
+  for (const [cle, { positions, bruts }] of positionsParCle) {
+    const nbPositions = positions.size;
+    const quantiteTrouvee = compteur.get(cle) || 0;
+    if (Math.abs(nbPositions - quantiteTrouvee) > 1e-6) {
+      ecarts.push({ type: "grain_matching", cle, nbPositions, quantiteTrouvee, grain: [...bruts].join(" / ") });
+    }
+  }
+  return ecarts;
+}
+
 function lireCoupe(workbook, clesStrat, qteAttendueParCle) {
   const lignes = chargerLignes(workbook);
 
@@ -740,8 +774,10 @@ function lireCoupe(workbook, clesStrat, qteAttendueParCle) {
     qteAttendueParCle || new Map()
   );
 
+  const pieces = lignesPieces(lignes, colCle, colMateriau, colTypeTrace, exclusion);
+
   const compteur = new Map();
-  for (const [cle, ligne] of lignesPieces(lignes, colCle, colMateriau, colTypeTrace, exclusion)) {
+  for (const [cle, ligne] of pieces) {
     let quantite = 1;
     if (colQuantite !== null && colQuantite < ligne.length) {
       const n = toFloatOrNull(ligne[colQuantite]);
@@ -758,7 +794,7 @@ function lireCoupe(workbook, clesStrat, qteAttendueParCle) {
     );
   }
 
-  const incoherences = detecterIncoherencesReserve(
+  const incoherencesReserve = detecterIncoherencesReserve(
     lignes,
     colCle,
     colMateriau,
@@ -767,8 +803,9 @@ function lireCoupe(workbook, clesStrat, qteAttendueParCle) {
     colQuantite,
     colGrain
   );
+  const ecartsGrainMatching = detecterEcartsGrainMatching(pieces, colGrain, compteur);
 
-  return { compteur, incoherences };
+  return { compteur, incoherences: [...incoherencesReserve, ...ecartsGrainMatching] };
 }
 
 function lireGrainMatching(workbook, clesStrat) {
@@ -1205,6 +1242,9 @@ function afficherRapportPaire(div, rapport, incoherences) {
     } else {
       const items = incoherences
         .map((inc) => {
+          if (inc.type === "grain_matching") {
+            return `<li>Pièce ${inc.cle} (grain matching ${inc.grain}) : ${inc.nbPositions} position(s) listée(s) dans le grain matching mais ${inc.quantiteTrouvee} pièce(s) trouvée(s) dans la liste de coupe.</li>`;
+          }
           const description = inc.description ? ` — ${inc.description}` : "";
           const grain = inc.grain ? `, grain matching ${inc.grain}` : "";
           return `<li>Pièce ${inc.cle} (trace ${inc.idTrace}${description}${grain}) : quantités différentes trouvées dans la liste de coupe — ${inc.quantites.join(" vs ")}.</li>`;
@@ -1212,7 +1252,7 @@ function afficherRapportPaire(div, rapport, incoherences) {
         .join("");
       zoneIncoherences.innerHTML = `
         <strong>⚠ ${incoherences.length} incohérence(s) technique(s) dans la liste de coupe</strong>
-        <p class="incoherences-note">Des lignes techniques (réserve/chute) censées partager la même quantité n'ont pas la même valeur — signe d'une modification ou d'un problème dans le fichier de coupe lui-même, indépendamment du contrôle STRAT.</p>
+        <p class="incoherences-note">Détectées dans la liste de coupe elle-même, indépendamment du contrôle STRAT : des lignes techniques (réserve/chute) censées partager la même quantité n'ont pas la même valeur, ou une pièce a moins (ou plus) d'exemplaires trouvés que de positions listées dans son grain matching.</p>
         <ul>${items}</ul>
       `;
     }

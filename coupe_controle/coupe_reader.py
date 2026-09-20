@@ -390,6 +390,52 @@ def detecter_incoherences_reserve(
     return incoherences
 
 
+# Le grain matching d'une pièce liste les positions qu'elle occupe dans
+# son module/bande de calage de fil (ex. "T76:1 2 3:1" = positions
+# 1, 2, 3). Le nombre de positions listées doit correspondre à la
+# quantité réellement trouvée pour cette pièce : sur un fichier réel
+# observé, 321 clés sur 323 concordent exactement — un écart est donc un
+# signal fiable, même quand le total global reste correct par ailleurs
+# (des pièces peuvent manquer dans un module sans casser le compte
+# global, qui raisonne par clé et pas par position).
+MOTIF_POSITIONS_GRAIN = re.compile(r"^[A-Za-z]*\d+:([\d ]+):\d+$")
+
+
+def detecter_ecarts_grain_matching(
+    pieces: list[tuple[str, tuple]], col_grain: int | None, compteur: Counter
+) -> list[dict]:
+    if col_grain is None:
+        return []
+
+    par_cle: dict[str, dict] = {}
+    for cle, ligne in pieces:
+        if col_grain >= len(ligne) or ligne[col_grain] is None:
+            continue
+        brut = str(ligne[col_grain]).strip()
+        correspondance = MOTIF_POSITIONS_GRAIN.match(brut)
+        if not correspondance:
+            continue
+        infos = par_cle.setdefault(cle, {"positions": set(), "bruts": set()})
+        infos["positions"].update(correspondance.group(1).split())
+        infos["bruts"].add(brut)
+
+    ecarts = []
+    for cle, infos in par_cle.items():
+        nb_positions = len(infos["positions"])
+        quantite_trouvee = compteur.get(cle, 0)
+        if abs(nb_positions - quantite_trouvee) > 1e-6:
+            ecarts.append(
+                {
+                    "type": "grain_matching",
+                    "cle": cle,
+                    "nb_positions": nb_positions,
+                    "quantite_trouvee": quantite_trouvee,
+                    "grain": " / ".join(sorted(infos["bruts"])),
+                }
+            )
+    return ecarts
+
+
 def lire_coupe(
     chemin: str | Path, cles_strat: set[str], qte_attendue_par_cle: dict[str, float] | None = None
 ) -> tuple[Counter, list[dict]]:
@@ -424,8 +470,10 @@ def lire_coupe(
         donnees, col_cle, col_materiau, col_type_trace, col_quantite, qte_attendue_par_cle or {}
     )
 
+    pieces = list(_lignes_pieces(donnees, col_cle, col_materiau, col_type_trace, exclusion))
+
     compteur: Counter = Counter()
-    for cle, ligne in _lignes_pieces(donnees, col_cle, col_materiau, col_type_trace, exclusion):
+    for cle, ligne in pieces:
         quantite = 1.0
         if col_quantite is not None and col_quantite < len(ligne) and ligne[col_quantite] is not None:
             try:
@@ -440,11 +488,12 @@ def lire_coupe(
             "du fichier semble différent de celui attendu."
         )
 
-    incoherences = detecter_incoherences_reserve(
+    incoherences_reserve = detecter_incoherences_reserve(
         donnees, col_cle, col_materiau, col_type_trace, exclusion, col_quantite, col_grain
     )
+    ecarts_grain_matching = detecter_ecarts_grain_matching(pieces, col_grain, compteur)
 
-    return compteur, incoherences
+    return compteur, incoherences_reserve + ecarts_grain_matching
 
 
 def lire_grain_matching(chemin: str | Path, cles_strat: set[str] | None = None) -> dict[str, list[str]]:
