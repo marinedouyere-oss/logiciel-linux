@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..comparator import comparer
-from ..coupe_reader import CoupeFormatError, lire_coupe
+from ..coupe_reader import CoupeFormatError, lire_coupe, lire_grain_matching
 from ..models import RapportComparaison, Statut
 from ..report_export import exporter_rapport
 from ..strat_reader import StratFormatError, lire_strat
@@ -57,6 +57,7 @@ class MainWindow(QMainWindow):
         self.resize(1100, 700)
 
         self.rapport: RapportComparaison | None = None
+        self.cles_strat: set[str] = set()
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -91,6 +92,21 @@ class MainWindow(QMainWindow):
         export_row.addWidget(self.bouton_export)
         root.addLayout(export_row)
 
+        recherche_row = QHBoxLayout()
+        recherche_row.addWidget(QLabel("Grain matching pour commande+ligne :"))
+        self.champ_recherche = QLineEdit()
+        self.champ_recherche.setPlaceholderText("ex. CVC26090331003")
+        self.champ_recherche.returnPressed.connect(self._rechercher_grain_matching)
+        recherche_row.addWidget(self.champ_recherche, 1)
+        bouton_rechercher = QPushButton("Rechercher")
+        bouton_rechercher.clicked.connect(self._rechercher_grain_matching)
+        recherche_row.addWidget(bouton_rechercher)
+        root.addLayout(recherche_row)
+
+        self.label_recherche = QLabel("")
+        self.label_recherche.setStyleSheet("padding: 4px;")
+        root.addWidget(self.label_recherche)
+
     def _ligne_fichier(self, libelle: str, nom_champ: str) -> QHBoxLayout:
         ligne = QHBoxLayout()
         ligne.addWidget(QLabel(libelle))
@@ -113,6 +129,7 @@ class MainWindow(QMainWindow):
         try:
             lignes_strat = lire_strat(chemin_strat)
             cles_strat = {l.cle for l in lignes_strat}
+            self.cles_strat = cles_strat
             trouve_par_cle = lire_coupe(chemin_coupe, cles_strat)
         except (StratFormatError, CoupeFormatError) as erreur:
             QMessageBox.critical(self, "Erreur de lecture", str(erreur))
@@ -161,6 +178,36 @@ class MainWindow(QMainWindow):
                     item.setBackground(couleur)
                 self.table.setItem(row, col, item)
         self.table.setSortingEnabled(True)
+
+    def _rechercher_grain_matching(self) -> None:
+        cle = self.champ_recherche.text().strip().upper()
+        chemin_coupe = self.champ_coupe.text().strip()
+        if not cle:
+            return
+        if not chemin_coupe:
+            QMessageBox.warning(self, "Fichier manquant", "Sélectionnez la liste de coupe.")
+            return
+
+        try:
+            grain_par_cle = lire_grain_matching(chemin_coupe, self.cles_strat)
+        except CoupeFormatError as erreur:
+            QMessageBox.critical(self, "Erreur de lecture", str(erreur))
+            return
+        except Exception as erreur:  # noqa: BLE001
+            QMessageBox.critical(self, "Erreur de lecture", f"Impossible de lire la liste de coupe :\n{erreur}")
+            return
+
+        if cle not in grain_par_cle:
+            self.label_recherche.setStyleSheet("padding: 4px; color: #c62828;")
+            self.label_recherche.setText(f"Clé {cle} introuvable dans la liste de coupe.")
+            return
+
+        valeurs = grain_par_cle[cle]
+        self.label_recherche.setStyleSheet("padding: 4px; font-weight: bold; color: #2e7d32;")
+        if not valeurs:
+            self.label_recherche.setText(f"{cle} → Unitaire (pas de grain matching)")
+        else:
+            self.label_recherche.setText(f"{cle} → grain matching : {', '.join(valeurs)}")
 
     def _exporter(self) -> None:
         if self.rapport is None:
