@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Contrôle de coupe — lancement / Cutrite</title>
+<title>Sentinelle — Contrôle de coupe</title>
 <style>
   :root {
     color-scheme: light;
@@ -21,6 +21,7 @@
     color: #222;
   }
   h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  h2 { font-size: 1.05rem; margin: 0 0 10px; }
   .sous-titre { color: #666; margin: 0 0 18px; font-size: 0.9rem; }
   .panneau {
     background: #fff;
@@ -29,21 +30,44 @@
     padding: 16px 20px;
     margin-bottom: 16px;
   }
+  .paire {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+    background: #fafbfc;
+    position: relative;
+  }
+  .paire-entete {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .paire-entete strong { font-size: 0.95rem; }
+  .btn-retirer {
+    background: transparent;
+    color: #c62828;
+    border: 1px solid #e0a0a0;
+    padding: 3px 10px;
+    font-size: 0.78rem;
+    border-radius: 5px;
+  }
+  .btn-retirer:hover { background: #fdecea; }
   .ligne-fichier {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-bottom: 10px;
+    margin-bottom: 8px;
     flex-wrap: wrap;
   }
   .ligne-fichier label {
-    width: 230px;
+    width: 210px;
     flex-shrink: 0;
     font-weight: 600;
-    font-size: 0.92rem;
+    font-size: 0.88rem;
   }
-  .ligne-fichier input[type=file] { flex: 1; min-width: 220px; }
-  .nom-fichier { font-size: 0.85rem; color: #555; }
+  .ligne-fichier input[type=file] { flex: 1; min-width: 200px; font-size: 0.85rem; }
   button {
     background: #1565c0;
     color: #fff;
@@ -57,16 +81,18 @@
   button:disabled { background: #b0bec5; cursor: not-allowed; }
   button.secondaire { background: #546e7a; }
   button.secondaire:hover:not(:disabled) { background: #37474f; }
-  .actions-row { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
-  #resume {
+  button.ajouter { background: #2e7d32; }
+  button.ajouter:hover:not(:disabled) { background: #1b5e20; }
+  .actions-row { display: flex; align-items: center; gap: 12px; margin-top: 10px; flex-wrap: wrap; }
+  .resume {
     font-weight: bold;
     padding: 10px 4px;
-    font-size: 0.98rem;
+    font-size: 0.95rem;
   }
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.88rem;
+    font-size: 0.86rem;
   }
   th, td {
     border: 1px solid var(--border);
@@ -84,7 +110,7 @@
   tr.statut-ok td { background: var(--ok); }
   tr.statut-manquant td { background: var(--manquant); }
   tr.statut-entrop td, tr.statut-ecart td { background: var(--attention); }
-  .table-scroll { max-height: 55vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
+  .table-scroll { max-height: 45vh; overflow: auto; border: 1px solid var(--border); border-radius: 6px; }
   .table-scroll table { border: none; }
   .export-row { display: flex; justify-content: flex-end; margin-top: 12px; }
   .recherche-row {
@@ -92,77 +118,61 @@
     align-items: center;
     gap: 10px;
     flex-wrap: wrap;
+    margin-top: 12px;
   }
+  .recherche-row label { font-size: 0.85rem; }
   .recherche-row input[type=text] {
     flex: 1;
-    min-width: 220px;
-    padding: 8px 10px;
+    min-width: 200px;
+    padding: 7px 10px;
     border: 1px solid var(--border);
     border-radius: 6px;
-    font-size: 0.92rem;
+    font-size: 0.88rem;
   }
-  #labelRecherche { padding: 8px 4px; font-size: 0.9rem; min-height: 1.4em; }
+  .label-recherche { padding: 6px 4px; font-size: 0.86rem; min-height: 1.3em; }
+  .resultat-paire { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--border); }
   footer { color: #888; font-size: 0.78rem; margin-top: 18px; }
   .vide { color: #888; text-align: center; padding: 18px; }
+  #compteurPaires { color: #666; font-size: 0.85rem; }
+  .progress-ligne {
+    padding: 6px 4px;
+    font-size: 0.88rem;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .progress-puce { width: 1.4em; text-align: center; flex-shrink: 0; }
+  .progress-texte { color: #555; }
+  .progress-vide .progress-texte { color: #999; }
+  .progress-erreur .progress-texte { color: var(--alerte-text); font-weight: 600; }
+  .progress-ok .progress-texte { color: var(--ok-text); font-weight: 600; }
+  .progress-attention .progress-texte { color: #b26a00; font-weight: 600; }
 </style>
 </head>
 <body>
-  <h1>Contrôle de coupe — lancement / Cutrite</h1>
+  <h1>Sentinelle — Contrôle de coupe (lancement / Cutrite)</h1>
   <p class="sous-titre">
     Version web autonome (HTML) — fonctionne hors-ligne dans le navigateur, sans installer Python.
-    Compare le fichier de lancement (STRAT) à la liste de coupe Cutrite. Rien n'est envoyé sur un
-    serveur : les fichiers sont lus et traités entièrement dans votre navigateur.
+    Compare le fichier de lancement (STRAT) à la liste de coupe Cutrite, par paire. Rien n'est envoyé
+    sur un serveur : les fichiers sont lus et traités entièrement dans votre navigateur.
+    5 postes fixes (Agglo 1er tour, Feno, Casse, Agglo 2ème tour, Chantiers) : remplissez
+    ceux dont vous avez besoin puis lancez le(s) contrôle(s) — les postes laissés vides sont
+    simplement ignorés.
   </p>
 
   <div class="panneau">
-    <div class="ligne-fichier">
-      <label for="inputStrat">Fichier de lancement (STRAT) :</label>
-      <input type="file" id="inputStrat" accept=".xlsx,.xlsm">
-    </div>
-    <div class="ligne-fichier">
-      <label for="inputCoupe">Liste de coupe (Cutrite) :</label>
-      <input type="file" id="inputCoupe" accept=".xlsx,.xlsm">
-    </div>
+    <div id="pairesContainer"></div>
     <div class="actions-row">
-      <button id="btnLancer">Lancer le contrôle</button>
+      <button id="btnLancerTout">Lancer le(s) contrôle(s)</button>
     </div>
   </div>
 
-  <div id="resume">Sélectionnez les deux fichiers puis lancez le contrôle.</div>
-
-  <div class="panneau">
-    <div class="table-scroll">
-      <table id="tableRapport">
-        <thead>
-          <tr>
-            <th data-key="commande">Commande <span class="fleche"></span></th>
-            <th data-key="ligne">Ligne <span class="fleche"></span></th>
-            <th data-key="article">Article <span class="fleche"></span></th>
-            <th data-key="lancement">Lancement <span class="fleche"></span></th>
-            <th data-key="qte_attendue">Qté attendue <span class="fleche"></span></th>
-            <th data-key="qte_trouvee">Qté trouvée <span class="fleche"></span></th>
-            <th data-key="ecart">Écart <span class="fleche"></span></th>
-            <th data-key="statut">Statut <span class="fleche"></span></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr><td class="vide" colspan="8">Aucun contrôle lancé.</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <div class="export-row">
-      <button id="btnExport" class="secondaire" disabled>Exporter le rapport (.xlsx)</button>
-    </div>
+  <div class="panneau" id="progressPanneau" style="display:none;">
+    <h2>Progression</h2>
+    <div id="progressContainer"></div>
   </div>
 
-  <div class="panneau">
-    <div class="recherche-row">
-      <label for="inputRecherche"><strong>Grain matching pour commande+ligne :</strong></label>
-      <input type="text" id="inputRecherche" placeholder="ex. CVC26090331003">
-      <button id="btnRechercher" class="secondaire">Rechercher</button>
-    </div>
-    <div id="labelRecherche"></div>
-  </div>
+  <div id="resultatsContainer"></div>
 
   <footer>
     Portage web du contrôle de coupe (logiciel-linux / coupe_controle) — même logique de
@@ -225,7 +235,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
  * comparator.py, report_export.py). Même logique métier que la
  * version de bureau PySide6, pour fonctionner dans un navigateur
  * sans installer Python (usage hors-ligne, aucune donnée envoyée
- * à un serveur : tout se passe dans cette page).
+ * à un serveur : tout se passe dans cette page). Gère jusqu'à 5
+ * paires fichier de lancement / liste de coupe en une fois.
  * ============================================================ */
 
 // ---- strat_reader ----
@@ -493,6 +504,17 @@ function comparer(lignesStrat, trouveParCle) {
     let commande = "", ligneNum = "", article = "", lancement = "", statut;
     if (!strat) {
       statut = "En trop";
+      // Pièce absente du fichier de lancement : on n'a que sa clé
+      // commande+ligne (venant de la liste de coupe). On en déduit le
+      // numéro de commande et la ligne (mêmes conventions que
+      // cleLigne() : les 3 derniers chiffres sont le numéro de ligne).
+      const correspondance = /^(.+?)(\d{3})$/.exec(cle);
+      if (correspondance) {
+        commande = correspondance[1];
+        ligneNum = String(parseInt(correspondance[2], 10));
+      } else {
+        commande = cle;
+      }
     } else {
       commande = strat.commande;
       ligneNum = strat.ligne;
@@ -548,7 +570,7 @@ const ARGB_PAR_STATUT = {
   "Écart de quantité": "FFFFEB9C",
 };
 
-async function exporterRapport(rapport) {
+async function exporterRapport(rapport, nomFichier) {
   const workbook = new ExcelJS.Workbook();
   const feuille = workbook.addWorksheet("Contrôle coupe");
 
@@ -604,46 +626,144 @@ async function exporterRapport(rapport) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "rapport_controle_coupe.xlsx";
+  a.download = nomFichier || "rapport_controle_coupe.xlsx";
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
 }
 
-// ---- UI ----
-let rapportCourant = null;
-let clesStratCourantes = new Set();
-let triColonne = null;
-let triAscendant = true;
-
+// ---- UI : 5 postes fixes, chacun avec son propre couple STRAT / coupe ----
+const NOMS_PAIRES = ["Agglo 1er tour", "Feno", "Casse", "Agglo 2ème tour", "Chantiers"];
 const $ = (id) => document.getElementById(id);
 
-async function chargerClasseur(file) {
-  const buffer = await file.arrayBuffer();
-  const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
-  return workbook;
+let prochainId = 1;
+// Chaque paire : { id, nom, rapport, clesStrat, triColonne, triAscendant }
+const paires = [];
+
+function nouvellePaire(nom) {
+  const id = prochainId++;
+  paires.push({
+    id,
+    nom,
+    rapport: null,
+    clesStrat: new Set(),
+    triColonne: null,
+    triAscendant: true,
+  });
+  return id;
+}
+
+function slug(texte) {
+  return texte
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .toLowerCase();
+}
+
+function redessinerPaires() {
+  const container = $("pairesContainer");
+  container.innerHTML = "";
+  paires.forEach((paire) => {
+    const div = document.createElement("div");
+    div.className = "paire";
+    div.dataset.id = paire.id;
+    div.innerHTML = `
+      <div class="paire-entete">
+        <strong>${paire.nom}</strong>
+      </div>
+      <div class="ligne-fichier">
+        <label for="strat-${paire.id}">Fichier de lancement (STRAT) :</label>
+        <input type="file" id="strat-${paire.id}" accept=".xlsx,.xlsm">
+      </div>
+      <div class="ligne-fichier">
+        <label for="coupe-${paire.id}">Liste de coupe (Cutrite) :</label>
+        <input type="file" id="coupe-${paire.id}" accept=".xlsx,.xlsm">
+      </div>
+    `;
+    container.appendChild(div);
+  });
 }
 
 function fmtQte(v) {
   return String(v);
 }
 
-function afficherRapport(rapport) {
-  const resume = $("resume");
-  if (rapport.nbAnomalies === 0) {
-    resume.style.color = "var(--ok-text)";
-    resume.textContent = `✔ Tout est correct — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées.`;
-  } else {
-    resume.style.color = "var(--alerte-text)";
-    resume.textContent = `⚠ ${rapport.nbAnomalies} anomalie(s) — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées (${rapport.nbOk} OK).`;
-  }
-  dessinerTable(rapport.lignes);
+function creerPanneauResultat(index, paire) {
+  const div = document.createElement("div");
+  div.className = "panneau";
+  div.dataset.id = paire.id;
+  div.innerHTML = `
+    <h2>Résultat — ${paire.nom}</h2>
+    <div class="resume" id="resume-${paire.id}"></div>
+    <div class="table-scroll">
+      <table id="table-${paire.id}">
+        <thead>
+          <tr>
+            <th data-key="commande">Commande <span class="fleche"></span></th>
+            <th data-key="ligne">Ligne <span class="fleche"></span></th>
+            <th data-key="article">Article <span class="fleche"></span></th>
+            <th data-key="lancement">Lancement <span class="fleche"></span></th>
+            <th data-key="qte_attendue">Qté attendue <span class="fleche"></span></th>
+            <th data-key="qte_trouvee">Qté trouvée <span class="fleche"></span></th>
+            <th data-key="ecart">Écart <span class="fleche"></span></th>
+            <th data-key="statut">Statut <span class="fleche"></span></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <div class="export-row">
+      <button type="button" class="secondaire" data-action="export">Exporter le rapport (.xlsx)</button>
+    </div>
+    <div class="recherche-row">
+      <label>Grain matching pour commande+ligne :</label>
+      <input type="text" data-role="recherche" placeholder="ex. CVC26090331003">
+      <button type="button" class="secondaire" data-action="rechercher">Rechercher</button>
+    </div>
+    <div class="label-recherche" data-role="label-recherche"></div>
+  `;
+
+  div.querySelectorAll("thead th").forEach((th) => {
+    th.addEventListener("click", () => {
+      const cle = th.dataset.key;
+      if (paire.triColonne === cle) paire.triAscendant = !paire.triAscendant;
+      else {
+        paire.triColonne = cle;
+        paire.triAscendant = true;
+      }
+      div.querySelectorAll("thead .fleche").forEach((f) => (f.textContent = ""));
+      th.querySelector(".fleche").textContent = paire.triAscendant ? "▲" : "▼";
+      trierEtRedessinerPaire(paire, div);
+    });
+  });
+
+  div.querySelector('[data-action="export"]').addEventListener("click", async (e) => {
+    if (!paire.rapport) return;
+    e.target.disabled = true;
+    try {
+      await exporterRapport(paire.rapport, `rapport_controle_coupe_${slug(paire.nom)}.xlsx`);
+    } catch (erreur) {
+      alert("Impossible d'enregistrer le rapport :\n" + (erreur && erreur.message ? erreur.message : erreur));
+    } finally {
+      e.target.disabled = false;
+    }
+  });
+
+  const inputRecherche = div.querySelector('[data-role="recherche"]');
+  const lancerRecherche = () => rechercherGrainMatchingPaire(paire, div, inputRecherche);
+  div.querySelector('[data-action="rechercher"]').addEventListener("click", lancerRecherche);
+  inputRecherche.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") lancerRecherche();
+  });
+
+  return div;
 }
 
-function dessinerTable(lignes) {
-  const tbody = document.querySelector("#tableRapport tbody");
+function dessinerTablePaire(div, lignes) {
+  const tbody = div.querySelector("tbody");
   tbody.innerHTML = "";
   if (lignes.length === 0) {
     tbody.innerHTML = '<tr><td class="vide" colspan="8">Aucune ligne.</td></tr>';
@@ -671,98 +791,58 @@ function dessinerTable(lignes) {
   }
 }
 
-function trierEtRedessiner() {
-  if (!rapportCourant || !triColonne) return;
-  const cle = triColonne;
-  const copie = [...rapportCourant.lignes];
+function trierEtRedessinerPaire(paire, div) {
+  if (!paire.rapport || !paire.triColonne) return;
+  const cle = paire.triColonne;
+  const copie = [...paire.rapport.lignes];
   copie.sort((a, b) => {
     let av = a[cle];
     let bv = b[cle];
     if (typeof av === "number" && typeof bv === "number") {
-      return triAscendant ? av - bv : bv - av;
+      return paire.triAscendant ? av - bv : bv - av;
     }
     av = String(av);
     bv = String(bv);
     if (av === bv) return 0;
     const cmp = av < bv ? -1 : 1;
-    return triAscendant ? cmp : -cmp;
+    return paire.triAscendant ? cmp : -cmp;
   });
-  dessinerTable(copie);
+  dessinerTablePaire(div, copie);
 }
 
-document.querySelectorAll("#tableRapport thead th").forEach((th) => {
-  th.addEventListener("click", () => {
-    const cle = th.dataset.key;
-    if (triColonne === cle) triAscendant = !triAscendant;
-    else {
-      triColonne = cle;
-      triAscendant = true;
-    }
-    document.querySelectorAll("#tableRapport thead .fleche").forEach((f) => (f.textContent = ""));
-    th.querySelector(".fleche").textContent = triAscendant ? "▲" : "▼";
-    trierEtRedessiner();
-  });
-});
-
-function definirEnCours(enCours) {
-  $("btnLancer").disabled = enCours;
-  $("btnRechercher").disabled = enCours;
+function afficherRapportPaire(div, rapport) {
+  const resume = div.querySelector(".resume");
+  if (rapport.nbAnomalies === 0) {
+    resume.style.color = "var(--ok-text)";
+    resume.textContent = `✔ Tout est correct — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées.`;
+  } else {
+    resume.style.color = "var(--alerte-text)";
+    resume.textContent = `⚠ ${rapport.nbAnomalies} anomalie(s) — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées (${rapport.nbOk} OK).`;
+  }
+  dessinerTablePaire(div, rapport.lignes);
 }
 
-$("btnLancer").addEventListener("click", async () => {
-  const fichierStrat = $("inputStrat").files[0];
-  const fichierCoupe = $("inputCoupe").files[0];
-  if (!fichierStrat || !fichierCoupe) {
-    alert("Sélectionnez le fichier de lancement et la liste de coupe.");
-    return;
-  }
-  definirEnCours(true);
-  try {
-    const wbStrat = await chargerClasseur(fichierStrat);
-    const lignesStrat = lireStrat(wbStrat);
-    clesStratCourantes = new Set(lignesStrat.map((l) => l.cle));
+async function chargerClasseur(file) {
+  const buffer = await file.arrayBuffer();
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  return workbook;
+}
 
-    const wbCoupe = await chargerClasseur(fichierCoupe);
-    const trouveParCle = lireCoupe(wbCoupe, clesStratCourantes);
-
-    rapportCourant = comparer(lignesStrat, trouveParCle);
-    triColonne = null;
-    document.querySelectorAll("#tableRapport thead .fleche").forEach((f) => (f.textContent = ""));
-    afficherRapport(rapportCourant);
-    $("btnExport").disabled = false;
-  } catch (erreur) {
-    alert("Erreur de lecture :\n" + (erreur && erreur.message ? erreur.message : erreur));
-  } finally {
-    definirEnCours(false);
-  }
-});
-
-$("btnExport").addEventListener("click", async () => {
-  if (!rapportCourant) return;
-  $("btnExport").disabled = true;
-  try {
-    await exporterRapport(rapportCourant);
-  } catch (erreur) {
-    alert("Impossible d'enregistrer le rapport :\n" + (erreur && erreur.message ? erreur.message : erreur));
-  } finally {
-    $("btnExport").disabled = false;
-  }
-});
-
-async function rechercherGrainMatching() {
-  const cle = $("inputRecherche").value.trim().toUpperCase();
-  const label = $("labelRecherche");
+async function rechercherGrainMatchingPaire(paire, div, inputRecherche) {
+  const cle = inputRecherche.value.trim().toUpperCase();
+  const label = div.querySelector('[data-role="label-recherche"]');
   if (!cle) return;
 
-  const fichierCoupe = $("inputCoupe").files[0];
+  const fichierCoupe = $(`coupe-${paire.id}`).files[0];
   if (!fichierCoupe) {
-    alert("Sélectionnez la liste de coupe.");
+    alert("Sélectionnez la liste de coupe de cette paire.");
     return;
   }
 
   try {
     const wbCoupe = await chargerClasseur(fichierCoupe);
-    const grainParCle = lireGrainMatching(wbCoupe, clesStratCourantes);
+    const grainParCle = lireGrainMatching(wbCoupe, paire.clesStrat);
 
     if (!grainParCle.has(cle)) {
       label.style.color = "var(--alerte-text)";
@@ -781,10 +861,118 @@ async function rechercherGrainMatching() {
   }
 }
 
-$("btnRechercher").addEventListener("click", rechercherGrainMatching);
-$("inputRecherche").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") rechercherGrainMatching();
-});
+// Laisse le navigateur repeindre l'écran avant de continuer, pour que
+// le panneau de progression soit visible pendant le traitement (et pas
+// seulement à la toute fin, une fois tout le travail synchrone terminé).
+function tick() {
+  return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+}
+
+function creerLignesProgress() {
+  const panneau = $("progressPanneau");
+  const container = $("progressContainer");
+  container.innerHTML = "";
+  panneau.style.display = "block";
+  paires.forEach((paire) => {
+    const ligne = document.createElement("div");
+    ligne.className = "progress-ligne";
+    ligne.id = `progress-${paire.id}`;
+    ligne.innerHTML =
+      `<span class="progress-puce">⏳</span>` +
+      `<strong>${paire.nom}</strong>` +
+      `<span class="progress-texte">en attente…</span>`;
+    container.appendChild(ligne);
+  });
+}
+
+function majProgress(paire, icone, texte, classe) {
+  const ligne = $(`progress-${paire.id}`);
+  if (!ligne) return;
+  ligne.querySelector(".progress-puce").textContent = icone;
+  ligne.querySelector(".progress-texte").textContent = texte;
+  ligne.className = "progress-ligne" + (classe ? " " + classe : "");
+}
+
+async function lancerControlePaire(index, paire) {
+  const fichierStrat = $(`strat-${paire.id}`).files[0];
+  const fichierCoupe = $(`coupe-${paire.id}`).files[0];
+  if (!fichierStrat && !fichierCoupe) {
+    majProgress(paire, "—", "vide (ignorée)", "progress-vide");
+    return null; // paire vide, ignorée silencieusement
+  }
+  if (!fichierStrat || !fichierCoupe) {
+    majProgress(paire, "❌", "fichier manquant (STRAT ou coupe)", "progress-erreur");
+    return { erreur: `${paire.nom} : sélectionnez à la fois le fichier de lancement et la liste de coupe.` };
+  }
+
+  try {
+    majProgress(paire, "⏳", "lecture du fichier de lancement (STRAT)…");
+    await tick();
+    const wbStrat = await chargerClasseur(fichierStrat);
+    const lignesStrat = lireStrat(wbStrat);
+    paire.clesStrat = new Set(lignesStrat.map((l) => l.cle));
+
+    majProgress(paire, "⏳", "lecture de la liste de coupe (Cutrite)…");
+    await tick();
+    const wbCoupe = await chargerClasseur(fichierCoupe);
+    const trouveParCle = lireCoupe(wbCoupe, paire.clesStrat);
+
+    majProgress(paire, "⏳", "comparaison en cours…");
+    await tick();
+    paire.rapport = comparer(lignesStrat, trouveParCle);
+    paire.triColonne = null;
+
+    if (paire.rapport.nbAnomalies === 0) {
+      majProgress(paire, "✅", `terminé — tout est correct (${paire.rapport.lignes.length} pièce(s))`, "progress-ok");
+    } else {
+      majProgress(paire, "⚠️", `terminé — ${paire.rapport.nbAnomalies} anomalie(s)`, "progress-attention");
+    }
+    return { ok: true };
+  } catch (erreur) {
+    const message = erreur && erreur.message ? erreur.message : String(erreur);
+    majProgress(paire, "❌", message, "progress-erreur");
+    return { erreur: `${paire.nom} : ${message}` };
+  }
+}
+
+async function lancerTousLesControles() {
+  const btn = $("btnLancerTout");
+  btn.disabled = true;
+  const erreurs = [];
+  const resultatsContainer = $("resultatsContainer");
+
+  try {
+    creerLignesProgress();
+    await tick();
+
+    for (let i = 0; i < paires.length; i++) {
+      const paire = paires[i];
+      const resultat = await lancerControlePaire(i, paire);
+      if (resultat && resultat.erreur) erreurs.push(resultat.erreur);
+    }
+
+    resultatsContainer.innerHTML = "";
+    paires.forEach((paire, index) => {
+      if (!paire.rapport) return;
+      const panneau = creerPanneauResultat(index, paire);
+      resultatsContainer.appendChild(panneau);
+      afficherRapportPaire(panneau, paire.rapport);
+    });
+
+    if (erreurs.length > 0) {
+      alert("Certaines paires n'ont pas pu être traitées :\n\n" + erreurs.join("\n"));
+    } else if (!paires.some((p) => p.rapport)) {
+      alert("Sélectionnez au moins une paire complète (fichier de lancement + liste de coupe).");
+    }
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+$("btnLancerTout").addEventListener("click", lancerTousLesControles);
+
+NOMS_PAIRES.forEach((nom) => nouvellePaire(nom));
+redessinerPaires();
 </script>
 </body>
 </html>

@@ -118,11 +118,12 @@ Dans la fenêtre : sélectionnez le fichier STRAT et la liste de coupe,
 cliquez sur **Lancer le contrôle**, puis exportez le rapport détaillé en
 Excel si besoin.
 
-### Version web autonome (Windows, sans Python)
+### Version web autonome — Sentinelle (Windows, sans Python)
 
-`coupe_controle/web/index.html` est une réimplémentation en HTML/JavaScript
-de ce même contrôle (mêmes règles de rapprochement, mêmes couleurs, même
-export Excel), pour les postes Windows où l'on ne veut pas installer Python.
+`coupe_controle/web/index.html` (« Sentinelle ») est une réimplémentation en
+HTML/JavaScript de ce même contrôle (mêmes règles de rapprochement, mêmes
+couleurs, même export Excel), pour les postes Windows où l'on ne veut pas
+installer Python.
 
 - C'est un **fichier unique** (bibliothèque de lecture/écriture Excel
   incluse) : il suffit de le copier sur le poste Windows et de faire un
@@ -130,3 +131,14 @@ export Excel), pour les postes Windows où l'on ne veut pas installer Python.
 - Tout se passe **localement dans le navigateur** : les fichiers STRAT et
   Cutrite ne sont jamais envoyés sur un serveur.
 - Fonctionne **entièrement hors-ligne**, sans connexion internet.
+- **5 postes fixes** pouvant être contrôlés en une seule fois (chacun avec
+  son propre fichier STRAT + sa propre liste de coupe) : *Agglo 1er tour*,
+  *Feno*, *Casse*, *Agglo 2ème tour*, *Chantiers*. Les postes laissés vides
+  sont simplement ignorés au lancement.
+- Un panneau de **progression** affiche l'avancement poste par poste
+  pendant le traitement (lecture STRAT → lecture coupe → comparaison →
+  terminé/anomalies).
+- Pour les pièces **« En trop »** (trouvées dans la liste de coupe mais
+  absentes du fichier de lancement), le numéro de commande et la ligne sont
+  déduits directement de la clé commande+ligne, pour rester identifiables
+  même sans correspondance STRAT.
