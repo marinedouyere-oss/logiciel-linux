@@ -145,9 +145,39 @@ installer Python.
   peut s'y connecter, par choix — pas de connexion ni de synchronisation
   entre appareils.
 - **Sur téléphone** : c'est un outil complètement indépendant du PC, sans
-  aucune connexion entre les deux. Copiez `index.html` sur le téléphone
-  (USB, e-mail…) et ouvrez-le directement dans Chrome — même
-  fonctionnement que sur PC, mais sans lien ni échange de données avec lui.
+  aucune connexion entre les deux. Deux façons de faire, au choix :
+  - Copier `index.html` sur le téléphone (USB, e-mail…) et l'ouvrir
+    directement dans Chrome — même fonctionnement que sur PC, mais sans
+    icône d'appli dédiée (ça s'ouvre comme une page dans le navigateur).
+  - Installer `coupe_controle/web/android/` (voir plus bas) : une vraie
+    appli Android avec icône, qui embarque le même `index.html` et ne
+    demande **aucune permission** (ni Internet, ni réseau, ni stockage) —
+    impossible pour elle de se connecter à quoi que ce soit, y compris au
+    PC.
+
+### Appli Android native — Sentinelle (sans navigateur, sans réseau)
+
+`coupe_controle/web/android/` est un habillage natif minimal (WebView) qui
+embarque le même `index.html` déjà autonome : mêmes règles de contrôle,
+même export Excel, mais avec une vraie icône installée et sans barre
+d'adresse. Le manifeste ne déclare **aucune permission** — en particulier
+pas `INTERNET` — donc l'appli ne peut techniquement se connecter à rien,
+ce qui garantit qu'aucune donnée ne peut en sortir ni y entrer par le
+réseau.
+
+Pour générer l'APK (nécessite le SDK Android + JDK 17, pas fourni ici) :
+
+```bash
+cd coupe_controle/web/android
+echo "sdk.dir=/chemin/vers/android-sdk" > local.properties
+./gradlew assembleDebug   # ou `gradle assembleDebug` si le wrapper n'est pas présent
+```
+
+L'APK généré (`app/build/outputs/apk/debug/app-debug.apk`) se copie sur le
+téléphone (USB, e-mail…) puis s'installe en autorisant temporairement
+« Installer des applications inconnues » pour la source utilisée — c'est
+une appli non publiée sur le Play Store, donc Android demande cette
+confirmation, comme pour n'importe quel APK installé hors store.
 - **5 postes fixes** pouvant être contrôlés en une seule fois : *Agglo 1er
   tour*, *Feno*, *Casse*, *Agglo 2ème tour*, *Chantiers*. Chaque poste
   débite 2 lancements en parallèle, traités comme 2 contrôles indépendants

@@ -1,0 +1,35 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.marinedouyere.sentinelle"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.marinedouyere.sentinelle"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// Recopie coupe_controle/web/index.html (déjà autonome, ExcelJS inclus) dans les
+// assets à chaque build, pour ne jamais avoir de copie figée qui se périme.
+tasks.register("syncAppHtml", Copy) {
+    from "${rootProject.projectDir}/../index.html"
+    into "src/main/assets"
+}
+tasks.named("preBuild").configure { dependsOn "syncAppHtml" }
