@@ -604,23 +604,13 @@ function detecterIncoherencesReserve(lignes, colCle, colMateriau, colTypeTrace, 
     if (grain) groupe.grains.add(grain);
   }
 
-  // Sur le fichier réel, 440 lignes techniques sur 441 ont une quantité de
-  // 1 (la seule exception fait justement partie d'une paire déjà
-  // incohérente) : une quantité réserve/chute différente de 1 est donc
-  // elle-même un signal à part entière, même quand la paire reste
-  // cohérente entre elle (aucune incohérence de type A ci-dessus).
-  const QUANTITE_RESERVE_NORMALE = 1;
-
   const incoherences = [];
   for (const { cle, idTrace, quantites, descriptions, grains } of groupes.values()) {
     const distinctes = [...new Set(quantites)].sort((a, b) => a - b);
+    if (distinctes.length <= 1) continue; // une quantité réserve/chute inhabituelle mais cohérente entre les deux lignes de sa paire n'est pas une anomalie en soi
     const description = [...descriptions].join(" / ") || null;
     const grain = [...grains].join(" / ") || null;
-    if (distinctes.length > 1) {
-      incoherences.push({ type: "ecart", cle, idTrace, quantites: distinctes, description, grain });
-    } else if (distinctes.length === 1 && distinctes[0] !== QUANTITE_RESERVE_NORMALE) {
-      incoherences.push({ type: "inhabituelle", cle, idTrace, quantites: distinctes, description, grain });
-    }
+    incoherences.push({ type: "ecart", cle, idTrace, quantites: distinctes, description, grain });
   }
   return incoherences;
 }
@@ -1215,18 +1205,14 @@ function afficherRapportPaire(div, rapport, incoherences) {
     } else {
       const items = incoherences
         .map((inc) => {
-          const texte =
-            inc.type === "ecart"
-              ? `quantités différentes trouvées dans la liste de coupe — ${inc.quantites.join(" vs ")}`
-              : `quantité réserve/chute inhabituelle — ${inc.quantites[0]} (normalement 1)`;
           const description = inc.description ? ` — ${inc.description}` : "";
           const grain = inc.grain ? `, grain matching ${inc.grain}` : "";
-          return `<li>Pièce ${inc.cle} (trace ${inc.idTrace}${description}${grain}) : ${texte}.</li>`;
+          return `<li>Pièce ${inc.cle} (trace ${inc.idTrace}${description}${grain}) : quantités différentes trouvées dans la liste de coupe — ${inc.quantites.join(" vs ")}.</li>`;
         })
         .join("");
       zoneIncoherences.innerHTML = `
         <strong>⚠ ${incoherences.length} incohérence(s) technique(s) dans la liste de coupe</strong>
-        <p class="incoherences-note">Des lignes techniques (réserve/chute), repérées par leur identifiant de trace, leur description et leur grain matching, ont une quantité inattendue — signe d'une modification ou d'un problème dans le fichier de coupe lui-même, indépendamment du contrôle STRAT.</p>
+        <p class="incoherences-note">Des lignes techniques (réserve/chute) censées partager la même quantité n'ont pas la même valeur — signe d'une modification ou d'un problème dans le fichier de coupe lui-même, indépendamment du contrôle STRAT.</p>
         <ul>${items}</ul>
       `;
     }

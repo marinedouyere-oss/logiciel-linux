@@ -316,14 +316,6 @@ def _detecter_exclusion_supplementaire(
     return meilleur if meilleur is not None and meilleur_score >= seuil else None
 
 
-# Sur un fichier réel observé, 440 lignes techniques sur 441 ont une
-# quantité de 1 (la seule exception faisant elle-même partie d'une paire
-# déjà incohérente) : une quantité réserve/chute différente de 1 est donc
-# elle-même un signal à part entière, même quand elle est cohérente à
-# l'intérieur de sa propre paire (réserve = chute).
-QUANTITE_RESERVE_NORMALE = 1
-
-
 def detecter_incoherences_reserve(
     donnees: list[tuple],
     col_cle: int,
@@ -336,12 +328,12 @@ def detecter_incoherences_reserve(
     """Contrôle de cohérence interne de la liste de coupe, indépendant de
     la comparaison avec le STRAT : les lignes techniques (réserve/chute...)
     partageant le même identifiant de trace (ex. "C389") devraient avoir
-    la même quantité, et celle-ci devrait valoir 1. Si ce n'est pas le cas,
-    c'est le signe d'une modification ou d'une incohérence dans le fichier
-    de coupe lui-même — même si ces lignes n'entrent pas dans le compte
-    des pièces réelles. Chaque incohérence rapporte aussi la description
-    (colonne "Noms"/"Description") et le grain matching des lignes
-    concernées, pour les identifier facilement dans le fichier."""
+    la même quantité. Si ce n'est pas le cas, c'est le signe d'une
+    modification ou d'une incohérence dans le fichier de coupe lui-même —
+    même si ces lignes n'entrent pas dans le compte des pièces réelles.
+    Chaque incohérence rapporte aussi la description (colonne "Noms"/
+    "Description") et le grain matching des lignes concernées, pour les
+    identifier facilement dans le fichier."""
     if col_type_trace is None:
         return []
 
@@ -383,16 +375,18 @@ def detecter_incoherences_reserve(
     incoherences = []
     for groupe in groupes.values():
         distinctes = sorted(set(groupe["quantites"]))
-        commun = {
-            "cle": groupe["cle"],
-            "id_trace": groupe["id_trace"],
-            "description": " / ".join(sorted(groupe["descriptions"])) or None,
-            "grain": " / ".join(sorted(groupe["grains"])) or None,
-        }
-        if len(distinctes) > 1:
-            incoherences.append({**commun, "type": "ecart", "quantites": distinctes})
-        elif len(distinctes) == 1 and distinctes[0] != QUANTITE_RESERVE_NORMALE:
-            incoherences.append({**commun, "type": "inhabituelle", "quantites": distinctes})
+        if len(distinctes) <= 1:
+            continue  # quantité inhabituelle mais cohérente entre les deux lignes de sa paire : pas une anomalie en soi
+        incoherences.append(
+            {
+                "cle": groupe["cle"],
+                "id_trace": groupe["id_trace"],
+                "description": " / ".join(sorted(groupe["descriptions"])) or None,
+                "grain": " / ".join(sorted(groupe["grains"])) or None,
+                "type": "ecart",
+                "quantites": distinctes,
+            }
+        )
     return incoherences
 
 
