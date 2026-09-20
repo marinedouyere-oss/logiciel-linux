@@ -213,7 +213,7 @@
   <h1>Sentinelle — Contrôle de coupe (lancement / Cutrite)</h1>
 
   <div class="panneau panneau-recherche">
-    <label for="rechercheGlobale">🔍 Recherche grain matching — sur toutes les listes de coupe sélectionnées</label>
+    <label for="rechercheGlobale">🔍 Recherche pièces sur Cutrite</label>
     <div class="recherche-row">
       <input type="text" id="rechercheGlobale" placeholder="ex. CVC26090331003">
       <button id="btnRechercheGlobale">Rechercher</button>
@@ -934,7 +934,7 @@ async function exporterRapport(rapport, nomFichier) {
     "Ligne",
     "Article",
     "Lancement",
-    "Qté attendue (STRAT)",
+    "Qté attendue",
     "Qté trouvée (coupe)",
     "Écart",
     "Statut",
@@ -1123,7 +1123,7 @@ function redessinerPaires() {
             <strong>${paire.lancementLabel}</strong>
           </div>
           <div class="ligne-fichier">
-            <label for="strat-${paire.id}">Fichier de lancement (STRAT) :</label>
+            <label for="strat-${paire.id}">Fichier de lancement :</label>
             <input type="file" id="strat-${paire.id}" accept=".xlsx,.xlsm">
             <span class="validation-fichier" data-role="validation-strat"></span>
           </div>
@@ -1474,12 +1474,12 @@ async function lancerControlePaire(index, paire) {
     return null; // paire vide, ignorée silencieusement
   }
   if (!fichierStrat || !fichierCoupe) {
-    majProgress(paire, "❌", "fichier manquant (STRAT ou coupe)", "progress-erreur");
+    majProgress(paire, "❌", "fichier manquant (lancement ou coupe)", "progress-erreur");
     return { erreur: `${paire.nom} : sélectionnez à la fois le fichier de lancement et la liste de coupe.` };
   }
 
   try {
-    majProgress(paire, "⏳", "lecture du fichier de lancement (STRAT)…");
+    majProgress(paire, "⏳", "lecture du fichier de lancement…");
     await tick();
     const wbStrat = await chargerClasseur(fichierStrat);
     const lignesStrat = lireStrat(wbStrat);
