@@ -142,3 +142,8 @@ installer Python.
   absentes du fichier de lancement), le numéro de commande et la ligne sont
   déduits directement de la clé commande+ligne, pour rester identifiables
   même sans correspondance STRAT.
+- Quand une même clé commande+ligne est débitée en **plusieurs lots**
+  (nesting sur plusieurs panneaux), la quantité réelle est calculée en
+  sommant la colonne quantité de la liste de coupe (détectée automatiquement
+  par comparaison avec les quantités du fichier de lancement) plutôt qu'en
+  comptant « 1 pièce par ligne », ce qui évite de fausses anomalies.

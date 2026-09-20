@@ -130,7 +130,8 @@ class MainWindow(QMainWindow):
             lignes_strat = lire_strat(chemin_strat)
             cles_strat = {l.cle for l in lignes_strat}
             self.cles_strat = cles_strat
-            trouve_par_cle = lire_coupe(chemin_coupe, cles_strat)
+            qte_attendue_par_cle = {l.cle: l.qte_attendue for l in lignes_strat}
+            trouve_par_cle = lire_coupe(chemin_coupe, cles_strat, qte_attendue_par_cle)
         except (StratFormatError, CoupeFormatError) as erreur:
             QMessageBox.critical(self, "Erreur de lecture", str(erreur))
             return
@@ -147,13 +148,13 @@ class MainWindow(QMainWindow):
             self.label_resume.setStyleSheet("font-weight: bold; padding: 6px; color: #2e7d32;")
             self.label_resume.setText(
                 f"✔ Tout est correct — {int(rapport.total_attendu)} pièces attendues, "
-                f"{rapport.total_trouve} trouvées."
+                f"{int(rapport.total_trouve)} trouvées."
             )
         else:
             self.label_resume.setStyleSheet("font-weight: bold; padding: 6px; color: #c62828;")
             self.label_resume.setText(
                 f"⚠ {rapport.nb_anomalies} anomalie(s) — "
-                f"{int(rapport.total_attendu)} pièces attendues, {rapport.total_trouve} trouvées "
+                f"{int(rapport.total_attendu)} pièces attendues, {int(rapport.total_trouve)} trouvées "
                 f"({rapport.nb_ok} OK)."
             )
 
@@ -166,7 +167,7 @@ class MainWindow(QMainWindow):
                 ligne.article,
                 ligne.lancement,
                 _fmt_qte(ligne.qte_attendue),
-                str(ligne.qte_trouvee),
+                _fmt_qte(ligne.qte_trouvee),
                 _fmt_qte(ligne.ecart),
                 ligne.statut.value,
             ]

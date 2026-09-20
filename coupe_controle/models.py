@@ -33,7 +33,7 @@ class LigneComparaison:
     article: str
     lancement: str
     qte_attendue: float
-    qte_trouvee: int
+    qte_trouvee: float
     statut: Statut
 
     @property

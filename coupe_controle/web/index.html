@@ -463,21 +463,13 @@ function estLignePiece(ligne, colTypeTrace) {
   return correspondance[1] === TYPE_TRACE_PIECE;
 }
 
-function lireCoupe(workbook, clesStrat) {
-  const lignes = chargerLignes(workbook);
-
-  let colCle = detecterColonneCle(lignes, clesStrat);
-  if (colCle === null) colCle = COLONNE_CLE_PAR_DEFAUT;
-  let colMateriau = detecterColonneMateriau(lignes);
-  if (colMateriau === null) colMateriau = COLONNE_MATERIAU_PAR_DEFAUT;
-  const colTypeTrace = detecterColonneTypeTrace(lignes);
-
-  const compteur = new Map();
+// Liste des [clé, ligne] pour les lignes qui représentent une pièce réelle
+// (clé renseignée, matériau pas "PROTECTION", type de trace "TC").
+function lignesPieces(lignes, colCle, colMateriau, colTypeTrace) {
+  const resultat = [];
   for (const ligne of lignes) {
-    if (colCle >= ligne.length) continue;
-    let cle = ligne[colCle];
-    if (cle === null || cle === undefined) continue;
-    cle = String(cle).trim();
+    if (colCle >= ligne.length || ligne[colCle] === null || ligne[colCle] === undefined) continue;
+    const cle = String(ligne[colCle]).trim();
 
     const materiau = colMateriau < ligne.length ? ligne[colMateriau] : null;
     if (materiau !== null && materiau !== undefined && MATERIAUX_EXCLUS.has(String(materiau).trim().toUpperCase())) {
@@ -485,7 +477,71 @@ function lireCoupe(workbook, clesStrat) {
     }
     if (!estLignePiece(ligne, colTypeTrace)) continue;
 
-    compteur.set(cle, (compteur.get(cle) || 0) + 1);
+    resultat.push([cle, ligne]);
+  }
+  return resultat;
+}
+
+// La colonne quantité n'est adoptée que si elle explique au moins cette
+// proportion des clés du fichier de lancement (sinon, un faux positif sur
+// un fichier sans cette colonne compterait n'importe quoi).
+const SEUIL_CONFIANCE_COLONNE_QUANTITE = 0.5;
+
+// La colonne quantité est celle dont la somme par clé (sur les lignes
+// pièce) reproduit le plus souvent, exactement, la quantité attendue du
+// fichier de lancement — une même clé peut être débitée en plusieurs
+// lots (nesting), avec un nombre de pièces différent à chaque lot :
+// compter "1 par ligne" sous-évalue alors la quantité réelle.
+function detecterColonneQuantite(lignes, colCle, colMateriau, colTypeTrace, qteAttendueParCle) {
+  if (!qteAttendueParCle || qteAttendueParCle.size === 0) return null;
+  const piecesLignes = lignesPieces(lignes, colCle, colMateriau, colTypeTrace);
+  let nbColonnes = 0;
+  for (const ligne of lignes) nbColonnes = Math.max(nbColonnes, ligne.length);
+
+  let meilleurIndex = null;
+  let meilleurScore = 0;
+  for (let col = 0; col < nbColonnes; col++) {
+    if (col === colCle || col === colMateriau || col === colTypeTrace) continue;
+    const sommes = new Map();
+    for (const [cle, ligne] of piecesLignes) {
+      const valeur = col < ligne.length ? ligne[col] : null;
+      const n = toFloatOrNull(valeur);
+      if (n === null) continue;
+      sommes.set(cle, (sommes.get(cle) || 0) + n);
+    }
+    let score = 0;
+    for (const [cle, total] of sommes) {
+      const attendu = qteAttendueParCle.get(cle);
+      if (attendu !== undefined && Math.abs(total - attendu) < 1e-6) score++;
+    }
+    if (score > meilleurScore) {
+      meilleurIndex = col;
+      meilleurScore = score;
+    }
+  }
+
+  const seuil = SEUIL_CONFIANCE_COLONNE_QUANTITE * qteAttendueParCle.size;
+  return meilleurScore >= seuil ? meilleurIndex : null;
+}
+
+function lireCoupe(workbook, clesStrat, qteAttendueParCle) {
+  const lignes = chargerLignes(workbook);
+
+  let colCle = detecterColonneCle(lignes, clesStrat);
+  if (colCle === null) colCle = COLONNE_CLE_PAR_DEFAUT;
+  let colMateriau = detecterColonneMateriau(lignes);
+  if (colMateriau === null) colMateriau = COLONNE_MATERIAU_PAR_DEFAUT;
+  const colTypeTrace = detecterColonneTypeTrace(lignes);
+  const colQuantite = detecterColonneQuantite(lignes, colCle, colMateriau, colTypeTrace, qteAttendueParCle || new Map());
+
+  const compteur = new Map();
+  for (const [cle, ligne] of lignesPieces(lignes, colCle, colMateriau, colTypeTrace)) {
+    let quantite = 1;
+    if (colQuantite !== null && colQuantite < ligne.length) {
+      const n = toFloatOrNull(ligne[colQuantite]);
+      if (n !== null) quantite = n;
+    }
+    compteur.set(cle, (compteur.get(cle) || 0) + quantite);
   }
 
   let total = 0;
@@ -503,17 +559,14 @@ function lireGrainMatching(workbook, clesStrat) {
 
   let colCle = detecterColonneCle(lignes, clesStrat || new Set());
   if (colCle === null) colCle = COLONNE_CLE_PAR_DEFAUT;
+  let colMateriau = detecterColonneMateriau(lignes);
+  if (colMateriau === null) colMateriau = COLONNE_MATERIAU_PAR_DEFAUT;
   let colGrain = detecterColonneGrainMatching(lignes);
   if (colGrain === null) colGrain = COLONNE_GRAIN_MATCHING_PAR_DEFAUT;
   const colTypeTrace = detecterColonneTypeTrace(lignes);
 
   const resultat = new Map();
-  for (const ligne of lignes) {
-    if (colCle >= ligne.length) continue;
-    let cle = ligne[colCle];
-    if (cle === null || cle === undefined) continue;
-    if (!estLignePiece(ligne, colTypeTrace)) continue;
-    cle = String(cle).trim();
+  for (const [cle, ligne] of lignesPieces(lignes, colCle, colMateriau, colTypeTrace)) {
     if (!resultat.has(cle)) resultat.set(cle, []);
 
     const valeurRaw = colGrain < ligne.length ? ligne[colGrain] : null;
@@ -945,11 +998,12 @@ async function lancerControlePaire(index, paire) {
     const wbStrat = await chargerClasseur(fichierStrat);
     const lignesStrat = lireStrat(wbStrat);
     paire.clesStrat = new Set(lignesStrat.map((l) => l.cle));
+    const qteAttendueParCle = new Map(lignesStrat.map((l) => [l.cle, l.qte_attendue]));
 
     majProgress(paire, "⏳", "lecture de la liste de coupe (Cutrite)…");
     await tick();
     const wbCoupe = await chargerClasseur(fichierCoupe);
-    const trouveParCle = lireCoupe(wbCoupe, paire.clesStrat);
+    const trouveParCle = lireCoupe(wbCoupe, paire.clesStrat, qteAttendueParCle);
 
     majProgress(paire, "⏳", "comparaison en cours…");
     await tick();
