@@ -86,3 +86,34 @@ oracle_budget/
   backup.py         export CSV
   ui/                interface PySide6 (fenêtre principale + 5 onglets)
 ```
+
+## Contrôle de coupe
+
+`coupe_controle/` est un second outil de bureau (PySide6), indépendant
+d'Oracle Budget, qui compare :
+
+- le **fichier de lancement** (export STRAT de l'ERP, une ligne par pièce
+  commandée, avec sa quantité) ;
+- la **liste de coupe** générée par Cutrite (Homag) pour l'optimisation de
+  débit (une ligne par panneau réellement découpé, chutes comprises).
+
+Les deux fichiers sont rapprochés via la clé `commande+ligne` de chaque
+pièce, ce qui permet de détecter les pièces manquantes, en trop, ou en
+écart de quantité entre ce qui a été lancé et ce qui a réellement été
+débité.
+
+Lancement :
+
+```bash
+python -m coupe_controle
+```
+
+Ou, après une installation en mode paquet (`pip install -e .`) :
+
+```bash
+coupe-controle
+```
+
+Dans la fenêtre : sélectionnez le fichier STRAT et la liste de coupe,
+cliquez sur **Lancer le contrôle**, puis exportez le rapport détaillé en
+Excel si besoin.

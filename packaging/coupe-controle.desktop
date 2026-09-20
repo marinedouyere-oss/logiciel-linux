@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Contrôle de coupe
+Comment=Contrôle du nombre de pièces entre un fichier de lancement et une liste de coupe Cutrite
+Exec=coupe-controle
+Terminal=false
+Categories=Office;Utility;
