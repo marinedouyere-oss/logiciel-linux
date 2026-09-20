@@ -140,10 +140,17 @@ class MainWindow(QMainWindow):
             return
 
         if incoherences:
-            details = "\n".join(
-                f"— Pièce {inc['cle']} (trace {inc['id_trace']}) : quantités {', '.join(str(q) for q in inc['quantites'])}"
-                for inc in incoherences
-            )
+
+            def _decrire(inc: dict) -> str:
+                repere = inc["id_trace"]
+                if inc.get("description"):
+                    repere += f" — {inc['description']}"
+                if inc.get("grain"):
+                    repere += f", grain matching {inc['grain']}"
+                quantites = ", ".join(str(q) for q in inc["quantites"])
+                return f"— Pièce {inc['cle']} (trace {repere}) : quantités {quantites}"
+
+            details = "\n".join(_decrire(inc) for inc in incoherences)
             QMessageBox.warning(
                 self,
                 "Incohérences dans la liste de coupe",

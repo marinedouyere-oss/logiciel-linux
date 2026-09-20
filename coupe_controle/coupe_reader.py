@@ -316,6 +316,14 @@ def _detecter_exclusion_supplementaire(
     return meilleur if meilleur is not None and meilleur_score >= seuil else None
 
 
+# Sur un fichier réel observé, 440 lignes techniques sur 441 ont une
+# quantité de 1 (la seule exception faisant elle-même partie d'une paire
+# déjà incohérente) : une quantité réserve/chute différente de 1 est donc
+# elle-même un signal à part entière, même quand elle est cohérente à
+# l'intérieur de sa propre paire (réserve = chute).
+QUANTITE_RESERVE_NORMALE = 1
+
+
 def detecter_incoherences_reserve(
     donnees: list[tuple],
     col_cle: int,
@@ -323,17 +331,21 @@ def detecter_incoherences_reserve(
     col_type_trace: int | None,
     exclusion: tuple[int, str] | None,
     col_quantite: int | None,
+    col_grain: int | None,
 ) -> list[dict]:
     """Contrôle de cohérence interne de la liste de coupe, indépendant de
     la comparaison avec le STRAT : les lignes techniques (réserve/chute...)
     partageant le même identifiant de trace (ex. "C389") devraient avoir
-    la même quantité. Si ce n'est pas le cas, c'est le signe d'une
-    modification ou d'une incohérence dans le fichier de coupe lui-même —
-    même si ces lignes n'entrent pas dans le compte des pièces réelles."""
+    la même quantité, et celle-ci devrait valoir 1. Si ce n'est pas le cas,
+    c'est le signe d'une modification ou d'une incohérence dans le fichier
+    de coupe lui-même — même si ces lignes n'entrent pas dans le compte
+    des pièces réelles. Chaque incohérence rapporte aussi la description
+    (colonne "Noms"/"Description") et le grain matching des lignes
+    concernées, pour les identifier facilement dans le fichier."""
     if col_type_trace is None:
         return []
 
-    groupes: dict[tuple[str, str], list[float]] = defaultdict(list)
+    groupes: dict[tuple[str, str], dict] = {}
     for ligne in donnees:
         if col_cle >= len(ligne) or ligne[col_cle] is None:
             continue
@@ -353,14 +365,34 @@ def detecter_incoherences_reserve(
             quantite = float(valeur) if valeur is not None else None
         except (TypeError, ValueError):
             quantite = None
+
+        description = str(ligne[0]).strip() if len(ligne) > 0 and ligne[0] is not None else None
+        grain = str(ligne[col_grain]).strip() if col_grain is not None and col_grain < len(ligne) and ligne[col_grain] is not None else None
+
+        clef = (cle, prefixe)
+        groupe = groupes.setdefault(
+            clef, {"cle": cle, "id_trace": prefixe, "quantites": [], "descriptions": set(), "grains": set()}
+        )
         if quantite is not None:
-            groupes[(cle, prefixe)].append(quantite)
+            groupe["quantites"].append(quantite)
+        if description:
+            groupe["descriptions"].add(description)
+        if grain:
+            groupe["grains"].add(grain)
 
     incoherences = []
-    for (cle, prefixe), quantites in groupes.items():
-        distinctes = sorted(set(quantites))
+    for groupe in groupes.values():
+        distinctes = sorted(set(groupe["quantites"]))
+        commun = {
+            "cle": groupe["cle"],
+            "id_trace": groupe["id_trace"],
+            "description": " / ".join(sorted(groupe["descriptions"])) or None,
+            "grain": " / ".join(sorted(groupe["grains"])) or None,
+        }
         if len(distinctes) > 1:
-            incoherences.append({"cle": cle, "id_trace": prefixe, "quantites": distinctes})
+            incoherences.append({**commun, "type": "ecart", "quantites": distinctes})
+        elif len(distinctes) == 1 and distinctes[0] != QUANTITE_RESERVE_NORMALE:
+            incoherences.append({**commun, "type": "inhabituelle", "quantites": distinctes})
     return incoherences
 
 
@@ -389,6 +421,7 @@ def lire_coupe(
         col_materiau = COLONNE_MATERIAU_PAR_DEFAUT
 
     col_type_trace = _detecter_colonne_type_trace(donnees)
+    col_grain = _detecter_colonne_grain_matching(donnees)
 
     col_quantite = _detecter_colonne_quantite(
         donnees, col_cle, col_materiau, col_type_trace, qte_attendue_par_cle or {}
@@ -413,7 +446,9 @@ def lire_coupe(
             "du fichier semble différent de celui attendu."
         )
 
-    incoherences = detecter_incoherences_reserve(donnees, col_cle, col_materiau, col_type_trace, exclusion, col_quantite)
+    incoherences = detecter_incoherences_reserve(
+        donnees, col_cle, col_materiau, col_type_trace, exclusion, col_quantite, col_grain
+    )
 
     return compteur, incoherences
 

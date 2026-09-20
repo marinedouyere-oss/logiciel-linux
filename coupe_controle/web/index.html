@@ -570,9 +570,9 @@ function estLigneTechnique(ligne, colMateriau, colTypeTrace, exclusion) {
 // la même quantité. Si ce n'est pas le cas, c'est le signe d'une
 // modification ou d'une incohérence dans le fichier de coupe lui-même —
 // même si ces lignes n'entrent pas dans le compte des pièces réelles.
-function detecterIncoherencesReserve(lignes, colCle, colMateriau, colTypeTrace, exclusion, colQuantite) {
+function detecterIncoherencesReserve(lignes, colCle, colMateriau, colTypeTrace, exclusion, colQuantite, colGrain) {
   if (colTypeTrace === null) return [];
-  const groupes = new Map(); // "cle||prefixe" -> [quantites]
+  const groupes = new Map(); // "cle||prefixe" -> { cle, idTrace, quantites, descriptions, grains }
   for (const ligne of lignes) {
     if (colCle >= ligne.length || ligne[colCle] === null || ligne[colCle] === undefined) continue;
     if (!estLigneTechnique(ligne, colMateriau, colTypeTrace, exclusion)) continue;
@@ -585,17 +585,41 @@ function detecterIncoherencesReserve(lignes, colCle, colMateriau, colTypeTrace, 
     const prefixe = correspondance[1];
     const quantite =
       colQuantite !== null && colQuantite < ligne.length ? toFloatOrNull(ligne[colQuantite]) : null;
+    // Colonne 0 = "Description"/"Noms" dans cet export : le nom affiché
+    // pour une ligne technique est souvent lié à son grain matching
+    // (ex. "T76/1" ↔ grain "T76:0:1").
+    const description = ligne.length > 0 && ligne[0] !== null && ligne[0] !== undefined ? String(ligne[0]).trim() : null;
+    const grain =
+      colGrain !== null && colGrain < ligne.length && ligne[colGrain] !== null && ligne[colGrain] !== undefined
+        ? String(ligne[colGrain]).trim()
+        : null;
 
     const clef = `${cle}||${prefixe}`;
-    if (!groupes.has(clef)) groupes.set(clef, { cle, idTrace: prefixe, quantites: [] });
-    if (quantite !== null) groupes.get(clef).quantites.push(quantite);
+    if (!groupes.has(clef)) {
+      groupes.set(clef, { cle, idTrace: prefixe, quantites: [], descriptions: new Set(), grains: new Set() });
+    }
+    const groupe = groupes.get(clef);
+    if (quantite !== null) groupe.quantites.push(quantite);
+    if (description) groupe.descriptions.add(description);
+    if (grain) groupe.grains.add(grain);
   }
 
+  // Sur le fichier réel, 440 lignes techniques sur 441 ont une quantité de
+  // 1 (la seule exception fait justement partie d'une paire déjà
+  // incohérente) : une quantité réserve/chute différente de 1 est donc
+  // elle-même un signal à part entière, même quand la paire reste
+  // cohérente entre elle (aucune incohérence de type A ci-dessus).
+  const QUANTITE_RESERVE_NORMALE = 1;
+
   const incoherences = [];
-  for (const { cle, idTrace, quantites } of groupes.values()) {
-    const distinctes = [...new Set(quantites)];
+  for (const { cle, idTrace, quantites, descriptions, grains } of groupes.values()) {
+    const distinctes = [...new Set(quantites)].sort((a, b) => a - b);
+    const description = [...descriptions].join(" / ") || null;
+    const grain = [...grains].join(" / ") || null;
     if (distinctes.length > 1) {
-      incoherences.push({ cle, idTrace, quantites: distinctes.sort((a, b) => a - b) });
+      incoherences.push({ type: "ecart", cle, idTrace, quantites: distinctes, description, grain });
+    } else if (distinctes.length === 1 && distinctes[0] !== QUANTITE_RESERVE_NORMALE) {
+      incoherences.push({ type: "inhabituelle", cle, idTrace, quantites: distinctes, description, grain });
     }
   }
   return incoherences;
@@ -716,6 +740,7 @@ function lireCoupe(workbook, clesStrat, qteAttendueParCle) {
   if (colMateriau === null) colMateriau = COLONNE_MATERIAU_PAR_DEFAUT;
   const colTypeTrace = detecterColonneTypeTrace(lignes);
   const colQuantite = detecterColonneQuantite(lignes, colCle, colMateriau, colTypeTrace, qteAttendueParCle || new Map());
+  const colGrain = detecterColonneGrainMatching(lignes);
   const exclusion = detecterExclusionSupplementaire(
     lignes,
     colCle,
@@ -743,7 +768,15 @@ function lireCoupe(workbook, clesStrat, qteAttendueParCle) {
     );
   }
 
-  const incoherences = detecterIncoherencesReserve(lignes, colCle, colMateriau, colTypeTrace, exclusion, colQuantite);
+  const incoherences = detecterIncoherencesReserve(
+    lignes,
+    colCle,
+    colMateriau,
+    colTypeTrace,
+    exclusion,
+    colQuantite,
+    colGrain
+  );
 
   return { compteur, incoherences };
 }
@@ -1181,14 +1214,19 @@ function afficherRapportPaire(div, rapport, incoherences) {
       zoneIncoherences.innerHTML = "";
     } else {
       const items = incoherences
-        .map(
-          (inc) =>
-            `<li>Pièce ${inc.cle} (trace ${inc.idTrace}) : quantités différentes trouvées dans la liste de coupe — ${inc.quantites.join(" vs ")}.</li>`
-        )
+        .map((inc) => {
+          const texte =
+            inc.type === "ecart"
+              ? `quantités différentes trouvées dans la liste de coupe — ${inc.quantites.join(" vs ")}`
+              : `quantité réserve/chute inhabituelle — ${inc.quantites[0]} (normalement 1)`;
+          const description = inc.description ? ` — ${inc.description}` : "";
+          const grain = inc.grain ? `, grain matching ${inc.grain}` : "";
+          return `<li>Pièce ${inc.cle} (trace ${inc.idTrace}${description}${grain}) : ${texte}.</li>`;
+        })
         .join("");
       zoneIncoherences.innerHTML = `
         <strong>⚠ ${incoherences.length} incohérence(s) technique(s) dans la liste de coupe</strong>
-        <p class="incoherences-note">Des lignes techniques (réserve/chute) censées partager la même quantité n'ont pas la même valeur — signe d'une modification ou d'un problème dans le fichier de coupe lui-même, indépendamment du contrôle STRAT.</p>
+        <p class="incoherences-note">Des lignes techniques (réserve/chute), repérées par leur identifiant de trace, leur description et leur grain matching, ont une quantité inattendue — signe d'une modification ou d'un problème dans le fichier de coupe lui-même, indépendamment du contrôle STRAT.</p>
         <ul>${items}</ul>
       `;
     }
