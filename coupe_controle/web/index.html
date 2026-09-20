@@ -113,6 +113,9 @@
     font-size: 0.88rem;
   }
   .ligne-fichier input[type=file] { flex: 1; min-width: 200px; font-size: 0.85rem; }
+  .validation-fichier { font-weight: 700; font-size: 1.05rem; width: 1.2em; flex-shrink: 0; text-align: center; }
+  .validation-fichier.valide { color: var(--ok-text); }
+  .validation-fichier.invalide { color: var(--alerte-text); }
   button {
     background: #1565c0;
     color: #fff;
@@ -1008,6 +1011,41 @@ function nouvellePaire(poste, lancementLabel) {
   return id;
 }
 
+// Refuse un fichier dont le nom ne contient pas le mot-clé attendu (ex.
+// "LAN" pour un fichier de lancement, "coupe" pour une liste de coupe) :
+// annule la sélection et l'indique visuellement, pour éviter d'intervertir
+// les deux fichiers d'une case par erreur.
+function validerFichierSelectionne(input, typeLabel, motCle, div, roleValidation) {
+  const span = div.querySelector(`[data-role="${roleValidation}"]`);
+  const fichier = input.files[0];
+  if (!fichier) {
+    if (span) {
+      span.textContent = "";
+      span.className = "validation-fichier";
+    }
+    return false;
+  }
+  const ok = fichier.name.toLowerCase().includes(motCle.toLowerCase());
+  if (!ok) {
+    input.value = "";
+    if (span) {
+      span.textContent = "✗";
+      span.className = "validation-fichier invalide";
+      span.title = `"${fichier.name}" ne ressemble pas à un fichier ${typeLabel} (le nom devrait contenir "${motCle}").`;
+    }
+    alert(
+      `"${fichier.name}" ne ressemble pas à un fichier ${typeLabel} (le nom devrait contenir "${motCle}").\nSélection annulée.`
+    );
+    return false;
+  }
+  if (span) {
+    span.textContent = "✓";
+    span.className = "validation-fichier valide";
+    span.title = "";
+  }
+  return true;
+}
+
 // Le code de lancement (colonne "comprod_lancement" du fichier STRAT, ex.
 // "LAN264004") encode l'année, la semaine et un numéro de séquence sur ses
 // 6 derniers chiffres (ex. 26 / 40 / 04) : la semaine est l'avant-dernière
@@ -1087,17 +1125,27 @@ function redessinerPaires() {
           <div class="ligne-fichier">
             <label for="strat-${paire.id}">Fichier de lancement (STRAT) :</label>
             <input type="file" id="strat-${paire.id}" accept=".xlsx,.xlsm">
+            <span class="validation-fichier" data-role="validation-strat"></span>
           </div>
           <div class="ligne-fichier">
             <label for="coupe-${paire.id}">Liste de coupe (Cutrite) :</label>
             <input type="file" id="coupe-${paire.id}" accept=".xlsx,.xlsm">
+            <span class="validation-fichier" data-role="validation-coupe"></span>
           </div>
           <div class="paire-go-row">
             <button type="button" class="btn-bilan secondaire" data-action="bilan">Voir le bilan</button>
             <button type="button" class="btn-go" data-action="go">GO</button>
           </div>
         `;
-        div.querySelector(`#strat-${paire.id}`).addEventListener("change", () => detecterSemainePaire(paire, div));
+        const inputStrat = div.querySelector(`#strat-${paire.id}`);
+        const inputCoupe = div.querySelector(`#coupe-${paire.id}`);
+        inputStrat.addEventListener("change", () => {
+          if (!validerFichierSelectionne(inputStrat, "lancement", "LAN", div, "validation-strat")) return;
+          detecterSemainePaire(paire, div);
+        });
+        inputCoupe.addEventListener("change", () => {
+          validerFichierSelectionne(inputCoupe, "liste de coupe", "coupe", div, "validation-coupe");
+        });
         div.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(paire, div));
         div.querySelector('[data-action="bilan"]').addEventListener("click", () => voirBilanPaire(paire));
         grille.appendChild(div);
@@ -1411,6 +1459,7 @@ async function lancerUnePaire(paire, div) {
       alert(resultat.erreur);
     } else if (resultat && resultat.ok) {
       afficherResultatPaire(index, paire);
+      voirBilanPaire(paire); // défile automatiquement jusqu'au bilan qu'on vient de produire
     }
   } finally {
     if (boutonGo) boutonGo.disabled = false;
