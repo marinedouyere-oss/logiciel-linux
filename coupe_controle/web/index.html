@@ -829,6 +829,7 @@ function nouvellePaire(poste, lancementLabel) {
     id,
     poste,
     lancementLabel,
+    semaine: null,
     nom: `${poste} — ${lancementLabel}`,
     rapport: null,
     clesStrat: new Set(),
@@ -836,6 +837,47 @@ function nouvellePaire(poste, lancementLabel) {
     triAscendant: true,
   });
   return id;
+}
+
+// Le code de lancement (colonne "comprod_lancement" du fichier STRAT, ex.
+// "LAN264004") encode l'année, la semaine et un numéro de séquence sur ses
+// 6 derniers chiffres (ex. 26 / 40 / 04) : la semaine est l'avant-dernière
+// paire de chiffres.
+function extraireSemaine(codeLancement) {
+  if (!codeLancement) return null;
+  const chiffres = String(codeLancement).replace(/\D/g, "");
+  if (chiffres.length < 4) return null;
+  return chiffres.slice(-4, -2);
+}
+
+// Met à jour le libellé affiché d'une paire ("Lancement 1 (sem 40)") ainsi
+// que paire.nom (utilisé dans la progression et les résultats), à partir
+// de la semaine détectée automatiquement dans son fichier STRAT.
+function majLibellePaire(paire, div) {
+  const libelle = paire.semaine ? `${paire.lancementLabel} (sem ${paire.semaine})` : paire.lancementLabel;
+  paire.nom = `${paire.poste} — ${libelle}`;
+  const strong = div.querySelector(".paire-entete strong");
+  if (strong) strong.textContent = libelle;
+}
+
+async function detecterSemainePaire(paire, div) {
+  const fichier = $(`strat-${paire.id}`).files[0];
+  if (!fichier) {
+    paire.semaine = null;
+    majLibellePaire(paire, div);
+    return;
+  }
+  try {
+    const workbook = await chargerClasseur(fichier);
+    const lignesStrat = lireStrat(workbook);
+    const premiereAvecLancement = lignesStrat.find((l) => l.lancement);
+    paire.semaine = premiereAvecLancement ? extraireSemaine(premiereAvecLancement.lancement) : null;
+  } catch (erreur) {
+    // Le fichier n'est peut-être pas (encore) un STRAT valide : l'erreur
+    // sera de toute façon signalée au lancement du contrôle.
+    paire.semaine = null;
+  }
+  majLibellePaire(paire, div);
 }
 
 function slug(texte) {
@@ -881,6 +923,7 @@ function redessinerPaires() {
             <input type="file" id="coupe-${paire.id}" accept=".xlsx,.xlsm">
           </div>
         `;
+        div.querySelector(`#strat-${paire.id}`).addEventListener("change", () => detecterSemainePaire(paire, div));
         grille.appendChild(div);
       });
 
