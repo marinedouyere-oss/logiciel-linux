@@ -57,6 +57,11 @@
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     gap: 12px;
   }
+  /* Postes à 4 lancements (ex. Chantiers) : 2 lignes de 2 plutôt qu'une
+     rangée qui s'étire selon la largeur de l'écran. */
+  .lancement-grille--2x2 {
+    grid-template-columns: repeat(2, minmax(280px, 1fr));
+  }
   .paire {
     border: 1px solid var(--border);
     border-radius: 8px;
@@ -918,6 +923,7 @@ function redessinerPaires() {
 
     const grille = document.createElement("div");
     grille.className = "lancement-grille";
+    if (nbLancements(poste) === 4) grille.classList.add("lancement-grille--2x2");
 
     paires
       .filter((paire) => paire.poste === poste)
