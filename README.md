@@ -139,7 +139,11 @@ installer Python.
   simplement ignorées au lancement.
 - Un panneau de **progression** affiche l'avancement poste par poste
   pendant le traitement (lecture STRAT → lecture coupe → comparaison →
-  terminé/anomalies).
+  terminé/anomalies). Chaque résultat s'affiche dès qu'il est prêt, sans
+  attendre les autres.
+- Une **recherche de grain matching unique**, tout en haut de la page,
+  interroge en une fois toutes les listes de coupe sélectionnées (pas
+  besoin d'avoir lancé le contrôle au préalable).
 - Pour les pièces **« En trop »** (trouvées dans la liste de coupe mais
   absentes du fichier de lancement), le numéro de commande et la ligne sont
   déduits directement de la clé commande+ligne, pour rester identifiables

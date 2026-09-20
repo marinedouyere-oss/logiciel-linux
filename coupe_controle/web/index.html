@@ -20,9 +20,8 @@
     background: #f5f5f5;
     color: #222;
   }
-  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  h1 { font-size: 1.3rem; margin: 0 0 14px; }
   h2 { font-size: 1.05rem; margin: 0 0 10px; }
-  .sous-titre { color: #666; margin: 0 0 18px; font-size: 0.9rem; }
   .panneau {
     background: #fff;
     border: 1px solid var(--border);
@@ -30,6 +29,22 @@
     padding: 16px 20px;
     margin-bottom: 16px;
   }
+  .panneau-recherche {
+    background: #eaf2fb;
+    border: 2px solid #1565c0;
+  }
+  .panneau-recherche label {
+    display: block;
+    font-weight: 700;
+    font-size: 1rem;
+    margin-bottom: 10px;
+  }
+  .panneau-recherche input[type=text] {
+    font-size: 1.05rem;
+    padding: 12px 14px;
+  }
+  .panneau-recherche button { font-size: 1.05rem; padding: 12px 22px; }
+  .panneau-recherche .label-recherche { font-size: 0.95rem; }
   .poste { margin-bottom: 18px; }
   .poste-titre {
     font-size: 1rem;
@@ -162,15 +177,15 @@
 </head>
 <body>
   <h1>Sentinelle — Contrôle de coupe (lancement / Cutrite)</h1>
-  <p class="sous-titre">
-    Version web autonome (HTML) — fonctionne hors-ligne dans le navigateur, sans installer Python.
-    Compare le fichier de lancement (STRAT) à la liste de coupe Cutrite, par paire. Rien n'est envoyé
-    sur un serveur : les fichiers sont lus et traités entièrement dans votre navigateur.
-    5 postes fixes (Agglo 1er tour, Feno, Casse, Agglo 2ème tour, Chantiers), chacun avec
-    2 lancements traités en parallèle : chaque lancement a son propre fichier de lancement
-    (STRAT) et sa propre liste de coupe. Remplissez les cases dont vous avez besoin puis
-    lancez le(s) contrôle(s) — celles laissées vides sont simplement ignorées.
-  </p>
+
+  <div class="panneau panneau-recherche">
+    <label for="rechercheGlobale">🔍 Recherche grain matching — sur toutes les listes de coupe sélectionnées</label>
+    <div class="recherche-row">
+      <input type="text" id="rechercheGlobale" placeholder="ex. CVC26090331003">
+      <button id="btnRechercheGlobale">Rechercher</button>
+    </div>
+    <div id="resultatRechercheGlobale" class="label-recherche"></div>
+  </div>
 
   <div class="panneau">
     <div id="pairesContainer"></div>
@@ -185,12 +200,6 @@
   </div>
 
   <div id="resultatsContainer"></div>
-
-  <footer>
-    Portage web du contrôle de coupe (logiciel-linux / coupe_controle) — même logique de
-    rapprochement STRAT ↔ Cutrite que la version de bureau PySide6, ré-implémentée en JavaScript.
-    Bibliothèque de lecture/écriture Excel : ExcelJS (embarquée dans ce fichier).
-  </footer>
 
 <script>
 /*! ExcelJS 19-10-2023 */
@@ -963,12 +972,6 @@ function creerPanneauResultat(index, paire) {
     <div class="export-row">
       <button type="button" class="secondaire" data-action="export">Exporter le rapport (.xlsx)</button>
     </div>
-    <div class="recherche-row">
-      <label>Grain matching pour commande+ligne :</label>
-      <input type="text" data-role="recherche" placeholder="ex. CVC26090331003">
-      <button type="button" class="secondaire" data-action="rechercher">Rechercher</button>
-    </div>
-    <div class="label-recherche" data-role="label-recherche"></div>
   `;
 
   div.querySelectorAll("thead th").forEach((th) => {
@@ -995,13 +998,6 @@ function creerPanneauResultat(index, paire) {
     } finally {
       e.target.disabled = false;
     }
-  });
-
-  const inputRecherche = div.querySelector('[data-role="recherche"]');
-  const lancerRecherche = () => rechercherGrainMatchingPaire(paire, div, inputRecherche);
-  div.querySelector('[data-action="rechercher"]').addEventListener("click", lancerRecherche);
-  inputRecherche.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") lancerRecherche();
   });
 
   return div;
@@ -1080,37 +1076,66 @@ async function chargerClasseur(file) {
   return workbook;
 }
 
-async function rechercherGrainMatchingPaire(paire, div, inputRecherche) {
-  const cle = inputRecherche.value.trim().toUpperCase();
-  const label = div.querySelector('[data-role="label-recherche"]');
-  if (!cle) return;
-
-  const fichierCoupe = $(`coupe-${paire.id}`).files[0];
-  if (!fichierCoupe) {
-    alert("Sélectionnez la liste de coupe de cette paire.");
+// Recherche une clé commande+ligne dans TOUTES les listes de coupe
+// actuellement sélectionnées (peu importe la paire, lancée ou non).
+async function rechercherGrainMatchingGlobal() {
+  const cle = $("rechercheGlobale").value.trim().toUpperCase();
+  const zone = $("resultatRechercheGlobale");
+  if (!cle) {
+    zone.textContent = "";
     return;
   }
 
-  try {
-    const wbCoupe = await chargerClasseur(fichierCoupe);
-    const grainParCle = lireGrainMatching(wbCoupe, paire.clesStrat);
+  const pairesAvecCoupe = paires.filter((paire) => $(`coupe-${paire.id}`).files[0]);
+  if (pairesAvecCoupe.length === 0) {
+    zone.style.color = "var(--alerte-text)";
+    zone.style.fontWeight = "normal";
+    zone.textContent = "Sélectionnez au moins une liste de coupe.";
+    return;
+  }
 
-    if (!grainParCle.has(cle)) {
-      label.style.color = "var(--alerte-text)";
-      label.style.fontWeight = "normal";
-      label.textContent = `Clé ${cle} introuvable dans la liste de coupe.`;
-      return;
+  zone.style.color = "";
+  zone.style.fontWeight = "normal";
+  zone.textContent = "Recherche en cours…";
+  await tick();
+
+  const trouvailles = [];
+  const erreurs = [];
+  for (const paire of pairesAvecCoupe) {
+    const fichierCoupe = $(`coupe-${paire.id}`).files[0];
+    try {
+      const wbCoupe = await chargerClasseur(fichierCoupe);
+      const grainParCle = lireGrainMatching(wbCoupe, paire.clesStrat);
+      if (grainParCle.has(cle)) {
+        trouvailles.push({ paire, valeurs: grainParCle.get(cle) });
+      }
+    } catch (erreur) {
+      erreurs.push(`${paire.nom} : ${erreur && erreur.message ? erreur.message : erreur}`);
     }
+  }
 
-    const valeurs = grainParCle.get(cle);
-    label.style.color = "var(--ok-text)";
-    label.style.fontWeight = "bold";
-    label.textContent =
-      valeurs.length === 0 ? `${cle} → Unitaire (pas de grain matching)` : `${cle} → grain matching : ${valeurs.join(", ")}`;
-  } catch (erreur) {
-    alert("Impossible de lire la liste de coupe :\n" + (erreur && erreur.message ? erreur.message : erreur));
+  if (trouvailles.length === 0) {
+    zone.style.color = "var(--alerte-text)";
+    zone.textContent = `Clé ${cle} introuvable dans les ${pairesAvecCoupe.length} liste(s) de coupe sélectionnée(s).`;
+  } else {
+    zone.style.color = "var(--ok-text)";
+    zone.innerHTML = trouvailles
+      .map(({ paire, valeurs }) => {
+        const detail = valeurs.length === 0 ? "Unitaire (pas de grain matching)" : `grain matching : ${valeurs.join(", ")}`;
+        return `<div><strong>${cle}</strong> — ${paire.nom} → ${detail}</div>`;
+      })
+      .join("");
+  }
+
+  if (erreurs.length > 0) {
+    zone.innerHTML += `<div style="color: var(--alerte-text); margin-top: 4px;">Illisibles : ${erreurs.join(" · ")}</div>`;
   }
 }
+
+$("btnRechercheGlobale").addEventListener("click", rechercherGrainMatchingGlobal);
+$("rechercheGlobale").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") rechercherGrainMatchingGlobal();
+});
 
 // Laisse le navigateur repeindre l'écran avant de continuer, pour que
 // le panneau de progression soit visible pendant le traitement (et pas
