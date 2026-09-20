@@ -436,9 +436,23 @@ def detecter_ecarts_grain_matching(
     return ecarts
 
 
+def _compter_unitaires(pieces: list[tuple[str, tuple]], col_grain: int | None, compteur: Counter) -> int | None:
+    """Compte les clés trouvées qui n'ont aucune valeur de grain matching
+    sur aucune de leurs lignes ("unitaires" : pas de calage de fil
+    nécessaire). Renvoie None si la colonne grain matching n'a pas pu être
+    détectée."""
+    if col_grain is None:
+        return None
+    a_grain: set[str] = set()
+    for cle, ligne in pieces:
+        if col_grain < len(ligne) and ligne[col_grain] is not None and str(ligne[col_grain]).strip():
+            a_grain.add(cle)
+    return sum(1 for cle in compteur if cle not in a_grain)
+
+
 def lire_coupe(
     chemin: str | Path, cles_strat: set[str], qte_attendue_par_cle: dict[str, float] | None = None
-) -> tuple[Counter, list[dict]]:
+) -> tuple[Counter, list[dict], int | None]:
     """Compte, pour chaque clé commande+ligne, le nombre de pièces dans la
     liste de coupe Cutrite (panneaux de protection et lignes techniques
     exclus). Si la colonne "quantité" par ligne peut être détectée avec
@@ -493,7 +507,9 @@ def lire_coupe(
     )
     ecarts_grain_matching = detecter_ecarts_grain_matching(pieces, col_grain, compteur)
 
-    return compteur, incoherences_reserve + ecarts_grain_matching
+    nb_unitaires = _compter_unitaires(pieces, col_grain, compteur)
+
+    return compteur, incoherences_reserve + ecarts_grain_matching, nb_unitaires
 
 
 def lire_grain_matching(chemin: str | Path, cles_strat: set[str] | None = None) -> dict[str, list[str]]:

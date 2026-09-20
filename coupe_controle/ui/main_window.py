@@ -57,6 +57,7 @@ class MainWindow(QMainWindow):
         self.resize(1100, 700)
 
         self.rapport: RapportComparaison | None = None
+        self.nb_unitaires: int | None = None
         self.cles_strat: set[str] = set()
 
         central = QWidget()
@@ -131,7 +132,8 @@ class MainWindow(QMainWindow):
             cles_strat = {l.cle for l in lignes_strat}
             self.cles_strat = cles_strat
             qte_attendue_par_cle = {l.cle: l.qte_attendue for l in lignes_strat}
-            trouve_par_cle, incoherences = lire_coupe(chemin_coupe, cles_strat, qte_attendue_par_cle)
+            trouve_par_cle, incoherences, nb_unitaires = lire_coupe(chemin_coupe, cles_strat, qte_attendue_par_cle)
+            self.nb_unitaires = nb_unitaires
         except (StratFormatError, CoupeFormatError) as erreur:
             QMessageBox.critical(self, "Erreur de lecture", str(erreur))
             return
@@ -168,18 +170,21 @@ class MainWindow(QMainWindow):
         self.bouton_export.setEnabled(True)
 
     def _afficher_rapport(self, rapport: RapportComparaison) -> None:
+        suffixe_unitaires = (
+            f", dont {self.nb_unitaires} unitaire(s) (sans grain matching)" if self.nb_unitaires is not None else ""
+        )
         if rapport.nb_anomalies == 0:
             self.label_resume.setStyleSheet("font-weight: bold; padding: 6px; color: #2e7d32;")
             self.label_resume.setText(
                 f"✔ Tout est correct — {int(rapport.total_attendu)} pièces attendues, "
-                f"{int(rapport.total_trouve)} trouvées."
+                f"{int(rapport.total_trouve)} trouvées{suffixe_unitaires}."
             )
         else:
             self.label_resume.setStyleSheet("font-weight: bold; padding: 6px; color: #c62828;")
             self.label_resume.setText(
                 f"⚠ {rapport.nb_anomalies} anomalie(s) — "
                 f"{int(rapport.total_attendu)} pièces attendues, {int(rapport.total_trouve)} trouvées "
-                f"({rapport.nb_ok} OK)."
+                f"({rapport.nb_ok} OK){suffixe_unitaires}."
             )
 
         # Seules les anomalies sont affichées dans le tableau (les pièces OK

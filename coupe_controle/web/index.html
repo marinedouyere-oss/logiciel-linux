@@ -791,6 +791,24 @@ function detecterEcartsGrainMatching(pieces, colGrain, compteur) {
   return ecarts;
 }
 
+// Compte les clés trouvées qui n'ont aucune valeur de grain matching sur
+// aucune de leurs lignes ("unitaires" : pas de calage de fil nécessaire).
+// Renvoie null si la colonne grain matching n'a pas pu être détectée.
+function compterUnitaires(pieces, colGrain, compteur) {
+  if (colGrain === null) return null;
+  const aGrain = new Set();
+  for (const [cle, ligne] of pieces) {
+    if (colGrain < ligne.length && ligne[colGrain] !== null && ligne[colGrain] !== undefined) {
+      if (String(ligne[colGrain]).trim()) aGrain.add(cle);
+    }
+  }
+  let nbUnitaires = 0;
+  for (const cle of compteur.keys()) {
+    if (!aGrain.has(cle)) nbUnitaires++;
+  }
+  return nbUnitaires;
+}
+
 function lireCoupe(workbook, clesStrat, qteAttendueParCle) {
   const lignes = chargerLignes(workbook);
 
@@ -840,8 +858,9 @@ function lireCoupe(workbook, clesStrat, qteAttendueParCle) {
     colGrain
   );
   const ecartsGrainMatching = detecterEcartsGrainMatching(pieces, colGrain, compteur);
+  const nbUnitaires = compterUnitaires(pieces, colGrain, compteur);
 
-  return { compteur, incoherences: [...incoherencesReserve, ...ecartsGrainMatching] };
+  return { compteur, incoherences: [...incoherencesReserve, ...ecartsGrainMatching], nbUnitaires };
 }
 
 function lireGrainMatching(workbook, clesStrat) {
@@ -1306,14 +1325,16 @@ function trierEtRedessinerPaire(paire, div) {
   dessinerTablePaire(div, copie);
 }
 
-function afficherRapportPaire(div, rapport, incoherences) {
+function afficherRapportPaire(div, rapport, incoherences, nbUnitaires) {
   const resume = div.querySelector(".resume");
+  const suffixeUnitaires =
+    nbUnitaires !== null && nbUnitaires !== undefined ? `, dont ${nbUnitaires} unitaire(s) (sans grain matching)` : "";
   if (rapport.nbAnomalies === 0) {
     resume.style.color = "var(--ok-text)";
-    resume.textContent = `✔ Tout est correct — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées.`;
+    resume.textContent = `✔ Tout est correct — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées${suffixeUnitaires}.`;
   } else {
     resume.style.color = "var(--alerte-text)";
-    resume.textContent = `⚠ ${rapport.nbAnomalies} anomalie(s) — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées (${rapport.nbOk} OK).`;
+    resume.textContent = `⚠ ${rapport.nbAnomalies} anomalie(s) — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées (${rapport.nbOk} OK)${suffixeUnitaires}.`;
   }
 
   const zoneIncoherences = div.querySelector(".incoherences-techniques");
@@ -1545,8 +1566,9 @@ async function lancerControlePaire(index, paire) {
     majProgress(paire, "⏳", "lecture de la liste de coupe (Cutrite)…");
     await tick();
     const wbCoupe = await chargerClasseur(fichierCoupe);
-    const { compteur: trouveParCle, incoherences } = lireCoupe(wbCoupe, paire.clesStrat, qteAttendueParCle);
+    const { compteur: trouveParCle, incoherences, nbUnitaires } = lireCoupe(wbCoupe, paire.clesStrat, qteAttendueParCle);
     paire.incoherences = incoherences;
+    paire.nbUnitaires = nbUnitaires;
 
     majProgress(paire, "⏳", "comparaison en cours…");
     await tick();
@@ -1579,7 +1601,7 @@ function afficherResultatPaire(index, paire) {
   if (!paire.rapport) return;
   const panneau = creerPanneauResultat(index, paire);
   resultatsContainer.appendChild(panneau);
-  afficherRapportPaire(panneau, paire.rapport, paire.incoherences);
+  afficherRapportPaire(panneau, paire.rapport, paire.incoherences, paire.nbUnitaires);
 }
 
 async function lancerTousLesControles() {
