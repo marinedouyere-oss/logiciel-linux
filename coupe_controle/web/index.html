@@ -821,11 +821,17 @@ async function exporterRapport(rapport, nomFichier) {
   URL.revokeObjectURL(url);
 }
 
-// ---- UI : 5 postes fixes, chacun débitant 2 lancements en parallèle ----
-// (2 lancements = 2 comparaisons indépendantes : chaque lancement a son
-// propre fichier STRAT et sa propre liste de coupe à lui comparer.)
+// ---- UI : 5 postes fixes, chacun débitant plusieurs lancements en
+// parallèle (chaque lancement = une comparaison indépendante, avec son
+// propre fichier STRAT et sa propre liste de coupe à lui comparer). ----
 const POSTES = ["Agglo 1er tour", "Feno", "Casse", "Agglo 2ème tour", "Chantiers"];
-const LANCEMENTS = ["Lancement 1", "Lancement 2"];
+const NB_LANCEMENTS_PAR_DEFAUT = 2;
+const NB_LANCEMENTS_PAR_POSTE = {
+  "Chantiers": 4,
+};
+function nbLancements(poste) {
+  return NB_LANCEMENTS_PAR_POSTE[poste] || NB_LANCEMENTS_PAR_DEFAUT;
+}
 const $ = (id) => document.getElementById(id);
 
 let prochainId = 1;
@@ -1259,7 +1265,7 @@ async function lancerTousLesControles() {
 $("btnLancerTout").addEventListener("click", lancerTousLesControles);
 
 POSTES.forEach((poste) => {
-  LANCEMENTS.forEach((lancement) => nouvellePaire(poste, lancement));
+  for (let i = 1; i <= nbLancements(poste); i++) nouvellePaire(poste, `Lancement ${i}`);
 });
 redessinerPaires();
 </script>
