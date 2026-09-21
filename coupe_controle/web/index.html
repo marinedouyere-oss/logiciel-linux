@@ -101,6 +101,10 @@
   .schema-chant { stroke: #b26a00; stroke-width: 4; stroke-linecap: round; }
   .schema-chant-label { font-size: 9px; fill: #b26a00; font-weight: 700; }
   .schema-angle { stroke: #c62828; stroke-width: 2; }
+  .schema-angle-forme { fill: none; }
+  .schema-angle-label { font-size: 8px; fill: #c62828; font-weight: 700; }
+  .schema-dvr { fill: none; stroke: #6a1b9a; stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .schema-dvr-label { font-size: 9px; fill: #6a1b9a; font-weight: 700; }
   .schema-legende { font-size: 0.72rem; color: #888; margin: -4px 0 8px; }
   .poste { margin-bottom: 18px; }
   .poste-titre {
@@ -1609,6 +1613,57 @@ function fmtDim(v) {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
+// Code d'assemblage par étrier (ex. "ETRLG585", "FG620") : préfixe "ETR" =
+// sans retour (10 mm de retour sinon), puis F(rontal) ou L(atéral), puis le
+// côté G/D, puis une valeur numérique dont le sens exact n'est pas encore
+// connu — affichée telle quelle en attendant. Certains codes d'assemblage
+// ne suivent pas ce format (ex. "BAZ", "USI", "DVR") : analyserCodeAssemblage
+// renvoie alors null et le code brut reste affiché tel quel.
+const MOTIF_CODE_ASSEMBLAGE = /^(ETR)?(F|L)(G|D)(\d+)$/i;
+
+function analyserCodeAssemblage(code) {
+  if (!code) return null;
+  const m = MOTIF_CODE_ASSEMBLAGE.exec(code.trim());
+  if (!m) return null;
+  return {
+    sansRetour: !!m[1],
+    type: m[2].toUpperCase() === "F" ? "frontal" : "latéral",
+    cote: m[3].toUpperCase() === "G" ? "gauche" : "droite",
+    valeur: m[4],
+    brut: code,
+  };
+}
+
+// Certaines pièces ont un assemblage des deux côtés à la fois, listés
+// ensemble séparés par " - " (ex. "LG369 - LD369", "FG600 - FD600") :
+// chaque partie est analysée séparément puis rejointe pour l'affichage.
+function texteCodeAssemblage(code) {
+  if (!code) return code;
+  return code
+    .split(/\s*-\s*/)
+    .map((p) => p.trim())
+    .filter(Boolean)
+    .map((p) => {
+      const info = analyserCodeAssemblage(p);
+      if (!info) return p;
+      const type = info.type === "frontal" ? "Frontal" : "Latéral";
+      const retour = info.sansRetour ? "sans retour" : "retour 10 mm";
+      return `${type}, ${retour}, côté ${info.cote} (${info.brut})`;
+    })
+    .join(" / ");
+}
+
+// EP13 = coin arrondi, EP14 = entaille plaquée (sauf mention contraire
+// ailleurs dans le fichier, non détectable ici). Les autres codes (ex.
+// "EP15") ne sont pas encore identifiés : affichés tels quels en attendant.
+function analyserCodeAngle(code) {
+  if (!code) return null;
+  const c = code.trim().toUpperCase();
+  if (c === "EP13") return { type: "arrondi", brut: code };
+  if (c === "EP14") return { type: "entaille", brut: code };
+  return { type: "inconnu", brut: code };
+}
+
 // Construit un schéma SVG en vue de dessus de la pièce (dimensions finies,
 // à l'échelle), avec les chants (AV/AR/G/D) et usinages d'angle relevés
 // dans le fichier, comme repères visuels des options du plan. Renvoie une
@@ -1653,19 +1708,66 @@ function construireSchemaPieceSvg(champs) {
     )
     .join("");
 
-  const taille = 10;
-  const angles = [
-    { coin: "Av. G", val: champs.angleAVG, x: x0, y: y0 + rectH, dx: taille, dy: -taille },
-    { coin: "Av. D", val: champs.angleAVD, x: x0 + rectW, y: y0 + rectH, dx: -taille, dy: -taille },
-    { coin: "Ar. G", val: champs.angleARG, x: x0, y: y0, dx: taille, dy: taille },
-    { coin: "Ar. D", val: champs.angleARD, x: x0 + rectW, y: y0, dx: -taille, dy: taille },
+  // Chaque coin est décrit par sa position et les deux directions unitaires
+  // (vers l'intérieur de la pièce) des côtés qui s'y rejoignent — utilisées
+  // pour dessiner un arrondi, une entaille en L, ou un repère générique
+  // selon le code relevé (voir analyserCodeAngle).
+  const taille = 12;
+  const coins = [
+    { id: "Av. G", val: champs.angleAVG, x: x0, y: y0 + rectH, dx1: 1, dy1: 0, dx2: 0, dy2: -1 },
+    { id: "Av. D", val: champs.angleAVD, x: x0 + rectW, y: y0 + rectH, dx1: -1, dy1: 0, dx2: 0, dy2: -1 },
+    { id: "Ar. G", val: champs.angleARG, x: x0, y: y0, dx1: 1, dy1: 0, dx2: 0, dy2: 1 },
+    { id: "Ar. D", val: champs.angleARD, x: x0 + rectW, y: y0, dx1: -1, dy1: 0, dx2: 0, dy2: 1 },
   ];
-  const anglesSvg = angles
-    .filter((a) => a.val)
-    .map(
-      (a) => `<line x1="${a.x}" y1="${a.y + a.dy}" x2="${a.x + a.dx}" y2="${a.y}" class="schema-angle"><title>Usinage angle ${a.coin} : ${a.val}</title></line>`
-    )
+  const anglesSvg = coins
+    .filter((c) => c.val)
+    .map((c) => {
+      const info = analyserCodeAngle(c.val);
+      const p1x = c.x + c.dx1 * taille;
+      const p1y = c.y + c.dy1 * taille;
+      const p2x = c.x + c.dx2 * taille;
+      const p2y = c.y + c.dy2 * taille;
+      const titre = `<title>Usinage angle ${c.id} : ${c.val}</title>`;
+      if (info.type === "arrondi") {
+        return `<path d="M ${p1x} ${p1y} A ${taille} ${taille} 0 0 1 ${p2x} ${p2y}" class="schema-angle schema-angle-forme">${titre}</path>`;
+      }
+      if (info.type === "entaille") {
+        const mx = c.x + c.dx1 * taille + c.dx2 * taille;
+        const my = c.y + c.dy1 * taille + c.dy2 * taille;
+        return `<path d="M ${p1x} ${p1y} L ${mx} ${my} L ${p2x} ${p2y}" class="schema-angle schema-angle-forme">${titre}</path>`;
+      }
+      // Code pas encore identifié (ex. "EP15") : repère générique + la
+      // valeur brute affichée en clair, pour rester traçable en attendant.
+      const lx = c.x + (c.dx1 + c.dx2) * (taille + 8);
+      const ly = c.y + (c.dy1 + c.dy2) * (taille + 8);
+      return `
+        <line x1="${p1x}" y1="${p1y}" x2="${p2x}" y2="${p2y}" class="schema-angle">${titre}</line>
+        <text x="${lx}" y="${ly}" class="schema-angle-label" text-anchor="middle">${c.val}</text>
+      `;
+    })
     .join("");
+
+  // Défonçage évier/plaque de cuisson : pas de position dans le fichier,
+  // donc dessiné centré sur la pièce (convention indiquée par l'atelier) —
+  // et réparti équitablement le long de la pièce s'il y en a plusieurs
+  // (compté par le nombre d'occurrences de "DVR" dans le code, ex.
+  // "DVRDVR1" = 2).
+  const nbDvr = champs.assemblage ? (champs.assemblage.match(/DVR/gi) || []).length : 0;
+  let dvrSvg = "";
+  if (nbDvr > 0) {
+    const cy = y0 + rectH / 2;
+    const rw = Math.min(rectW / (nbDvr + 0.5), 70);
+    const rh = Math.min(rectH * 0.5, 46);
+    dvrSvg = Array.from({ length: nbDvr }, (_, i) => {
+      const cx = x0 + (rectW * (i + 1)) / (nbDvr + 1);
+      return `
+        <rect x="${cx - rw / 2}" y="${cy - rh / 2}" width="${rw}" height="${rh}" rx="6" class="schema-dvr">
+          <title>Défonçage évier/plaque de cuisson (DVR)${nbDvr > 1 ? `, ${i + 1}/${nbDvr}` : ", centré"}</title>
+        </rect>
+        <text x="${cx}" y="${cy + 3}" class="schema-dvr-label" text-anchor="middle">DVR</text>
+      `;
+    }).join("");
+  }
 
   return `
     <svg viewBox="0 0 ${vbW} ${vbH}" class="schema-piece" role="img" aria-label="Schéma de la pièce, ${fmtDim(longueur)} x ${fmtDim(largeur)} mm">
@@ -1676,6 +1778,7 @@ function construireSchemaPieceSvg(champs) {
       <rect x="${x0}" y="${y0}" width="${rectW}" height="${rectH}" class="schema-rect" />
       ${chantsSvg}
       ${anglesSvg}
+      ${dvrSvg}
     </svg>
   `;
 }
@@ -1908,7 +2011,7 @@ async function rechercherGrainMatchingGlobal() {
             : "";
         const assemblageHtml =
           champsDetail && champsDetail.assemblage
-            ? `<div class="resultat-champ"><span class="resultat-champ-label">Assemblage</span><span class="resultat-champ-valeur">${champsDetail.assemblage}</span></div>`
+            ? `<div class="resultat-champ"><span class="resultat-champ-label">Assemblage</span><span class="resultat-champ-valeur">${texteCodeAssemblage(champsDetail.assemblage)}</span></div>`
             : "";
 
         return `
