@@ -16,6 +16,8 @@ COL_QTE = "comdet_qte"
 COL_LANCEMENT = "comprod_lancement"
 COL_CLE = "commande+ligne"
 COL_AGGLO = "agglo"
+COL_LIVSEM = "com_livsem"
+COL_LIVAN = "com_livan"
 
 REQUIRED_HEADERS = (COL_COMMANDE, COL_LIGNE, COL_ARTICLE, COL_QTE)
 
@@ -65,15 +67,20 @@ def _fmt_ligne(ligne) -> str:
         return str(ligne)
 
 
-def lire_strat(chemin: str | Path) -> tuple[list[LigneStrat], list[dict]]:
+def lire_strat(chemin: str | Path) -> tuple[list[LigneStrat], list[dict], list[dict]]:
     """Lit le fichier de lancement et agrège les lignes par clé
     commande+ligne (les quantités des lignes partageant une même clé sont
     additionnées).
 
-    Renvoie aussi les doublons détectés : une même clé commande+ligne
-    apparaissant sur plusieurs lignes (hors panneaux "PROTECTION", exclus
-    plus haut et qui ne sont donc jamais la cause d'un doublon signalé ici)
-    peut indiquer une pièce lancée deux fois par erreur dans l'ERP."""
+    Renvoie aussi :
+    - les doublons détectés : une même clé commande+ligne apparaissant sur
+      plusieurs lignes (hors panneaux "PROTECTION", exclus plus haut et qui
+      ne sont donc jamais la cause d'un doublon signalé ici) peut indiquer
+      une pièce lancée deux fois par erreur dans l'ERP ;
+    - les semaines de livraison distinctes trouvées (colonne "com_livsem") :
+      un fichier de lancement ne devrait normalement en contenir qu'une
+      seule ; plusieurs semaines différentes peuvent signaler des pièces
+      mélangées par erreur entre deux lancements."""
 
     chemin = Path(chemin)
     classeur, feuille, entetes = _trouver_feuille_et_entetes(chemin)
@@ -85,10 +92,13 @@ def lire_strat(chemin: str | Path) -> tuple[list[LigneStrat], list[dict]]:
         idx_lancement = entetes.get(COL_LANCEMENT)
         idx_cle = entetes.get(COL_CLE)
         idx_agglo = entetes.get(COL_AGGLO)
+        idx_livsem = entetes.get(COL_LIVSEM)
+        idx_livan = entetes.get(COL_LIVAN)
 
         qte_par_cle: dict[str, float] = defaultdict(float)
         infos_par_cle: dict[str, tuple[str, str, str, str]] = {}
         lignes_brutes_par_cle: dict[str, list[tuple[str, float]]] = defaultdict(list)
+        compte_par_semaine: dict[tuple[str, str], int] = defaultdict(int)
 
         nb_colonnes = feuille.max_column
 
@@ -124,6 +134,11 @@ def lire_strat(chemin: str | Path) -> tuple[list[LigneStrat], list[dict]]:
             )
             lignes_brutes_par_cle[cle].append((str(article), qte_flottante))
 
+            livsem = valeur(ligne_donnees, idx_livsem)
+            if livsem is not None and str(livsem).strip() != "":
+                livan = valeur(ligne_donnees, idx_livan)
+                compte_par_semaine[(str(livan) if livan is not None else "", str(livsem))] += 1
+
         resultat = []
         for cle, qte in qte_par_cle.items():
             commande, numero_ligne, article, lancement = infos_par_cle[cle]
@@ -154,6 +169,11 @@ def lire_strat(chemin: str | Path) -> tuple[list[LigneStrat], list[dict]]:
                 }
             )
 
-        return resultat, doublons
+        semaines = [
+            {"annee": annee, "semaine": semaine, "nb_pieces": nb}
+            for (annee, semaine), nb in sorted(compte_par_semaine.items())
+        ]
+
+        return resultat, doublons, semaines
     finally:
         classeur.close()

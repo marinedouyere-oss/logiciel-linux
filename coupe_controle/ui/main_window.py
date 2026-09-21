@@ -129,18 +129,44 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            lignes_strat, doublons_strat = lire_strat(chemin_strat)
-            cles_strat = {l.cle for l in lignes_strat}
-            self.cles_strat = cles_strat
-            qte_attendue_par_cle = {l.cle: l.qte_attendue for l in lignes_strat}
-            trouve_par_cle, incoherences, nb_unitaires = lire_coupe(chemin_coupe, cles_strat, qte_attendue_par_cle)
-            self.nb_unitaires = nb_unitaires
-            self.nb_pieces_trouvees = len(trouve_par_cle)
-        except (StratFormatError, CoupeFormatError) as erreur:
+            lignes_strat, doublons_strat, semaines_strat = lire_strat(chemin_strat)
+        except StratFormatError as erreur:
             QMessageBox.critical(self, "Erreur de lecture", str(erreur))
             return
         except Exception as erreur:  # noqa: BLE001 - remonter toute erreur de lecture à l'utilisateur
-            QMessageBox.critical(self, "Erreur de lecture", f"Impossible de lire les fichiers :\n{erreur}")
+            QMessageBox.critical(self, "Erreur de lecture", f"Impossible de lire le fichier de lancement :\n{erreur}")
+            return
+
+        if len(semaines_strat) > 1:
+            details_semaines = "\n".join(
+                f"— semaine {s['semaine']}/{s['annee']} : {s['nb_pieces']} pièce(s)" for s in semaines_strat
+            )
+            reponse = QMessageBox.question(
+                self,
+                "Semaines de livraison différentes",
+                "Plusieurs semaines de livraison différentes trouvées dans le fichier de "
+                f"lancement :\n\n{details_semaines}\n\n"
+                "Normalement, un fichier de lancement ne contient qu'une seule semaine de "
+                "livraison. Continuer quand même ?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if reponse != QMessageBox.StandardButton.Yes:
+                return
+
+        cles_strat = {l.cle for l in lignes_strat}
+        self.cles_strat = cles_strat
+        qte_attendue_par_cle = {l.cle: l.qte_attendue for l in lignes_strat}
+
+        try:
+            trouve_par_cle, incoherences, nb_unitaires = lire_coupe(chemin_coupe, cles_strat, qte_attendue_par_cle)
+            self.nb_unitaires = nb_unitaires
+            self.nb_pieces_trouvees = len(trouve_par_cle)
+        except CoupeFormatError as erreur:
+            QMessageBox.critical(self, "Erreur de lecture", str(erreur))
+            return
+        except Exception as erreur:  # noqa: BLE001 - remonter toute erreur de lecture à l'utilisateur
+            QMessageBox.critical(self, "Erreur de lecture", f"Impossible de lire la liste de coupe :\n{erreur}")
             return
 
         if doublons_strat:

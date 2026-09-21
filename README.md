@@ -216,3 +216,10 @@ confirmation, comme pour n'importe quel APK installé hors store.
   signaler une pièce lancée deux fois par erreur dans l'ERP. Les quantités
   restent additionnées comme avant (comportement inchangé), c'est un
   avertissement en plus, pas un blocage.
+- **Contrôle des semaines de livraison** (colonne `com_livsem` du STRAT) :
+  un fichier de lancement ne devrait normalement contenir qu'une seule
+  semaine de livraison. Si plusieurs semaines différentes sont détectées,
+  une fenêtre de confirmation **bloque** le contrôle jusqu'à ce que
+  l'utilisateur clique sur OK (pour continuer quand même) ou Annuler (pour
+  arrêter) — contrairement au contrôle des doublons, qui n'est qu'un
+  avertissement informatif.

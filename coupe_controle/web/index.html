@@ -248,6 +248,53 @@
   .progress-erreur .progress-texte { color: var(--alerte-text); font-weight: 600; }
   .progress-ok .progress-texte { color: var(--ok-text); font-weight: 600; }
   .progress-attention .progress-texte { color: #b26a00; font-weight: 600; }
+
+  /* Fenêtre de confirmation intégrée à la page (pas la boîte de dialogue
+     native du navigateur) : rendu identique sur PC et dans l'appli Android,
+     dont le comportement des dialogues JS natifs n'est pas garanti. */
+  .modale-fond {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 16px;
+  }
+  .modale-fond.masquee { display: none; }
+  .modale-boite {
+    background: #fff;
+    border-radius: 8px;
+    max-width: 480px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: 20px;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
+  }
+  .modale-boite h3 { margin: 0 0 10px; color: #b26a00; }
+  .modale-boite p { white-space: pre-line; line-height: 1.5; }
+  .modale-boutons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .modale-boutons button {
+    padding: 8px 18px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: #eee;
+    cursor: pointer;
+    font-size: 0.95rem;
+  }
+  .modale-boutons button.principal {
+    background: #1565c0;
+    color: #fff;
+    border-color: #1565c0;
+    font-weight: 600;
+  }
 </style>
 </head>
 <body>
@@ -275,6 +322,17 @@
   </div>
 
   <div id="resultatsContainer"></div>
+
+  <div class="modale-fond masquee" id="modaleConfirmation">
+    <div class="modale-boite">
+      <h3 id="modaleConfirmationTitre">⚠ Confirmation nécessaire</h3>
+      <p id="modaleConfirmationMessage"></p>
+      <div class="modale-boutons">
+        <button type="button" id="modaleConfirmationAnnuler">Annuler</button>
+        <button type="button" class="principal" id="modaleConfirmationOk">OK</button>
+      </div>
+    </div>
+  </div>
 
 <script>
 /*! ExcelJS 19-10-2023 */
@@ -391,6 +449,8 @@ const COL_QTE = "comdet_qte";
 const COL_LANCEMENT = "comprod_lancement";
 const COL_CLE = "commande+ligne";
 const COL_AGGLO = "agglo";
+const COL_LIVSEM = "com_livsem";
+const COL_LIVAN = "com_livan";
 const REQUIRED_HEADERS = [COL_COMMANDE, COL_LIGNE, COL_ARTICLE, COL_QTE];
 
 // Un panneau de protection (support = "PROTECTION") n'est pas une pièce
@@ -461,10 +521,13 @@ function lireStrat(workbook) {
   const idxLancement = entetes[COL_LANCEMENT];
   const idxCle = entetes[COL_CLE];
   const idxAgglo = entetes[COL_AGGLO];
+  const idxLivsem = entetes[COL_LIVSEM];
+  const idxLivan = entetes[COL_LIVAN];
 
   const qteParCle = new Map();
   const infosParCle = new Map();
   const lignesBrutesParCle = new Map(); // clé -> [{article, qte}] (une entrée par ligne source, pour repérer les doublons)
+  const comptePieceParSemaine = new Map(); // "annee-semaine" -> nb de pièces (pour repérer un mélange de semaines de livraison)
 
   const nbLignes = feuille.rowCount || 0;
   for (let r = 2; r <= nbLignes; r++) {
@@ -501,6 +564,13 @@ function lireStrat(workbook) {
     });
     if (!lignesBrutesParCle.has(cle)) lignesBrutesParCle.set(cle, []);
     lignesBrutesParCle.get(cle).push({ article: String(article), qte: qteNum });
+
+    const livsem = idxLivsem ? cellValue(row.getCell(idxLivsem)) : null;
+    if (livsem !== null && livsem !== undefined && String(livsem).trim() !== "") {
+      const livan = idxLivan ? cellValue(row.getCell(idxLivan)) : null;
+      const cleSemaine = `${livan ?? ""}-${livsem}`;
+      comptePieceParSemaine.set(cleSemaine, (comptePieceParSemaine.get(cleSemaine) || 0) + 1);
+    }
   }
 
   const resultat = [];
@@ -523,7 +593,17 @@ function lireStrat(workbook) {
     });
   }
 
-  return { lignes: resultat, doublons };
+  // Semaines de livraison distinctes trouvées (normalement une seule par
+  // fichier de lancement) : plusieurs semaines différentes peuvent
+  // signaler des pièces mélangées par erreur entre deux lancements.
+  const semaines = [...comptePieceParSemaine.entries()]
+    .map(([cleSemaine, nbPieces]) => {
+      const [annee, semaine] = cleSemaine.split("-");
+      return { annee, semaine, nbPieces };
+    })
+    .sort((a, b) => (a.annee + a.semaine).localeCompare(b.annee + b.semaine));
+
+  return { lignes: resultat, doublons, semaines };
 }
 
 // ---- coupe_reader ----
@@ -1828,6 +1908,32 @@ function tick() {
   return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
 }
 
+// Fenêtre de confirmation bloquante intégrée à la page (au lieu de
+// confirm(), dont le rendu dans une WebView Android n'est pas garanti) :
+// résout à true/false selon le bouton cliqué, une seule confirmation à la
+// fois (les boutons GO sont désactivés pendant un contrôle en cours).
+function demanderConfirmation(titre, message) {
+  const fond = $("modaleConfirmation");
+  $("modaleConfirmationTitre").textContent = titre;
+  $("modaleConfirmationMessage").textContent = message;
+  fond.classList.remove("masquee");
+
+  return new Promise((resolve) => {
+    const boutonOk = $("modaleConfirmationOk");
+    const boutonAnnuler = $("modaleConfirmationAnnuler");
+    const nettoyer = (valeur) => {
+      fond.classList.add("masquee");
+      boutonOk.removeEventListener("click", surOk);
+      boutonAnnuler.removeEventListener("click", surAnnuler);
+      resolve(valeur);
+    };
+    const surOk = () => nettoyer(true);
+    const surAnnuler = () => nettoyer(false);
+    boutonOk.addEventListener("click", surOk);
+    boutonAnnuler.addEventListener("click", surAnnuler);
+  });
+}
+
 function creerLignesProgress() {
   const panneau = $("progressPanneau");
   const container = $("progressContainer");
@@ -1926,8 +2032,25 @@ async function lancerControlePaire(index, paire) {
     majProgress(paire, "⏳", "lecture du fichier de lancement…");
     await tick();
     const wbStrat = await chargerClasseur(fichierStrat);
-    const { lignes: lignesStrat, doublons: doublonsStrat } = lireStrat(wbStrat);
+    const { lignes: lignesStrat, doublons: doublonsStrat, semaines: semainesStrat } = lireStrat(wbStrat);
     paire.doublonsStrat = doublonsStrat;
+
+    if (semainesStrat.length > 1) {
+      const detail = semainesStrat.map((s) => `— semaine ${s.semaine}/${s.annee} : ${s.nbPieces} pièce(s)`).join("\n");
+      majProgress(paire, "⚠️", "semaines de livraison différentes détectées — confirmation demandée…", "progress-attention");
+      const continuer = await demanderConfirmation(
+        "⚠ Semaines de livraison différentes",
+        `${paire.nom} : plusieurs semaines de livraison différentes trouvées dans le fichier de lancement :\n\n` +
+          `${detail}\n\n` +
+          `Normalement, un fichier de lancement ne contient qu'une seule semaine de livraison. ` +
+          `Cliquez sur OK pour continuer quand même, ou sur Annuler pour arrêter ce contrôle.`
+      );
+      if (!continuer) {
+        majProgress(paire, "❌", "contrôle annulé (semaines de livraison différentes)", "progress-erreur");
+        return { erreur: `${paire.nom} : contrôle annulé — semaines de livraison différentes non confirmées.` };
+      }
+    }
+
     paire.clesStrat = new Set(lignesStrat.map((l) => l.cle));
     const qteAttendueParCle = new Map(lignesStrat.map((l) => [l.cle, l.qte_attendue]));
     paire.qteAttendueParCle = qteAttendueParCle; // réutilisé par la recherche globale pour détecter la colonne quantité
