@@ -159,7 +159,7 @@ class MainWindow(QMainWindow):
         qte_attendue_par_cle = {l.cle: l.qte_attendue for l in lignes_strat}
 
         try:
-            trouve_par_cle, incoherences, nb_unitaires = lire_coupe(chemin_coupe, cles_strat, qte_attendue_par_cle)
+            trouve_par_cle, nb_unitaires = lire_coupe(chemin_coupe, cles_strat, qte_attendue_par_cle)
             self.nb_unitaires = nb_unitaires
             self.nb_pieces_trouvees = len(trouve_par_cle)
         except CoupeFormatError as erreur:
@@ -182,30 +182,6 @@ class MainWindow(QMainWindow):
                 "Une même clé commande+ligne apparaît sur plusieurs lignes du fichier de "
                 "lancement (hors panneaux de protection) — vérifiez qu'il ne s'agit pas "
                 f"d'une pièce lancée deux fois par erreur :\n\n{details_doublons}",
-            )
-
-        if incoherences:
-
-            def _decrire(inc: dict) -> str:
-                if inc.get("type") == "grain_matching":
-                    return (
-                        f"— Pièce {inc['cle']} (grain matching {inc['grain']}) : "
-                        f"{inc['nb_positions']} position(s) listée(s) mais {inc['quantite_trouvee']} pièce(s) trouvée(s)"
-                    )
-                repere = inc["id_trace"]
-                if inc.get("description"):
-                    repere += f" — {inc['description']}"
-                if inc.get("grain"):
-                    repere += f", grain matching {inc['grain']}"
-                quantites = ", ".join(str(q) for q in inc["quantites"])
-                return f"— Pièce {inc['cle']} (trace {repere}) : quantités {quantites}"
-
-            details = "\n".join(_decrire(inc) for inc in incoherences)
-            QMessageBox.warning(
-                self,
-                "Incohérences dans la liste de coupe",
-                "Des lignes techniques (réserve/chute) qui devraient partager la même "
-                f"quantité n'ont pas la même valeur :\n\n{details}",
             )
 
         self.rapport = comparer(lignes_strat, trouve_par_cle)

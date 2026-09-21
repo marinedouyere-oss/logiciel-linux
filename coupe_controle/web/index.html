@@ -785,76 +785,6 @@ function lignesPieces(lignes, colCle, colMateriau, colTypeTrace, exclusion) {
   return resultat;
 }
 
-// Renvoie true pour une ligne technique (talon/chute, bande de chant,
-// panneau de protection...) : l'inverse des critères de lignesPieces(),
-// mais sans exiger que la clé soit renseignée (utile pour le contrôle de
-// cohérence ci-dessous, qui regroupe justement ces lignes techniques).
-function estLigneTechnique(ligne, colMateriau, colTypeTrace, exclusion) {
-  const materiau = colMateriau < ligne.length ? ligne[colMateriau] : null;
-  if (materiau !== null && materiau !== undefined && MATERIAUX_EXCLUS.has(String(materiau).trim().toUpperCase())) {
-    return true;
-  }
-  if (!estLignePiece(ligne, colTypeTrace)) return true;
-  if (exclusion) {
-    const { col: colExclu, valeur: valeurExclue } = exclusion;
-    if (colExclu < ligne.length && ligne[colExclu] !== null && ligne[colExclu] !== undefined) {
-      if (String(ligne[colExclu]).trim().toUpperCase() === valeurExclue) return true;
-    }
-  }
-  return false;
-}
-
-// Contrôle de cohérence interne de la liste de coupe, indépendant de la
-// comparaison avec le STRAT : les lignes techniques (réserve/chute...)
-// partageant le même identifiant de trace (ex. "C389") devraient avoir
-// la même quantité. Si ce n'est pas le cas, c'est le signe d'une
-// modification ou d'une incohérence dans le fichier de coupe lui-même —
-// même si ces lignes n'entrent pas dans le compte des pièces réelles.
-function detecterIncoherencesReserve(lignes, colCle, colMateriau, colTypeTrace, exclusion, colQuantite, colGrain) {
-  if (colTypeTrace === null) return [];
-  const groupes = new Map(); // "cle||prefixe" -> { cle, idTrace, quantites, descriptions, grains }
-  for (const ligne of lignes) {
-    if (colCle >= ligne.length || ligne[colCle] === null || ligne[colCle] === undefined) continue;
-    if (!estLigneTechnique(ligne, colMateriau, colTypeTrace, exclusion)) continue;
-    if (colTypeTrace >= ligne.length || ligne[colTypeTrace] === null || ligne[colTypeTrace] === undefined) continue;
-
-    const correspondance = MOTIF_TYPE_TRACE.exec(String(ligne[colTypeTrace]).trim());
-    if (!correspondance) continue;
-
-    const cle = String(ligne[colCle]).trim();
-    const prefixe = correspondance[1];
-    const quantite =
-      colQuantite !== null && colQuantite < ligne.length ? toFloatOrNull(ligne[colQuantite]) : null;
-    // Colonne 0 = "Description"/"Noms" dans cet export : le nom affiché
-    // pour une ligne technique est souvent lié à son grain matching
-    // (ex. "T76/1" ↔ grain "T76:0:1").
-    const description = ligne.length > 0 && ligne[0] !== null && ligne[0] !== undefined ? String(ligne[0]).trim() : null;
-    const grain =
-      colGrain !== null && colGrain < ligne.length && ligne[colGrain] !== null && ligne[colGrain] !== undefined
-        ? String(ligne[colGrain]).trim()
-        : null;
-
-    const clef = `${cle}||${prefixe}`;
-    if (!groupes.has(clef)) {
-      groupes.set(clef, { cle, idTrace: prefixe, quantites: [], descriptions: new Set(), grains: new Set() });
-    }
-    const groupe = groupes.get(clef);
-    if (quantite !== null) groupe.quantites.push(quantite);
-    if (description) groupe.descriptions.add(description);
-    if (grain) groupe.grains.add(grain);
-  }
-
-  const incoherences = [];
-  for (const { cle, idTrace, quantites, descriptions, grains } of groupes.values()) {
-    const distinctes = [...new Set(quantites)].sort((a, b) => a - b);
-    if (distinctes.length <= 1) continue; // une quantité réserve/chute inhabituelle mais cohérente entre les deux lignes de sa paire n'est pas une anomalie en soi
-    const description = [...descriptions].join(" / ") || null;
-    const grain = [...grains].join(" / ") || null;
-    incoherences.push({ type: "ecart", cle, idTrace, quantites: distinctes, description, grain });
-  }
-  return incoherences;
-}
-
 function sommeParCle(pieces, colQuantite) {
   const sommes = new Map();
   for (const [cle, ligne] of pieces) {
@@ -961,40 +891,6 @@ function detecterColonneQuantite(lignes, colCle, colMateriau, colTypeTrace, qteA
   return meilleurScore >= seuil ? meilleurIndex : null;
 }
 
-// Le grain matching d'une pièce liste les positions qu'elle occupe dans
-// son module/bande de calage de fil (ex. "T76:1 2 3:1" = positions
-// 1, 2, 3). Le nombre de positions listées doit correspondre à la
-// quantité réellement trouvée pour cette pièce : sur le fichier réel,
-// 321 clés sur 323 concordent exactement — un écart est donc un signal
-// fiable, même quand le total global reste correct par ailleurs (des
-// pièces peuvent manquer dans un module sans casser le compte global).
-const MOTIF_POSITIONS_GRAIN = /^[A-Za-z]*\d+:([\d ]+):\d+$/;
-
-function detecterEcartsGrainMatching(pieces, colGrain, compteur) {
-  if (colGrain === null) return [];
-  const positionsParCle = new Map();
-  for (const [cle, ligne] of pieces) {
-    if (colGrain >= ligne.length || ligne[colGrain] === null || ligne[colGrain] === undefined) continue;
-    const brut = String(ligne[colGrain]).trim();
-    const correspondance = MOTIF_POSITIONS_GRAIN.exec(brut);
-    if (!correspondance) continue;
-    if (!positionsParCle.has(cle)) positionsParCle.set(cle, { positions: new Set(), bruts: new Set() });
-    const info = positionsParCle.get(cle);
-    for (const p of correspondance[1].trim().split(/\s+/)) info.positions.add(p);
-    info.bruts.add(brut);
-  }
-
-  const ecarts = [];
-  for (const [cle, { positions, bruts }] of positionsParCle) {
-    const nbPositions = positions.size;
-    const quantiteTrouvee = compteur.get(cle) || 0;
-    if (Math.abs(nbPositions - quantiteTrouvee) > 1e-6) {
-      ecarts.push({ type: "grain_matching", cle, nbPositions, quantiteTrouvee, grain: [...bruts].join(" / ") });
-    }
-  }
-  return ecarts;
-}
-
 // Compte les clés trouvées qui n'ont aucune valeur de grain matching sur
 // aucune de leurs lignes ("unitaires" : pas de calage de fil nécessaire).
 // Renvoie null si la colonne grain matching n'a pas pu être détectée.
@@ -1052,21 +948,10 @@ function lireCoupe(workbook, clesStrat, qteAttendueParCle) {
     );
   }
 
-  const incoherencesReserve = detecterIncoherencesReserve(
-    lignes,
-    colCle,
-    colMateriau,
-    colTypeTrace,
-    exclusion,
-    colQuantite,
-    colGrain
-  );
-  const ecartsGrainMatching = detecterEcartsGrainMatching(pieces, colGrain, compteur);
   const nbUnitaires = compterUnitaires(pieces, colGrain, compteur);
 
   return {
     compteur,
-    incoherences: [...incoherencesReserve, ...ecartsGrainMatching],
     nbUnitaires,
     nbPiecesTrouvees: compteur.size,
   };
@@ -1264,7 +1149,6 @@ function nouvellePaire(poste, lancementLabel) {
     semaine: null,
     nom: `${poste} — ${lancementLabel}`,
     rapport: null,
-    incoherences: [],
     clesStrat: new Set(),
     triColonne: null,
     triAscendant: true,
@@ -1429,7 +1313,6 @@ function creerPanneauResultat(index, paire) {
     <h2>Résultat — ${paire.nom}</h2>
     <div class="resume" id="resume-${paire.id}"></div>
     <div class="incoherences-techniques" id="doublons-${paire.id}"></div>
-    <div class="incoherences-techniques" id="incoherences-${paire.id}"></div>
     <div class="table-scroll">
       <table id="table-${paire.id}">
         <thead>
@@ -1535,7 +1418,7 @@ function trierEtRedessinerPaire(paire, div) {
   dessinerTablePaire(div, copie);
 }
 
-function afficherRapportPaire(div, rapport, incoherences, nbUnitaires, nbPiecesTrouvees, doublonsStrat) {
+function afficherRapportPaire(div, rapport, nbUnitaires, nbPiecesTrouvees, doublonsStrat) {
   const resume = div.querySelector(".resume");
   let suffixeUnitaires = "";
   if (nbUnitaires !== null && nbUnitaires !== undefined && nbPiecesTrouvees) {
@@ -1552,29 +1435,6 @@ function afficherRapportPaire(div, rapport, incoherences, nbUnitaires, nbPiecesT
   } else {
     resume.style.color = "var(--alerte-text)";
     resume.textContent = `⚠ ${rapport.nbAnomalies} anomalie(s) — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées (${rapport.nbOk} OK)${suffixeUnitaires}.`;
-  }
-
-  const zoneIncoherences = div.querySelector(`#incoherences-${div.dataset.id}`);
-  if (zoneIncoherences) {
-    if (!incoherences || incoherences.length === 0) {
-      zoneIncoherences.innerHTML = "";
-    } else {
-      const items = incoherences
-        .map((inc) => {
-          if (inc.type === "grain_matching") {
-            return `<li>Pièce ${inc.cle} (grain matching ${inc.grain}) : ${inc.nbPositions} position(s) listée(s) dans le grain matching mais ${inc.quantiteTrouvee} pièce(s) trouvée(s) dans la liste de coupe.</li>`;
-          }
-          const description = inc.description ? ` — ${inc.description}` : "";
-          const grain = inc.grain ? `, grain matching ${inc.grain}` : "";
-          return `<li>Pièce ${inc.cle} (trace ${inc.idTrace}${description}${grain}) : quantités différentes trouvées dans la liste de coupe — ${inc.quantites.join(" vs ")}.</li>`;
-        })
-        .join("");
-      zoneIncoherences.innerHTML = `
-        <strong>⚠ ${incoherences.length} incohérence(s) technique(s) dans la liste de coupe</strong>
-        <p class="incoherences-note">Détectées dans la liste de coupe elle-même, indépendamment du contrôle STRAT : des lignes techniques (réserve/chute) censées partager la même quantité n'ont pas la même valeur, ou une pièce a moins (ou plus) d'exemplaires trouvés que de positions listées dans son grain matching.</p>
-        <ul>${items}</ul>
-      `;
-    }
   }
 
   const zoneDoublons = div.querySelector(`#doublons-${div.dataset.id}`);
@@ -1759,39 +1619,6 @@ async function lireRecordsPDF(fichier) {
   }
 }
 
-// Contrôle de cohérence interne (équivalent PDF de detecterIncoherencesReserve
-// côté Excel) : les lignes de réserve/décor exclues du compte ("T3/1",
-// "LT3/1"...) partagent un même numéro de module ("3") et devraient donc
-// représenter le même nombre de pièces. Une différence est le signe d'une
-// incohérence dans la liste de coupe elle-même, indépendante du STRAT.
-const MOTIF_MODULE_RESERVE_PDF = /^L?T(\d+)\/\d+$/i;
-
-function detecterIncoherencesReservePDF(records) {
-  const groupes = new Map(); // numéro de module -> { quantites, descriptions }
-  for (const r of records) {
-    const m = MOTIF_MODULE_RESERVE_PDF.exec(r.desc);
-    if (!m) continue;
-    const id = m[1];
-    if (!groupes.has(id)) groupes.set(id, { quantites: new Set(), descriptions: new Set() });
-    const g = groupes.get(id);
-    g.quantites.add(r.qte);
-    g.descriptions.add(r.desc);
-  }
-  const incoherences = [];
-  for (const [id, g] of groupes) {
-    if (g.quantites.size <= 1) continue;
-    incoherences.push({
-      type: "ecart",
-      cle: "(réserve)",
-      idTrace: `T${id}`,
-      quantites: [...g.quantites].sort((a, b) => a - b),
-      description: [...g.descriptions].join(" / "),
-      grain: null,
-    });
-  }
-  return incoherences;
-}
-
 function lireCoupeDepuisRecordsPDF(records) {
   const pieces = records.filter((r) => r.cle && estRecordPieceReellePDF(r));
 
@@ -1808,17 +1635,14 @@ function lireCoupeDepuisRecordsPDF(records) {
     );
   }
 
-  // Réutilise directement detecterEcartsGrainMatching / compterUnitaires
-  // (elles attendent des [clé, ligne] avec ligne[colGrain] ; on leur passe
-  // un tableau à une seule case contenant le grain déjà extrait).
+  // Réutilise directement compterUnitaires (elle attend des [clé, ligne]
+  // avec ligne[colGrain] ; on lui passe un tableau à une seule case
+  // contenant le grain déjà extrait).
   const piecesPourGrain = pieces.map((p) => [p.cle, [p.grain]]);
-  const ecartsGrainMatching = detecterEcartsGrainMatching(piecesPourGrain, 0, compteur);
   const nbUnitaires = compterUnitaires(piecesPourGrain, 0, compteur);
-  const incoherencesReserve = detecterIncoherencesReservePDF(records);
 
   return {
     compteur,
-    incoherences: [...incoherencesReserve, ...ecartsGrainMatching],
     nbUnitaires,
     nbPiecesTrouvees: compteur.size,
   };
@@ -2117,11 +1941,9 @@ async function lancerControlePaire(index, paire) {
     await tick();
     const {
       compteur: trouveParCle,
-      incoherences,
       nbUnitaires,
       nbPiecesTrouvees,
     } = await lireCoupeDepuisFichier(fichierCoupe, paire.clesStrat, qteAttendueParCle);
-    paire.incoherences = incoherences;
     paire.nbUnitaires = nbUnitaires;
     paire.nbPiecesTrouvees = nbPiecesTrouvees;
 
@@ -2130,13 +1952,10 @@ async function lancerControlePaire(index, paire) {
     paire.rapport = comparer(lignesStrat, trouveParCle);
     paire.triColonne = null;
 
-    const suffixeIncoherences = incoherences.length > 0 ? `, ${incoherences.length} incohérence(s) technique(s)` : "";
-    if (paire.rapport.nbAnomalies === 0 && incoherences.length === 0) {
+    if (paire.rapport.nbAnomalies === 0) {
       majProgress(paire, "✅", `terminé — tout est correct (${paire.rapport.lignes.length} pièce(s))`, "progress-ok");
-    } else if (paire.rapport.nbAnomalies === 0) {
-      majProgress(paire, "⚠️", `terminé — 0 anomalie${suffixeIncoherences}`, "progress-attention");
     } else {
-      majProgress(paire, "⚠️", `terminé — ${paire.rapport.nbAnomalies} anomalie(s)${suffixeIncoherences}`, "progress-attention");
+      majProgress(paire, "⚠️", `terminé — ${paire.rapport.nbAnomalies} anomalie(s)`, "progress-attention");
     }
     return { ok: true };
   } catch (erreur) {
@@ -2156,7 +1975,7 @@ function afficherResultatPaire(index, paire) {
   if (!paire.rapport) return;
   const panneau = creerPanneauResultat(index, paire);
   resultatsContainer.appendChild(panneau);
-  afficherRapportPaire(panneau, paire.rapport, paire.incoherences, paire.nbUnitaires, paire.nbPiecesTrouvees, paire.doublonsStrat);
+  afficherRapportPaire(panneau, paire.rapport, paire.nbUnitaires, paire.nbPiecesTrouvees, paire.doublonsStrat);
 }
 
 async function lancerTousLesControles() {
