@@ -507,10 +507,14 @@ function trouverFeuilleEtEntetes(workbook) {
   );
 }
 
-// Une même clé commande+ligne apparaissant sur plusieurs lignes du fichier
-// de lancement (hors panneaux "PROTECTION", qui accompagnent normalement
-// une pièce sans être un doublon) peut signaler une pièce lancée deux fois
-// par erreur dans l'ERP — voir lireStrat().
+// Un doublon, c'est deux lignes parfaitement identiques sur toute la donnée
+// (commande, ligne, article, quantité, lancement, agglo, semaine de
+// livraison...) dans le fichier de lancement (hors panneaux "PROTECTION",
+// qui accompagnent normalement une pièce sans être un doublon) : ça peut
+// signaler une pièce lancée deux fois par erreur dans l'ERP. Deux lignes qui
+// partagent la même clé commande+ligne mais dont une autre donnée diffère
+// (ex. une pièce nestée sur plusieurs lots) ne sont pas un doublon — voir
+// lireStrat().
 function lireStrat(workbook) {
   const { feuille, entetes } = trouverFeuilleEtEntetes(workbook);
 
@@ -526,7 +530,7 @@ function lireStrat(workbook) {
 
   const qteParCle = new Map();
   const infosParCle = new Map();
-  const lignesBrutesParCle = new Map(); // clé -> [{article, qte}] (une entrée par ligne source, pour repérer les doublons)
+  const lignesBrutesParCle = new Map(); // clé -> [{signature, article, qte}] (une entrée par ligne source, pour repérer les doublons)
   const comptePieceParSemaine = new Map(); // "annee-semaine" -> nb de pièces (pour repérer un mélange de semaines de livraison)
 
   const nbLignes = feuille.rowCount || 0;
@@ -554,6 +558,9 @@ function lireStrat(workbook) {
     let cle = idxCle ? cellValue(row.getCell(idxCle)) : null;
     cle = cle !== null && cle !== undefined && String(cle).trim() !== "" ? String(cle).trim() : cleLigne(commande, numeroLigne);
 
+    const livsem = idxLivsem ? cellValue(row.getCell(idxLivsem)) : null;
+    const livan = idxLivan ? cellValue(row.getCell(idxLivan)) : null;
+
     const qteNum = toFloatOrNull(qte) ?? 0;
     qteParCle.set(cle, (qteParCle.get(cle) || 0) + qteNum);
     infosParCle.set(cle, {
@@ -562,12 +569,23 @@ function lireStrat(workbook) {
       article: String(article),
       lancement: String(lancement),
     });
+    // Signature = toute la donnée de la ligne : deux lignes ne sont un
+    // doublon que si elles sont identiques sur chacun de ces champs, pas
+    // seulement sur la clé commande+ligne (voir lireStrat()).
+    const signature = JSON.stringify([
+      commande,
+      String(numeroLigne ?? ""),
+      String(article),
+      qteNum,
+      String(lancement),
+      agglo === null || agglo === undefined ? "" : String(agglo).trim(),
+      livsem === null || livsem === undefined ? "" : String(livsem).trim(),
+      livan === null || livan === undefined ? "" : String(livan).trim(),
+    ]);
     if (!lignesBrutesParCle.has(cle)) lignesBrutesParCle.set(cle, []);
-    lignesBrutesParCle.get(cle).push({ article: String(article), qte: qteNum });
+    lignesBrutesParCle.get(cle).push({ signature, article: String(article), qte: qteNum });
 
-    const livsem = idxLivsem ? cellValue(row.getCell(idxLivsem)) : null;
     if (livsem !== null && livsem !== undefined && String(livsem).trim() !== "") {
-      const livan = idxLivan ? cellValue(row.getCell(idxLivan)) : null;
       const cleSemaine = `${livan ?? ""}-${livsem}`;
       comptePieceParSemaine.set(cleSemaine, (comptePieceParSemaine.get(cleSemaine) || 0) + 1);
     }
@@ -582,15 +600,23 @@ function lireStrat(workbook) {
   const doublons = [];
   for (const [cle, occurrences] of lignesBrutesParCle) {
     if (occurrences.length <= 1) continue;
+    const parSignature = new Map();
+    for (const occ of occurrences) {
+      if (!parSignature.has(occ.signature)) parSignature.set(occ.signature, []);
+      parSignature.get(occ.signature).push(occ);
+    }
     const infos = infosParCle.get(cle);
-    doublons.push({
-      cle,
-      commande: infos.commande,
-      ligne: infos.ligne,
-      nbLignes: occurrences.length,
-      articles: occurrences.map((o) => o.article),
-      quantites: occurrences.map((o) => o.qte),
-    });
+    for (const identiques of parSignature.values()) {
+      if (identiques.length <= 1) continue;
+      doublons.push({
+        cle,
+        commande: infos.commande,
+        ligne: infos.ligne,
+        nbLignes: identiques.length,
+        articles: identiques.map((o) => o.article),
+        quantites: identiques.map((o) => o.qte),
+      });
+    }
   }
 
   // Semaines de livraison distinctes trouvées (normalement une seule par

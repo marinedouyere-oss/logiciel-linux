@@ -73,10 +73,14 @@ def lire_strat(chemin: str | Path) -> tuple[list[LigneStrat], list[dict], list[d
     additionnées).
 
     Renvoie aussi :
-    - les doublons détectés : une même clé commande+ligne apparaissant sur
-      plusieurs lignes (hors panneaux "PROTECTION", exclus plus haut et qui
-      ne sont donc jamais la cause d'un doublon signalé ici) peut indiquer
-      une pièce lancée deux fois par erreur dans l'ERP ;
+    - les doublons détectés : deux lignes parfaitement identiques sur toute
+      la donnée (commande, ligne, article, quantité, lancement, agglo,
+      semaine de livraison...), hors panneaux "PROTECTION" (exclus plus
+      haut et qui ne sont donc jamais la cause d'un doublon signalé ici),
+      peuvent indiquer une pièce lancée deux fois par erreur dans l'ERP.
+      Deux lignes qui partagent la même clé commande+ligne mais dont une
+      autre donnée diffère (ex. une pièce nestée sur plusieurs lots) ne
+      sont pas un doublon ;
     - les semaines de livraison distinctes trouvées (colonne "com_livsem") :
       un fichier de lancement ne devrait normalement en contenir qu'une
       seule ; plusieurs semaines différentes peuvent signaler des pièces
@@ -97,7 +101,7 @@ def lire_strat(chemin: str | Path) -> tuple[list[LigneStrat], list[dict], list[d
 
         qte_par_cle: dict[str, float] = defaultdict(float)
         infos_par_cle: dict[str, tuple[str, str, str, str]] = {}
-        lignes_brutes_par_cle: dict[str, list[tuple[str, float]]] = defaultdict(list)
+        lignes_brutes_par_cle: dict[str, list[tuple[tuple, str, float]]] = defaultdict(list)
         compte_par_semaine: dict[tuple[str, str], int] = defaultdict(int)
 
         nb_colonnes = feuille.max_column
@@ -124,6 +128,9 @@ def lire_strat(chemin: str | Path) -> tuple[list[LigneStrat], list[dict], list[d
             cle = valeur(ligne_donnees, idx_cle)
             cle = str(cle).strip() if cle else _cle_ligne(commande, numero_ligne)
 
+            livsem = valeur(ligne_donnees, idx_livsem)
+            livan = valeur(ligne_donnees, idx_livan)
+
             qte_flottante = float(qte)
             qte_par_cle[cle] += qte_flottante
             infos_par_cle[cle] = (
@@ -132,11 +139,22 @@ def lire_strat(chemin: str | Path) -> tuple[list[LigneStrat], list[dict], list[d
                 str(article),
                 str(lancement) if lancement else "",
             )
-            lignes_brutes_par_cle[cle].append((str(article), qte_flottante))
+            # Signature = toute la donnée de la ligne : deux lignes ne sont
+            # un doublon que si elles sont identiques sur chacun de ces
+            # champs, pas seulement sur la clé commande+ligne.
+            signature = (
+                commande,
+                str(numero_ligne) if numero_ligne is not None else "",
+                str(article),
+                qte_flottante,
+                str(lancement) if lancement else "",
+                str(agglo).strip() if agglo is not None else "",
+                str(livsem).strip() if livsem is not None else "",
+                str(livan).strip() if livan is not None else "",
+            )
+            lignes_brutes_par_cle[cle].append((signature, str(article), qte_flottante))
 
-            livsem = valeur(ligne_donnees, idx_livsem)
             if livsem is not None and str(livsem).strip() != "":
-                livan = valeur(ligne_donnees, idx_livan)
                 compte_par_semaine[(str(livan) if livan is not None else "", str(livsem))] += 1
 
         resultat = []
@@ -157,17 +175,24 @@ def lire_strat(chemin: str | Path) -> tuple[list[LigneStrat], list[dict], list[d
         for cle, occurrences in lignes_brutes_par_cle.items():
             if len(occurrences) <= 1:
                 continue
+            par_signature: dict[tuple, list[tuple[str, float]]] = defaultdict(list)
+            for signature, article, qte_flottante in occurrences:
+                par_signature[signature].append((article, qte_flottante))
+
             commande, numero_ligne, _, _ = infos_par_cle[cle]
-            doublons.append(
-                {
-                    "cle": cle,
-                    "commande": commande,
-                    "ligne": numero_ligne,
-                    "nb_lignes": len(occurrences),
-                    "articles": [a for a, _ in occurrences],
-                    "quantites": [q for _, q in occurrences],
-                }
-            )
+            for identiques in par_signature.values():
+                if len(identiques) <= 1:
+                    continue
+                doublons.append(
+                    {
+                        "cle": cle,
+                        "commande": commande,
+                        "ligne": numero_ligne,
+                        "nb_lignes": len(identiques),
+                        "articles": [a for a, _ in identiques],
+                        "quantites": [q for _, q in identiques],
+                    }
+                )
 
         semaines = [
             {"annee": annee, "semaine": semaine, "nb_pieces": nb}
