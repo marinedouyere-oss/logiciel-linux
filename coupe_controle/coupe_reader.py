@@ -76,8 +76,11 @@ def _feuille_principale(classeur):
 def _charger_lignes(chemin: str | Path) -> list[tuple]:
     chemin = Path(chemin)
     classeur = openpyxl.load_workbook(chemin, data_only=True, read_only=True)
-    feuille = _feuille_principale(classeur)
-    lignes = list(feuille.iter_rows(min_row=1, values_only=True))
+    try:
+        feuille = _feuille_principale(classeur)
+        lignes = list(feuille.iter_rows(min_row=1, values_only=True))
+    finally:
+        classeur.close()
     if not lignes:
         raise CoupeFormatError("Le fichier de la liste de coupe est vide.")
     return lignes[1:]

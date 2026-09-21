@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import re
 from collections import Counter
 
 from .models import LigneComparaison, LigneStrat, RapportComparaison, Statut
+
+# Pièce "En trop" : trouvée dans la liste de coupe mais absente du fichier de
+# lancement, donc pas de LigneStrat pour retrouver sa commande/ligne. On les
+# déduit directement de la clé commande+ligne (mêmes conventions que
+# strat_reader._cle_ligne : les 3 derniers chiffres sont le numéro de
+# ligne) pour rester identifiable même sans correspondance STRAT — même
+# logique que côté web (template.html/comparer()).
+MOTIF_CLE_EN_TROP = re.compile(r"^(.+?)(\d{3})$")
 
 
 def comparer(lignes_strat: list[LigneStrat], trouve_par_cle: Counter) -> RapportComparaison:
@@ -16,7 +25,12 @@ def comparer(lignes_strat: list[LigneStrat], trouve_par_cle: Counter) -> Rapport
         qte_trouvee = trouve_par_cle.get(cle, 0)
 
         if strat is None:
-            commande, ligne_num, article, lancement = "", "", "", ""
+            correspondance = MOTIF_CLE_EN_TROP.match(cle)
+            if correspondance:
+                commande, ligne_num = correspondance.group(1), str(int(correspondance.group(2)))
+            else:
+                commande, ligne_num = cle, ""
+            article, lancement = "", ""
             statut = Statut.EN_TROP
         else:
             commande, ligne_num, article, lancement = (
