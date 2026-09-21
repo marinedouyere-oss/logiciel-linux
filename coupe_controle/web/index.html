@@ -29,6 +29,20 @@
     color: #222;
   }
   h1 { font-size: 1.3rem; margin: 0 0 14px; }
+  .onglets { display: flex; gap: 4px; margin-bottom: 16px; border-bottom: 2px solid var(--border); }
+  .onglet-btn {
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    margin-bottom: -2px;
+    padding: 10px 18px;
+    font-size: 1rem;
+    font-weight: 600;
+    color: #666;
+    cursor: pointer;
+  }
+  .onglet-btn.actif { color: #1565c0; border-bottom-color: #1565c0; }
+  .onglet-page.inactif { display: none; }
   h2 { font-size: 1.05rem; margin: 0 0 10px; }
   .panneau {
     background: #fff;
@@ -86,6 +100,21 @@
     font-size: 0.85rem;
   }
   .grain-vide { color: #888; font-weight: 400; font-size: 0.88rem; }
+  .donnees-lan-titre {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #888;
+    margin: 14px 0 6px;
+    padding-top: 10px;
+    border-top: 1px solid #eceff1;
+  }
+  .table-donnees-lan { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .table-donnees-lan tr:nth-child(odd) { background: #fafbfc; }
+  .table-donnees-lan th, .table-donnees-lan td { padding: 4px 8px; text-align: left; vertical-align: top; }
+  .table-donnees-lan th { font-weight: 600; color: #555; white-space: nowrap; }
+  .table-donnees-lan td { word-break: break-word; }
   .schema-piece {
     width: 100%;
     max-width: 340px;
@@ -329,25 +358,34 @@
 <body>
   <h1>Sentinelle Beta v1.1 — Contrôle de coupe (lancement / Cutrite)</h1>
 
-  <div class="panneau panneau-recherche">
-    <label for="rechercheGlobale">🔍 Recherche pièces sur Cutrite</label>
-    <div class="recherche-row">
-      <input type="text" id="rechercheGlobale" placeholder="ex. CVC26090331003">
-      <button id="btnRechercheGlobale">Rechercher</button>
-    </div>
-    <div id="resultatRechercheGlobale" class="label-recherche"></div>
+  <div class="onglets">
+    <button type="button" class="onglet-btn actif" data-onglet="controle">Contrôle</button>
+    <button type="button" class="onglet-btn" data-onglet="recherche">Recherche</button>
   </div>
 
-  <div class="panneau">
-    <div id="pairesContainer"></div>
-    <div class="actions-row">
-      <button id="btnLancerTout">Lancer le(s) contrôle(s)</button>
+  <div class="onglet-page" id="onglet-controle">
+    <div class="panneau">
+      <div id="pairesContainer"></div>
+      <div class="actions-row">
+        <button id="btnLancerTout">Lancer le(s) contrôle(s)</button>
+      </div>
+    </div>
+
+    <div class="panneau" id="progressPanneau" style="display:none;">
+      <h2>Progression</h2>
+      <div id="progressContainer"></div>
     </div>
   </div>
 
-  <div class="panneau" id="progressPanneau" style="display:none;">
-    <h2>Progression</h2>
-    <div id="progressContainer"></div>
+  <div class="onglet-page inactif" id="onglet-recherche">
+    <div class="panneau panneau-recherche">
+      <label for="rechercheGlobale">🔍 Recherche pièces sur Cutrite</label>
+      <div class="recherche-row">
+        <input type="text" id="rechercheGlobale" placeholder="ex. CVC26090331003">
+        <button id="btnRechercheGlobale">Rechercher</button>
+      </div>
+      <div id="resultatRechercheGlobale" class="label-recherche"></div>
+    </div>
   </div>
 
   <div class="modale-fond masquee" id="modaleConfirmation">
@@ -601,6 +639,18 @@ function lireStrat(workbook) {
     const dimFiniesRaw = idxDimFinies ? cellValue(row.getCell(idxDimFinies)) : null;
     const dimFinies = dimFiniesRaw ? MOTIF_DIMENSIONS_FINIES_STRAT.exec(String(dimFiniesRaw)) : null;
 
+    // Toutes les colonnes de la ligne, telles quelles (nom de colonne du
+    // fichier -> valeur) : utilisé par l'onglet Recherche pour afficher
+    // l'intégralité de la donnée du fichier de lancement, pas seulement
+    // les quelques champs ci-dessous déjà utilisés pour le schéma.
+    const toutesDonnees = {};
+    for (const [nomColonne, idxColonne] of Object.entries(entetes)) {
+      const v = cellValue(row.getCell(idxColonne));
+      if (v !== null && v !== undefined && String(v).trim() !== "") {
+        toutesDonnees[nomColonne] = String(v).trim();
+      }
+    }
+
     const qteNum = toFloatOrNull(qte) ?? 0;
     qteParCle.set(cle, (qteParCle.get(cle) || 0) + qteNum);
     infosParCle.set(cle, {
@@ -612,6 +662,7 @@ function lireStrat(workbook) {
       longueurFinie: dimFinies ? toFloatOrNull(dimFinies[1]) : null,
       largeurFinie: dimFinies ? toFloatOrNull(dimFinies[2]) : null,
       epaisseurFinie: dimFinies ? toFloatOrNull(dimFinies[3]) : null,
+      toutesDonnees,
     });
     // Signature = toute la donnée de la ligne : deux lignes ne sont un
     // doublon que si elles sont identiques sur chacun de ces champs, pas
@@ -1673,6 +1724,17 @@ function fmtDim(v) {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }
 
+// Un champ texte libre du fichier de lancement (ex. "commentaire") peut
+// contenir n'importe quel caractère, contrairement aux codes habituels de
+// ce fichier : on échappe avant de l'injecter dans le HTML du tableau
+// "toutes les données", pour ne pas casser l'affichage.
+function echapperHtml(texte) {
+  return String(texte)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
 // Code d'assemblage par étrier (ex. "ETRLG585", "FG620") : préfixe "ETR" =
 // sans retour (10 mm de retour sinon), puis F(rontal) ou L(atéral), puis le
 // côté G/D, puis une valeur numérique dont le sens exact n'est pas encore
@@ -1998,7 +2060,7 @@ async function rechercherGrainMatchingGlobal() {
         if (fichierStrat) {
           try {
             const ligneStrat = lireStrat(await chargerClasseur(fichierStrat)).lignes.find((l) => l.cle === cle);
-            if (ligneStrat && (ligneStrat.longueurFinie || ligneStrat.assemblage)) {
+            if (ligneStrat) {
               champsDetail = {
                 ...(champsDetail || {}),
                 lancement: ligneStrat.lancement || (champsDetail && champsDetail.lancement) || null,
@@ -2006,6 +2068,7 @@ async function rechercherGrainMatchingGlobal() {
                 longueurFinie: ligneStrat.longueurFinie ?? (champsDetail && champsDetail.longueurFinie) ?? null,
                 largeurFinie: ligneStrat.largeurFinie ?? (champsDetail && champsDetail.largeurFinie) ?? null,
                 epaisseurFinie: ligneStrat.epaisseurFinie ?? (champsDetail && champsDetail.epaisseurFinie) ?? null,
+                toutesDonneesLan: ligneStrat.toutesDonnees || null,
               };
             }
           } catch (_erreurStrat) {
@@ -2046,6 +2109,17 @@ async function rechercherGrainMatchingGlobal() {
           champsDetail && champsDetail.assemblage
             ? `<div class="resultat-champ"><span class="resultat-champ-label">Assemblage</span><span class="resultat-champ-valeur">${champsDetail.assemblage}</span></div>`
             : "";
+        const toutesDonneesHtml =
+          champsDetail && champsDetail.toutesDonneesLan
+            ? `
+              <p class="donnees-lan-titre">Toutes les données du fichier de lancement</p>
+              <table class="table-donnees-lan">
+                ${Object.entries(champsDetail.toutesDonneesLan)
+                  .map(([colonne, valeur]) => `<tr><th>${echapperHtml(colonne)}</th><td>${echapperHtml(valeur)}</td></tr>`)
+                  .join("")}
+              </table>
+            `
+            : "";
 
         return `
           <div class="resultat-recherche">
@@ -2061,6 +2135,7 @@ async function rechercherGrainMatchingGlobal() {
               ${epaisseurHtml}
               ${assemblageHtml}
             </div>
+            ${toutesDonneesHtml}
           </div>
         `;
       })
@@ -2075,6 +2150,20 @@ async function rechercherGrainMatchingGlobal() {
 $("btnRechercheGlobale").addEventListener("click", rechercherGrainMatchingGlobal);
 $("rechercheGlobale").addEventListener("keydown", (e) => {
   if (e.key === "Enter") rechercherGrainMatchingGlobal();
+});
+
+// Les fichiers déjà sélectionnés dans l'onglet Contrôle restent utilisables
+// tels quels dans l'onglet Recherche (mêmes <input type="file">, juste
+// affichés/masqués) : pas besoin de les re-sélectionner en changeant d'onglet.
+document.querySelectorAll(".onglet-btn").forEach((bouton) => {
+  bouton.addEventListener("click", () => {
+    document.querySelectorAll(".onglet-btn").forEach((b) => b.classList.remove("actif"));
+    bouton.classList.add("actif");
+    const cible = bouton.dataset.onglet;
+    document.querySelectorAll(".onglet-page").forEach((page) => {
+      page.classList.toggle("inactif", page.id !== `onglet-${cible}`);
+    });
+  });
 });
 
 // Laisse le navigateur repeindre l'écran avant de continuer, pour que
