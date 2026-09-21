@@ -1556,9 +1556,7 @@ function afficherRapportPaire(div, rapport, nbUnitaires, nbPiecesTrouvees, doubl
     const pourcentage = ((nbUnitaires / nbPiecesTrouvees) * 100).toFixed(1).replace(".", ",");
     const nbGrainMatching = nbPiecesTrouvees - nbUnitaires;
     const pourcentageGrain = ((nbGrainMatching / nbPiecesTrouvees) * 100).toFixed(1).replace(".", ",");
-    suffixeUnitaires =
-      `, dont ${nbUnitaires} unitaire(s) sans grain matching (${pourcentage} %) / ` +
-      `${nbGrainMatching} avec grain matching (${pourcentageGrain} %)`;
+    suffixeUnitaires = `, dont ${pourcentage} % unitaire / ${pourcentageGrain} % grain matching`;
   }
   if (rapport.nbAnomalies === 0) {
     resume.style.color = "var(--ok-text)";
