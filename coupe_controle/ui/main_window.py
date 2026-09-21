@@ -129,7 +129,7 @@ class MainWindow(QMainWindow):
             return
 
         try:
-            lignes_strat = lire_strat(chemin_strat)
+            lignes_strat, doublons_strat = lire_strat(chemin_strat)
             cles_strat = {l.cle for l in lignes_strat}
             self.cles_strat = cles_strat
             qte_attendue_par_cle = {l.cle: l.qte_attendue for l in lignes_strat}
@@ -142,6 +142,21 @@ class MainWindow(QMainWindow):
         except Exception as erreur:  # noqa: BLE001 - remonter toute erreur de lecture à l'utilisateur
             QMessageBox.critical(self, "Erreur de lecture", f"Impossible de lire les fichiers :\n{erreur}")
             return
+
+        if doublons_strat:
+            details_doublons = "\n".join(
+                f"— Commande {d['commande']}, ligne {d['ligne']} (clé {d['cle']}) : "
+                f"{d['nb_lignes']} lignes — articles {', '.join(d['articles'])}, "
+                f"quantités {', '.join(str(q) for q in d['quantites'])}"
+                for d in doublons_strat
+            )
+            QMessageBox.warning(
+                self,
+                "Doublons dans le fichier de lancement",
+                "Une même clé commande+ligne apparaît sur plusieurs lignes du fichier de "
+                "lancement (hors panneaux de protection) — vérifiez qu'il ne s'agit pas "
+                f"d'une pièce lancée deux fois par erreur :\n\n{details_doublons}",
+            )
 
         if incoherences:
 

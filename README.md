@@ -210,3 +210,9 @@ confirmation, comme pour n'importe quel APK installé hors store.
   détectée automatiquement pour exclure les lignes techniques de réserve/
   chute qui porteraient par erreur le même type de trace que la vraie
   pièce.
+- **Détection des doublons dans le fichier de lancement** : si une même clé
+  commande+ligne apparaît sur plusieurs lignes du STRAT (hors panneaux de
+  protection, qui sont normaux), un avertissement s'affiche — ça peut
+  signaler une pièce lancée deux fois par erreur dans l'ERP. Les quantités
+  restent additionnées comme avant (comportement inchangé), c'est un
+  avertissement en plus, pas un blocage.

@@ -65,10 +65,15 @@ def _fmt_ligne(ligne) -> str:
         return str(ligne)
 
 
-def lire_strat(chemin: str | Path) -> list[LigneStrat]:
+def lire_strat(chemin: str | Path) -> tuple[list[LigneStrat], list[dict]]:
     """Lit le fichier de lancement et agrège les lignes par clé
-    commande+ligne (une clé peut apparaître plusieurs fois dans le fichier,
-    par ex. pièce + protection : les quantités sont alors additionnées)."""
+    commande+ligne (les quantités des lignes partageant une même clé sont
+    additionnées).
+
+    Renvoie aussi les doublons détectés : une même clé commande+ligne
+    apparaissant sur plusieurs lignes (hors panneaux "PROTECTION", exclus
+    plus haut et qui ne sont donc jamais la cause d'un doublon signalé ici)
+    peut indiquer une pièce lancée deux fois par erreur dans l'ERP."""
 
     chemin = Path(chemin)
     classeur, feuille, entetes = _trouver_feuille_et_entetes(chemin)
@@ -83,6 +88,7 @@ def lire_strat(chemin: str | Path) -> list[LigneStrat]:
 
         qte_par_cle: dict[str, float] = defaultdict(float)
         infos_par_cle: dict[str, tuple[str, str, str, str]] = {}
+        lignes_brutes_par_cle: dict[str, list[tuple[str, float]]] = defaultdict(list)
 
         nb_colonnes = feuille.max_column
 
@@ -108,13 +114,15 @@ def lire_strat(chemin: str | Path) -> list[LigneStrat]:
             cle = valeur(ligne_donnees, idx_cle)
             cle = str(cle).strip() if cle else _cle_ligne(commande, numero_ligne)
 
-            qte_par_cle[cle] += float(qte)
+            qte_flottante = float(qte)
+            qte_par_cle[cle] += qte_flottante
             infos_par_cle[cle] = (
                 commande,
                 _fmt_ligne(numero_ligne),
                 str(article),
                 str(lancement) if lancement else "",
             )
+            lignes_brutes_par_cle[cle].append((str(article), qte_flottante))
 
         resultat = []
         for cle, qte in qte_par_cle.items():
@@ -129,6 +137,23 @@ def lire_strat(chemin: str | Path) -> list[LigneStrat]:
                     qte_attendue=qte,
                 )
             )
-        return resultat
+
+        doublons = []
+        for cle, occurrences in lignes_brutes_par_cle.items():
+            if len(occurrences) <= 1:
+                continue
+            commande, numero_ligne, _, _ = infos_par_cle[cle]
+            doublons.append(
+                {
+                    "cle": cle,
+                    "commande": commande,
+                    "ligne": numero_ligne,
+                    "nb_lignes": len(occurrences),
+                    "articles": [a for a, _ in occurrences],
+                    "quantites": [q for _, q in occurrences],
+                }
+            )
+
+        return resultat, doublons
     finally:
         classeur.close()

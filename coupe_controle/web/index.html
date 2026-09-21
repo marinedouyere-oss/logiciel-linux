@@ -447,6 +447,10 @@ function trouverFeuilleEtEntetes(workbook) {
   );
 }
 
+// Une même clé commande+ligne apparaissant sur plusieurs lignes du fichier
+// de lancement (hors panneaux "PROTECTION", qui accompagnent normalement
+// une pièce sans être un doublon) peut signaler une pièce lancée deux fois
+// par erreur dans l'ERP — voir lireStrat().
 function lireStrat(workbook) {
   const { feuille, entetes } = trouverFeuilleEtEntetes(workbook);
 
@@ -460,6 +464,7 @@ function lireStrat(workbook) {
 
   const qteParCle = new Map();
   const infosParCle = new Map();
+  const lignesBrutesParCle = new Map(); // clé -> [{article, qte}] (une entrée par ligne source, pour repérer les doublons)
 
   const nbLignes = feuille.rowCount || 0;
   for (let r = 2; r <= nbLignes; r++) {
@@ -494,6 +499,8 @@ function lireStrat(workbook) {
       article: String(article),
       lancement: String(lancement),
     });
+    if (!lignesBrutesParCle.has(cle)) lignesBrutesParCle.set(cle, []);
+    lignesBrutesParCle.get(cle).push({ article: String(article), qte: qteNum });
   }
 
   const resultat = [];
@@ -501,7 +508,22 @@ function lireStrat(workbook) {
     const infos = infosParCle.get(cle);
     resultat.push({ cle, qte_attendue: qte, ...infos });
   }
-  return resultat;
+
+  const doublons = [];
+  for (const [cle, occurrences] of lignesBrutesParCle) {
+    if (occurrences.length <= 1) continue;
+    const infos = infosParCle.get(cle);
+    doublons.push({
+      cle,
+      commande: infos.commande,
+      ligne: infos.ligne,
+      nbLignes: occurrences.length,
+      articles: occurrences.map((o) => o.article),
+      quantites: occurrences.map((o) => o.qte),
+    });
+  }
+
+  return { lignes: resultat, doublons };
 }
 
 // ---- coupe_reader ----
@@ -1189,7 +1211,7 @@ async function detecterSemainePaire(paire, div) {
   }
   try {
     const workbook = await chargerClasseur(fichier);
-    const lignesStrat = lireStrat(workbook);
+    const { lignes: lignesStrat } = lireStrat(workbook);
     const premiereAvecLancement = lignesStrat.find((l) => l.lancement);
     paire.semaine = premiereAvecLancement ? extraireSemaine(premiereAvecLancement.lancement) : null;
   } catch (erreur) {
@@ -1280,6 +1302,7 @@ function creerPanneauResultat(index, paire) {
   div.innerHTML = `
     <h2>Résultat — ${paire.nom}</h2>
     <div class="resume" id="resume-${paire.id}"></div>
+    <div class="incoherences-techniques" id="doublons-${paire.id}"></div>
     <div class="incoherences-techniques" id="incoherences-${paire.id}"></div>
     <div class="table-scroll">
       <table id="table-${paire.id}">
@@ -1386,7 +1409,7 @@ function trierEtRedessinerPaire(paire, div) {
   dessinerTablePaire(div, copie);
 }
 
-function afficherRapportPaire(div, rapport, incoherences, nbUnitaires, nbPiecesTrouvees) {
+function afficherRapportPaire(div, rapport, incoherences, nbUnitaires, nbPiecesTrouvees, doublonsStrat) {
   const resume = div.querySelector(".resume");
   let suffixeUnitaires = "";
   if (nbUnitaires !== null && nbUnitaires !== undefined && nbPiecesTrouvees) {
@@ -1405,7 +1428,7 @@ function afficherRapportPaire(div, rapport, incoherences, nbUnitaires, nbPiecesT
     resume.textContent = `⚠ ${rapport.nbAnomalies} anomalie(s) — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées (${rapport.nbOk} OK)${suffixeUnitaires}.`;
   }
 
-  const zoneIncoherences = div.querySelector(".incoherences-techniques");
+  const zoneIncoherences = div.querySelector(`#incoherences-${div.dataset.id}`);
   if (zoneIncoherences) {
     if (!incoherences || incoherences.length === 0) {
       zoneIncoherences.innerHTML = "";
@@ -1423,6 +1446,26 @@ function afficherRapportPaire(div, rapport, incoherences, nbUnitaires, nbPiecesT
       zoneIncoherences.innerHTML = `
         <strong>⚠ ${incoherences.length} incohérence(s) technique(s) dans la liste de coupe</strong>
         <p class="incoherences-note">Détectées dans la liste de coupe elle-même, indépendamment du contrôle STRAT : des lignes techniques (réserve/chute) censées partager la même quantité n'ont pas la même valeur, ou une pièce a moins (ou plus) d'exemplaires trouvés que de positions listées dans son grain matching.</p>
+        <ul>${items}</ul>
+      `;
+    }
+  }
+
+  const zoneDoublons = div.querySelector(`#doublons-${div.dataset.id}`);
+  if (zoneDoublons) {
+    if (!doublonsStrat || doublonsStrat.length === 0) {
+      zoneDoublons.innerHTML = "";
+    } else {
+      const items = doublonsStrat
+        .map((d) => {
+          const articles = d.articles.join(" / ");
+          const quantites = d.quantites.join(" + ");
+          return `<li>Commande ${d.commande}, ligne ${d.ligne} (clé ${d.cle}) : ${d.nbLignes} lignes dans le fichier de lancement — articles ${articles}, quantités ${quantites}.</li>`;
+        })
+        .join("");
+      zoneDoublons.innerHTML = `
+        <strong>⚠ ${doublonsStrat.length} doublon(s) dans le fichier de lancement</strong>
+        <p class="incoherences-note">Une même clé commande+ligne apparaît sur plusieurs lignes du fichier de lancement (hors panneaux de protection) — vérifiez qu'il ne s'agit pas d'une pièce lancée deux fois par erreur.</p>
         <ul>${items}</ul>
       `;
     }
@@ -1883,7 +1926,8 @@ async function lancerControlePaire(index, paire) {
     majProgress(paire, "⏳", "lecture du fichier de lancement…");
     await tick();
     const wbStrat = await chargerClasseur(fichierStrat);
-    const lignesStrat = lireStrat(wbStrat);
+    const { lignes: lignesStrat, doublons: doublonsStrat } = lireStrat(wbStrat);
+    paire.doublonsStrat = doublonsStrat;
     paire.clesStrat = new Set(lignesStrat.map((l) => l.cle));
     const qteAttendueParCle = new Map(lignesStrat.map((l) => [l.cle, l.qte_attendue]));
     paire.qteAttendueParCle = qteAttendueParCle; // réutilisé par la recherche globale pour détecter la colonne quantité
@@ -1931,7 +1975,7 @@ function afficherResultatPaire(index, paire) {
   if (!paire.rapport) return;
   const panneau = creerPanneauResultat(index, paire);
   resultatsContainer.appendChild(panneau);
-  afficherRapportPaire(panneau, paire.rapport, paire.incoherences, paire.nbUnitaires, paire.nbPiecesTrouvees);
+  afficherRapportPaire(panneau, paire.rapport, paire.incoherences, paire.nbUnitaires, paire.nbPiecesTrouvees, paire.doublonsStrat);
 }
 
 async function lancerTousLesControles() {
