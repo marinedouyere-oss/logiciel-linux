@@ -145,8 +145,9 @@
     flex-shrink: 0;
   }
   .btn-reinitialiser:hover { background: #f0f0f0; }
-  .paire-go-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 10px; }
-  .btn-bilan { font-size: 0.82rem; padding: 8px 14px; }
+  .paire-go-row { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; }
+  .resultat-inline:empty { display: none; }
+  .resultat-inline { margin-top: 14px; }
   .btn-go {
     background: #2e7d32;
     font-weight: 700;
@@ -348,8 +349,6 @@
     <h2>Progression</h2>
     <div id="progressContainer"></div>
   </div>
-
-  <div id="resultatsContainer"></div>
 
   <div class="modale-fond masquee" id="modaleConfirmation">
     <div class="modale-boite">
@@ -1288,8 +1287,8 @@ function reinitialiserPaire(paire, div) {
   const ligneProgress = $(`progress-${paire.id}`);
   if (ligneProgress) ligneProgress.remove();
 
-  const panneauResultat = document.querySelector(`#resultatsContainer .panneau[data-id="${paire.id}"]`);
-  if (panneauResultat) panneauResultat.remove();
+  const conteneurResultat = $(`resultat-inline-${paire.id}`);
+  if (conteneurResultat) conteneurResultat.innerHTML = "";
 }
 
 async function detecterSemainePaire(paire, div) {
@@ -1359,9 +1358,9 @@ function redessinerPaires() {
             <span class="validation-fichier" data-role="validation-coupe"></span>
           </div>
           <div class="paire-go-row">
-            <button type="button" class="btn-bilan secondaire" data-action="bilan">Voir le bilan</button>
             <button type="button" class="btn-go" data-action="go">GO</button>
           </div>
+          <div class="resultat-inline" id="resultat-inline-${paire.id}"></div>
         `;
         const inputStrat = div.querySelector(`#strat-${paire.id}`);
         const inputCoupe = div.querySelector(`#coupe-${paire.id}`);
@@ -1373,7 +1372,6 @@ function redessinerPaires() {
           validerFichierSelectionne(inputCoupe, "liste de coupe", "coupe", div, "validation-coupe");
         });
         div.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(paire, div));
-        div.querySelector('[data-action="bilan"]').addEventListener("click", () => voirBilanPaire(paire));
         div.querySelector('[data-action="reinitialiser"]').addEventListener("click", () => reinitialiserPaire(paire, div));
         grille.appendChild(div);
       });
@@ -2157,22 +2155,6 @@ function creerLigneProgressPourPaire(paire) {
     `<span class="progress-texte">en attente…</span>`;
 }
 
-// Fait défiler jusqu'au bilan d'une seule paire et le met brièvement en
-// évidence, pour le retrouver facilement même quand plusieurs bilans se
-// sont accumulés dans la page.
-function voirBilanPaire(paire) {
-  const panneau = document.querySelector(`#resultatsContainer .panneau[data-id="${paire.id}"]`);
-  if (!panneau) {
-    alert(`Aucun bilan pour "${paire.nom}" pour l'instant — lancez d'abord son contrôle (bouton GO).`);
-    return;
-  }
-  panneau.scrollIntoView({ behavior: "smooth", block: "start" });
-  panneau.classList.remove("mis-en-avant");
-  // force le redémarrage de l'animation même si on reclique juste après
-  void panneau.offsetWidth;
-  panneau.classList.add("mis-en-avant");
-}
-
 // Lance et affiche le résultat d'une seule paire (bouton GO), sans
 // attendre ni toucher aux autres paires.
 async function lancerUnePaire(paire, div) {
@@ -2187,7 +2169,6 @@ async function lancerUnePaire(paire, div) {
       alert(resultat.erreur);
     } else if (resultat && resultat.ok) {
       afficherResultatPaire(index, paire);
-      voirBilanPaire(paire); // défile automatiquement jusqu'au bilan qu'on vient de produire
     }
   } finally {
     if (boutonGo) boutonGo.disabled = false;
@@ -2265,13 +2246,16 @@ async function lancerControlePaire(index, paire) {
 // sa comparaison est terminée — indépendamment des autres paires en cours
 // ou pas encore traitées.
 function afficherResultatPaire(index, paire) {
-  const resultatsContainer = $("resultatsContainer");
-  const ancien = resultatsContainer.querySelector(`.panneau[data-id="${paire.id}"]`);
-  if (ancien) ancien.remove();
+  const conteneur = $(`resultat-inline-${paire.id}`);
+  if (!conteneur) return;
+  conteneur.innerHTML = "";
   if (!paire.rapport) return;
   const panneau = creerPanneauResultat(index, paire);
-  resultatsContainer.appendChild(panneau);
+  conteneur.appendChild(panneau);
   afficherRapportPaire(panneau, paire.rapport, paire.nbUnitaires, paire.nbPiecesTrouvees, paire.doublonsStrat);
+  // Brève mise en évidence pour signaler que le résultat vient d'apparaître
+  // juste en dessous, sans avoir à défiler ailleurs sur la page.
+  panneau.classList.add("mis-en-avant");
 }
 
 async function lancerTousLesControles() {
