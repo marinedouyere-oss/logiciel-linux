@@ -1512,19 +1512,26 @@ async function extraireLignesTextePDF(documentPDF) {
 }
 
 // Ligne d'en-tête d'une pièce : "N°. Description Matériau Long Largeur Qté"
-const MOTIF_ENTETE_PIECE_PDF = /^(\d+)\.\s*(\S+)\s+(\S+)\s+([\d.]+)\s+([\d.]+)\s+(\d+)\b/;
+// Long./Largeur acceptent une virgule décimale par prudence (comme
+// toFloatOrNull ailleurs dans ce fichier) : ces deux valeurs ne servent
+// qu'à reconnaître la ligne, pas à être stockées.
+const MOTIF_ENTETE_PIECE_PDF = /^(\d+)\.\s*(\S+)\s+(\S+)\s+([\d.,]+)\s+([\d.,]+)\s+(\d+)\b/;
 // Les valeurs de détail sont séparées par des virgules ; le grain matching
 // peut contenir un espace interne (ex. "T1:1 2:1" = positions 1 et 2), donc
 // on borne par la virgule plutôt que par un espace pour ne pas le tronquer.
 const MOTIF_CLE_DETAIL_PDF = /5\.num commande\+ligne\s+([^,\s]+)/;
 const MOTIF_GRAIN_DETAIL_PDF = /18\.Grain matching\s+([^,]+)/;
-const MOTIF_RESERVE_NUE_PDF = /^T\d+\/\d+$/;
+const MOTIF_RESERVE_NUE_PDF = /^T\d+\/\d+$/i;
 
+// Comme les autres comparaisons de codes de ce fichier (matériau, type de
+// trace...), on normalise en majuscules avant de comparer : Cutrite génère
+// ces codes de façon cohérente, mais mieux vaut ne pas en dépendre.
 function estDescriptionPieceReellePDF(desc) {
   if (!desc) return false;
-  if (desc.startsWith("L")) return false; // décor/sous-face (L0001, LT1/1...)
-  if (MOTIF_RESERVE_NUE_PDF.test(desc)) return false; // réserve technique nue (T1/1...)
-  if (desc === "GABARIT") return false; // gabarit/outillage, pas une pièce client
+  const d = desc.toUpperCase();
+  if (d.startsWith("L")) return false; // décor/sous-face (L0001, LT1/1...)
+  if (MOTIF_RESERVE_NUE_PDF.test(d)) return false; // réserve technique nue (T1/1...)
+  if (d === "GABARIT") return false; // gabarit/outillage, pas une pièce client
   return true;
 }
 
@@ -1560,8 +1567,48 @@ function extraireRecordsPDF(lignesTexte) {
 
 async function lireRecordsPDF(fichier) {
   const documentPDF = await chargerDocumentPDF(fichier);
-  const lignesTexte = await extraireLignesTextePDF(documentPDF);
-  return extraireRecordsPDF(lignesTexte);
+  try {
+    const lignesTexte = await extraireLignesTextePDF(documentPDF);
+    return extraireRecordsPDF(lignesTexte);
+  } finally {
+    // Libère la mémoire côté worker pdf.js (polices, structure des pages) :
+    // sans ça, chaque lecture PDF (contrôle, recherche globale) en laisse
+    // une copie non libérée pour toute la durée de vie de l'onglet.
+    documentPDF.destroy();
+  }
+}
+
+// Contrôle de cohérence interne (équivalent PDF de detecterIncoherencesReserve
+// côté Excel) : les lignes de réserve/décor exclues du compte ("T3/1",
+// "LT3/1"...) partagent un même numéro de module ("3") et devraient donc
+// représenter le même nombre de pièces. Une différence est le signe d'une
+// incohérence dans la liste de coupe elle-même, indépendante du STRAT.
+const MOTIF_MODULE_RESERVE_PDF = /^L?T(\d+)\/\d+$/i;
+
+function detecterIncoherencesReservePDF(records) {
+  const groupes = new Map(); // numéro de module -> { quantites, descriptions }
+  for (const r of records) {
+    const m = MOTIF_MODULE_RESERVE_PDF.exec(r.desc);
+    if (!m) continue;
+    const id = m[1];
+    if (!groupes.has(id)) groupes.set(id, { quantites: new Set(), descriptions: new Set() });
+    const g = groupes.get(id);
+    g.quantites.add(r.qte);
+    g.descriptions.add(r.desc);
+  }
+  const incoherences = [];
+  for (const [id, g] of groupes) {
+    if (g.quantites.size <= 1) continue;
+    incoherences.push({
+      type: "ecart",
+      cle: "(réserve)",
+      idTrace: `T${id}`,
+      quantites: [...g.quantites].sort((a, b) => a - b),
+      description: [...g.descriptions].join(" / "),
+      grain: null,
+    });
+  }
+  return incoherences;
 }
 
 function lireCoupeDepuisRecordsPDF(records) {
@@ -1586,8 +1633,14 @@ function lireCoupeDepuisRecordsPDF(records) {
   const piecesPourGrain = pieces.map((p) => [p.cle, [p.grain]]);
   const ecartsGrainMatching = detecterEcartsGrainMatching(piecesPourGrain, 0, compteur);
   const nbUnitaires = compterUnitaires(piecesPourGrain, 0, compteur);
+  const incoherencesReserve = detecterIncoherencesReservePDF(records);
 
-  return { compteur, incoherences: ecartsGrainMatching, nbUnitaires, nbPiecesTrouvees: compteur.size };
+  return {
+    compteur,
+    incoherences: [...incoherencesReserve, ...ecartsGrainMatching],
+    nbUnitaires,
+    nbPiecesTrouvees: compteur.size,
+  };
 }
 
 async function lireCoupePDF(fichier) {
@@ -1611,20 +1664,33 @@ async function lireGrainMatchingPDF(fichier) {
 }
 
 // ---- Points d'entrée communs Excel / PDF pour la liste de coupe ----
-async function lireCoupeDepuisFichier(fichier, clesStrat, qteAttendueParCle) {
+// Charge le fichier UNE SEULE fois (l'étape coûteuse : dézipper l'Excel ou
+// parser toutes les pages du PDF) pour être réutilisé par plusieurs
+// lectures (comptage, grain matching) sans reparser le fichier à chaque
+// fois — voir rechercherGrainMatchingGlobal, qui a besoin des deux.
+async function chargerSourceCoupe(fichier) {
   if (estFichierPDF(fichier)) {
-    return await lireCoupePDF(fichier);
+    return { pdf: true, records: await lireRecordsPDF(fichier) };
   }
-  const workbook = await chargerClasseur(fichier);
-  return lireCoupe(workbook, clesStrat, qteAttendueParCle);
+  return { pdf: false, workbook: await chargerClasseur(fichier) };
+}
+
+function lireCoupeDepuisSource(source, clesStrat, qteAttendueParCle) {
+  if (source.pdf) return lireCoupeDepuisRecordsPDF(source.records);
+  return lireCoupe(source.workbook, clesStrat, qteAttendueParCle);
+}
+
+function lireGrainMatchingDepuisSource(source, clesStrat) {
+  if (source.pdf) return lireGrainMatchingDepuisRecordsPDF(source.records);
+  return lireGrainMatching(source.workbook, clesStrat);
+}
+
+async function lireCoupeDepuisFichier(fichier, clesStrat, qteAttendueParCle) {
+  return lireCoupeDepuisSource(await chargerSourceCoupe(fichier), clesStrat, qteAttendueParCle);
 }
 
 async function lireGrainMatchingDepuisFichier(fichier, clesStrat) {
-  if (estFichierPDF(fichier)) {
-    return await lireGrainMatchingPDF(fichier);
-  }
-  const workbook = await chargerClasseur(fichier);
-  return lireGrainMatching(workbook, clesStrat);
+  return lireGrainMatchingDepuisSource(await chargerSourceCoupe(fichier), clesStrat);
 }
 
 // Recherche une clé commande+ligne dans TOUTES les listes de coupe
@@ -1655,11 +1721,14 @@ async function rechercherGrainMatchingGlobal() {
   for (const paire of pairesAvecCoupe) {
     const fichierCoupe = $(`coupe-${paire.id}`).files[0];
     try {
-      const grainParCle = await lireGrainMatchingDepuisFichier(fichierCoupe, paire.clesStrat);
+      // Chargé une seule fois (dézippage Excel ou lecture des pages PDF,
+      // l'étape coûteuse) et réutilisé pour le grain matching ET le compte.
+      const source = await chargerSourceCoupe(fichierCoupe);
+      const grainParCle = lireGrainMatchingDepuisSource(source, paire.clesStrat);
       if (grainParCle.has(cle)) {
         let quantite = null;
         try {
-          const { compteur } = await lireCoupeDepuisFichier(fichierCoupe, paire.clesStrat, paire.qteAttendueParCle || new Map());
+          const { compteur } = lireCoupeDepuisSource(source, paire.clesStrat, paire.qteAttendueParCle || new Map());
           quantite = compteur.has(cle) ? compteur.get(cle) : null;
         } catch (_erreurComptage) {
           quantite = null; // le grain matching reste affiché même si le comptage global échoue
