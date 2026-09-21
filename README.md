@@ -125,9 +125,15 @@ HTML/JavaScript de ce même contrôle (mêmes règles de rapprochement, mêmes
 couleurs, même export Excel), pour les postes Windows où l'on ne veut pas
 installer Python.
 
-- C'est un **fichier unique** (`index.html`, bibliothèque de lecture/écriture
-  Excel incluse) : il suffit de le copier sur le poste Windows et de faire un
+- C'est un **fichier unique** (`index.html`, bibliothèques de lecture Excel et
+  PDF incluses) : il suffit de le copier sur le poste Windows et de faire un
   double-clic pour l'ouvrir dans le navigateur (Edge, Chrome, Firefox…).
+- La **liste de coupe** peut être un fichier Excel (comme avant) **ou un PDF**
+  exporté directement depuis Cutrite (« Liste coupes »). Le PDF est même
+  préférable quand il est disponible : il évite tout copier-coller manuel
+  depuis l'écran Cutrite vers Excel, une étape qui pouvait introduire des
+  erreurs de saisie invisibles pour le contrôle. Le fichier de lancement
+  (STRAT), lui, reste toujours au format Excel.
 - Tout se passe **localement dans le navigateur** : les fichiers STRAT et
   Cutrite ne sont jamais envoyés sur un serveur.
 - Fonctionne **entièrement hors-ligne**, sans connexion internet.
