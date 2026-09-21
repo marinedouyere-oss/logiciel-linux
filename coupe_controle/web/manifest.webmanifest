@@ -1,6 +1,6 @@
 {
-  "name": "Sentinelle — Contrôle de coupe",
-  "short_name": "Sentinelle",
+  "name": "Sentinelle Beta — Contrôle de coupe",
+  "short_name": "Sentinelle Beta",
   "description": "Contrôle de coupe lancement / Cutrite",
   "start_url": "./index.html",
   "scope": "./",
