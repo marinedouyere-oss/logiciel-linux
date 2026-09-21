@@ -57,6 +57,15 @@ MOTIF_GRAIN_MATCHING = re.compile(r"^[A-Za-z]*\d+:\d+:\d+$")
 MOTIF_TYPE_TRACE = re.compile(r"^([A-Za-z0-9]+):T([A-Z]):")
 TYPE_TRACE_PIECE = "C"
 
+# Un modulo ou une bande (ex. "T9/1", "T58/1") n'est jamais une pièce : ce
+# sont les panneaux (agglo/strat/sous-face) qui composent ce groupe de
+# pièces, qui elles se trouvent ailleurs dans le fichier et se rattachent au
+# modulo via leur grain matching ("T9:1 2:1" = fait partie de la bande T9).
+# Repérable par sa description (colonne "Noms", en position 0) qui porte
+# alors le nom du modulo lui-même — vrai même quand la ligne est par
+# ailleurs taguée "TC" comme une vraie pièce.
+MOTIF_DESCRIPTION_MODULE = re.compile(r"^T\d+/\d+$")
+
 # La colonne quantité n'est adoptée que si elle explique au moins cette
 # proportion des clés du fichier de lancement (sinon, un faux positif sur
 # un fichier sans cette colonne compterait n'importe quoi) : mieux vaut
@@ -151,10 +160,19 @@ def _detecter_colonne_type_trace(lignes: list[tuple]) -> int | None:
 
 
 def _est_ligne_piece(ligne: tuple, col_type_trace: int | None) -> bool:
-    """Renvoie False pour une ligne technique (talon/chute, bande de chant...)
-    identifiée par la colonne type de trace, quand cette colonne est
-    disponible. Si elle n'a pas pu être détectée, toutes les lignes sont
-    considérées comme des pièces (comportement inchangé)."""
+    """Renvoie False pour une ligne technique (talon/chute, bande de chant,
+    modulo/bande qui s'auto-référence...) et True pour une vraie pièce.
+
+    Un modulo/bande n'est jamais une pièce, même s'il est par ailleurs tagué
+    "TC" comme une vraie pièce (repéré par son nom en colonne 0, voir
+    MOTIF_DESCRIPTION_MODULE) : ce contrôle passe avant celui du type de
+    trace, qui identifie le reste des lignes techniques (talon/chute, bande
+    de chant) quand cette colonne est disponible. Si le type de trace n'a
+    pas pu être détecté, les autres lignes restent considérées comme des
+    pièces (comportement inchangé)."""
+    if len(ligne) > 0 and ligne[0] is not None and MOTIF_DESCRIPTION_MODULE.match(str(ligne[0]).strip().upper()):
+        return False
+
     if col_type_trace is None or col_type_trace >= len(ligne):
         return True
     valeur = ligne[col_type_trace]
