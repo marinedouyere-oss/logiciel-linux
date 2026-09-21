@@ -106,6 +106,8 @@
   .schema-dvr { fill: none; stroke: #6a1b9a; stroke-width: 1.5; stroke-dasharray: 4 3; }
   .schema-dvr-label { font-size: 9px; fill: #6a1b9a; font-weight: 700; }
   .schema-chapelle { fill: #fff; stroke: #2e7d32; stroke-width: 1.3; }
+  .schema-retour { fill: #eef3f9; stroke: #1565c0; stroke-width: 1.3; }
+  .schema-retour-label { font-size: 8px; fill: #1565c0; font-weight: 700; }
   .schema-legende { font-size: 0.72rem; color: #888; margin: -4px 0 8px; }
   .poste { margin-bottom: 18px; }
   .poste-titre {
@@ -1773,16 +1775,17 @@ function construireSchemaPieceSvg(champs) {
   // Chapelles d'assemblage par étrier : ferrures fraisées sous la pièce
   // (invisibles du dessus), réparties par 3 le long du bord concerné (côté
   // gauche et/ou droite selon le code d'assemblage) — convention indiquée
-  // par l'atelier, pas de position exacte dans le fichier.
-  const cotesAssemblage = new Set();
+  // par l'atelier, pas de position exacte dans le fichier. On retient aussi
+  // si ce bord est "avec retour" ou "sans retour" pour le talon ci-dessous.
+  const sansRetourParCote = new Map(); // "gauche"/"droite" -> sansRetour (bool)
   if (champs.assemblage) {
     for (const partie of champs.assemblage.split(/\s*-\s*/)) {
       const info = analyserCodeAssemblage(partie.trim());
-      if (info) cotesAssemblage.add(info.cote);
+      if (info) sansRetourParCote.set(info.cote, info.sansRetour);
     }
   }
   const NB_CHAPELLES = 3;
-  const chapellesSvg = [...cotesAssemblage]
+  const chapellesSvg = [...sansRetourParCote.keys()]
     .flatMap((cote) => {
       const xBord = cote === "gauche" ? x0 : x0 + rectW;
       const decalage = cote === "gauche" ? 9 : -9;
@@ -1793,6 +1796,24 @@ function construireSchemaPieceSvg(champs) {
     })
     .join("");
 
+  // "Retour" = la pièce dépasse de 10 mm sa cote nominale à ce bord (ex.
+  // 2000 devient 2010) : dessiné comme un petit talon qui déborde du bord
+  // concerné. "Sans retour" = bord exactement à la cote, rien à dessiner.
+  const tabH = Math.min(rectH * 0.3, 40);
+  const tabW = 9;
+  const retourSvg = [...sansRetourParCote.entries()]
+    .filter(([, sansRetour]) => !sansRetour)
+    .map(([cote]) => {
+      const cy = y0 + rectH / 2;
+      const x = cote === "gauche" ? x0 - tabW : x0 + rectW;
+      const lx = cote === "gauche" ? x0 - tabW - 4 : x0 + rectW + tabW + 4;
+      return `
+        <rect x="${x}" y="${cy - tabH / 2}" width="${tabW}" height="${tabH}" class="schema-retour"><title>Retour de 10 mm, côté ${cote}</title></rect>
+        <text x="${lx}" y="${cy + 3}" class="schema-retour-label" text-anchor="middle">+10</text>
+      `;
+    })
+    .join("");
+
   return `
     <svg viewBox="0 0 ${vbW} ${vbH}" class="schema-piece" role="img" aria-label="Schéma de la pièce, ${fmtDim(longueur)} x ${fmtDim(largeur)} mm">
       <line x1="${x0}" y1="${y0 - 10}" x2="${x0 + rectW}" y2="${y0 - 10}" class="schema-cote" />
@@ -1800,6 +1821,7 @@ function construireSchemaPieceSvg(champs) {
       <line x1="${x0 - 10}" y1="${y0}" x2="${x0 - 10}" y2="${y0 + rectH}" class="schema-cote" />
       <text x="${x0 - 14}" y="${y0 + rectH / 2}" class="schema-cote-label" text-anchor="middle" transform="rotate(-90 ${x0 - 14} ${y0 + rectH / 2})">${fmtDim(largeur)} mm</text>
       <rect x="${x0}" y="${y0}" width="${rectW}" height="${rectH}" class="schema-rect" />
+      ${retourSvg}
       ${chantsSvg}
       ${anglesSvg}
       ${dvrSvg}
@@ -2024,7 +2046,7 @@ async function rechercherGrainMatchingGlobal() {
 
         const schemaHtml = champsDetail ? construireSchemaPieceSvg(champsDetail) : "";
         const legendeHtml = schemaHtml
-          ? `<p class="schema-legende">Chants (trait orange) : AV = avant, AR = arrière, G = gauche, D = droite. Repère rouge = usinage d'angle relevé à ce coin. Ovales verts = chapelles d'assemblage (fraisées sous la pièce). Rectangle pointillé violet = défonçage évier/plaque.</p>`
+          ? `<p class="schema-legende">Chants (trait orange) : AV = avant, AR = arrière, G = gauche, D = droite. Repère rouge = usinage d'angle relevé à ce coin. Ovales verts = chapelles d'assemblage (fraisées sous la pièce). Talon bleu "+10" = retour de 10 mm sur ce bord. Rectangle pointillé violet = défonçage évier/plaque.</p>`
           : "";
         const lancementHtml =
           champsDetail && champsDetail.lancement
