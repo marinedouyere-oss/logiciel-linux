@@ -25,6 +25,13 @@ public class MainActivity extends Activity {
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(true);
+        // Sans ces deux réglages, la WebView ignore la balise <meta
+        // name="viewport"> de la page et l'affiche comme une page "bureau"
+        // large (~980px) réduite pour tenir à l'écran — d'où un rendu tassé
+        // à gauche avec une bande vide à droite et un défilement horizontal,
+        // au lieu du rendu responsive mobile normal.
+        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(true);
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
