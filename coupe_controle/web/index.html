@@ -134,6 +134,17 @@
     margin-bottom: 10px;
   }
   .paire-entete strong { font-size: 0.95rem; }
+  .btn-reinitialiser {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 0.76rem;
+    color: #666;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .btn-reinitialiser:hover { background: #f0f0f0; }
   .paire-go-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 10px; }
   .btn-bilan { font-size: 0.82rem; padding: 8px 14px; }
   .btn-go {
@@ -1246,6 +1257,41 @@ function majLibellePaire(paire, div) {
   if (strong) strong.textContent = libelle;
 }
 
+// Vide les deux fichiers sélectionnés et tout l'état déjà calculé pour ce
+// lancement (rapport, semaine détectée, doublons...), et retire son
+// panneau de résultat et sa ligne de progression s'ils existaient — pour
+// recommencer ce lancement à zéro sans recharger toute la page.
+function reinitialiserPaire(paire, div) {
+  const inputStrat = div.querySelector(`#strat-${paire.id}`);
+  const inputCoupe = div.querySelector(`#coupe-${paire.id}`);
+  if (inputStrat) inputStrat.value = "";
+  if (inputCoupe) inputCoupe.value = "";
+  for (const role of ["validation-strat", "validation-coupe"]) {
+    const span = div.querySelector(`[data-role="${role}"]`);
+    if (span) {
+      span.textContent = "";
+      span.className = "validation-fichier";
+    }
+  }
+
+  paire.semaine = null;
+  paire.rapport = null;
+  paire.clesStrat = new Set();
+  paire.qteAttendueParCle = undefined;
+  paire.doublonsStrat = undefined;
+  paire.nbUnitaires = undefined;
+  paire.nbPiecesTrouvees = undefined;
+  paire.triColonne = null;
+  paire.triAscendant = true;
+  majLibellePaire(paire, div);
+
+  const ligneProgress = $(`progress-${paire.id}`);
+  if (ligneProgress) ligneProgress.remove();
+
+  const panneauResultat = document.querySelector(`#resultatsContainer .panneau[data-id="${paire.id}"]`);
+  if (panneauResultat) panneauResultat.remove();
+}
+
 async function detecterSemainePaire(paire, div) {
   const fichier = $(`strat-${paire.id}`).files[0];
   if (!fichier) {
@@ -1300,6 +1346,7 @@ function redessinerPaires() {
         div.innerHTML = `
           <div class="paire-entete">
             <strong>${paire.lancementLabel}</strong>
+            <button type="button" class="btn-reinitialiser" data-action="reinitialiser" title="Réinitialiser ce lancement">↺ Réinitialiser</button>
           </div>
           <div class="ligne-fichier">
             <label for="strat-${paire.id}">Fichier de lancement :</label>
@@ -1327,6 +1374,7 @@ function redessinerPaires() {
         });
         div.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(paire, div));
         div.querySelector('[data-action="bilan"]').addEventListener("click", () => voirBilanPaire(paire));
+        div.querySelector('[data-action="reinitialiser"]').addEventListener("click", () => reinitialiserPaire(paire, div));
         grille.appendChild(div);
       });
 
