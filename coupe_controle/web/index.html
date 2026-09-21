@@ -40,7 +40,12 @@
     font-weight: 600;
     color: #666;
     cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
   }
+  /* Plus spécifique que la règle générale "button:hover" (fond bleu plein),
+     sinon un tap sur mobile (qui déclenche :hover sans vraie souris) fait
+     apparaître ce fond bleu au lieu du simple soulignement voulu. */
+  .onglet-btn:hover:not(:disabled) { background: none; }
   .onglet-btn.actif { color: #1565c0; border-bottom-color: #1565c0; }
   .onglet-page.inactif { display: none; }
   h2 { font-size: 1.05rem; margin: 0 0 10px; }
