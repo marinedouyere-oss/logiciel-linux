@@ -220,6 +220,17 @@
   .validation-fichier { font-weight: 700; font-size: 1.05rem; width: 1.2em; flex-shrink: 0; text-align: center; }
   .validation-fichier.valide { color: var(--ok-text); }
   .validation-fichier.invalide { color: var(--alerte-text); }
+  /* Le texte "mémorisé : nom_du_fichier.xlsx" est trop long pour la
+     colonne étroite d'un simple ✓ : passe sur sa propre ligne pleine
+     largeur plutôt que de s'écraser verticalement caractère par
+     caractère dans une colonne de 1.2em. */
+  .validation-fichier.memorise {
+    width: auto;
+    flex-basis: 100%;
+    text-align: left;
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
   button {
     background: #1565c0;
     color: #fff;
@@ -1236,6 +1247,105 @@ function nbLancements(poste) {
 }
 const $ = (id) => document.getElementById(id);
 
+// ---- Mémorisation locale (IndexedDB) : garde une copie complète des
+// fichiers sélectionnés et du dernier résultat calculé pour chaque
+// lancement, indépendante du fichier d'origine (qui peut être déplacé ou
+// supprimé du téléphone ensuite sans rien perdre côté Sentinelle), pour
+// tout retrouver automatiquement à la réouverture de l'appli. Purement un
+// confort : si IndexedDB est indisponible (mode privé...), l'appli continue
+// de fonctionner normalement, juste sans persistance.
+const DB_MEMOIRE_NOM = "sentinelle-memoire";
+const DB_MEMOIRE_VERSION = 1;
+const MAGASIN_PAIRES = "paires";
+
+function ouvrirBaseMemoire() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) {
+      reject(new Error("IndexedDB indisponible"));
+      return;
+    }
+    const requete = indexedDB.open(DB_MEMOIRE_NOM, DB_MEMOIRE_VERSION);
+    requete.onupgradeneeded = () => {
+      const db = requete.result;
+      if (!db.objectStoreNames.contains(MAGASIN_PAIRES)) {
+        db.createObjectStore(MAGASIN_PAIRES, { keyPath: "cleMemoire" });
+      }
+    };
+    requete.onsuccess = () => resolve(requete.result);
+    requete.onerror = () => reject(requete.error);
+  });
+}
+
+// Clé stable d'une session à l'autre (contrairement à paire.id, réattribué
+// à chaque chargement de page) : poste + libellé du lancement identifient
+// une case de façon unique, puisque la grille de postes est fixe.
+function cleMemoirePaire(paire) {
+  return `${paire.poste}||${paire.lancementLabel}`;
+}
+
+async function sauvegarderDansMemoire(paire, champsPartiels) {
+  try {
+    const db = await ouvrirBaseMemoire();
+    const cle = cleMemoirePaire(paire);
+    const tx = db.transaction(MAGASIN_PAIRES, "readwrite");
+    const magasin = tx.objectStore(MAGASIN_PAIRES);
+    const existant = await new Promise((resolve) => {
+      const req = magasin.get(cle);
+      req.onsuccess = () => resolve(req.result || { cleMemoire: cle });
+      req.onerror = () => resolve({ cleMemoire: cle });
+    });
+    magasin.put({ ...existant, ...champsPartiels, cleMemoire: cle });
+    await new Promise((resolve) => {
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+    });
+  } catch (_erreur) {
+    // Mémorisation indisponible : sans effet sur le fonctionnement normal.
+  }
+}
+
+async function chargerDepuisMemoire(paire) {
+  try {
+    const db = await ouvrirBaseMemoire();
+    const cle = cleMemoirePaire(paire);
+    return await new Promise((resolve) => {
+      const tx = db.transaction(MAGASIN_PAIRES, "readonly");
+      const req = tx.objectStore(MAGASIN_PAIRES).get(cle);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch (_erreur) {
+    return null;
+  }
+}
+
+async function effacerMemoire(paire) {
+  try {
+    const db = await ouvrirBaseMemoire();
+    const cle = cleMemoirePaire(paire);
+    const tx = db.transaction(MAGASIN_PAIRES, "readwrite");
+    tx.objectStore(MAGASIN_PAIRES).delete(cle);
+    await new Promise((resolve) => {
+      tx.oncomplete = resolve;
+      tx.onerror = resolve;
+    });
+  } catch (_erreur) {
+    // Mémorisation indisponible : sans effet sur le fonctionnement normal.
+  }
+}
+
+// Le fichier réellement sélectionné dans l'<input> a priorité sur celui
+// restauré depuis la mémoire locale (ex. l'utilisateur vient d'en choisir
+// un nouveau), sinon on retombe sur la copie mémorisée s'il y en a une.
+function fichierStratDe(paire) {
+  const input = $(`strat-${paire.id}`);
+  return (input && input.files[0]) || paire.fichierStratRestaure || null;
+}
+function fichierCoupeDe(paire) {
+  const input = $(`coupe-${paire.id}`);
+  return (input && input.files[0]) || paire.fichierCoupeRestaure || null;
+}
+
 let prochainId = 1;
 // Chaque paire : { id, poste, lancementLabel, nom, rapport, clesStrat, triColonne, triAscendant }
 const paires = [];
@@ -1338,6 +1448,8 @@ function reinitialiserPaire(paire, div) {
   paire.nbPiecesTrouvees = undefined;
   paire.triColonne = null;
   paire.triAscendant = true;
+  paire.fichierStratRestaure = undefined;
+  paire.fichierCoupeRestaure = undefined;
   majLibellePaire(paire, div);
 
   const ligneProgress = $(`progress-${paire.id}`);
@@ -1345,10 +1457,12 @@ function reinitialiserPaire(paire, div) {
 
   const conteneurResultat = $(`resultat-inline-${paire.id}`);
   if (conteneurResultat) conteneurResultat.innerHTML = "";
+
+  effacerMemoire(paire);
 }
 
 async function detecterSemainePaire(paire, div) {
-  const fichier = $(`strat-${paire.id}`).files[0];
+  const fichier = fichierStratDe(paire);
   if (!fichier) {
     paire.semaine = null;
     majLibellePaire(paire, div);
@@ -1420,21 +1534,70 @@ function redessinerPaires() {
         `;
         const inputStrat = div.querySelector(`#strat-${paire.id}`);
         const inputCoupe = div.querySelector(`#coupe-${paire.id}`);
-        inputStrat.addEventListener("change", () => {
+        inputStrat.addEventListener("change", async () => {
           if (!validerFichierSelectionne(inputStrat, "lancement", "LAN", div, "validation-strat")) return;
           detecterSemainePaire(paire, div);
+          const fichier = inputStrat.files[0];
+          const bytes = await fichier.arrayBuffer();
+          sauvegarderDansMemoire(paire, { fichierStrat: { nom: fichier.name, type: fichier.type, bytes } });
         });
-        inputCoupe.addEventListener("change", () => {
-          validerFichierSelectionne(inputCoupe, "liste de coupe", "coupe", div, "validation-coupe");
+        inputCoupe.addEventListener("change", async () => {
+          if (!validerFichierSelectionne(inputCoupe, "liste de coupe", "coupe", div, "validation-coupe")) return;
+          const fichier = inputCoupe.files[0];
+          const bytes = await fichier.arrayBuffer();
+          sauvegarderDansMemoire(paire, { fichierCoupe: { nom: fichier.name, type: fichier.type, bytes } });
         });
         div.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(paire, div));
         div.querySelector('[data-action="reinitialiser"]').addEventListener("click", () => reinitialiserPaire(paire, div));
+        restaurerPaire(paire, div);
         grille.appendChild(div);
       });
 
     posteDiv.appendChild(grille);
     container.appendChild(posteDiv);
   });
+}
+
+// Recharge, pour une paire donnée, la copie de fichiers et/ou le dernier
+// résultat mémorisés lors d'une session précédente (voir sauvegarderDansMemoire),
+// et les affiche comme si l'utilisateur venait de les fournir — sans action
+// de sa part à la réouverture de l'appli.
+async function restaurerPaire(paire, div) {
+  const donnees = await chargerDepuisMemoire(paire);
+  if (!donnees) return;
+
+  if (donnees.fichierStrat) {
+    paire.fichierStratRestaure = new File([donnees.fichierStrat.bytes], donnees.fichierStrat.nom, {
+      type: donnees.fichierStrat.type,
+    });
+    const span = div.querySelector('[data-role="validation-strat"]');
+    if (span) {
+      span.textContent = `✓ mémorisé : ${donnees.fichierStrat.nom}`;
+      span.className = "validation-fichier valide memorise";
+    }
+  }
+  if (donnees.fichierCoupe) {
+    paire.fichierCoupeRestaure = new File([donnees.fichierCoupe.bytes], donnees.fichierCoupe.nom, {
+      type: donnees.fichierCoupe.type,
+    });
+    const span = div.querySelector('[data-role="validation-coupe"]');
+    if (span) {
+      span.textContent = `✓ mémorisé : ${donnees.fichierCoupe.nom}`;
+      span.className = "validation-fichier valide memorise";
+    }
+  }
+  if (donnees.rapport) {
+    paire.rapport = donnees.rapport;
+    paire.doublonsStrat = donnees.doublonsStrat;
+    paire.semaine = donnees.semaine;
+    paire.nbUnitaires = donnees.nbUnitaires;
+    paire.nbPiecesTrouvees = donnees.nbPiecesTrouvees;
+    paire.clesStrat = donnees.clesStrat instanceof Set ? donnees.clesStrat : new Set(donnees.clesStrat || []);
+    paire.qteAttendueParCle =
+      donnees.qteAttendueParCle instanceof Map ? donnees.qteAttendueParCle : new Map(donnees.qteAttendueParCle || []);
+    majLibellePaire(paire, div);
+    afficherResultatPaire(paires.indexOf(paire), paire);
+  }
 }
 
 function fmtQte(v) {
@@ -2019,7 +2182,7 @@ async function rechercherGrainMatchingGlobal() {
     return;
   }
 
-  const pairesAvecCoupe = paires.filter((paire) => $(`coupe-${paire.id}`).files[0]);
+  const pairesAvecCoupe = paires.filter((paire) => fichierCoupeDe(paire));
   if (pairesAvecCoupe.length === 0) {
     zone.style.color = "var(--alerte-text)";
     zone.style.fontWeight = "normal";
@@ -2035,7 +2198,7 @@ async function rechercherGrainMatchingGlobal() {
   const trouvailles = [];
   const erreurs = [];
   for (const paire of pairesAvecCoupe) {
-    const fichierCoupe = $(`coupe-${paire.id}`).files[0];
+    const fichierCoupe = fichierCoupeDe(paire);
     try {
       // Chargé une seule fois (dézippage Excel ou lecture des pages PDF,
       // l'étape coûteuse) et réutilisé pour le grain matching ET le compte.
@@ -2059,7 +2222,7 @@ async function rechercherGrainMatchingGlobal() {
           const record = source.records.find((r) => r.cle === cle && estRecordPieceReellePDF(r));
           if (record) champsDetail = extraireChampsDetailPDF(record.detailTexte);
         }
-        const fichierStrat = $(`strat-${paire.id}`).files[0];
+        const fichierStrat = fichierStratDe(paire);
         if (fichierStrat) {
           try {
             const ligneStrat = lireStrat(await chargerClasseur(fichierStrat)).lignes.find((l) => l.cle === cle);
@@ -2268,8 +2431,8 @@ async function lancerUnePaire(paire, div) {
 }
 
 async function lancerControlePaire(index, paire) {
-  const fichierStrat = $(`strat-${paire.id}`).files[0];
-  const fichierCoupe = $(`coupe-${paire.id}`).files[0];
+  const fichierStrat = fichierStratDe(paire);
+  const fichierCoupe = fichierCoupeDe(paire);
   if (!fichierStrat && !fichierCoupe) {
     majProgress(paire, "—", "vide (ignorée)", "progress-vide");
     return null; // paire vide, ignorée silencieusement
@@ -2326,6 +2489,15 @@ async function lancerControlePaire(index, paire) {
     } else {
       majProgress(paire, "⚠️", `terminé — ${paire.rapport.nbAnomalies} anomalie(s)`, "progress-attention");
     }
+    sauvegarderDansMemoire(paire, {
+      rapport: paire.rapport,
+      doublonsStrat: paire.doublonsStrat,
+      semaine: paire.semaine,
+      nbUnitaires: paire.nbUnitaires,
+      nbPiecesTrouvees: paire.nbPiecesTrouvees,
+      clesStrat: paire.clesStrat,
+      qteAttendueParCle: paire.qteAttendueParCle,
+    });
     return { ok: true };
   } catch (erreur) {
     const message = erreur && erreur.message ? erreur.message : String(erreur);
