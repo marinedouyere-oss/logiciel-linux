@@ -100,9 +100,6 @@
   .schema-cote-label { font-size: 10px; fill: #37474f; font-weight: 600; }
   .schema-chant { stroke: #b26a00; stroke-width: 4; stroke-linecap: round; }
   .schema-chant-label { font-size: 9px; fill: #b26a00; font-weight: 700; }
-  .schema-angle { stroke: #c62828; stroke-width: 2; }
-  .schema-angle-forme { fill: none; }
-  .schema-angle-label { font-size: 8px; fill: #c62828; font-weight: 700; }
   .schema-dvr { fill: none; stroke: #6a1b9a; stroke-width: 1.5; stroke-dasharray: 4 3; }
   .schema-dvr-label { font-size: 9px; fill: #6a1b9a; font-weight: 700; }
   .schema-chapelle { fill: #fff; stroke: #2e7d32; stroke-width: 1.3; }
@@ -1654,22 +1651,11 @@ function texteCodeAssemblage(code) {
     .join(" / ");
 }
 
-// EP13 = coin arrondi, EP14 = entaille plaquée (sauf mention contraire
-// ailleurs dans le fichier, non détectable ici). Les autres codes (ex.
-// "EP15") ne sont pas encore identifiés : affichés tels quels en attendant.
-function analyserCodeAngle(code) {
-  if (!code) return null;
-  const c = code.trim().toUpperCase();
-  if (c === "EP13") return { type: "arrondi", brut: code };
-  if (c === "EP14") return { type: "entaille", brut: code };
-  return { type: "inconnu", brut: code };
-}
-
 // Construit un schéma SVG en vue de dessus de la pièce (dimensions finies,
-// à l'échelle), avec les chants (AV/AR/G/D) et usinages d'angle relevés
-// dans le fichier, comme repères visuels des options du plan. Renvoie une
-// chaîne vide si les dimensions finies n'ont pas pu être lues (Excel, ou
-// PDF sans le champ "52.L*l*ep fini").
+// à l'échelle), avec les chants (AV/AR/G/D), le défonçage évier/plaque et
+// les chapelles d'assemblage relevés dans le fichier, comme repères
+// visuels des options du plan. Renvoie une chaîne vide si les dimensions
+// finies n'ont pas pu être lues (Excel, ou PDF sans "52.L*l*ep fini").
 function construireSchemaPieceSvg(champs) {
   const longueur = champs.longueurFinie;
   const largeur = champs.largeurFinie;
@@ -1707,45 +1693,6 @@ function construireSchemaPieceSvg(champs) {
         <text x="${c.lx}" y="${c.ly}" class="schema-chant-label" text-anchor="middle">${c.cote}</text>
       `
     )
-    .join("");
-
-  // Chaque coin est décrit par sa position et les deux directions unitaires
-  // (vers l'intérieur de la pièce) des côtés qui s'y rejoignent — utilisées
-  // pour dessiner un arrondi, une entaille en L, ou un repère générique
-  // selon le code relevé (voir analyserCodeAngle).
-  const taille = 12;
-  const coins = [
-    { id: "Av. G", val: champs.angleAVG, x: x0, y: y0 + rectH, dx1: 1, dy1: 0, dx2: 0, dy2: -1 },
-    { id: "Av. D", val: champs.angleAVD, x: x0 + rectW, y: y0 + rectH, dx1: -1, dy1: 0, dx2: 0, dy2: -1 },
-    { id: "Ar. G", val: champs.angleARG, x: x0, y: y0, dx1: 1, dy1: 0, dx2: 0, dy2: 1 },
-    { id: "Ar. D", val: champs.angleARD, x: x0 + rectW, y: y0, dx1: -1, dy1: 0, dx2: 0, dy2: 1 },
-  ];
-  const anglesSvg = coins
-    .filter((c) => c.val)
-    .map((c) => {
-      const info = analyserCodeAngle(c.val);
-      const p1x = c.x + c.dx1 * taille;
-      const p1y = c.y + c.dy1 * taille;
-      const p2x = c.x + c.dx2 * taille;
-      const p2y = c.y + c.dy2 * taille;
-      const titre = `<title>Usinage angle ${c.id} : ${c.val}</title>`;
-      if (info.type === "arrondi") {
-        return `<path d="M ${p1x} ${p1y} A ${taille} ${taille} 0 0 1 ${p2x} ${p2y}" class="schema-angle schema-angle-forme">${titre}</path>`;
-      }
-      if (info.type === "entaille") {
-        const mx = c.x + c.dx1 * taille + c.dx2 * taille;
-        const my = c.y + c.dy1 * taille + c.dy2 * taille;
-        return `<path d="M ${p1x} ${p1y} L ${mx} ${my} L ${p2x} ${p2y}" class="schema-angle schema-angle-forme">${titre}</path>`;
-      }
-      // Code pas encore identifié (ex. "EP15") : repère générique + la
-      // valeur brute affichée en clair, pour rester traçable en attendant.
-      const lx = c.x + (c.dx1 + c.dx2) * (taille + 8);
-      const ly = c.y + (c.dy1 + c.dy2) * (taille + 8);
-      return `
-        <line x1="${p1x}" y1="${p1y}" x2="${p2x}" y2="${p2y}" class="schema-angle">${titre}</line>
-        <text x="${lx}" y="${ly}" class="schema-angle-label" text-anchor="middle">${c.val}</text>
-      `;
-    })
     .join("");
 
   // Défonçage évier/plaque de cuisson : pas de position dans le fichier,
@@ -1802,7 +1749,6 @@ function construireSchemaPieceSvg(champs) {
       <text x="${x0 - 14}" y="${y0 + rectH / 2}" class="schema-cote-label" text-anchor="middle" transform="rotate(-90 ${x0 - 14} ${y0 + rectH / 2})">${fmtDim(largeur)} mm</text>
       <rect x="${x0}" y="${y0}" width="${rectW}" height="${rectH}" class="schema-rect" />
       ${chantsSvg}
-      ${anglesSvg}
       ${dvrSvg}
       ${chapellesSvg}
     </svg>
@@ -2025,7 +1971,7 @@ async function rechercherGrainMatchingGlobal() {
 
         const schemaHtml = champsDetail ? construireSchemaPieceSvg(champsDetail) : "";
         const legendeHtml = schemaHtml
-          ? `<p class="schema-legende">Chants (trait orange) : AV = avant, AR = arrière, G = gauche, D = droite. Repère rouge = usinage d'angle relevé à ce coin. Ovales verts = chapelles d'assemblage (fraisées sous la pièce). Rectangle pointillé violet = défonçage évier/plaque.</p>`
+          ? `<p class="schema-legende">Chants (trait orange) : AV = avant, AR = arrière, G = gauche, D = droite. Ovales verts = chapelles d'assemblage (fraisées sous la pièce). Rectangle pointillé violet = défonçage évier/plaque.</p>`
           : "";
         const lancementHtml =
           champsDetail && champsDetail.lancement
