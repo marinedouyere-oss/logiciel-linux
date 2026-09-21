@@ -1704,6 +1704,18 @@ function estDescriptionPieceReellePDF(desc) {
   return true;
 }
 
+// Un enregistrement PDF est une vraie pièce si sa description passe le test
+// ci-dessus ET que son matériau n'est pas un panneau de protection (même
+// exclusion que côté Excel, voir MATERIAUX_EXCLUS) : un panneau de
+// protection accompagne une pièce sans être lui-même une pièce à compter —
+// sinon la pièce protégée est comptée deux fois (une fois pour elle-même,
+// une fois pour son panneau de protection).
+function estRecordPieceReellePDF(r) {
+  if (!estDescriptionPieceReellePDF(r.desc)) return false;
+  if (r.materiau && MATERIAUX_EXCLUS.has(String(r.materiau).trim().toUpperCase())) return false;
+  return true;
+}
+
 function extraireRecordsPDF(lignesTexte) {
   const records = [];
   let courant = null;
@@ -1781,7 +1793,7 @@ function detecterIncoherencesReservePDF(records) {
 }
 
 function lireCoupeDepuisRecordsPDF(records) {
-  const pieces = records.filter((r) => r.cle && estDescriptionPieceReellePDF(r.desc));
+  const pieces = records.filter((r) => r.cle && estRecordPieceReellePDF(r));
 
   const compteur = new Map();
   for (const p of pieces) {
@@ -1820,7 +1832,7 @@ async function lireCoupePDF(fichier) {
 function lireGrainMatchingDepuisRecordsPDF(records) {
   const resultat = new Map();
   for (const r of records) {
-    if (!r.cle || !estDescriptionPieceReellePDF(r.desc)) continue;
+    if (!r.cle || !estRecordPieceReellePDF(r)) continue;
     if (!resultat.has(r.cle)) resultat.set(r.cle, []);
     if (r.grain && !resultat.get(r.cle).includes(r.grain)) resultat.get(r.cle).push(r.grain);
   }
