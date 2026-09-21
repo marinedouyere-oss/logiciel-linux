@@ -86,6 +86,22 @@
     font-size: 0.85rem;
   }
   .grain-vide { color: #888; font-weight: 400; font-size: 0.88rem; }
+  .schema-piece {
+    width: 100%;
+    max-width: 340px;
+    height: auto;
+    margin: 6px 0 10px;
+    background: #fbfcfd;
+    border: 1px solid #e0e6ec;
+    border-radius: 6px;
+  }
+  .schema-rect { fill: #eef3f9; stroke: #37474f; stroke-width: 1.5; }
+  .schema-cote { stroke: #90a4ae; stroke-width: 1; }
+  .schema-cote-label { font-size: 10px; fill: #37474f; font-weight: 600; }
+  .schema-chant { stroke: #b26a00; stroke-width: 4; stroke-linecap: round; }
+  .schema-chant-label { font-size: 9px; fill: #b26a00; font-weight: 700; }
+  .schema-angle { stroke: #c62828; stroke-width: 2; }
+  .schema-legende { font-size: 0.72rem; color: #888; margin: -4px 0 8px; }
   .poste { margin-bottom: 18px; }
   .poste-titre {
     font-size: 1rem;
@@ -1552,6 +1568,118 @@ const MOTIF_CLE_DETAIL_PDF = /5\.num commande\+ligne\s+([^,\s]+)/;
 const MOTIF_GRAIN_DETAIL_PDF = /18\.Grain matching\s+([^,]+)/;
 const MOTIF_RESERVE_NUE_PDF = /^T\d+\/\d+$/i;
 
+// Champs additionnels du détail PDF utilisés pour le schéma de pièce dans
+// la recherche (dimensions finies, chants, usinages d'angle, assemblage...).
+// Chaque champ est borné par la virgule qui le sépare du suivant, comme
+// MOTIF_CLE_DETAIL_PDF / MOTIF_GRAIN_DETAIL_PDF ci-dessus.
+const MOTIFS_CHAMPS_DETAIL_PDF = {
+  lancement: /1\.Lancement\s+([^,]+)/,
+  epaisseur: /6\.Epaisseur\s+([^,]+)/,
+  chantAV: /11\.Chant AV\s+([^,]+)/,
+  chantAR: /12\.Chant AR\s+([^,]+)/,
+  chantG: /13\.Chant G\s+([^,]+)/,
+  chantD: /14\.Chant D\s+([^,]+)/,
+  angleAVG: /20\.Angle AV G\s+([^,]+)/,
+  angleAVD: /21\.Angle AV D\s+([^,]+)/,
+  angleARG: /22\.Angle AR G\s+([^,]+)/,
+  angleARD: /23\.Angle AR D\s+([^,]+)/,
+  assemblage: /44\.Assemblage\s+([^,]+)/,
+  typeChant: /48\.Type chant\s+([^,]+)/,
+};
+const MOTIF_DIMENSIONS_FINIES_PDF = /52\.L\*l\*ep fini\s+([\d.,]+)\s*X\s*([\d.,]+)\s*X\s*([\d.,]+)/;
+
+// Extrait, pour un enregistrement PDF donné, les champs utiles au schéma de
+// pièce affiché dans la recherche. Fait exprès de ne pas être appelé pour
+// chaque ligne du fichier (coût inutile) : seulement à la demande, sur
+// l'enregistrement déjà retrouvé pour la clé recherchée.
+function extraireChampsDetailPDF(detailTexte) {
+  const champs = {};
+  for (const [nom, motif] of Object.entries(MOTIFS_CHAMPS_DETAIL_PDF)) {
+    const m = motif.exec(detailTexte);
+    champs[nom] = m ? m[1].trim() : null;
+  }
+  const dim = MOTIF_DIMENSIONS_FINIES_PDF.exec(detailTexte);
+  champs.longueurFinie = dim ? toFloatOrNull(dim[1]) : null;
+  champs.largeurFinie = dim ? toFloatOrNull(dim[2]) : null;
+  champs.epaisseurFinie = dim ? toFloatOrNull(dim[3]) : null;
+  return champs;
+}
+
+function fmtDim(v) {
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
+}
+
+// Construit un schéma SVG en vue de dessus de la pièce (dimensions finies,
+// à l'échelle), avec les chants (AV/AR/G/D) et usinages d'angle relevés
+// dans le fichier, comme repères visuels des options du plan. Renvoie une
+// chaîne vide si les dimensions finies n'ont pas pu être lues (Excel, ou
+// PDF sans le champ "52.L*l*ep fini").
+function construireSchemaPieceSvg(champs) {
+  const longueur = champs.longueurFinie;
+  const largeur = champs.largeurFinie;
+  if (!longueur || !largeur) return "";
+
+  const vbW = 320;
+  const vbH = 190;
+  const margeG = 46;
+  const margeD = 26;
+  const margeH = 30;
+  const margeB = 26;
+  const availW = vbW - margeG - margeD;
+  const availH = vbH - margeH - margeB;
+  const echelle = Math.min(availW / longueur, availH / largeur);
+  let rectW = longueur * echelle;
+  let rectH = largeur * echelle;
+  // Garde un minimum visuel pour les pièces très fines (bandes de chant...)
+  // où la vraie proportion serait invisible à l'écran.
+  if (rectH < 8) rectH = 8;
+  if (rectW < 8) rectW = 8;
+  const x0 = margeG + (availW - rectW) / 2;
+  const y0 = margeH + (availH - rectH) / 2;
+
+  const chants = [
+    { cote: "AV", val: champs.chantAV, x1: x0, y1: y0 + rectH, x2: x0 + rectW, y2: y0 + rectH, lx: x0 + rectW / 2, ly: y0 + rectH + 14 },
+    { cote: "AR", val: champs.chantAR, x1: x0, y1: y0, x2: x0 + rectW, y2: y0, lx: x0 + rectW / 2, ly: y0 - 6 },
+    { cote: "G", val: champs.chantG, x1: x0, y1: y0, x2: x0, y2: y0 + rectH, lx: x0 - 8, ly: y0 + rectH / 2 },
+    { cote: "D", val: champs.chantD, x1: x0 + rectW, y1: y0, x2: x0 + rectW, y2: y0 + rectH, lx: x0 + rectW + 8, ly: y0 + rectH / 2 },
+  ];
+  const chantsSvg = chants
+    .filter((c) => c.val)
+    .map(
+      (c) => `
+        <line x1="${c.x1}" y1="${c.y1}" x2="${c.x2}" y2="${c.y2}" class="schema-chant"><title>Chant ${c.cote} : ${c.val}</title></line>
+        <text x="${c.lx}" y="${c.ly}" class="schema-chant-label" text-anchor="middle">${c.cote}</text>
+      `
+    )
+    .join("");
+
+  const taille = 10;
+  const angles = [
+    { coin: "Av. G", val: champs.angleAVG, x: x0, y: y0 + rectH, dx: taille, dy: -taille },
+    { coin: "Av. D", val: champs.angleAVD, x: x0 + rectW, y: y0 + rectH, dx: -taille, dy: -taille },
+    { coin: "Ar. G", val: champs.angleARG, x: x0, y: y0, dx: taille, dy: taille },
+    { coin: "Ar. D", val: champs.angleARD, x: x0 + rectW, y: y0, dx: -taille, dy: taille },
+  ];
+  const anglesSvg = angles
+    .filter((a) => a.val)
+    .map(
+      (a) => `<line x1="${a.x}" y1="${a.y + a.dy}" x2="${a.x + a.dx}" y2="${a.y}" class="schema-angle"><title>Usinage angle ${a.coin} : ${a.val}</title></line>`
+    )
+    .join("");
+
+  return `
+    <svg viewBox="0 0 ${vbW} ${vbH}" class="schema-piece" role="img" aria-label="Schéma de la pièce, ${fmtDim(longueur)} x ${fmtDim(largeur)} mm">
+      <line x1="${x0}" y1="${y0 - 10}" x2="${x0 + rectW}" y2="${y0 - 10}" class="schema-cote" />
+      <text x="${x0 + rectW / 2}" y="${y0 - 14}" class="schema-cote-label" text-anchor="middle">${fmtDim(longueur)} mm</text>
+      <line x1="${x0 - 10}" y1="${y0}" x2="${x0 - 10}" y2="${y0 + rectH}" class="schema-cote" />
+      <text x="${x0 - 14}" y="${y0 + rectH / 2}" class="schema-cote-label" text-anchor="middle" transform="rotate(-90 ${x0 - 14} ${y0 + rectH / 2})">${fmtDim(largeur)} mm</text>
+      <rect x="${x0}" y="${y0}" width="${rectW}" height="${rectH}" class="schema-rect" />
+      ${chantsSvg}
+      ${anglesSvg}
+    </svg>
+  `;
+}
+
 // Comme les autres comparaisons de codes de ce fichier (matériau, type de
 // trace...), on normalise en majuscules avant de comparer : Cutrite génère
 // ces codes de façon cohérente, mais mieux vaut ne pas en dépendre.
@@ -1738,7 +1866,15 @@ async function rechercherGrainMatchingGlobal() {
         } catch (_erreurComptage) {
           quantite = null; // le grain matching reste affiché même si le comptage global échoue
         }
-        trouvailles.push({ paire, valeurs: grainParCle.get(cle), quantite });
+        // Schéma et détails (lancement, épaisseur, chants, usinages d'angle)
+        // seulement disponibles depuis le PDF : le fichier Excel n'a pas de
+        // colonnes exploitables pour ces champs (voir MOTIFS_CHAMPS_DETAIL_PDF).
+        let champsDetail = null;
+        if (source.pdf) {
+          const record = source.records.find((r) => r.cle === cle && estRecordPieceReellePDF(r));
+          if (record) champsDetail = extraireChampsDetailPDF(record.detailTexte);
+        }
+        trouvailles.push({ paire, valeurs: grainParCle.get(cle), quantite, champsDetail });
       }
     } catch (erreur) {
       erreurs.push(`${paire.nom} : ${erreur && erreur.message ? erreur.message : erreur}`);
@@ -1751,21 +1887,44 @@ async function rechercherGrainMatchingGlobal() {
   } else {
     zone.style.color = "var(--ok-text)";
     zone.innerHTML = trouvailles
-      .map(({ paire, valeurs, quantite }) => {
+      .map(({ paire, valeurs, quantite, champsDetail }) => {
         const quantiteTexte = quantite !== null ? String(quantite) : "?";
         const grainHtml =
           valeurs.length === 0
             ? `<span class="grain-vide">Unitaire (pas de grain matching)</span>`
             : valeurs.map((v) => `<span class="grain-puce">${v}</span>`).join("");
+
+        const schemaHtml = champsDetail ? construireSchemaPieceSvg(champsDetail) : "";
+        const legendeHtml = schemaHtml
+          ? `<p class="schema-legende">Chants (trait orange) : AV = avant, AR = arrière, G = gauche, D = droite. Repère rouge = usinage d'angle relevé à ce coin.</p>`
+          : "";
+        const lancementHtml =
+          champsDetail && champsDetail.lancement
+            ? `<div class="resultat-champ"><span class="resultat-champ-label">Lancement</span><span class="resultat-champ-valeur">${champsDetail.lancement}</span></div>`
+            : "";
+        const epaisseurHtml =
+          champsDetail && champsDetail.epaisseurFinie !== null
+            ? `<div class="resultat-champ"><span class="resultat-champ-label">Épaisseur</span><span class="resultat-champ-valeur">${fmtDim(champsDetail.epaisseurFinie)} mm</span></div>`
+            : "";
+        const assemblageHtml =
+          champsDetail && champsDetail.assemblage
+            ? `<div class="resultat-champ"><span class="resultat-champ-label">Assemblage</span><span class="resultat-champ-valeur">${champsDetail.assemblage}</span></div>`
+            : "";
+
         return `
           <div class="resultat-recherche">
             <div class="resultat-recherche-entete">
               <span class="resultat-cle">${cle}</span>
               <span class="resultat-poste">${paire.nom}</span>
             </div>
+            ${schemaHtml}
+            ${legendeHtml}
             <div class="resultat-recherche-champs">
               <div class="resultat-champ"><span class="resultat-champ-label">Quantité trouvée</span><span class="resultat-champ-valeur">${quantiteTexte}</span></div>
               <div class="resultat-champ"><span class="resultat-champ-label">Grain matching</span><span class="resultat-champ-valeur">${grainHtml}</span></div>
+              ${lancementHtml}
+              ${epaisseurHtml}
+              ${assemblageHtml}
             </div>
           </div>
         `;
