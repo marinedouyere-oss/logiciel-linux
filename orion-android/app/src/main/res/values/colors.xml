@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#0EA5E9</color>
+
+    <!-- Orion brand palette, matched to the original web app (orion.html) -->
+    <color name="orion_bg">#EEF4FA</color>
+    <color name="orion_panel">#FFFFFF</color>
+    <color name="orion_border">#D3E0EE</color>
+    <color name="orion_border_strong">#AECBE8</color>
+    <color name="orion_ink">#10263D</color>
+    <color name="orion_ink_soft">#5C7189</color>
+    <color name="orion_sky">#0EA5E9</color>
+    <color name="orion_sky_dark">#0B7FB3</color>
+    <color name="orion_sky_tint">#E3F4FD</color>
+    <color name="orion_amber">#D97706</color>
+    <color name="orion_amber_tint">#FDF0DC</color>
+    <color name="orion_green">#178A4C</color>
+    <color name="orion_danger">#B3261E</color>
+</resources>
