@@ -48,6 +48,8 @@ class OrionViewModel(application: Application) : AndroidViewModel(application) {
 
     var isWoodstoreLoading by mutableStateOf(true)
         private set
+    var woodstoreError by mutableStateOf<String?>(null)
+        private set
     var isComputing by mutableStateOf(false)
         private set
     var computeError by mutableStateOf<String?>(null)
@@ -58,11 +60,25 @@ class OrionViewModel(application: Application) : AndroidViewModel(application) {
     private var nextId = 1
 
     init {
+        reloadWoodstore()
+    }
+
+    /** (Re)loads the Woodstore library from local storage, or the bundled seed on first run. */
+    fun reloadWoodstore() {
+        isWoodstoreLoading = true
+        woodstoreError = null
         viewModelScope.launch(Dispatchers.IO) {
-            val loaded = WoodstoreRepository.load(getApplication())
+            val result = runCatching { WoodstoreRepository.load(getApplication()) }
             withContext(Dispatchers.Main) {
-                woodstore.clear()
-                woodstore.addAll(loaded)
+                result.onSuccess { loaded ->
+                    woodstore.clear()
+                    woodstore.addAll(loaded)
+                    if (loaded.isEmpty()) {
+                        woodstoreError = "La bibliothèque Woodstore est vide (aucune référence chargée)."
+                    }
+                }.onFailure { e ->
+                    woodstoreError = "Impossible de charger Woodstore : ${e.message ?: e::class.simpleName}"
+                }
                 isWoodstoreLoading = false
             }
         }
@@ -123,8 +139,17 @@ class OrionViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun resetWoodstoreToBase() {
+        // Compute the replacement BEFORE touching the current list: if loading the
+        // seed fails for any reason, the existing library must not be wiped out.
+        val seed = try {
+            WoodstoreRepository.loadSeed(getApplication())
+        } catch (e: Exception) {
+            woodstoreError = "Impossible de recharger la bibliothèque d'origine : ${e.message ?: e::class.simpleName}"
+            return
+        }
         woodstore.clear()
-        woodstore.addAll(WoodstoreRepository.loadSeed(getApplication()))
+        woodstore.addAll(seed)
+        if (seed.isEmpty()) woodstoreError = "La bibliothèque d'origine est vide."
         persistWoodstore()
     }
 

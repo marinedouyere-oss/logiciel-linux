@@ -142,6 +142,14 @@ fun WoodstoreScreen(viewModel: OrionViewModel) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
+        viewModel.woodstoreError?.let { err ->
+            Spacer(Modifier.height(4.dp))
+            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { viewModel.reloadWoodstore() }) { Text("Réessayer") }
+            }
+        }
+
         Spacer(Modifier.height(8.dp))
         if (viewModel.isWoodstoreLoading) {
             Text("Chargement…", style = MaterialTheme.typography.bodyMedium)
