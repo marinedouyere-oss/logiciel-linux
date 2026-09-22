@@ -1553,7 +1553,7 @@ function redessinerPaires() {
           </div>
           <div class="resultat-inline" id="resultat-inline-${paire.id}"></div>
           <div class="ligne-fichier">
-            <label for="bkp-${paire.id}">Contrôle Scies — fichier .bkp (optionnel) :</label>
+            <label for="bkp-${paire.id}">Contrôle Scies — fichier .bkp :</label>
             <input type="file" id="bkp-${paire.id}" accept=".bkp">
             <span class="validation-fichier" data-role="validation-bkp"></span>
           </div>
@@ -2399,17 +2399,21 @@ async function lancerControleScies(paire, div) {
   conteneur.textContent = "⏳ lecture des fichiers…";
   await tick();
 
+  let etape = "lecture du fichier de lancement";
   try {
     const { lignes: lignesStrat } = lireStrat(await chargerClasseur(fichierStrat));
     const qteAttendueParCle = new Map(lignesStrat.map((l) => [l.cle, l.qte_attendue]));
 
+    etape = "lecture du fichier .bkp";
     const nomLancement = fichierBkp.name.replace(/_\d{4}-\d{2}-\d{2}.*$/i, "").replace(/\.bkp$/i, "");
     const qteParCleBkp = await lireBkp(fichierBkp, nomLancement);
 
+    etape = "comparaison";
     const ecarts = comparerScies(qteAttendueParCle, qteParCleBkp);
     afficherResultatScies(conteneur, ecarts, qteAttendueParCle.size);
   } catch (erreur) {
-    conteneur.textContent = `❌ ${erreur && erreur.message ? erreur.message : String(erreur)}`;
+    const messageBrut = erreur && erreur.message ? erreur.message : String(erreur);
+    conteneur.textContent = `❌ échec à l'étape « ${etape} » : ${messageBrut}`;
   } finally {
     if (bouton) bouton.disabled = false;
   }
@@ -2708,6 +2712,7 @@ async function lancerControlePaire(index, paire) {
     return { erreur: `${paire.nom} : sélectionnez à la fois le fichier de lancement et la liste de coupe.` };
   }
 
+  let etape = "lecture du fichier de lancement";
   try {
     majProgress(paire, "⏳", "lecture du fichier de lancement…");
     await tick();
@@ -2735,6 +2740,7 @@ async function lancerControlePaire(index, paire) {
     const qteAttendueParCle = new Map(lignesStrat.map((l) => [l.cle, l.qte_attendue]));
     paire.qteAttendueParCle = qteAttendueParCle; // réutilisé par la recherche globale pour détecter la colonne quantité
 
+    etape = "lecture de la liste de coupe (Cutrite)";
     majProgress(paire, "⏳", "lecture de la liste de coupe (Cutrite)…");
     await tick();
     const {
@@ -2745,6 +2751,7 @@ async function lancerControlePaire(index, paire) {
     paire.nbUnitaires = nbUnitaires;
     paire.nbPiecesTrouvees = nbPiecesTrouvees;
 
+    etape = "comparaison";
     majProgress(paire, "⏳", "comparaison en cours…");
     await tick();
     paire.rapport = comparer(lignesStrat, trouveParCle);
@@ -2766,7 +2773,8 @@ async function lancerControlePaire(index, paire) {
     });
     return { ok: true };
   } catch (erreur) {
-    const message = erreur && erreur.message ? erreur.message : String(erreur);
+    const messageBrut = erreur && erreur.message ? erreur.message : String(erreur);
+    const message = `échec à l'étape « ${etape} » : ${messageBrut}`;
     majProgress(paire, "❌", message, "progress-erreur");
     return { erreur: `${paire.nom} : ${message}` };
   }
