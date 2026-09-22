@@ -29,12 +29,13 @@ import androidx.compose.ui.unit.dp
 import com.marinedouyere.orion.data.SETTINGS_SCHEMA
 import com.marinedouyere.orion.data.SettingsField
 import com.marinedouyere.orion.ui.OrionViewModel
+import com.marinedouyere.orion.ui.formatMm
 import com.marinedouyere.orion.ui.theme.OrionGreen
 import com.marinedouyere.orion.ui.theme.OrionInkSoft
 
 private fun displayValue(v: Any?): String = when (v) {
     null -> ""
-    is Double -> if (v == Math.floor(v) && !v.isInfinite()) v.toLong().toString() else v.toString()
+    is Double -> formatMm(v)
     else -> v.toString()
 }
 

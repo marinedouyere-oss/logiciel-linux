@@ -24,7 +24,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.MenuAnchorType
+import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -48,6 +48,7 @@ import com.marinedouyere.orion.data.famList
 import com.marinedouyere.orion.data.importWoodstoreXlsx
 import com.marinedouyere.orion.data.jsParseFloat
 import com.marinedouyere.orion.ui.OrionViewModel
+import com.marinedouyere.orion.ui.formatMm
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -211,7 +212,7 @@ private fun WoodstoreRowItem(row: WoodstoreRow, onDelete: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Text("${row.id}  ·  ${row.mat}", style = MaterialTheme.typography.bodyMedium)
             Text(
-                "${row.L.toInt()} × ${row.W.toInt()} mm" + (row.ep?.let { " · ${it} mm" } ?: "") + " · fil ${row.fil.ifBlank { "N" }} · ${famLabel(row.fam)}",
+                "${formatMm(row.L)} × ${formatMm(row.W)} mm" + (row.ep?.let { " · ${formatMm(it)} mm" } ?: "") + " · fil ${row.fil.ifBlank { "N" }} · ${famLabel(row.fam)}",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -300,7 +301,7 @@ private fun FamilyDropdown(selected: String, families: List<String>, allLabel: S
             readOnly = true,
             label = { Text("Famille") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
         )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             if (allLabel != null) {
@@ -324,7 +325,7 @@ private fun FilDropdown(selected: String, modifier: Modifier = Modifier, onSelec
             readOnly = true,
             label = { Text("Fil") },
             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
+            modifier = Modifier.menuAnchor(ExposedDropdownMenuAnchorType.PrimaryNotEditable).fillMaxWidth(),
         )
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             listOf("N", "O").forEach { f ->
