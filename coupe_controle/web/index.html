@@ -72,6 +72,7 @@
   }
   .panneau-recherche button { font-size: 1.05rem; padding: 12px 22px; }
   .panneau-recherche .label-recherche { font-size: 0.95rem; }
+  .recherche-aide { margin: -4px 0 10px; font-size: 0.82rem; color: #445; }
   .resultat-recherche {
     background: #fff;
     border: 1px solid #c7d9ee;
@@ -412,8 +413,9 @@
   <div class="onglet-page inactif" id="onglet-recherche">
     <div class="panneau panneau-recherche">
       <label for="rechercheGlobale">🔍 Recherche pièces sur Cutrite</label>
+      <p class="recherche-aide">Clé complète (CVC26090331003), numéro de commande seul (CVC26090331), ou numéro de bande/modulo (T9, T9/1).</p>
       <div class="recherche-row">
-        <input type="text" id="rechercheGlobale" placeholder="ex. CVC26090331003">
+        <input type="text" id="rechercheGlobale" placeholder="ex. CVC26090331003, CVC26090331 ou T9">
         <button id="btnRechercheGlobale">Rechercher</button>
       </div>
       <div id="resultatRechercheGlobale" class="label-recherche"></div>
@@ -2442,12 +2444,38 @@ function afficherResultatScies(conteneur, ecarts, nbClesAttendues) {
   `;
 }
 
-// Recherche une clé commande+ligne dans TOUTES les listes de coupe
-// actuellement sélectionnées (peu importe la paire, lancée ou non).
+// La recherche accepte trois formats, reconnus automatiquement :
+// - une clé complète commande+ligne (ex. "CVC26090331003") ;
+// - un numéro de commande seul, sans ligne (ex. "CVC26090331") — renvoie
+//   alors toutes les lignes/pièces de cette commande ;
+// - un numéro de bande ou de modulo (ex. "T9" ou "T9/1") — renvoie toutes
+//   les pièces réelles rattachées à cette bande via leur champ de grain
+//   matching (ex. une valeur "T9:1:1" signale que la pièce fait partie de
+//   la bande T9), le même mécanisme qui relie déjà bandes/modulos et
+//   pièces dans le fichier .bkp (voir lireQuantitesCtt).
+const MOTIF_RECHERCHE_BANDE = /^L?T\s*(\d+)(?:\/\d+)?$/i;
+
+function extraireNumeroBandeRecherche(requete) {
+  const m = MOTIF_RECHERCHE_BANDE.exec(requete.trim());
+  return m ? m[1] : null;
+}
+
+function clesDeLaBande(grainParCle, numeroBande) {
+  const motif = new RegExp(`^T${numeroBande}:`, "i");
+  const cles = new Set();
+  for (const [cle, valeurs] of grainParCle) {
+    if (valeurs.some((v) => motif.test(v))) cles.add(cle);
+  }
+  return cles;
+}
+
+// Recherche une clé, une commande ou une bande/modulo dans TOUTES les
+// listes de coupe actuellement sélectionnées (peu importe la paire, lancée
+// ou non).
 async function rechercherGrainMatchingGlobal() {
-  const cle = $("rechercheGlobale").value.trim().toUpperCase();
+  const requete = $("rechercheGlobale").value.trim().toUpperCase();
   const zone = $("resultatRechercheGlobale");
-  if (!cle) {
+  if (!requete) {
     zone.textContent = "";
     return;
   }
@@ -2465,6 +2493,8 @@ async function rechercherGrainMatchingGlobal() {
   zone.textContent = "Recherche en cours…";
   await tick();
 
+  const numeroBande = extraireNumeroBandeRecherche(requete);
+
   const trouvailles = [];
   const erreurs = [];
   for (const paire of pairesAvecCoupe) {
@@ -2474,7 +2504,19 @@ async function rechercherGrainMatchingGlobal() {
       // l'étape coûteuse) et réutilisé pour le grain matching ET le compte.
       const source = await chargerSourceCoupe(fichierCoupe);
       const grainParCle = lireGrainMatchingDepuisSource(source, paire.clesStrat);
-      if (grainParCle.has(cle)) {
+
+      let clesCibles;
+      if (numeroBande) {
+        clesCibles = clesDeLaBande(grainParCle, numeroBande);
+      } else if (grainParCle.has(requete)) {
+        clesCibles = new Set([requete]); // clé complète trouvée telle quelle
+      } else {
+        // Pas de clé exacte : on cherche toutes les clés dont la commande
+        // correspond (recherche par numéro de commande seul).
+        clesCibles = new Set([...grainParCle.keys()].filter((c) => c.startsWith(requete)));
+      }
+
+      for (const cle of clesCibles) {
         let quantite = null;
         try {
           const { compteur } = lireCoupeDepuisSource(source, paire.clesStrat, paire.qteAttendueParCle || new Map());
@@ -2512,7 +2554,7 @@ async function rechercherGrainMatchingGlobal() {
             // en cas d'échec de lecture, on garde les champs du PDF.
           }
         }
-        trouvailles.push({ paire, valeurs: grainParCle.get(cle), quantite, champsDetail });
+        trouvailles.push({ paire, cle, valeurs: grainParCle.get(cle) || [], quantite, champsDetail });
       }
     } catch (erreur) {
       erreurs.push(`${paire.nom} : ${erreur && erreur.message ? erreur.message : erreur}`);
@@ -2521,11 +2563,12 @@ async function rechercherGrainMatchingGlobal() {
 
   if (trouvailles.length === 0) {
     zone.style.color = "var(--alerte-text)";
-    zone.textContent = `Clé ${cle} introuvable dans les ${pairesAvecCoupe.length} liste(s) de coupe sélectionnée(s).`;
+    const quoi = numeroBande ? `bande/modulo T${numeroBande}` : `clé ou commande ${requete}`;
+    zone.textContent = `${quoi} introuvable dans les ${pairesAvecCoupe.length} liste(s) de coupe sélectionnée(s).`;
   } else {
     zone.style.color = "var(--ok-text)";
     zone.innerHTML = trouvailles
-      .map(({ paire, valeurs, quantite, champsDetail }) => {
+      .map(({ paire, cle, valeurs, quantite, champsDetail }) => {
         const quantiteTexte = quantite !== null ? String(quantite) : "?";
         const grainHtml =
           valeurs.length === 0
