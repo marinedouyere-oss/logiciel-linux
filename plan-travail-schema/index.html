@@ -88,7 +88,10 @@
     <fieldset>
       <legend>Découpes (évier, plaque de cuisson...)</legend>
       <div id="decoupesList"></div>
-      <button type="button" id="btnAddDecoupe" class="btn-secondary">+ Ajouter une découpe</button>
+      <button type="button" id="btnAddDecoupe" class="btn-secondary">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        <span>Ajouter une découpe</span>
+      </button>
     </fieldset>
 
     <fieldset>
@@ -97,11 +100,26 @@
     </fieldset>
 
     <div class="actions">
-      <button type="button" id="btnPng">Exporter en PNG</button>
-      <button type="button" id="btnPrint">Imprimer / PDF</button>
-      <button type="button" id="btnSave">Enregistrer (.json)</button>
-      <button type="button" id="btnLoad">Charger (.json)</button>
-      <button type="button" id="btnReset" class="btn-danger">Nouveau plan</button>
+      <button type="button" id="btnPng">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="M8 10l4 4 4-4"/><path d="M5 19h14"/></svg>
+        <span>Exporter en PNG</span>
+      </button>
+      <button type="button" id="btnPrint">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8V4h10v4"/><rect x="5" y="8" width="14" height="7" rx="1.5"/><path d="M8 15v5h8v-5"/></svg>
+        <span>Imprimer / PDF</span>
+      </button>
+      <button type="button" id="btnSave">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11l3 3v13a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M8 4v5h7V4"/><path d="M8 20v-6h8v6"/></svg>
+        <span>Enregistrer (.json)</span>
+      </button>
+      <button type="button" id="btnLoad">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a1 1 0 011-1h4l2 2h8a1 1 0 011 1v9a1 1 0 01-1 1H5a1 1 0 01-1-1V7z"/></svg>
+        <span>Charger (.json)</span>
+      </button>
+      <button type="button" id="btnReset" class="btn-danger">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+        <span>Nouveau plan</span>
+      </button>
       <input type="file" id="fileLoad" accept="application/json" hidden>
     </div>
   </section>
