@@ -27,6 +27,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExposedDropdownMenuAnchorType
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.DropdownMenuItem
@@ -100,6 +101,15 @@ fun WoodstoreScreen(viewModel: OrionViewModel) {
     }
 
     Column(Modifier.fillMaxWidth().padding(16.dp)) {
+        Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+            Text(
+                "Diagnostic — version ${com.marinedouyere.orion.BuildConfig.VERSION_NAME} (${com.marinedouyere.orion.BuildConfig.VERSION_CODE}) · " +
+                    "chargement=${viewModel.isWoodstoreLoading} · erreur=${viewModel.woodstoreError ?: "aucune"} · lignes=${viewModel.woodstore.size}",
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(6.dp),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
         Text("Woodstore — bibliothèque de panneaux", style = MaterialTheme.typography.titleMedium)
         Text(
             "Formats, matières et décors utilisés dans l'onglet Calepinage. Les ajouts et suppressions restent enregistrés sur cet appareil.",
