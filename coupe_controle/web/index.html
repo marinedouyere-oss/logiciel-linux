@@ -264,6 +264,22 @@
   .incoherences-techniques strong { color: #b26a00; }
   .incoherences-note { color: #666; margin: 4px 0 6px; font-size: 0.82rem; }
   .incoherences-techniques ul { margin: 0; padding-left: 20px; }
+  .btn-scies { background: #1565c0; font-weight: 700; }
+  .btn-scies:hover:not(:disabled) { background: #0d47a1; }
+  .scies-resultat:empty { display: none; }
+  .scies-resultat {
+    background: #e3f2fd;
+    border: 1px solid #1565c0;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-top: 12px;
+    font-size: 0.86rem;
+  }
+  .scies-resultat .scies-titre { font-weight: 700; color: #0d47a1; display: block; margin-bottom: 4px; }
+  .scies-resultat.scies-ok { background: #e8f5e9; border-color: var(--ok-text); }
+  .scies-resultat.scies-ok .scies-titre { color: var(--ok-text); }
+  .scies-resultat table { margin-top: 8px; font-size: 0.82rem; }
+  .scies-resultat .scies-note { color: #666; margin: 4px 0 6px; font-size: 0.8rem; }
   table {
     width: 100%;
     border-collapse: collapse;
@@ -1429,9 +1445,11 @@ function majLibellePaire(paire, div) {
 function reinitialiserPaire(paire, div) {
   const inputStrat = div.querySelector(`#strat-${paire.id}`);
   const inputCoupe = div.querySelector(`#coupe-${paire.id}`);
+  const inputBkp = div.querySelector(`#bkp-${paire.id}`);
   if (inputStrat) inputStrat.value = "";
   if (inputCoupe) inputCoupe.value = "";
-  for (const role of ["validation-strat", "validation-coupe"]) {
+  if (inputBkp) inputBkp.value = "";
+  for (const role of ["validation-strat", "validation-coupe", "validation-bkp"]) {
     const span = div.querySelector(`[data-role="${role}"]`);
     if (span) {
       span.textContent = "";
@@ -1457,6 +1475,9 @@ function reinitialiserPaire(paire, div) {
 
   const conteneurResultat = $(`resultat-inline-${paire.id}`);
   if (conteneurResultat) conteneurResultat.innerHTML = "";
+
+  const conteneurScies = $(`scies-resultat-${paire.id}`);
+  if (conteneurScies) conteneurScies.innerHTML = "";
 
   effacerMemoire(paire);
 }
@@ -1531,9 +1552,19 @@ function redessinerPaires() {
             <button type="button" class="btn-go" data-action="go">GO</button>
           </div>
           <div class="resultat-inline" id="resultat-inline-${paire.id}"></div>
+          <div class="ligne-fichier">
+            <label for="bkp-${paire.id}">Contrôle Scies — fichier .bkp (optionnel) :</label>
+            <input type="file" id="bkp-${paire.id}" accept=".bkp">
+            <span class="validation-fichier" data-role="validation-bkp"></span>
+          </div>
+          <div class="paire-go-row">
+            <button type="button" class="btn-scies" data-action="scies">Vérifier Scies</button>
+          </div>
+          <div class="scies-resultat" id="scies-resultat-${paire.id}"></div>
         `;
         const inputStrat = div.querySelector(`#strat-${paire.id}`);
         const inputCoupe = div.querySelector(`#coupe-${paire.id}`);
+        const inputBkp = div.querySelector(`#bkp-${paire.id}`);
         inputStrat.addEventListener("change", async () => {
           if (!validerFichierSelectionne(inputStrat, "lancement", "LAN", div, "validation-strat")) return;
           detecterSemainePaire(paire, div);
@@ -1547,8 +1578,12 @@ function redessinerPaires() {
           const bytes = await fichier.arrayBuffer();
           sauvegarderDansMemoire(paire, { fichierCoupe: { nom: fichier.name, type: fichier.type, bytes } });
         });
+        inputBkp.addEventListener("change", () => {
+          validerFichierSelectionne(inputBkp, "sauvegarde d'optimisation", ".bkp", div, "validation-bkp");
+        });
         div.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(paire, div));
         div.querySelector('[data-action="reinitialiser"]').addEventListener("click", () => reinitialiserPaire(paire, div));
+        div.querySelector('[data-action="scies"]').addEventListener("click", () => lancerControleScies(paire, div));
         restaurerPaire(paire, div);
         grille.appendChild(div);
       });
@@ -2170,6 +2205,237 @@ async function lireCoupeDepuisFichier(fichier, clesStrat, qteAttendueParCle) {
 
 async function lireGrainMatchingDepuisFichier(fichier, clesStrat) {
   return lireGrainMatchingDepuisSource(await chargerSourceCoupe(fichier), clesStrat);
+}
+
+// ---- bkp_reader (Contrôle Scies) ----
+//
+// Le fichier .bkp est une sauvegarde ZIP complète du logiciel d'optimisation
+// V12 Laisne. Elle contient, entre autres, un fichier <lancement>.ctt "maître"
+// qui liste, pour chaque pièce réellement placée sur un panneau, une entrée
+// CSV (lignes PNL1/PNL2/PNL3). Ce contrôle compare ce que le logiciel
+// d'optimisation a effectivement traité à ce que le fichier de lancement
+// attendait, pour détecter une pièce oubliée pendant l'optimisation.
+//
+// Deux pièges identifiés en analysant manuellement plusieurs .bkp réels
+// (voir historique) :
+// - chaque pièce réelle apparaît sous DEUX repères ("trace") au moins :
+//   "TC" (référence catalogue/matériau — la seule source fiable de quantité)
+//   et "TF" (référence à son placement sur un panneau donné). Ne prendre que
+//   "TC" et sommer TOUTES ses occurrences par pièce (un même repère "TC"
+//   peut apparaître plusieurs fois, une fois par bande qui l'utilise).
+// - les bandes/chants découpés en longueur (matériau type "CRED14") génèrent
+//   des enregistrements "modulo" techniques (nom "T9/1", "LT9/1"...) qui ne
+//   sont jamais de vraies pièces à compter : à exclure systématiquement.
+
+const MOTIF_BANDE_MODULO = /^L?T\d+\/\d+$/;
+
+// Repère et décode le répertoire central d'une archive ZIP (implémentation
+// minimale : lecture seule, méthodes "stocké" et "deflate" uniquement —
+// suffisant pour les .bkp V12 Laisne — pour éviter d'ajouter une librairie
+// externe au bundle).
+async function listerEntreesZip(bytes) {
+  const vue = new DataView(bytes);
+  const taille = bytes.byteLength;
+  let finPos = -1;
+  const debutRecherche = Math.max(0, taille - 22 - 65536);
+  for (let i = taille - 22; i >= debutRecherche; i--) {
+    if (vue.getUint32(i, true) === 0x06054b50) {
+      finPos = i;
+      break;
+    }
+  }
+  if (finPos === -1) {
+    throw new Error("Archive .bkp invalide (fin de répertoire central introuvable).");
+  }
+  const nbEntrees = vue.getUint16(finPos + 10, true);
+  let offsetCentral = vue.getUint32(finPos + 16, true);
+
+  const entrees = [];
+  const decodeur = new TextDecoder("utf-8");
+  for (let i = 0; i < nbEntrees; i++) {
+    if (vue.getUint32(offsetCentral, true) !== 0x02014b50) break;
+    const methode = vue.getUint16(offsetCentral + 10, true);
+    const tailleCompressee = vue.getUint32(offsetCentral + 20, true);
+    const tailleReelle = vue.getUint32(offsetCentral + 24, true);
+    const longueurNom = vue.getUint16(offsetCentral + 28, true);
+    const longueurExtra = vue.getUint16(offsetCentral + 30, true);
+    const longueurCommentaire = vue.getUint16(offsetCentral + 32, true);
+    const offsetEnTeteLocal = vue.getUint32(offsetCentral + 42, true);
+    const nomBytes = new Uint8Array(bytes, offsetCentral + 46, longueurNom);
+    entrees.push({ nom: decodeur.decode(nomBytes), methode, tailleCompressee, tailleReelle, offsetEnTeteLocal });
+    offsetCentral += 46 + longueurNom + longueurExtra + longueurCommentaire;
+  }
+  return entrees;
+}
+
+// Extrait et décompresse (si besoin) le contenu d'une entrée ZIP.
+async function extraireEntreeZip(bytes, entree) {
+  const vue = new DataView(bytes);
+  const base = entree.offsetEnTeteLocal;
+  if (vue.getUint32(base, true) !== 0x04034b50) {
+    throw new Error("En-tête local ZIP invalide.");
+  }
+  const longueurNom = vue.getUint16(base + 26, true);
+  const longueurExtra = vue.getUint16(base + 28, true);
+  const debutDonnees = base + 30 + longueurNom + longueurExtra;
+  const donneesCompressees = new Uint8Array(bytes, debutDonnees, entree.tailleCompressee);
+
+  if (entree.methode === 0) return donneesCompressees.slice();
+  if (entree.methode !== 8) {
+    throw new Error(`Méthode de compression ZIP non supportée (code ${entree.methode}).`);
+  }
+  const flux = new Blob([donneesCompressees]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return new Uint8Array(await new Response(flux).arrayBuffer());
+}
+
+// Trouve, dans l'archive .bkp, le fichier .ctt "maître" d'un lancement — les
+// fichiers .ctt annexes (un par matériau ou par panneau) portent tous un
+// suffixe "_xxx" après le nom du lancement ; le maître n'en a pas.
+function trouverEntreeCttMaitre(entrees, nomLancement) {
+  const candidats = entrees.filter((e) => /\.ctt$/i.test(e.nom));
+  if (candidats.length === 0) {
+    throw new Error("Aucun fichier .ctt trouvé dans l'archive .bkp.");
+  }
+  if (nomLancement) {
+    const cible = candidats.find((e) => e.nom.split(/[/\\]/).pop().toLowerCase() === `${nomLancement.toLowerCase()}.ctt`);
+    if (cible) return cible;
+  }
+  const sansSuffixe = candidats.filter((e) => !e.nom.split(/[/\\]/).pop().includes("_"));
+  if (sansSuffixe.length >= 1) {
+    return sansSuffixe.reduce((a, b) => (b.tailleReelle > a.tailleReelle ? b : a));
+  }
+  throw new Error("Fichier .ctt maître introuvable dans l'archive .bkp (tous les .ctt trouvés ont un suffixe).");
+}
+
+// Parse le contenu texte du .ctt maître et renvoie, par clé commande+ligne,
+// la quantité de pièces réellement optimisées — voir notes ci-dessus sur le
+// choix des repères "TC" et l'exclusion des bandes/modulos.
+function lireQuantitesCtt(texte) {
+  const lignes = texte.split(/\r?\n/);
+  let pnl1Courant = null;
+  let pnl2Courant = null;
+  const pieces = new Map(); // id ("P123") -> { TC: [{nom, qte, cle}, ...] }
+
+  for (const ligne of lignes) {
+    if (ligne.startsWith("PNL1,")) {
+      const c = ligne.split(",");
+      pnl1Courant = { nom: c[1], qte: parseInt(c[5], 10) || 0 };
+    } else if (ligne.startsWith("PNL2,")) {
+      const c = ligne.split(",");
+      pnl2Courant = { cle: c[5] || "", agglo: c[9] || "" };
+    } else if (ligne.startsWith("PNL3,")) {
+      const m = /^PNL3,([A-Z]+\d+):(T[A-Z0-9]+):/.exec(ligne);
+      if (m && pnl1Courant && pnl2Courant) {
+        const [, id, type] = m;
+        if (type !== "TC") continue;
+        if (!pieces.has(id)) pieces.set(id, []);
+        pieces.get(id).push({ ...pnl1Courant, ...pnl2Courant });
+      }
+    }
+  }
+
+  const qteParCle = new Map();
+  for (const [id, entreesTC] of pieces) {
+    if (!id.startsWith("P")) continue; // les identifiants "C<n>" sont des bandes/chutes, jamais des pièces
+    const reelles = entreesTC.filter(
+      (e) => !MOTIF_BANDE_MODULO.test(e.nom) && e.agglo.trim().toUpperCase() !== "PROTECTION"
+    );
+    if (reelles.length === 0) continue;
+    const cle = reelles[0].cle;
+    if (!cle) continue;
+    const qte = reelles.reduce((s, e) => s + e.qte, 0);
+    qteParCle.set(cle, (qteParCle.get(cle) || 0) + qte);
+  }
+  return qteParCle;
+}
+
+// Lit un fichier .bkp (archive V12 Laisne) et renvoie les quantités
+// réellement optimisées par clé.
+async function lireBkp(fichier, nomLancement) {
+  const bytes = await fichier.arrayBuffer();
+  const entrees = await listerEntreesZip(bytes);
+  const entreeCtt = trouverEntreeCttMaitre(entrees, nomLancement);
+  const donnees = await extraireEntreeZip(bytes, entreeCtt);
+  const texte = new TextDecoder("iso-8859-1").decode(donnees);
+  return lireQuantitesCtt(texte);
+}
+
+// Compare les quantités attendues (fichier de lancement) à celles réellement
+// optimisées (extraites du .bkp) et renvoie la liste des écarts, triée.
+function comparerScies(qteAttendueParCle, qteParCleBkp) {
+  const cles = new Set([...qteAttendueParCle.keys(), ...qteParCleBkp.keys()]);
+  const ecarts = [];
+  for (const cle of cles) {
+    const attendu = qteAttendueParCle.get(cle) || 0;
+    const trouve = qteParCleBkp.get(cle) || 0;
+    if (attendu !== trouve) ecarts.push({ cle, attendu, trouve });
+  }
+  ecarts.sort((a, b) => a.cle.localeCompare(b.cle));
+  return ecarts;
+}
+
+// Lance le Contrôle Scies pour une paire : lit le fichier de lancement déjà
+// sélectionné (indépendamment du contrôle STRAT/liste de coupe principal) et
+// le fichier .bkp fourni, puis affiche les écarts éventuels.
+async function lancerControleScies(paire, div) {
+  const conteneur = div.querySelector(`#scies-resultat-${paire.id}`);
+  const bouton = div.querySelector('[data-action="scies"]');
+  const fichierStrat = fichierStratDe(paire);
+  const inputBkp = div.querySelector(`#bkp-${paire.id}`);
+  const fichierBkp = inputBkp && inputBkp.files[0];
+
+  if (!fichierStrat) {
+    alert(`${paire.nom} : sélectionnez d'abord le fichier de lancement.`);
+    return;
+  }
+  if (!fichierBkp) {
+    alert(`${paire.nom} : sélectionnez le fichier .bkp à vérifier.`);
+    return;
+  }
+
+  if (bouton) bouton.disabled = true;
+  conteneur.innerHTML = "";
+  conteneur.className = "scies-resultat";
+  conteneur.textContent = "⏳ lecture des fichiers…";
+  await tick();
+
+  try {
+    const { lignes: lignesStrat } = lireStrat(await chargerClasseur(fichierStrat));
+    const qteAttendueParCle = new Map(lignesStrat.map((l) => [l.cle, l.qte_attendue]));
+
+    const nomLancement = fichierBkp.name.replace(/_\d{4}-\d{2}-\d{2}.*$/i, "").replace(/\.bkp$/i, "");
+    const qteParCleBkp = await lireBkp(fichierBkp, nomLancement);
+
+    const ecarts = comparerScies(qteAttendueParCle, qteParCleBkp);
+    afficherResultatScies(conteneur, ecarts, qteAttendueParCle.size);
+  } catch (erreur) {
+    conteneur.textContent = `❌ ${erreur && erreur.message ? erreur.message : String(erreur)}`;
+  } finally {
+    if (bouton) bouton.disabled = false;
+  }
+}
+
+function afficherResultatScies(conteneur, ecarts, nbClesAttendues) {
+  if (ecarts.length === 0) {
+    conteneur.className = "scies-resultat scies-ok";
+    conteneur.innerHTML = `<span class="scies-titre">✔ Contrôle Scies : tout correspond</span>${nbClesAttendues} clé(s) du fichier de lancement retrouvée(s) à l'identique dans le .bkp.`;
+    return;
+  }
+  const lignes = ecarts
+    .map((e) => {
+      const type = e.attendu === 0 ? "en trop (absente du lancement)" : e.trouve === 0 ? "absente du .bkp" : "quantité différente";
+      return `<tr><td>${echapperHtml(e.cle)}</td><td>${e.attendu}</td><td>${e.trouve}</td><td>${type}</td></tr>`;
+    })
+    .join("");
+  conteneur.className = "scies-resultat";
+  conteneur.innerHTML = `
+    <span class="scies-titre">⚠ Contrôle Scies : ${ecarts.length} écart(s) sur ${nbClesAttendues} clé(s)</span>
+    <p class="scies-note">Comparaison entre le fichier de lancement et ce qui a été réellement optimisé (fichier .bkp) — une pièce en écart peut signaler un oubli lors de l'optimisation.</p>
+    <table>
+      <thead><tr><th>Clé (commande+ligne)</th><th>Attendu</th><th>Trouvé (.bkp)</th><th>Écart</th></tr></thead>
+      <tbody>${lignes}</tbody>
+    </table>
+  `;
 }
 
 // Recherche une clé commande+ligne dans TOUTES les listes de coupe
