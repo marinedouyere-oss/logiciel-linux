@@ -19,6 +19,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.marinedouyere.orion.ui.calepinage.CalepinageScreen
 import com.marinedouyere.orion.ui.reglages.ReglagesScreen
 import com.marinedouyere.orion.ui.woodstore.WoodstoreScreen
@@ -35,7 +36,7 @@ private enum class OrionTab(val label: String) {
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OrionRoot() {
+fun OrionRoot(viewModel: OrionViewModel = viewModel()) {
     var selected by remember { mutableIntStateOf(0) }
 
     Scaffold(
@@ -74,9 +75,9 @@ fun OrionRoot() {
                 .background(MaterialTheme.colorScheme.background),
         ) {
             when (OrionTab.entries[selected]) {
-                OrionTab.Calepinage -> CalepinageScreen()
-                OrionTab.Reglages -> ReglagesScreen()
-                OrionTab.Woodstore -> WoodstoreScreen()
+                OrionTab.Calepinage -> CalepinageScreen(viewModel)
+                OrionTab.Reglages -> ReglagesScreen(viewModel)
+                OrionTab.Woodstore -> WoodstoreScreen(viewModel)
             }
         }
     }

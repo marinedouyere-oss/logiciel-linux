@@ -6,9 +6,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.marinedouyere.orion.ui.OrionViewModel
 
 @Composable
-fun CalepinageScreen() {
+fun CalepinageScreen(viewModel: OrionViewModel) {
     Text(
         text = "Calepinage — à venir",
         style = MaterialTheme.typography.bodyLarge,

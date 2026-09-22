@@ -17,6 +17,10 @@ val FAM_LABELS: Map<String, String> = mapOf(
 
 fun famLabel(fam: String?): String = FAM_LABELS[fam] ?: fam.takeUnless { it.isNullOrBlank() } ?: "Autre"
 
+/** Distinct families present in the library, sorted by their display label (fillFamSelects in orion.html). */
+fun famList(woodstore: List<WoodstoreRow>): List<String> =
+    woodstore.mapNotNull { it.fam.takeUnless { f -> f.isBlank() } }.distinct().sortedBy { famLabel(it) }
+
 /**
  * Machine settings profile applied per family (FAM_PROFILE): only strat and agglo
  * have real Cut Rite parameter sheets, so every other family borrows the closest one.
