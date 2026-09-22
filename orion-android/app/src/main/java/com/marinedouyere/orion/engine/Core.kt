@@ -1,7 +1,14 @@
 package com.marinedouyere.orion.engine
 
 import com.marinedouyere.orion.data.Piece
+import kotlin.math.floor
 import kotlin.random.Random
+
+/**
+ * JS `Math.round` semantics (round-half-up) for our always-non-negative
+ * dimensions — NOT the same as kotlin.math.round, which rounds half-to-even.
+ */
+internal fun jsRound(x: Double): Double = floor(x + 0.5)
 
 /**
  * Mutable per-piece stock counter used while an optimization run consumes
@@ -37,6 +44,18 @@ internal data class Strategy(val name: String, val alpha: Double, val densityBon
 internal data class OptimizeContext(val price: DoubleArray?, val sheetsLeft: Int)
 
 internal fun priceOf(ctx: OptimizeContext?, di: Int): Double = ctx?.price?.get(di) ?: 1.0
+
+/**
+ * Shared "is this candidate result better" ranking used by optimize()'s and
+ * optimize3()'s main strategy loops: fewer unplaced pieces wins, then fewer
+ * new sheets, then better material utilization.
+ */
+internal fun isBetterCandidate(cand: OptimizeResult, currentBest: OptimizeResult?): Boolean {
+    if (currentBest == null) return true
+    if (cand.unplaced != currentBest.unplaced) return cand.unplaced < currentBest.unplaced
+    if (cand.newSheets != currentBest.newSheets) return cand.newSheets < currentBest.newSheets
+    return cand.util > currentBest.util
+}
 
 // alpha = intensité du prix de rareté (0 = aucun, plus haut = plus marqué)
 internal val STRATEGIES: List<Strategy> = buildList {

@@ -16,7 +16,43 @@ internal data class StripResult(
     val recoupes: Int = 0,
 )
 
-internal data class SheetBuild(val bands: List<StripResult>, val usedWidth: Double)
+/** `coupeTete`/`zones` are only ever non-default for buildSheet3's output (head-cut splits); v2's buildSheet leaves them at defaults. */
+internal data class SheetBuild(val bands: List<StripResult>, val usedWidth: Double, val coupeTete: Double? = null, val zones: Int = 1)
+
+/**
+ * Resolves demand-index-based bands into the public CutSheet/CutBand/CutItem
+ * shape (pieceId/name/pieceL/pieceW attached). Equivalent to the normalization
+ * pass at the end of optimize()/optimize3() in orion.html, just applied per
+ * sheet as it's built instead of once at the very end.
+ */
+internal fun SheetBuild.toCutSheet(
+    sheetL: Double,
+    sheetW: Double,
+    demand: List<Demand>,
+    fromChute: Boolean,
+    parentSheetIndex: Int? = null,
+): CutSheet = CutSheet(
+    L = sheetL,
+    W = sheetW,
+    bands = bands.map { b ->
+        CutBand(
+            height = b.height,
+            usedLen = b.usedLen,
+            area = b.area,
+            y = b.y,
+            recoupes = b.recoupes,
+            items = b.items.map { it ->
+                val d = demand[it.di]
+                CutItem(d.pieceId, d.name, d.L, d.W, it.w, it.h, it.rotated, it.x, it.dy)
+            },
+        )
+    },
+    usedWidth = usedWidth,
+    fromChute = fromChute,
+    parentSheetIndex = parentSheetIndex,
+    coupeTete = coupeTete,
+    zones = zones,
+)
 
 /**
  * Bounded knapsack: fills one band of the given `height` over `maxLen`.
