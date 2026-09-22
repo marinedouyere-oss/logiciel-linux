@@ -100,75 +100,79 @@ fun WoodstoreScreen(viewModel: OrionViewModel) {
         list
     }
 
-    Column(Modifier.fillMaxWidth().padding(16.dp)) {
-        Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
-            Text(
-                "Diagnostic — version ${com.marinedouyere.orion.BuildConfig.VERSION_NAME} (${com.marinedouyere.orion.BuildConfig.VERSION_CODE}) · " +
-                    "chargement=${viewModel.isWoodstoreLoading} · erreur=${viewModel.woodstoreError ?: "aucune"} · lignes=${viewModel.woodstore.size}",
-                style = MaterialTheme.typography.labelSmall,
-                modifier = Modifier.padding(6.dp),
-            )
-        }
-        Spacer(Modifier.height(8.dp))
-        Text("Woodstore — bibliothèque de panneaux", style = MaterialTheme.typography.titleMedium)
-        Text(
-            "Formats, matières et décors utilisés dans l'onglet Calepinage. Les ajouts et suppressions restent enregistrés sur cet appareil.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(Modifier.height(12.dp))
+    LazyColumn(Modifier.fillMaxWidth().padding(16.dp)) {
+        item {
+            Column {
+                Surface(color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        "Diagnostic — version ${com.marinedouyere.orion.BuildConfig.VERSION_NAME} (${com.marinedouyere.orion.BuildConfig.VERSION_CODE}) · " +
+                            "chargement=${viewModel.isWoodstoreLoading} · erreur=${viewModel.woodstoreError ?: "aucune"} · lignes=${viewModel.woodstore.size}",
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier.padding(6.dp),
+                    )
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("Woodstore — bibliothèque de panneaux", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Formats, matières et décors utilisés dans l'onglet Calepinage. Les ajouts et suppressions restent enregistrés sur cet appareil.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(12.dp))
 
-        AddRowCard(existingFamilies = families.ifEmpty { FAM_LABELS.keys.toList() }) { row ->
-            if (!viewModel.addWoodstoreRow(row)) snackbar = "Ce code article existe déjà dans la bibliothèque."
-        }
+                AddRowCard(existingFamilies = families.ifEmpty { FAM_LABELS.keys.toList() }) { row ->
+                    if (!viewModel.addWoodstoreRow(row)) snackbar = "Ce code article existe déjà dans la bibliothèque."
+                }
 
-        Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { importLauncher.launch(arrayOf("*/*")) }) { Text("Importer un export (.xlsx)") }
-            OutlinedButton(onClick = { exportLauncher.launch("woodstore_orion.xlsx") }) { Text("Exporter en Excel") }
-            OutlinedButton(onClick = { showResetConfirm = true }) { Text("Réinitialiser") }
-        }
+                Spacer(Modifier.height(12.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { importLauncher.launch(arrayOf("*/*")) }, modifier = Modifier.fillMaxWidth()) { Text("Importer un export (.xlsx)") }
+                    OutlinedButton(onClick = { exportLauncher.launch("woodstore_orion.xlsx") }, modifier = Modifier.fillMaxWidth()) { Text("Exporter en Excel") }
+                    OutlinedButton(onClick = { showResetConfirm = true }, modifier = Modifier.fillMaxWidth()) { Text("Réinitialiser") }
+                }
 
-        Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FamilyDropdown(
-                selected = famFilter,
-                families = families,
-                allLabel = "Toutes les familles (${viewModel.woodstore.size})",
-                modifier = Modifier.width(220.dp),
-                onSelect = { famFilter = it },
-            )
-            OutlinedTextField(
-                value = search,
-                onValueChange = { search = it },
-                label = { Text("Rechercher (code, décor, description)") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        Text(
-            "${filtered.size} référence(s) sur ${viewModel.woodstore.size}",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FamilyDropdown(
+                        selected = famFilter,
+                        families = families,
+                        allLabel = "Toutes les familles (${viewModel.woodstore.size})",
+                        modifier = Modifier.width(220.dp),
+                        onSelect = { famFilter = it },
+                    )
+                    OutlinedTextField(
+                        value = search,
+                        onValueChange = { search = it },
+                        label = { Text("Rechercher (code, décor, description)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Text(
+                    "${filtered.size} référence(s) sur ${viewModel.woodstore.size}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
-        viewModel.woodstoreError?.let { err ->
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                TextButton(onClick = { viewModel.reloadWoodstore() }) { Text("Réessayer") }
+                viewModel.woodstoreError?.let { err ->
+                    Spacer(Modifier.height(4.dp))
+                    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(err, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { viewModel.reloadWoodstore() }) { Text("Réessayer") }
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                if (viewModel.isWoodstoreLoading) {
+                    Text("Chargement…", style = MaterialTheme.typography.bodyMedium)
+                }
             }
         }
 
-        Spacer(Modifier.height(8.dp))
-        if (viewModel.isWoodstoreLoading) {
-            Text("Chargement…", style = MaterialTheme.typography.bodyMedium)
-        } else {
-            LazyColumn(Modifier.fillMaxWidth()) {
-                items(filtered, key = { it.id }) { row ->
-                    WoodstoreRowItem(row, onDelete = { pendingDelete = row })
-                    HorizontalDivider()
-                }
+        if (!viewModel.isWoodstoreLoading) {
+            items(filtered, key = { it.id }) { row ->
+                WoodstoreRowItem(row, onDelete = { pendingDelete = row })
+                HorizontalDivider()
             }
         }
     }
