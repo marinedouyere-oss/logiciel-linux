@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Schéma technique — Plan de travail</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="app-header">
+  <h1>Générateur de schéma technique — Plan de travail</h1>
+  <p class="subtitle">Saisissez les cotes transmises par le client pour obtenir un schéma coté, prêt à imprimer ou à exporter.</p>
+</header>
+
+<main class="layout">
+  <section class="panel form-panel">
+
+    <fieldset>
+      <legend>Client / chantier</legend>
+      <label>Nom du client
+        <input type="text" id="clientNom" placeholder="ex. M. et Mme Martin">
+      </label>
+      <label>Adresse / chantier
+        <input type="text" id="clientAdresse" placeholder="ex. 12 rue des Lilas, Lyon">
+      </label>
+      <div class="field-row">
+        <label>Référence
+          <input type="text" id="reference" placeholder="ex. DEV-2026-014">
+        </label>
+        <label>Date
+          <input type="date" id="dateProjet">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Plan reçu du client (repère visuel)</legend>
+      <label>Photo, croquis ou PDF du client
+        <input type="file" id="refFile" accept="image/*,application/pdf">
+      </label>
+      <p class="hint">Sert uniquement de repère pendant la saisie des cotes ci-dessous : ce fichier n'est ni exporté, ni enregistré.</p>
+      <div id="refPreview" class="ref-preview" hidden></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Forme du plan de travail</legend>
+      <div class="shape-choice">
+        <label><input type="radio" name="forme" value="droit" checked> Droit</label>
+        <label><input type="radio" name="forme" value="L"> En L</label>
+        <label><input type="radio" name="forme" value="U"> En U</label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Cotes (mm)</legend>
+      <div id="segmentsFields" class="field-grid"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Bords contre un mur</legend>
+      <div id="wallsFields" class="field-grid"></div>
+      <p class="hint">Décochez un bord s'il reste libre (non adossé à un mur). Les bords avant restent toujours apparents (chant fini).</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Matériau</legend>
+      <div class="field-row">
+        <label>Épaisseur (mm)
+          <input type="number" id="epaisseur" min="1" step="1">
+        </label>
+        <label>Unité d'affichage des cotes
+          <select id="uniteAffichage">
+            <option value="mm">Millimètres</option>
+            <option value="cm">Centimètres</option>
+          </select>
+        </label>
+      </div>
+      <div class="field-row">
+        <label>Matériau
+          <input type="text" id="materiau" placeholder="ex. Quartz, Granit, Stratifié...">
+        </label>
+        <label>Finition de chant
+          <input type="text" id="chant" placeholder="ex. Chant droit, arrondi 5 mm...">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Découpes (évier, plaque de cuisson...)</legend>
+      <div id="decoupesList"></div>
+      <button type="button" id="btnAddDecoupe" class="btn-secondary">+ Ajouter une découpe</button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Notes</legend>
+      <textarea id="notes" rows="3" placeholder="Remarques complémentaires pour l'atelier..."></textarea>
+    </fieldset>
+
+    <div class="actions">
+      <button type="button" id="btnPng">Exporter en PNG</button>
+      <button type="button" id="btnPrint">Imprimer / PDF</button>
+      <button type="button" id="btnSave">Enregistrer (.json)</button>
+      <button type="button" id="btnLoad">Charger (.json)</button>
+      <button type="button" id="btnReset" class="btn-danger">Nouveau plan</button>
+      <input type="file" id="fileLoad" accept="application/json" hidden>
+    </div>
+  </section>
+
+  <section class="panel preview-panel">
+    <div id="schemaError" class="error-box" hidden></div>
+    <div id="schemaHeader" class="schema-header"></div>
+    <div class="svg-wrap">
+      <svg id="schemaSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
