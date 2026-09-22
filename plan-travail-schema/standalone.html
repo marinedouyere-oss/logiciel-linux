@@ -1,0 +1,1245 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Schéma technique — Plan de travail</title>
+<style>
+:root {
+  --bg: #eef1f6;
+  --surface: #ffffff;
+  --surface-2: #f4f6f9;
+  --border: #e2e7ee;
+  --border-strong: #c7cfda;
+  --text: #171b21;
+  --text-muted: #667085;
+  --accent: #3563a8;
+  --accent-strong: #294f87;
+  --accent-tint: rgba(53, 99, 168, 0.14);
+  --accent-on: #ffffff;
+  --danger: #b4301f;
+  --danger-tint: rgba(180, 48, 31, 0.1);
+
+  --paper-bg: #fdfdfc;
+  --paper-text: #171b21;
+  --paper-muted: #667085;
+  --paper-border: #e2e7ee;
+  --paper-danger: #b4301f;
+  --paper-danger-tint: rgba(180, 48, 31, 0.1);
+
+  --radius-lg: 16px;
+  --radius-md: 10px;
+  --radius-sm: 7px;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --shadow-md: 0 10px 28px -14px rgba(15, 23, 42, 0.22);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #10131a;
+    --surface: #171b24;
+    --surface-2: #1e232e;
+    --border: #2b3140;
+    --border-strong: #3a4254;
+    --text: #e7eaf0;
+    --text-muted: #9aa4b6;
+    --accent: #6ea1e8;
+    --accent-strong: #8fb9f2;
+    --accent-tint: rgba(110, 161, 232, 0.16);
+    --accent-on: #0d1420;
+    --danger: #ef6a58;
+    --danger-tint: rgba(239, 106, 88, 0.14);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+    --shadow-md: 0 12px 32px -14px rgba(0, 0, 0, 0.6);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", "Segoe UI Variable", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+::selection { background: var(--accent-tint); }
+
+.app-header {
+  padding: 26px 28px 16px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  border-top: 3px solid var(--accent);
+}
+.app-header h1 { margin: 0 0 4px; font-size: 1.45rem; font-weight: 800; letter-spacing: -0.01em; }
+.subtitle { margin: 0; color: var(--text-muted); font-size: 0.92rem; }
+
+.layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 400px) 1fr;
+  gap: 20px;
+  padding: 20px 28px 36px;
+  align-items: start;
+}
+
+@media (max-width: 860px) {
+  .layout { grid-template-columns: 1fr; padding: 16px; }
+  .form-panel { max-height: none !important; }
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  box-shadow: var(--shadow-sm);
+}
+
+.form-panel {
+  max-height: calc(100vh - 150px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+.form-panel::-webkit-scrollbar { width: 8px; }
+.form-panel::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 8px; }
+.form-panel::-webkit-scrollbar-track { background: transparent; }
+
+/* Native fieldset/legend chrome reads as a retro "group box"; sections are
+   restyled as unboxed blocks with a small label + rule instead. */
+fieldset {
+  border: 0;
+  margin: 0 0 24px;
+  padding: 0;
+}
+.form-panel fieldset:last-of-type { margin-bottom: 0; }
+legend {
+  display: block;
+  width: 100%;
+  padding: 0 0 9px;
+  margin: 0 0 13px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: 10px 0;
+  color: var(--text-muted);
+}
+fieldset > label:first-child { margin-top: 0; }
+
+input[type="text"], input[type="number"], input[type="date"], select, textarea {
+  width: 100%;
+  margin-top: 5px;
+  padding: 9px 11px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: 400;
+  color: var(--text);
+  background: var(--surface-2);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+input[type="text"]:hover, input[type="number"]:hover, input[type="date"]:hover, select:hover, textarea:hover {
+  border-color: var(--border-strong);
+}
+input[type="text"]:focus, input[type="number"]:focus, input[type="date"]:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-tint);
+}
+textarea { resize: vertical; font-weight: 400; }
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23667085' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 16px;
+  padding-right: 34px;
+  cursor: pointer;
+}
+@media (prefers-color-scheme: dark) {
+  select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%239aa4b6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  }
+}
+
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); width: 15px; height: 15px; }
+
+input[type="file"] {
+  width: 100%;
+  margin-top: 5px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+input[type="file"]::file-selector-button {
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  margin-right: 10px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+input[type="file"]::file-selector-button:hover { border-color: var(--border-strong); background: var(--surface-2); }
+
+.field-row { display: flex; gap: 12px; }
+.field-row label { flex: 1; }
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px 14px;
+}
+
+.shape-choice {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius-sm) + 4px);
+}
+.shape-choice label {
+  position: relative;
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  user-select: none;
+}
+@supports selector(:has(a)) {
+  .shape-choice input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+  }
+  .shape-choice label:has(input:checked) {
+    background: var(--surface);
+    color: var(--accent);
+    box-shadow: var(--shadow-sm);
+  }
+  .shape-choice label:has(input:focus-visible) {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}
+
+.hint { font-size: 0.78rem; color: var(--text-muted); margin: 6px 0 0; line-height: 1.4; }
+
+.ref-preview {
+  margin-top: 10px;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 8px;
+  background: var(--surface-2);
+}
+.ref-preview img { max-width: 100%; display: block; border-radius: var(--radius-sm); }
+
+.decoupe-row {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin-bottom: 10px;
+  background: var(--surface-2);
+}
+.decoupe-row .field-row { margin-bottom: 2px; }
+.decoupe-row .row-actions { text-align: right; margin-top: 2px; }
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  font: inherit;
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  padding: 9px 14px;
+  background: var(--surface);
+  color: var(--text);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.05s ease;
+}
+button:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
+button:active { transform: translateY(1px); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.icon { width: 16px; height: 16px; flex: none; }
+
+.actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 6px; align-items: center; }
+.actions button { background: var(--accent); color: var(--accent-on); border-color: var(--accent); }
+.actions button:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
+.actions .btn-danger { background: transparent; color: var(--danger); border-color: var(--danger); margin-left: auto; }
+.actions .btn-danger:hover { background: var(--danger-tint); }
+
+.btn-secondary { background: transparent; color: var(--accent); border-color: var(--accent); margin-top: 4px; }
+.btn-secondary:hover { background: var(--accent-tint); }
+
+.row-actions button {
+  background: transparent;
+  color: var(--danger);
+  border-color: transparent;
+  padding: 5px 8px;
+  font-size: 0.78rem;
+}
+.row-actions button:hover { background: var(--danger-tint); border-color: var(--danger); }
+
+.preview-panel {
+  /* Fixed "paper" tokens: the fabrication drawing stays a consistent light
+     sheet regardless of the app's light/dark theme, like a print preview. */
+  --surface: var(--paper-bg);
+  --surface-2: var(--paper-bg);
+  --text: var(--paper-text);
+  --text-muted: var(--paper-muted);
+  --border: var(--paper-border);
+  --danger: var(--paper-danger);
+  --danger-tint: var(--paper-danger-tint);
+  background: var(--paper-bg);
+  color: var(--paper-text);
+  min-height: 500px;
+  display: flex;
+  flex-direction: column;
+}
+
+.schema-header {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+  margin-bottom: 16px;
+  font-size: 0.85rem;
+}
+.schema-header .block { min-width: 0; }
+.schema-header .block strong {
+  display: block;
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-bottom: 3px;
+}
+
+.error-box {
+  background: var(--danger-tint);
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  padding: 9px 13px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.svg-wrap { flex: 1; min-height: 420px; }
+#schemaSvg { width: 100%; height: 100%; min-height: 420px; }
+
+@media print {
+  .app-header, .form-panel, .actions { display: none !important; }
+  .layout { display: block; padding: 0; }
+  .panel.preview-panel { border: none; box-shadow: none; padding: 0; }
+  body { background: #fff; }
+  .svg-wrap { min-height: 600px; }
+}
+
+</style>
+</head>
+<body>
+<header class="app-header">
+  <h1>Générateur de schéma technique — Plan de travail</h1>
+  <p class="subtitle">Saisissez les cotes transmises par le client pour obtenir un schéma coté, prêt à imprimer ou à exporter.</p>
+</header>
+
+<main class="layout">
+  <section class="panel form-panel">
+
+    <fieldset>
+      <legend>Client / chantier</legend>
+      <label>Nom du client
+        <input type="text" id="clientNom" placeholder="ex. M. et Mme Martin">
+      </label>
+      <label>Adresse / chantier
+        <input type="text" id="clientAdresse" placeholder="ex. 12 rue des Lilas, Lyon">
+      </label>
+      <div class="field-row">
+        <label>Référence
+          <input type="text" id="reference" placeholder="ex. DEV-2026-014">
+        </label>
+        <label>Date
+          <input type="date" id="dateProjet">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Plan reçu du client (repère visuel)</legend>
+      <label>Photo, croquis ou PDF du client
+        <input type="file" id="refFile" accept="image/*,application/pdf">
+      </label>
+      <p class="hint">Sert uniquement de repère pendant la saisie des cotes ci-dessous : ce fichier n'est ni exporté, ni enregistré.</p>
+      <div id="refPreview" class="ref-preview" hidden></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Forme du plan de travail</legend>
+      <div class="shape-choice">
+        <label><input type="radio" name="forme" value="droit" checked> Droit</label>
+        <label><input type="radio" name="forme" value="L"> En L</label>
+        <label><input type="radio" name="forme" value="U"> En U</label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Cotes (mm)</legend>
+      <div id="segmentsFields" class="field-grid"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Bords contre un mur</legend>
+      <div id="wallsFields" class="field-grid"></div>
+      <p class="hint">Décochez un bord s'il reste libre (non adossé à un mur). Les bords avant restent toujours apparents (chant fini).</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Matériau</legend>
+      <div class="field-row">
+        <label>Épaisseur (mm)
+          <input type="number" id="epaisseur" min="1" step="1">
+        </label>
+        <label>Unité d'affichage des cotes
+          <select id="uniteAffichage">
+            <option value="mm">Millimètres</option>
+            <option value="cm">Centimètres</option>
+          </select>
+        </label>
+      </div>
+      <div class="field-row">
+        <label>Matériau
+          <input type="text" id="materiau" placeholder="ex. Quartz, Granit, Stratifié...">
+        </label>
+        <label>Finition de chant
+          <input type="text" id="chant" placeholder="ex. Chant droit, arrondi 5 mm...">
+        </label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Découpes (évier, plaque de cuisson...)</legend>
+      <div id="decoupesList"></div>
+      <button type="button" id="btnAddDecoupe" class="btn-secondary">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        <span>Ajouter une découpe</span>
+      </button>
+    </fieldset>
+
+    <fieldset>
+      <legend>Notes</legend>
+      <textarea id="notes" rows="3" placeholder="Remarques complémentaires pour l'atelier..."></textarea>
+    </fieldset>
+
+    <div class="actions">
+      <button type="button" id="btnPng">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v11"/><path d="M8 10l4 4 4-4"/><path d="M5 19h14"/></svg>
+        <span>Exporter en PNG</span>
+      </button>
+      <button type="button" id="btnPrint">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 8V4h10v4"/><rect x="5" y="8" width="14" height="7" rx="1.5"/><path d="M8 15v5h8v-5"/></svg>
+        <span>Imprimer / PDF</span>
+      </button>
+      <button type="button" id="btnSave">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 4h11l3 3v13a1 1 0 01-1 1H5a1 1 0 01-1-1V5a1 1 0 011-1z"/><path d="M8 4v5h7V4"/><path d="M8 20v-6h8v6"/></svg>
+        <span>Enregistrer (.json)</span>
+      </button>
+      <button type="button" id="btnLoad">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a1 1 0 011-1h4l2 2h8a1 1 0 011 1v9a1 1 0 01-1 1H5a1 1 0 01-1-1V7z"/></svg>
+        <span>Charger (.json)</span>
+      </button>
+      <button type="button" id="btnReset" class="btn-danger">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+        <span>Nouveau plan</span>
+      </button>
+      <input type="file" id="fileLoad" accept="application/json" hidden>
+    </div>
+  </section>
+
+  <section class="panel preview-panel">
+    <div id="schemaError" class="error-box" hidden></div>
+    <div id="schemaHeader" class="schema-header"></div>
+    <div class="svg-wrap">
+      <svg id="schemaSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+const STORAGE_KEY = "planTravailSchema:v1";
+
+const SHAPE_LABELS = { droit: "Droit", L: "En L", U: "En U" };
+
+const SEGMENT_FIELDS = {
+  droit: [
+    { key: "L", label: "Longueur" },
+    { key: "D", label: "Profondeur" },
+  ],
+  L: [
+    { key: "La", label: "Longueur bras A" },
+    { key: "Da", label: "Profondeur bras A" },
+    { key: "Lb", label: "Longueur bras B" },
+    { key: "Db", label: "Profondeur bras B" },
+  ],
+  U: [
+    { key: "Ll", label: "Longueur bras gauche" },
+    { key: "Dl", label: "Profondeur bras gauche" },
+    { key: "Lf", label: "Longueur du fond" },
+    { key: "Df", label: "Profondeur du fond" },
+    { key: "Lr", label: "Longueur bras droit" },
+    { key: "Dr", label: "Profondeur bras droit" },
+  ],
+};
+
+const CUTOUT_TYPES = [
+  { value: "evier", label: "Évier" },
+  { value: "plaque", label: "Plaque de cuisson" },
+  { value: "autre", label: "Autre" },
+];
+
+function defaultState() {
+  return {
+    client: { nom: "", adresse: "", reference: "", date: "" },
+    forme: "droit",
+    segments: {
+      droit: { L: 3000, D: 600 },
+      L: { La: 3000, Da: 600, Lb: 2000, Db: 600 },
+      U: { Ll: 2000, Dl: 600, Lf: 3000, Df: 600, Lr: 2000, Dr: 600 },
+    },
+    walls: {},
+    epaisseur: 38,
+    materiau: "",
+    chant: "",
+    uniteAffichage: "mm",
+    decoupes: [],
+    notes: "",
+  };
+}
+
+function mergeState(parsed) {
+  const base = defaultState();
+  return {
+    ...base,
+    ...parsed,
+    client: { ...base.client, ...(parsed.client || {}) },
+    segments: {
+      droit: { ...base.segments.droit, ...((parsed.segments || {}).droit || {}) },
+      L: { ...base.segments.L, ...((parsed.segments || {}).L || {}) },
+      U: { ...base.segments.U, ...((parsed.segments || {}).U || {}) },
+    },
+    walls: { ...(parsed.walls || {}) },
+    decoupes: Array.isArray(parsed.decoupes) ? parsed.decoupes : [],
+  };
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return defaultState();
+    return mergeState(JSON.parse(raw));
+  } catch (err) {
+    console.warn("Impossible de restaurer la dernière session :", err);
+    return defaultState();
+  }
+}
+
+function persistState() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (err) {
+    console.warn("Impossible d'enregistrer automatiquement :", err);
+  }
+}
+
+let state = loadState();
+let cutoutSeq = 0;
+let refObjectUrl = null;
+
+function byId(id) { return document.getElementById(id); }
+
+function edgeDesc(p1, p2, kind, id, label) {
+  return { p1, p2, kind, id, label, defaultWall: kind === "wall" };
+}
+
+// Toutes les formes sont des polygones rectilignes tracés dans le sens horaire
+// (repère écran, y vers le bas) : la normale sortante d'une arête de direction
+// (dx,dy) est (dy,-dx). Cette convention est utilisée pour placer les lignes
+// de cote et les hachures de mur vers l'extérieur de la matière.
+function computeGeometry(s) {
+  const seg = s.segments[s.forme];
+
+  if (s.forme === "droit") {
+    const { L, D } = seg;
+    if (!(L > 0 && D > 0)) return { error: "Renseignez une longueur et une profondeur supérieures à zéro." };
+    const p = [{ x: 0, y: 0 }, { x: L, y: 0 }, { x: L, y: D }, { x: 0, y: D }];
+    return {
+      polygon: p,
+      arms: [{ id: "a", label: "Segment", origin: { x: 0, y: 0 }, length: L, depth: D, lengthAxis: "x", lengthSign: 1, depthAxis: "y", depthSign: 1 }],
+      edges: [
+        edgeDesc(p[0], p[1], "wall", "fond", "Fond"),
+        edgeDesc(p[1], p[2], "end", "extDroite", "Extrémité droite"),
+        edgeDesc(p[2], p[3], "front", "frontA", "Avant"),
+        edgeDesc(p[3], p[0], "end", "extGauche", "Extrémité gauche"),
+      ],
+    };
+  }
+
+  if (s.forme === "L") {
+    const { La, Da, Lb, Db } = seg;
+    if (!(La > 0 && Da > 0 && Lb > 0 && Db > 0)) return { error: "Toutes les cotes doivent être supérieures à zéro." };
+    if (!(La > Db && Lb > Da)) {
+      return { error: "Pour former un L valide : la longueur du bras A doit dépasser la profondeur du bras B, et la longueur du bras B doit dépasser la profondeur du bras A." };
+    }
+    const p = [
+      { x: 0, y: 0 }, { x: La, y: 0 }, { x: La, y: Da }, { x: Db, y: Da }, { x: Db, y: Lb }, { x: 0, y: Lb },
+    ];
+    return {
+      polygon: p,
+      arms: [
+        { id: "a", label: "Bras A", origin: { x: 0, y: 0 }, length: La, depth: Da, lengthAxis: "x", lengthSign: 1, depthAxis: "y", depthSign: 1 },
+        { id: "b", label: "Bras B", origin: { x: 0, y: 0 }, length: Lb, depth: Db, lengthAxis: "y", lengthSign: 1, depthAxis: "x", depthSign: 1 },
+      ],
+      edges: [
+        edgeDesc(p[0], p[1], "wall", "mursA", "Mur bras A"),
+        edgeDesc(p[1], p[2], "end", "extA", "Extrémité bras A"),
+        edgeDesc(p[2], p[3], "front", "frontA", "Avant bras A"),
+        edgeDesc(p[3], p[4], "front", "frontB", "Avant bras B"),
+        edgeDesc(p[4], p[5], "end", "extB", "Extrémité bras B"),
+        edgeDesc(p[5], p[0], "wall", "mursB", "Mur bras B"),
+      ],
+    };
+  }
+
+  if (s.forme === "U") {
+    const { Ll, Dl, Lf, Df, Lr, Dr } = seg;
+    if (!(Ll > 0 && Dl > 0 && Lf > 0 && Df > 0 && Lr > 0 && Dr > 0)) return { error: "Toutes les cotes doivent être supérieures à zéro." };
+    const W = Lf;
+    if (!(Ll > Df && Lr > Df && W > Dl + Dr)) {
+      return { error: "Vérifiez les cotes : chaque bras doit être plus long que la profondeur du fond, et la longueur du fond doit dépasser la somme des profondeurs des deux bras." };
+    }
+    const p = [
+      { x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: Lr }, { x: W - Dr, y: Lr },
+      { x: W - Dr, y: Df }, { x: Dl, y: Df }, { x: Dl, y: Ll }, { x: 0, y: Ll },
+    ];
+    return {
+      polygon: p,
+      arms: [
+        { id: "g", label: "Bras gauche", origin: { x: 0, y: 0 }, length: Ll, depth: Dl, lengthAxis: "y", lengthSign: 1, depthAxis: "x", depthSign: 1 },
+        { id: "f", label: "Fond", origin: { x: 0, y: 0 }, length: Lf, depth: Df, lengthAxis: "x", lengthSign: 1, depthAxis: "y", depthSign: 1 },
+        { id: "d", label: "Bras droit", origin: { x: W, y: 0 }, length: Lr, depth: Dr, lengthAxis: "y", lengthSign: 1, depthAxis: "x", depthSign: -1 },
+      ],
+      edges: [
+        edgeDesc(p[0], p[1], "wall", "mursFond", "Mur du fond"),
+        edgeDesc(p[1], p[2], "wall", "mursDroit", "Mur bras droit"),
+        edgeDesc(p[2], p[3], "end", "extDroit", "Extrémité bras droit"),
+        edgeDesc(p[3], p[4], "front", "frontD", "Avant bras droit"),
+        edgeDesc(p[4], p[5], "front", "frontF", "Avant du fond"),
+        edgeDesc(p[5], p[6], "front", "frontG", "Avant bras gauche"),
+        edgeDesc(p[6], p[7], "end", "extGauche", "Extrémité bras gauche"),
+        edgeDesc(p[7], p[0], "wall", "mursGauche", "Mur bras gauche"),
+      ],
+    };
+  }
+
+  return { error: "Forme inconnue." };
+}
+
+function cutoutRect(arm, c) {
+  const along0 = Number(c.along) || 0;
+  const along1 = along0 + (Number(c.longueur) || 0);
+  const across0 = Number(c.across) || 0;
+  const across1 = across0 + (Number(c.profondeur) || 0);
+  let x0, x1, y0, y1;
+  if (arm.lengthAxis === "x") {
+    x0 = arm.origin.x + arm.lengthSign * along0;
+    x1 = arm.origin.x + arm.lengthSign * along1;
+    y0 = arm.origin.y + arm.depthSign * across0;
+    y1 = arm.origin.y + arm.depthSign * across1;
+  } else {
+    y0 = arm.origin.y + arm.lengthSign * along0;
+    y1 = arm.origin.y + arm.lengthSign * along1;
+    x0 = arm.origin.x + arm.depthSign * across0;
+    x1 = arm.origin.x + arm.depthSign * across1;
+  }
+  return { x: Math.min(x0, x1), y: Math.min(y0, y1), w: Math.abs(x1 - x0), h: Math.abs(y1 - y0) };
+}
+
+function cutoutTypeLabel(type) {
+  const found = CUTOUT_TYPES.find((t) => t.value === type);
+  return found ? found.label : "Découpe";
+}
+
+function formatLength(mm, unite) {
+  const v = Math.round(mm);
+  if (unite === "cm") return (v / 10).toLocaleString("fr-FR", { maximumFractionDigits: 1 }) + " cm";
+  return v.toLocaleString("fr-FR") + " mm";
+}
+
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+function drawWallHatch(svg, p1, p2, strokeW, maxDim) {
+  const dx = p2.x - p1.x, dy = p2.y - p1.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return;
+  const ux = dx / len, uy = dy / len;
+  const nx = uy, ny = -ux;
+  const step = Math.max(maxDim * 0.035, strokeW * 8);
+  const count = Math.max(2, Math.round(len / step));
+  const hatchLen = (len / count) * 0.85;
+  const group = svgEl("g", { stroke: "#1c2733", "stroke-width": strokeW * 0.5 });
+  for (let i = 0; i < count; i++) {
+    const t = (i + 0.5) * (len / count);
+    const bx = p1.x + ux * t, by = p1.y + uy * t;
+    group.appendChild(svgEl("line", {
+      x1: bx, y1: by,
+      x2: bx - nx * hatchLen + ux * hatchLen * 0.5,
+      y2: by - ny * hatchLen + uy * hatchLen * 0.5,
+    }));
+  }
+  svg.appendChild(group);
+}
+
+function drawDimension(svg, p1, p2, offset, strokeW, fontSize, unite) {
+  const dx = p2.x - p1.x, dy = p2.y - p1.y;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return;
+  const ux = dx / len, uy = dy / len;
+  const nx = uy, ny = -ux;
+
+  const o1 = { x: p1.x + nx * offset, y: p1.y + ny * offset };
+  const o2 = { x: p2.x + nx * offset, y: p2.y + ny * offset };
+
+  const group = svgEl("g", { stroke: "#5b6b7c", "stroke-width": strokeW });
+  group.appendChild(svgEl("line", { x1: p1.x, y1: p1.y, x2: o1.x, y2: o1.y }));
+  group.appendChild(svgEl("line", { x1: p2.x, y1: p2.y, x2: o2.x, y2: o2.y }));
+  group.appendChild(svgEl("line", { x1: o1.x, y1: o1.y, x2: o2.x, y2: o2.y }));
+
+  const tick = offset * 0.16;
+  [o1, o2].forEach((pt) => {
+    group.appendChild(svgEl("line", {
+      x1: pt.x - nx * tick - ux * tick, y1: pt.y - ny * tick - uy * tick,
+      x2: pt.x + nx * tick + ux * tick, y2: pt.y + ny * tick + uy * tick,
+    }));
+  });
+  svg.appendChild(group);
+
+  const mid = { x: (o1.x + o2.x) / 2, y: (o1.y + o2.y) / 2 };
+  let angle = (Math.atan2(dy, dx) * 180) / Math.PI;
+  if (angle > 90 || angle < -90) angle += 180;
+  const tx = mid.x + nx * fontSize * 1.1;
+  const ty = mid.y + ny * fontSize * 1.1;
+
+  const text = svgEl("text", {
+    x: tx, y: ty, "font-size": fontSize, fill: "#1c2733",
+    "text-anchor": "middle", "dominant-baseline": "middle",
+    transform: `rotate(${angle} ${tx} ${ty})`,
+    "font-family": "Arial, sans-serif",
+  });
+  text.textContent = formatLength(len, unite);
+  svg.appendChild(text);
+}
+
+function renderSVG() {
+  const svg = byId("schemaSvg");
+  while (svg.firstChild) svg.removeChild(svg.firstChild);
+  const errBox = byId("schemaError");
+
+  const geo = computeGeometry(state);
+  if (geo.error) {
+    errBox.textContent = geo.error;
+    errBox.hidden = false;
+    svg.removeAttribute("viewBox");
+    return geo;
+  }
+  errBox.hidden = true;
+
+  const xs = geo.polygon.map((p) => p.x);
+  const ys = geo.polygon.map((p) => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const w = maxX - minX, h = maxY - minY;
+  const maxDim = Math.max(w, h);
+
+  const strokeMain = maxDim * 0.006;
+  const strokeFront = strokeMain * 1.8;
+  const strokeDim = Math.max(maxDim * 0.0018, 0.6);
+  const fontSize = maxDim * 0.026;
+  const dimOffset = maxDim * 0.11;
+  const margin = maxDim * 0.24;
+
+  svg.setAttribute("viewBox", `${minX - margin} ${minY - margin} ${w + margin * 2} ${h + margin * 2}`);
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+
+  svg.appendChild(svgEl("polygon", {
+    points: geo.polygon.map((p) => `${p.x},${p.y}`).join(" "),
+    fill: "#e8edf3", stroke: "none",
+  }));
+
+  for (const e of geo.edges) {
+    const isFront = e.kind === "front";
+    const wallOn = state.walls[e.id] ?? e.defaultWall;
+    svg.appendChild(svgEl("line", {
+      x1: e.p1.x, y1: e.p1.y, x2: e.p2.x, y2: e.p2.y,
+      stroke: "#1c2733",
+      "stroke-width": isFront ? strokeFront : strokeMain,
+      "stroke-linecap": "square",
+    }));
+    if (e.kind === "wall" && wallOn) drawWallHatch(svg, e.p1, e.p2, strokeMain, maxDim);
+    drawDimension(svg, e.p1, e.p2, dimOffset, strokeDim, fontSize, state.uniteAffichage);
+  }
+
+  for (const c of state.decoupes) {
+    const arm = geo.arms.find((a) => a.id === c.segment) || geo.arms[0];
+    const rect = cutoutRect(arm, c);
+    if (rect.w <= 0 || rect.h <= 0) continue;
+    svg.appendChild(svgEl("rect", {
+      x: rect.x, y: rect.y, width: rect.w, height: rect.h,
+      fill: "#ffffff", stroke: "#b5321f",
+      "stroke-width": strokeDim * 2,
+      "stroke-dasharray": `${strokeDim * 4},${strokeDim * 2.5}`,
+    }));
+    const label = svgEl("text", {
+      x: rect.x + rect.w / 2, y: rect.y + rect.h / 2,
+      "font-size": Math.max(fontSize * 0.8, 4), fill: "#b5321f",
+      "text-anchor": "middle", "dominant-baseline": "middle",
+      "font-family": "Arial, sans-serif",
+    });
+    label.textContent = c.label && c.label.trim() ? c.label : cutoutTypeLabel(c.type);
+    svg.appendChild(label);
+  }
+
+  return geo;
+}
+
+function escapeHtml(str) {
+  const div = document.createElement("div");
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+function updateHeaderDisplay() {
+  const el = byId("schemaHeader");
+  const c = state.client;
+  const parts = [
+    ["Client", c.nom || "—"],
+    ["Chantier", c.adresse || "—"],
+    ["Référence", c.reference || "—"],
+    ["Date", c.date || "—"],
+    ["Forme", SHAPE_LABELS[state.forme]],
+    ["Épaisseur", `${state.epaisseur || 0} mm`],
+    ["Matériau", state.materiau || "—"],
+    ["Chant", state.chant || "—"],
+  ];
+  el.innerHTML = parts.map(([k, v]) => `<div class="block"><strong>${k}</strong>${escapeHtml(String(v))}</div>`).join("");
+  if (state.notes && state.notes.trim()) {
+    const notesDiv = document.createElement("div");
+    notesDiv.className = "block";
+    notesDiv.style.flexBasis = "100%";
+    notesDiv.innerHTML = `<strong>Notes</strong>${escapeHtml(state.notes)}`;
+    el.appendChild(notesDiv);
+  }
+}
+
+function rerender() {
+  persistState();
+  updateHeaderDisplay();
+  renderSVG();
+}
+
+function renderSegmentFields() {
+  const container = byId("segmentsFields");
+  container.innerHTML = "";
+  for (const f of SEGMENT_FIELDS[state.forme]) {
+    const label = document.createElement("label");
+    label.textContent = f.label;
+    const input = document.createElement("input");
+    input.type = "number";
+    input.min = "1";
+    input.step = "10";
+    input.value = state.segments[state.forme][f.key];
+    input.addEventListener("input", () => {
+      state.segments[state.forme][f.key] = parseFloat(input.value) || 0;
+      rerender();
+    });
+    label.appendChild(input);
+    container.appendChild(label);
+  }
+}
+
+function renderWallFields() {
+  const container = byId("wallsFields");
+  container.innerHTML = "";
+  const geo = computeGeometry(state);
+  if (geo.error || !geo.edges) return;
+  for (const e of geo.edges.filter((edge) => edge.kind !== "front")) {
+    const label = document.createElement("label");
+    label.style.display = "flex";
+    label.style.alignItems = "center";
+    label.style.gap = "6px";
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = state.walls[e.id] ?? e.defaultWall;
+    input.addEventListener("change", () => {
+      state.walls[e.id] = input.checked;
+      rerender();
+    });
+    label.appendChild(input);
+    label.appendChild(document.createTextNode(e.label));
+    container.appendChild(label);
+  }
+}
+
+function makeSelect(options, value, onChange, ariaLabel) {
+  const select = document.createElement("select");
+  if (ariaLabel) select.setAttribute("aria-label", ariaLabel);
+  for (const o of options) {
+    const opt = document.createElement("option");
+    opt.value = o.value;
+    opt.textContent = o.label;
+    if (o.value === value) opt.selected = true;
+    select.appendChild(opt);
+  }
+  select.addEventListener("change", () => onChange(select.value));
+  return select;
+}
+
+function makeNumberField(labelText, value, onChange) {
+  const label = document.createElement("label");
+  label.style.flex = "1";
+  label.textContent = labelText;
+  const input = document.createElement("input");
+  input.type = "number";
+  input.min = "0";
+  input.step = "10";
+  input.value = value;
+  input.addEventListener("input", () => onChange(parseFloat(input.value) || 0));
+  label.appendChild(input);
+  return label;
+}
+
+function makeTextField(labelText, value, onChange) {
+  const label = document.createElement("label");
+  label.textContent = labelText;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = value || "";
+  input.addEventListener("input", () => onChange(input.value));
+  label.appendChild(input);
+  return label;
+}
+
+function renderDecoupesList() {
+  const container = byId("decoupesList");
+  container.innerHTML = "";
+  const geo = computeGeometry(state);
+  const arms = geo.arms || [];
+
+  state.decoupes.forEach((c) => {
+    const row = document.createElement("div");
+    row.className = "decoupe-row";
+
+    const row1 = document.createElement("div");
+    row1.className = "field-row";
+    row1.appendChild(makeSelect(CUTOUT_TYPES, c.type, (v) => { c.type = v; rerender(); }, "Type de découpe"));
+    row1.appendChild(makeSelect(
+      arms.map((a) => ({ value: a.id, label: a.label })),
+      arms.some((a) => a.id === c.segment) ? c.segment : (arms[0] && arms[0].id),
+      (v) => { c.segment = v; rerender(); },
+      "Segment"
+    ));
+    row.appendChild(row1);
+
+    const row2 = document.createElement("div");
+    row2.className = "field-row";
+    row2.appendChild(makeNumberField("Depuis début segment (mm)", c.along, (v) => { c.along = v; rerender(); }));
+    row2.appendChild(makeNumberField("Depuis le mur (mm)", c.across, (v) => { c.across = v; rerender(); }));
+    row.appendChild(row2);
+
+    const row3 = document.createElement("div");
+    row3.className = "field-row";
+    row3.appendChild(makeNumberField("Largeur découpe (mm)", c.longueur, (v) => { c.longueur = v; rerender(); }));
+    row3.appendChild(makeNumberField("Profondeur découpe (mm)", c.profondeur, (v) => { c.profondeur = v; rerender(); }));
+    row.appendChild(row3);
+
+    const row4 = document.createElement("div");
+    row4.className = "field-row";
+    const labelField = makeTextField("Étiquette (optionnel)", c.label, (v) => { c.label = v; rerender(); });
+    labelField.style.flex = "1";
+    row4.appendChild(labelField);
+    row.appendChild(row4);
+
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "Supprimer";
+    del.addEventListener("click", () => {
+      state.decoupes = state.decoupes.filter((x) => x.id !== c.id);
+      renderDecoupesList();
+      rerender();
+    });
+    actions.appendChild(del);
+    row.appendChild(actions);
+
+    container.appendChild(row);
+  });
+}
+
+function addDecoupe() {
+  const geo = computeGeometry(state);
+  const firstArm = geo.arms && geo.arms[0];
+  cutoutSeq += 1;
+  state.decoupes.push({
+    id: `c${Date.now()}_${cutoutSeq}`,
+    type: "evier",
+    label: "",
+    segment: firstArm ? firstArm.id : "a",
+    along: 200,
+    across: 50,
+    longueur: 800,
+    profondeur: 500,
+  });
+  renderDecoupesList();
+  rerender();
+}
+
+function syncStaticFieldsFromState() {
+  byId("clientNom").value = state.client.nom || "";
+  byId("clientAdresse").value = state.client.adresse || "";
+  byId("reference").value = state.client.reference || "";
+  byId("dateProjet").value = state.client.date || "";
+  byId("epaisseur").value = state.epaisseur;
+  byId("uniteAffichage").value = state.uniteAffichage;
+  byId("materiau").value = state.materiau || "";
+  byId("chant").value = state.chant || "";
+  byId("notes").value = state.notes || "";
+  document.querySelectorAll('input[name="forme"]').forEach((r) => { r.checked = r.value === state.forme; });
+}
+
+function bindClientFieldListeners() {
+  byId("clientNom").addEventListener("input", (e) => { state.client.nom = e.target.value; rerender(); });
+  byId("clientAdresse").addEventListener("input", (e) => { state.client.adresse = e.target.value; rerender(); });
+  byId("reference").addEventListener("input", (e) => { state.client.reference = e.target.value; rerender(); });
+  byId("dateProjet").addEventListener("input", (e) => { state.client.date = e.target.value; rerender(); });
+}
+
+function bindMaterialFieldListeners() {
+  byId("epaisseur").addEventListener("input", (e) => { state.epaisseur = parseFloat(e.target.value) || 0; rerender(); });
+  byId("uniteAffichage").addEventListener("change", (e) => { state.uniteAffichage = e.target.value; rerender(); });
+  byId("materiau").addEventListener("input", (e) => { state.materiau = e.target.value; rerender(); });
+  byId("chant").addEventListener("input", (e) => { state.chant = e.target.value; rerender(); });
+  byId("notes").addEventListener("input", (e) => { state.notes = e.target.value; rerender(); });
+}
+
+function bindShapeChoiceListeners() {
+  document.querySelectorAll('input[name="forme"]').forEach((r) => {
+    r.addEventListener("change", () => {
+      if (!r.checked) return;
+      state.forme = r.value;
+      renderSegmentFields();
+      renderWallFields();
+      renderDecoupesList();
+      rerender();
+    });
+  });
+}
+
+function bindRefFileListener() {
+  const input = byId("refFile");
+  const preview = byId("refPreview");
+  input.addEventListener("change", () => {
+    if (refObjectUrl) { URL.revokeObjectURL(refObjectUrl); refObjectUrl = null; }
+    preview.innerHTML = "";
+    const file = input.files && input.files[0];
+    if (!file) { preview.hidden = true; return; }
+    refObjectUrl = URL.createObjectURL(file);
+    if (file.type === "application/pdf") {
+      const embed = document.createElement("embed");
+      embed.src = refObjectUrl;
+      embed.type = "application/pdf";
+      embed.style.width = "100%";
+      embed.style.height = "200px";
+      preview.appendChild(embed);
+    } else {
+      const img = document.createElement("img");
+      img.src = refObjectUrl;
+      img.alt = "Plan reçu du client";
+      preview.appendChild(img);
+    }
+    preview.hidden = false;
+  });
+}
+
+function exportFilename(ext) {
+  const base = (state.client.nom || "plan-de-travail").trim().replace(/[^a-z0-9]+/gi, "-").replace(/^-+|-+$/g, "").toLowerCase() || "plan-de-travail";
+  const date = state.client.date || new Date().toISOString().slice(0, 10);
+  return `${base}_${date}.${ext}`;
+}
+
+function exportPng() {
+  const svg = byId("schemaSvg");
+  if (!svg.hasAttribute("viewBox")) {
+    alert("Corrigez les cotes avant d'exporter : le schéma n'est pas valide.");
+    return;
+  }
+  const vb = svg.viewBox.baseVal;
+  const outW = 1600;
+  const outH = Math.round(outW * (vb.height / vb.width));
+  const clone = svg.cloneNode(true);
+  clone.setAttribute("width", outW);
+  clone.setAttribute("height", outH);
+  const xml = new XMLSerializer().serializeToString(clone);
+  const svgBlob = new Blob([xml], { type: "image/svg+xml;charset=utf-8" });
+  const url = URL.createObjectURL(svgBlob);
+  const img = new Image();
+  img.onload = () => {
+    const headerH = 110;
+    const scale = 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = outW * scale;
+    canvas.height = (outH + headerH) * scale;
+    const ctx = canvas.getContext("2d");
+    ctx.scale(scale, scale);
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, outW, outH + headerH);
+    ctx.fillStyle = "#1c2733";
+    ctx.font = "bold 22px Arial, sans-serif";
+    const c = state.client;
+    ctx.fillText(`Client : ${c.nom || "—"}    Chantier : ${c.adresse || "—"}`, 20, 30);
+    ctx.font = "16px Arial, sans-serif";
+    ctx.fillText(`Réf : ${c.reference || "—"}    Date : ${c.date || "—"}    Forme : ${SHAPE_LABELS[state.forme]}`, 20, 56);
+    ctx.fillText(`Épaisseur : ${state.epaisseur || 0} mm    Matériau : ${state.materiau || "—"}    Chant : ${state.chant || "—"}`, 20, 80);
+    ctx.drawImage(img, 0, headerH, outW, outH);
+    URL.revokeObjectURL(url);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const link = document.createElement("a");
+      link.download = exportFilename("png");
+      link.href = URL.createObjectURL(blob);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(link.href), 4000);
+    });
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    alert("Export impossible. Réessayez après avoir vérifié les cotes.");
+  };
+  img.src = url;
+}
+
+function saveJson() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const link = document.createElement("a");
+  link.download = exportFilename("json");
+  link.href = URL.createObjectURL(blob);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(link.href), 4000);
+}
+
+function loadJsonFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      state = mergeState(JSON.parse(String(reader.result)));
+      initForm();
+      rerender();
+    } catch (err) {
+      alert("Fichier JSON invalide : " + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function initForm() {
+  syncStaticFieldsFromState();
+  renderSegmentFields();
+  renderWallFields();
+  renderDecoupesList();
+}
+
+function wireActionsOnce() {
+  byId("btnAddDecoupe").addEventListener("click", addDecoupe);
+  byId("btnPng").addEventListener("click", exportPng);
+  byId("btnPrint").addEventListener("click", () => window.print());
+  byId("btnSave").addEventListener("click", saveJson);
+  const fileLoad = byId("fileLoad");
+  byId("btnLoad").addEventListener("click", () => fileLoad.click());
+  fileLoad.addEventListener("change", () => {
+    const file = fileLoad.files && fileLoad.files[0];
+    if (file) loadJsonFile(file);
+    fileLoad.value = "";
+  });
+  byId("btnReset").addEventListener("click", () => {
+    if (!confirm("Démarrer un nouveau plan ? Les cotes actuelles seront remplacées (pensez à exporter avant si besoin).")) return;
+    state = defaultState();
+    initForm();
+    rerender();
+  });
+  bindRefFileListener();
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  bindClientFieldListeners();
+  bindShapeChoiceListeners();
+  bindMaterialFieldListeners();
+  wireActionsOnce();
+  initForm();
+  rerender();
+});
+
+</script>
+</body>
+</html>
