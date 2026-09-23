@@ -27,6 +27,11 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
+  // /api/fichiers et /api/fichier (scan du dossier partagé, voir
+  // scannerDossierPartage) donnent des données toujours changeantes —
+  // jamais servies depuis le cache, toujours en direct depuis le serveur
+  // local, sinon le scan pourrait afficher une liste de fichiers périmée.
+  if (new URL(event.request.url).pathname.startsWith("/api/")) return;
   event.respondWith(
     caches.match(event.request).then((reponseEnCache) => {
       const recuperation = fetch(event.request)

@@ -9,6 +9,15 @@
 # de connexion ni de synchronisation entre appareils. Pour utiliser
 # Sentinelle sur un téléphone, copiez le fichier index.html dessus
 # séparément (USB, e-mail...) et ouvrez-le directement dans Chrome.
+#
+# Expose en plus deux petites routes (/api/fichiers et /api/fichier) qui
+# donnent à la page web un accès en LECTURE SEULE à $DossierPartage — un
+# dossier partagé sur le réseau (ex. un chemin \\serveur\partage\...) où
+# STRAT, liste de coupe (nommée pareil, avec "CUTRITE" dans le nom) et
+# .bkp atterrissent. Ça permet à l'onglet "Scan du dossier partagé" de
+# Sentinelle de repérer et charger tout seul les derniers fichiers, sans
+# sélection manuelle à chaque poste. À adapter à votre chemin réseau réel.
+$DossierPartage = "\\SERVEUR\Partage\Sentinelle"
 
 $Port = 8080
 $Racine = Split-Path -Parent $PSScriptRoot
@@ -22,6 +31,48 @@ $mimeTypes = @{
     ".svg"         = "image/svg+xml"
     ".ico"         = "image/x-icon"
     ".xlsx"        = "application/octet-stream"
+}
+
+# Renvoie, en JSON, la liste des fichiers du dossier partagé (nom, taille,
+# date de dernière modification) — utilisé par la page pour repérer les
+# derniers STRAT/liste de coupe/.bkp disponibles.
+function Repondre-ListeFichiers($response) {
+    $items = @()
+    if (Test-Path $DossierPartage -PathType Container) {
+        Get-ChildItem -Path $DossierPartage -File | ForEach-Object {
+            $items += [PSCustomObject]@{
+                nom = $_.Name
+                taille = $_.Length
+                modifie = $_.LastWriteTimeUtc.ToString("o")
+            }
+        }
+    }
+    $json = ConvertTo-Json -InputObject $items -Compress
+    $octets = [Text.Encoding]::UTF8.GetBytes($json)
+    $response.ContentType = "application/json; charset=utf-8"
+    $response.ContentLength64 = $octets.Length
+    $response.OutputStream.Write($octets, 0, $octets.Length)
+}
+
+# Sert le contenu brut d'un fichier du dossier partagé, désigné par son nom
+# exact (paramètre ?nom=...) — jamais un chemin, pour ne pas pouvoir sortir
+# du dossier partagé.
+function Repondre-Fichier($response, $nomDemande) {
+    if ([string]::IsNullOrEmpty($nomDemande) -or $nomDemande -match '[\\/]' -or $nomDemande.Contains("..")) {
+        $response.StatusCode = 400
+        $response.OutputStream.Close()
+        return
+    }
+    $chemin = Join-Path $DossierPartage $nomDemande
+    if (-not (Test-Path $chemin -PathType Leaf)) {
+        $response.StatusCode = 404
+        $response.OutputStream.Close()
+        return
+    }
+    $octets = [IO.File]::ReadAllBytes($chemin)
+    $response.ContentType = "application/octet-stream"
+    $response.ContentLength64 = $octets.Length
+    $response.OutputStream.Write($octets, 0, $octets.Length)
 }
 
 $listener = New-Object System.Net.HttpListener
@@ -52,6 +103,19 @@ try {
         $response = $context.Response
 
         $chemin = $request.Url.LocalPath
+
+        if ($chemin -eq "/api/fichiers") {
+            Repondre-ListeFichiers $response
+            $response.OutputStream.Close()
+            continue
+        }
+        if ($chemin -eq "/api/fichier") {
+            $nomDemande = $request.QueryString["nom"]
+            Repondre-Fichier $response $nomDemande
+            $response.OutputStream.Close()
+            continue
+        }
+
         if ($chemin -eq "/") { $chemin = "/index.html" }
         $cheminFichier = Join-Path $Racine ($chemin.TrimStart("/") -replace "/", [IO.Path]::DirectorySeparatorChar)
 

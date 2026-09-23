@@ -73,6 +73,14 @@
   .panneau-recherche button { font-size: 1.05rem; padding: 12px 22px; }
   .panneau-recherche .label-recherche { font-size: 0.95rem; }
   .recherche-aide { margin: -4px 0 10px; font-size: 0.82rem; color: #445; }
+  .panneau-scan {
+    background: #eef7ee;
+    border: 2px solid #2e7d32;
+  }
+  .panneau-scan label { display: block; font-weight: 700; font-size: 1rem; margin-bottom: 6px; }
+  .panneau-scan button { background: #2e7d32; }
+  .panneau-scan button:hover:not(:disabled) { background: #1b5e20; }
+  .panneau-scan .label-recherche { font-size: 0.88rem; margin-top: 8px; }
   .resultat-recherche {
     background: #fff;
     border: 1px solid #c7d9ee;
@@ -397,6 +405,13 @@
   </div>
 
   <div class="onglet-page" id="onglet-controle">
+    <div class="panneau panneau-scan">
+      <label>📂 Scan du dossier partagé</label>
+      <p class="recherche-aide">Récupère automatiquement, pour chaque poste, le fichier de lancement (+ liste de coupe "CUTRITE...") le plus récent du dossier partagé, et le place en case "Lancement 2". Fonctionne uniquement sur PC via le serveur local (serveur.ps1) — indisponible sur Android ou en ouvrant le fichier directement.</p>
+      <button type="button" id="btnScanPartage">Scanner le dossier partagé</button>
+      <div id="resultatScanPartage" class="label-recherche"></div>
+    </div>
+
     <div class="panneau">
       <div id="pairesContainer"></div>
       <div class="actions-row">
@@ -2443,6 +2458,165 @@ function afficherResultatScies(conteneur, ecarts, nbClesAttendues) {
     </table>
   `;
 }
+
+// ---- scan_dossier_partage ----
+//
+// Reconnaît automatiquement, dans le nom d'un fichier posé dans le dossier
+// partagé (servi par serveur.ps1 via /api/fichiers et /api/fichier), à quel
+// poste et quel tour il appartient — convention interne de l'atelier :
+// "LAN<AA><SS><TT><suffixe>", ex. "LAN264101STRAT.xlsx" :
+//   AA = année (26 = 2026), SS = semaine (41), TT = tour (01/02, Agglo
+//   seulement), suffixe = STRAT (Agglo), FENO, CASSE ou autre (Chantiers).
+// La liste de coupe correspondante porte exactement le même identifiant
+// "LAN..." quelque part dans son nom, précédé de "CUTRITE" pour la
+// distinguer du fichier de lancement (ex. "CUTRITE_LAN264101STRAT.xlsx").
+const MOTIF_CODE_LANCEMENT_PARTAGE = /LAN(\d{6})([A-Z]*)/i;
+
+function decoderNomFichierPartage(nom) {
+  const m = MOTIF_CODE_LANCEMENT_PARTAGE.exec(nom);
+  if (!m) return null;
+  const code = m[1];
+  const tour = code.slice(4, 6);
+  const suffixe = m[2].toUpperCase();
+
+  let poste;
+  if (suffixe.includes("FENO")) poste = "Feno";
+  else if (suffixe.includes("CASSE")) poste = "Casse";
+  else if (suffixe.includes("STRAT") && tour === "01") poste = "Agglo 1er tour";
+  else if (suffixe.includes("STRAT") && tour === "02") poste = "Agglo 2ème tour";
+  else poste = "Chantiers";
+
+  return {
+    code,
+    poste,
+    estCutrite: /CUTRITE/i.test(nom),
+    estBkp: /\.bkp$/i.test(nom),
+  };
+}
+
+async function telechargerFichierPartage(nom) {
+  const reponse = await fetch(`/api/fichier?nom=${encodeURIComponent(nom)}`);
+  if (!reponse.ok) throw new Error(`téléchargement impossible pour "${nom}" (HTTP ${reponse.status})`);
+  const bytes = await reponse.arrayBuffer();
+  const type = /\.pdf$/i.test(nom) ? "application/pdf" : "application/octet-stream";
+  return new File([bytes], nom, { type });
+}
+
+// Simule la sélection d'un fichier depuis le dossier partagé — impossible de
+// peupler un <input type=file> par script pour des raisons de sécurité
+// navigateur, donc on réutilise le même mécanisme que la restauration
+// mémoire (fichierStratRestaure / fichierCoupeRestaure), déjà lu en
+// priorité par fichierStratDe()/fichierCoupeDe() quand l'input est vide.
+async function assignerFichierScanneAPaire(paire, div, role, fichier) {
+  const roleValidation = role === "strat" ? "validation-strat" : "validation-coupe";
+  const span = div.querySelector(`[data-role="${roleValidation}"]`);
+  if (span) {
+    span.textContent = `✓ scanné : ${fichier.name}`;
+    span.className = "validation-fichier valide memorise";
+  }
+  const bytes = await fichier.arrayBuffer();
+  if (role === "strat") {
+    paire.fichierStratRestaure = fichier;
+    await detecterSemainePaire(paire, div);
+    sauvegarderDansMemoire(paire, { fichierStrat: { nom: fichier.name, type: fichier.type, bytes } });
+  } else {
+    paire.fichierCoupeRestaure = fichier;
+    sauvegarderDansMemoire(paire, { fichierCoupe: { nom: fichier.name, type: fichier.type, bytes } });
+  }
+}
+
+// Scanne le dossier partagé (via le serveur local PC) et place, pour
+// chaque poste, le fichier de lancement (+ liste de coupe) le plus récent
+// dans la case "Lancement 2" — convention de l'atelier : le lancement le
+// plus récent va toujours là.
+async function scannerDossierPartage() {
+  const zone = $("resultatScanPartage");
+  const bouton = $("btnScanPartage");
+  if (bouton) bouton.disabled = true;
+  zone.style.color = "";
+  zone.textContent = "Scan en cours…";
+  await tick();
+
+  try {
+    let fichiers;
+    try {
+      const reponse = await fetch("/api/fichiers");
+      if (!reponse.ok) throw new Error(`HTTP ${reponse.status}`);
+      fichiers = await reponse.json();
+    } catch (_erreurReseau) {
+      zone.style.color = "var(--alerte-text)";
+      zone.textContent =
+        "Scan indisponible : le serveur local ne répond pas. Cette fonction marche uniquement sur PC, lancée via serveur.ps1 (pas en ouvrant le fichier directement, ni sur Android).";
+      return;
+    }
+
+    // Regroupe les fichiers par identifiant "LAN......" partagé entre le
+    // STRAT, sa liste de coupe CUTRITE et son éventuel .bkp.
+    // Le code à 6 chiffres (année+semaine+tour) n'est PAS un identifiant
+    // unique à lui seul : Agglo, Feno, Casse peuvent tous porter le même
+    // code la même semaine (seul le suffixe du nom les distingue). Il faut
+    // donc regrouper par poste + code, pas par code seul, sous peine
+    // qu'un fichier Feno écrase le fichier Agglo de la même semaine.
+    const groupes = new Map();
+    for (const f of fichiers) {
+      const info = decoderNomFichierPartage(f.nom);
+      if (!info) continue;
+      const cleGroupe = `${info.poste}|${info.code}`;
+      if (!groupes.has(cleGroupe)) groupes.set(cleGroupe, { poste: info.poste });
+      const g = groupes.get(cleGroupe);
+      const entree = { nom: f.nom, modifie: f.modifie };
+      if (info.estBkp) g.bkp = entree;
+      else if (info.estCutrite) g.cutrite = entree;
+      else g.strat = entree;
+    }
+
+    // Pour chaque poste, ne garde que le groupe le plus récent (date du
+    // fichier de lancement lui-même).
+    const dernierParPoste = new Map();
+    for (const g of groupes.values()) {
+      if (!g.strat) continue; // sans fichier de lancement, rien à charger
+      const date = new Date(g.strat.modifie).getTime();
+      const actuel = dernierParPoste.get(g.poste);
+      if (!actuel || date > actuel.date) dernierParPoste.set(g.poste, { ...g, date });
+    }
+
+    if (dernierParPoste.size === 0) {
+      zone.style.color = "var(--alerte-text)";
+      zone.textContent = "Aucun fichier de lancement reconnu dans le dossier partagé.";
+      return;
+    }
+
+    const resultats = [];
+    for (const [poste, g] of dernierParPoste) {
+      const paireCible = paires.find((p) => p.poste === poste && p.lancementLabel === "Lancement 2");
+      const div = paireCible && document.querySelector(`.paire[data-id="${paireCible.id}"]`);
+      if (!paireCible || !div) {
+        resultats.push(`— ${poste} : pas de case "Lancement 2" pour ce poste, ignoré.`);
+        continue;
+      }
+      try {
+        const fichierStrat = await telechargerFichierPartage(g.strat.nom);
+        await assignerFichierScanneAPaire(paireCible, div, "strat", fichierStrat);
+        let suffixe = "";
+        if (g.cutrite) {
+          const fichierCoupe = await telechargerFichierPartage(g.cutrite.nom);
+          await assignerFichierScanneAPaire(paireCible, div, "coupe", fichierCoupe);
+          suffixe = " + liste de coupe";
+        }
+        resultats.push(`✔ ${poste} — Lancement 2 : ${g.strat.nom}${suffixe}`);
+      } catch (erreur) {
+        resultats.push(`❌ ${poste} : ${erreur && erreur.message ? erreur.message : erreur}`);
+      }
+    }
+
+    zone.style.color = "";
+    zone.innerHTML = resultats.map((l) => `<div>${echapperHtml(l)}</div>`).join("");
+  } finally {
+    if (bouton) bouton.disabled = false;
+  }
+}
+
+$("btnScanPartage").addEventListener("click", scannerDossierPartage);
 
 // La recherche accepte trois formats, reconnus automatiquement :
 // - une clé complète commande+ligne (ex. "CVC26090331003") ;
