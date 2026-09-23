@@ -11,13 +11,18 @@
 # séparément (USB, e-mail...) et ouvrez-le directement dans Chrome.
 #
 # Expose en plus deux petites routes (/api/fichiers et /api/fichier) qui
-# donnent à la page web un accès en LECTURE SEULE à $DossierPartage — un
-# dossier partagé sur le réseau (ex. un chemin \\serveur\partage\...) où
-# STRAT, liste de coupe (nommée pareil, avec "CUTRITE" dans le nom) et
-# .bkp atterrissent. Ça permet à l'onglet "Scan du dossier partagé" de
-# Sentinelle de repérer et charger tout seul les derniers fichiers, sans
-# sélection manuelle à chaque poste. À adapter à votre chemin réseau réel.
-$DossierPartage = "\\SERVEUR\Partage\Sentinelle"
+# donnent à la page web un accès en LECTURE SEULE à $DossierPartage — le
+# dossier partagé où STRAT, liste de coupe (nommée pareil, avec "CUTRITE"
+# dans le nom) et .bkp atterrissent. Ça permet à l'onglet "Scan du dossier
+# partagé" de Sentinelle de repérer et charger tout seul les derniers
+# fichiers, sans sélection manuelle à chaque poste.
+#
+# REMPLACEZ la ligne ci-dessous par le vrai chemin de ce dossier, tel qu'il
+# apparaît dans l'Explorateur Windows sur ce PC — un chemin normal comme
+# "C:\Sentinelle\Partage" ou une lettre de lecteur réseau déjà connectée
+# comme "Z:\Sentinelle" fonctionnent aussi bien qu'un chemin réseau du
+# genre "\\serveur\partage\...".
+$DossierPartage = "C:\Sentinelle\Partage"
 
 $Port = 8080
 $Racine = Split-Path -Parent $PSScriptRoot
