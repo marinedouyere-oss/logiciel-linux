@@ -406,9 +406,10 @@
 
   <div class="onglet-page" id="onglet-controle">
     <div class="panneau panneau-scan">
-      <label>📂 Scan du dossier partagé</label>
-      <p class="recherche-aide">Récupère automatiquement, pour chaque poste, le fichier de lancement (+ liste de coupe "CUTRITE...") le plus récent du dossier partagé, et le place en case "Lancement 2". Fonctionne uniquement sur PC via le serveur local (serveur.ps1) — indisponible sur Android ou en ouvrant le fichier directement.</p>
-      <button type="button" id="btnScanPartage">Scanner le dossier partagé</button>
+      <label>📂 Dossier partagé</label>
+      <p class="recherche-aide">Choisissez le dossier (un dossier Windows normal, local ou partagé) où atterrissent les fichiers de lancement et listes de coupe "CUTRITE...". Sentinelle y récupère automatiquement, pour chaque poste, le fichier le plus récent et le place en case "Lancement 2". Fonctionne uniquement sur PC (Chrome/Edge) — indisponible sur Android.</p>
+      <button type="button" id="btnChoisirDossierPartage">Choisir le dossier…</button>
+      <button type="button" id="btnScanPartage" disabled>Scanner le dossier partagé</button>
       <div id="resultatScanPartage" class="label-recherche"></div>
     </div>
 
@@ -2461,8 +2462,15 @@ function afficherResultatScies(conteneur, ecarts, nbClesAttendues) {
 
 // ---- scan_dossier_partage ----
 //
-// Reconnaît automatiquement, dans le nom d'un fichier posé dans le dossier
-// partagé (servi par serveur.ps1 via /api/fichiers et /api/fichier), à quel
+// Le dossier partagé est choisi via le sélecteur natif du navigateur
+// (window.showDirectoryPicker — exactement l'Explorateur Windows habituel :
+// un dossier local, un dossier synchronisé ou un lecteur réseau déjà
+// connecté s'y choisissent pareil). Aucun serveur ni chemin à configurer :
+// une fois choisi, Sentinelle lit directement les fichiers dedans.
+// Disponible seulement sur navigateur de bureau (Chrome/Edge) — absent
+// d'Android, où l'appli retombe sur la sélection manuelle habituelle.
+//
+// Reconnaît automatiquement, dans le nom d'un fichier du dossier, à quel
 // poste et quel tour il appartient — convention interne de l'atelier :
 // "LAN<AA><SS><TT><suffixe>", ex. "LAN264101STRAT.xlsx" :
 //   AA = année (26 = 2026), SS = semaine (41), TT = tour (01/02, Agglo
@@ -2494,12 +2502,89 @@ function decoderNomFichierPartage(nom) {
   };
 }
 
-async function telechargerFichierPartage(nom) {
-  const reponse = await fetch(`/api/fichier?nom=${encodeURIComponent(nom)}`);
-  if (!reponse.ok) throw new Error(`téléchargement impossible pour "${nom}" (HTTP ${reponse.status})`);
-  const bytes = await reponse.arrayBuffer();
-  const type = /\.pdf$/i.test(nom) ? "application/pdf" : "application/octet-stream";
-  return new File([bytes], nom, { type });
+function scanPartageDisponible() {
+  return typeof window.showDirectoryPicker === "function";
+}
+
+// Mémorise la référence au dossier choisi (une "poignée" FileSystemHandle,
+// clonable telle quelle dans IndexedDB) pour ne pas avoir à le rechoisir à
+// chaque ouverture — le navigateur redemande juste une confirmation
+// d'autorisation, sans reproposer l'Explorateur.
+const DB_DOSSIER_PARTAGE_NOM = "sentinelle-dossier-partage";
+const MAGASIN_DOSSIER_PARTAGE = "poignee";
+let dossierPartageHandle = null;
+
+function ouvrirBaseDossierPartage() {
+  return new Promise((resolve, reject) => {
+    const requete = indexedDB.open(DB_DOSSIER_PARTAGE_NOM, 1);
+    requete.onupgradeneeded = () => requete.result.createObjectStore(MAGASIN_DOSSIER_PARTAGE);
+    requete.onsuccess = () => resolve(requete.result);
+    requete.onerror = () => reject(requete.error);
+  });
+}
+
+async function sauvegarderPoigneeDossierPartage(handle) {
+  try {
+    const db = await ouvrirBaseDossierPartage();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(MAGASIN_DOSSIER_PARTAGE, "readwrite");
+      tx.objectStore(MAGASIN_DOSSIER_PARTAGE).put(handle, "dossier");
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (_erreur) {
+    // Mémorisation optionnelle : sans elle, il suffit de rechoisir le
+    // dossier à la prochaine ouverture.
+  }
+}
+
+async function chargerPoigneeDossierPartage() {
+  try {
+    const db = await ouvrirBaseDossierPartage();
+    return await new Promise((resolve, reject) => {
+      const requete = db.transaction(MAGASIN_DOSSIER_PARTAGE, "readonly").objectStore(MAGASIN_DOSSIER_PARTAGE).get("dossier");
+      requete.onsuccess = () => resolve(requete.result || null);
+      requete.onerror = () => reject(requete.error);
+    });
+  } catch (_erreur) {
+    return null;
+  }
+}
+
+async function choisirDossierPartage() {
+  const zone = $("resultatScanPartage");
+  if (!scanPartageDisponible()) {
+    zone.style.color = "var(--alerte-text)";
+    zone.textContent = "Non disponible dans ce navigateur : fonctionne sur Chrome ou Edge, sur PC.";
+    return;
+  }
+  try {
+    dossierPartageHandle = await window.showDirectoryPicker();
+    sauvegarderPoigneeDossierPartage(dossierPartageHandle);
+    $("btnScanPartage").disabled = false;
+    zone.style.color = "var(--ok-text)";
+    zone.textContent = `Dossier choisi : ${dossierPartageHandle.name}`;
+  } catch (_erreurAnnulation) {
+    // Sélection annulée par l'utilisateur : rien à faire.
+  }
+}
+
+// Au chargement de la page, retrouve le dossier choisi la dernière fois
+// si le navigateur accorde encore la permission sans avoir à la
+// redemander (sinon l'utilisateur reclique "Choisir le dossier…").
+async function restaurerDossierPartage() {
+  if (!scanPartageDisponible()) return;
+  const handle = await chargerPoigneeDossierPartage();
+  if (!handle) return;
+  try {
+    if ((await handle.queryPermission({ mode: "read" })) === "granted") {
+      dossierPartageHandle = handle;
+      $("btnScanPartage").disabled = false;
+      $("resultatScanPartage").textContent = `Dossier mémorisé : ${handle.name}`;
+    }
+  } catch (_erreur) {
+    // Poignée invalide (dossier déplacé/supprimé depuis) : ignorée, l'utilisateur en rechoisit un.
+  }
 }
 
 // Simule la sélection d'un fichier depuis le dossier partagé — impossible de
@@ -2525,28 +2610,32 @@ async function assignerFichierScanneAPaire(paire, div, role, fichier) {
   }
 }
 
-// Scanne le dossier partagé (via le serveur local PC) et place, pour
-// chaque poste, le fichier de lancement (+ liste de coupe) le plus récent
-// dans la case "Lancement 2" — convention de l'atelier : le lancement le
-// plus récent va toujours là.
+// Scanne le dossier choisi et place, pour chaque poste, le fichier de
+// lancement (+ liste de coupe) le plus récent dans la case "Lancement 2" —
+// convention de l'atelier : le lancement le plus récent va toujours là.
 async function scannerDossierPartage() {
   const zone = $("resultatScanPartage");
   const bouton = $("btnScanPartage");
+  if (!dossierPartageHandle) {
+    zone.style.color = "var(--alerte-text)";
+    zone.textContent = "Choisissez d'abord un dossier.";
+    return;
+  }
+
   if (bouton) bouton.disabled = true;
   zone.style.color = "";
   zone.textContent = "Scan en cours…";
   await tick();
 
   try {
-    let fichiers;
+    const fichiers = [];
     try {
-      const reponse = await fetch("/api/fichiers");
-      if (!reponse.ok) throw new Error(`HTTP ${reponse.status}`);
-      fichiers = await reponse.json();
-    } catch (_erreurReseau) {
+      for await (const [nom, entree] of dossierPartageHandle.entries()) {
+        if (entree.kind === "file") fichiers.push({ nom, entree });
+      }
+    } catch (erreurLecture) {
       zone.style.color = "var(--alerte-text)";
-      zone.textContent =
-        "Scan indisponible : le serveur local ne répond pas. Cette fonction marche uniquement sur PC, lancée via serveur.ps1 (pas en ouvrant le fichier directement, ni sur Android).";
+      zone.textContent = `Impossible de lire le dossier "${dossierPartageHandle.name}" : ${erreurLecture.message}. Recliquez sur "Choisir le dossier…".`;
       return;
     }
 
@@ -2564,26 +2653,26 @@ async function scannerDossierPartage() {
       const cleGroupe = `${info.poste}|${info.code}`;
       if (!groupes.has(cleGroupe)) groupes.set(cleGroupe, { poste: info.poste });
       const g = groupes.get(cleGroupe);
-      const entree = { nom: f.nom, modifie: f.modifie };
-      if (info.estBkp) g.bkp = entree;
-      else if (info.estCutrite) g.cutrite = entree;
-      else g.strat = entree;
+      if (info.estBkp) g.bkp = f;
+      else if (info.estCutrite) g.cutrite = f;
+      else g.strat = f;
     }
 
-    // Pour chaque poste, ne garde que le groupe le plus récent (date du
-    // fichier de lancement lui-même).
+    if (groupes.size === 0) {
+      zone.style.color = "var(--alerte-text)";
+      zone.textContent = "Aucun fichier de lancement reconnu dans ce dossier.";
+      return;
+    }
+
+    // Pour chaque poste, ne garde que le groupe le plus récent — date lue
+    // directement sur le fichier (lastModified), pas devinée sur son nom.
     const dernierParPoste = new Map();
     for (const g of groupes.values()) {
       if (!g.strat) continue; // sans fichier de lancement, rien à charger
-      const date = new Date(g.strat.modifie).getTime();
+      const fichierStrat = await g.strat.entree.getFile();
+      const date = fichierStrat.lastModified;
       const actuel = dernierParPoste.get(g.poste);
-      if (!actuel || date > actuel.date) dernierParPoste.set(g.poste, { ...g, date });
-    }
-
-    if (dernierParPoste.size === 0) {
-      zone.style.color = "var(--alerte-text)";
-      zone.textContent = "Aucun fichier de lancement reconnu dans le dossier partagé.";
-      return;
+      if (!actuel || date > actuel.date) dernierParPoste.set(g.poste, { ...g, date, fichierStrat });
     }
 
     const resultats = [];
@@ -2595,11 +2684,10 @@ async function scannerDossierPartage() {
         continue;
       }
       try {
-        const fichierStrat = await telechargerFichierPartage(g.strat.nom);
-        await assignerFichierScanneAPaire(paireCible, div, "strat", fichierStrat);
+        await assignerFichierScanneAPaire(paireCible, div, "strat", g.fichierStrat);
         let suffixe = "";
         if (g.cutrite) {
-          const fichierCoupe = await telechargerFichierPartage(g.cutrite.nom);
+          const fichierCoupe = await g.cutrite.entree.getFile();
           await assignerFichierScanneAPaire(paireCible, div, "coupe", fichierCoupe);
           suffixe = " + liste de coupe";
         }
@@ -2616,7 +2704,9 @@ async function scannerDossierPartage() {
   }
 }
 
+$("btnChoisirDossierPartage").addEventListener("click", choisirDossierPartage);
 $("btnScanPartage").addEventListener("click", scannerDossierPartage);
+restaurerDossierPartage();
 
 // La recherche accepte trois formats, reconnus automatiquement :
 // - une clé complète commande+ligne (ex. "CVC26090331003") ;
