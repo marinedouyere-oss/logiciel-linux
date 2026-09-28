@@ -429,7 +429,7 @@
   <div class="onglet-page inactif" id="onglet-recherche">
     <div class="panneau panneau-recherche">
       <label for="rechercheGlobale">🔍 Recherche pièces sur Cutrite</label>
-      <p class="recherche-aide">Clé complète (CVC26090331003), numéro de commande seul (CVC26090331), ou numéro de bande/modulo (T9, T9/1).</p>
+      <p class="recherche-aide">Clé complète (CVC26090331003), numéro de commande seul (CVC26090331), ou numéro de bande/modulo (T9, T9/1). Fonctionne même sans liste de coupe sélectionnée (recherche alors dans le fichier de lancement seul) — sauf la recherche par bande/modulo, qui a besoin de la liste de coupe.</p>
       <div class="recherche-row">
         <input type="text" id="rechercheGlobale" placeholder="ex. CVC26090331003, CVC26090331 ou T9">
         <button id="btnRechercheGlobale">Rechercher</button>
@@ -2807,11 +2807,17 @@ async function rechercherGrainMatchingGlobal() {
     return;
   }
 
-  const pairesAvecCoupe = paires.filter((paire) => fichierCoupeDe(paire));
-  if (pairesAvecCoupe.length === 0) {
+  // La liste de coupe n'est plus obligatoire : si seul le fichier de
+  // lancement est disponible pour un poste (pas encore de liste de coupe
+  // sélectionnée, ou juste après un scan qui n'en a pas trouvé), la
+  // recherche par clé/commande fonctionne quand même directement dessus —
+  // seule la recherche par bande/modulo reste limitée à la liste de coupe
+  // (ces numéros n'existent pas dans le fichier de lancement).
+  const pairesRecherche = paires.filter((paire) => fichierCoupeDe(paire) || fichierStratDe(paire));
+  if (pairesRecherche.length === 0) {
     zone.style.color = "var(--alerte-text)";
     zone.style.fontWeight = "normal";
-    zone.textContent = "Sélectionnez au moins une liste de coupe.";
+    zone.textContent = "Sélectionnez au moins un fichier de lancement ou une liste de coupe.";
     return;
   }
 
@@ -2824,8 +2830,43 @@ async function rechercherGrainMatchingGlobal() {
 
   const trouvailles = [];
   const erreurs = [];
-  for (const paire of pairesAvecCoupe) {
+  for (const paire of pairesRecherche) {
     const fichierCoupe = fichierCoupeDe(paire);
+    const fichierStrat = fichierStratDe(paire);
+
+    if (!fichierCoupe) {
+      // Pas de liste de coupe pour ce poste : recherche directe dans le
+      // fichier de lancement (clé exacte ou préfixe de commande), sans
+      // grain matching ni quantité "réellement trouvée" — juste ce que le
+      // fichier de lancement attend.
+      if (numeroBande || !fichierStrat) continue;
+      try {
+        const { lignes: lignesStrat } = lireStrat(await chargerClasseur(fichierStrat));
+        const lignesCibles = lignesStrat.filter((l) => l.cle === requete || l.cle.startsWith(requete));
+        for (const ligneStrat of lignesCibles) {
+          const champsDetail = {
+            lancement: ligneStrat.lancement || null,
+            assemblage: ligneStrat.assemblage || null,
+            longueurFinie: ligneStrat.longueurFinie ?? null,
+            largeurFinie: ligneStrat.largeurFinie ?? null,
+            epaisseurFinie: ligneStrat.epaisseurFinie ?? null,
+            toutesDonneesLan: ligneStrat.toutesDonnees || null,
+          };
+          trouvailles.push({
+            paire,
+            cle: ligneStrat.cle,
+            valeurs: null,
+            quantite: ligneStrat.qte_attendue,
+            champsDetail,
+            sansCoupe: true,
+          });
+        }
+      } catch (erreur) {
+        erreurs.push(`${paire.nom} : ${erreur && erreur.message ? erreur.message : erreur}`);
+      }
+      continue;
+    }
+
     try {
       // Chargé une seule fois (dézippage Excel ou lecture des pages PDF,
       // l'étape coûteuse) et réutilisé pour le grain matching ET le compte.
@@ -2881,7 +2922,7 @@ async function rechercherGrainMatchingGlobal() {
             // en cas d'échec de lecture, on garde les champs du PDF.
           }
         }
-        trouvailles.push({ paire, cle, valeurs: grainParCle.get(cle) || [], quantite, champsDetail });
+        trouvailles.push({ paire, cle, valeurs: grainParCle.get(cle) || [], quantite, champsDetail, sansCoupe: false });
       }
     } catch (erreur) {
       erreurs.push(`${paire.nom} : ${erreur && erreur.message ? erreur.message : erreur}`);
@@ -2891,14 +2932,15 @@ async function rechercherGrainMatchingGlobal() {
   if (trouvailles.length === 0) {
     zone.style.color = "var(--alerte-text)";
     const quoi = numeroBande ? `bande/modulo T${numeroBande}` : `clé ou commande ${requete}`;
-    zone.textContent = `${quoi} introuvable dans les ${pairesAvecCoupe.length} liste(s) de coupe sélectionnée(s).`;
+    zone.textContent = `${quoi} introuvable dans les ${pairesRecherche.length} poste(s)/lancement(s) sélectionné(s) (liste de coupe et/ou fichier de lancement).`;
   } else {
     zone.style.color = "var(--ok-text)";
     zone.innerHTML = trouvailles
-      .map(({ paire, cle, valeurs, quantite, champsDetail }) => {
-        const quantiteTexte = quantite !== null ? String(quantite) : "?";
+      .map(({ paire, cle, valeurs, quantite, champsDetail, sansCoupe }) => {
+        const quantiteTexte = quantite !== null && quantite !== undefined ? String(quantite) : "?";
+        const quantiteLabel = sansCoupe ? "Quantité attendue (fichier de lancement)" : "Quantité trouvée";
         const grainHtml =
-          valeurs.length === 0
+          !valeurs || valeurs.length === 0
             ? `<span class="grain-vide">Unitaire (pas de grain matching)</span>`
             : valeurs.map((v) => `<span class="grain-puce">${v}</span>`).join("");
 
@@ -2934,9 +2976,10 @@ async function rechercherGrainMatchingGlobal() {
               <span class="resultat-poste">${paire.nom}</span>
             </div>
             ${schemaHtml}
+            ${sansCoupe ? `<p class="scies-note">Pas de liste de coupe pour ce poste — données du fichier de lancement uniquement.</p>` : ""}
             <div class="resultat-recherche-champs">
-              <div class="resultat-champ"><span class="resultat-champ-label">Quantité trouvée</span><span class="resultat-champ-valeur">${quantiteTexte}</span></div>
-              <div class="resultat-champ"><span class="resultat-champ-label">Grain matching</span><span class="resultat-champ-valeur">${grainHtml}</span></div>
+              <div class="resultat-champ"><span class="resultat-champ-label">${quantiteLabel}</span><span class="resultat-champ-valeur">${quantiteTexte}</span></div>
+              ${sansCoupe ? "" : `<div class="resultat-champ"><span class="resultat-champ-label">Grain matching</span><span class="resultat-champ-valeur">${grainHtml}</span></div>`}
               ${lancementHtml}
               ${epaisseurHtml}
               ${assemblageHtml}
