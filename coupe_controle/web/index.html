@@ -1379,6 +1379,10 @@ function fichierCoupeDe(paire) {
   const input = $(`coupe-${paire.id}`);
   return (input && input.files[0]) || paire.fichierCoupeRestaure || null;
 }
+function fichierBkpDe(paire) {
+  const input = $(`bkp-${paire.id}`);
+  return (input && input.files[0]) || paire.fichierBkpRestaure || null;
+}
 
 let prochainId = 1;
 // Chaque paire : { id, poste, lancementLabel, nom, rapport, clesStrat, triColonne, triAscendant }
@@ -1486,6 +1490,7 @@ function reinitialiserPaire(paire, div) {
   paire.triAscendant = true;
   paire.fichierStratRestaure = undefined;
   paire.fichierCoupeRestaure = undefined;
+  paire.fichierBkpRestaure = undefined;
   majLibellePaire(paire, div);
 
   const ligneProgress = $(`progress-${paire.id}`);
@@ -2440,8 +2445,7 @@ async function lancerControleScies(paire, div) {
   const conteneur = div.querySelector(`#scies-resultat-${paire.id}`);
   const bouton = div.querySelector('[data-action="scies"]');
   const fichierStrat = fichierStratDe(paire);
-  const inputBkp = div.querySelector(`#bkp-${paire.id}`);
-  const fichierBkp = inputBkp && inputBkp.files[0];
+  const fichierBkp = fichierBkpDe(paire);
 
   if (!fichierStrat) {
     alert(`${paire.nom} : sélectionnez d'abord le fichier de lancement.`);
@@ -2634,20 +2638,25 @@ async function restaurerDossierPartage() {
 // mémoire (fichierStratRestaure / fichierCoupeRestaure), déjà lu en
 // priorité par fichierStratDe()/fichierCoupeDe() quand l'input est vide.
 async function assignerFichierScanneAPaire(paire, div, role, fichier) {
-  const roleValidation = role === "strat" ? "validation-strat" : "validation-coupe";
+  const roleValidation = { strat: "validation-strat", coupe: "validation-coupe", bkp: "validation-bkp" }[role];
   const span = div.querySelector(`[data-role="${roleValidation}"]`);
   if (span) {
     span.textContent = `✓ scanné : ${fichier.name}`;
     span.className = "validation-fichier valide memorise";
   }
-  const bytes = await fichier.arrayBuffer();
   if (role === "strat") {
     paire.fichierStratRestaure = fichier;
     await detecterSemainePaire(paire, div);
+    const bytes = await fichier.arrayBuffer();
     sauvegarderDansMemoire(paire, { fichierStrat: { nom: fichier.name, type: fichier.type, bytes } });
-  } else {
+  } else if (role === "coupe") {
     paire.fichierCoupeRestaure = fichier;
+    const bytes = await fichier.arrayBuffer();
     sauvegarderDansMemoire(paire, { fichierCoupe: { nom: fichier.name, type: fichier.type, bytes } });
+  } else {
+    // Le .bkp n'est pas mémorisé entre sessions (fichier volumineux, propre
+    // au Contrôle Scies) : juste rattaché pour cette session de scan.
+    paire.fichierBkpRestaure = fichier;
   }
 }
 
@@ -2732,7 +2741,20 @@ async function scannerDossierPartage() {
           await assignerFichierScanneAPaire(paireCible, div, "coupe", fichierCoupe);
           suffixe = " + liste de coupe";
         }
+        if (g.bkp) {
+          const fichierBkp = await g.bkp.entree.getFile();
+          await assignerFichierScanneAPaire(paireCible, div, "bkp", fichierBkp);
+          suffixe += " + .bkp";
+        }
         resultats.push(`✔ ${poste} — Lancement 2 : ${g.strat.nom}${suffixe}`);
+
+        // Le scan sert justement à éviter les clics manuels : une fois les
+        // fichiers trouvés en place, lance directement l'analyse
+        // correspondante (contrôle principal si la liste de coupe est là,
+        // Contrôle Scies si le .bkp est là) plutôt que de s'arrêter à la
+        // sélection.
+        if (g.cutrite) await lancerUnePaire(paireCible, div);
+        if (g.bkp) await lancerControleScies(paireCible, div);
       } catch (erreur) {
         resultats.push(`❌ ${poste} : ${erreur && erreur.message ? erreur.message : erreur}`);
       }
