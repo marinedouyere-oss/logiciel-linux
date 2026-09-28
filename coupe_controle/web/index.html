@@ -2697,9 +2697,13 @@ async function scannerDossierPartage() {
     // donc regrouper par poste + code, pas par code seul, sous peine
     // qu'un fichier Feno écrase le fichier Agglo de la même semaine.
     const groupes = new Map();
+    const nonReconnus = [];
     for (const f of fichiers) {
       const info = decoderNomFichierPartage(f.nom);
-      if (!info) continue;
+      if (!info) {
+        nonReconnus.push(f.nom);
+        continue;
+      }
       const cleGroupe = `${info.poste}|${info.code}`;
       if (!groupes.has(cleGroupe)) groupes.set(cleGroupe, { poste: info.poste });
       const g = groupes.get(cleGroupe);
@@ -2708,9 +2712,20 @@ async function scannerDossierPartage() {
       else g.strat = f;
     }
 
+    // Affiché systématiquement (succès ou non) : le nom d'un fichier ne
+    // contenant pas "LAN" suivi de 6 chiffres est ignoré silencieusement
+    // par le scan (voir decoderNomFichierPartage) — les lister permet de
+    // voir directement, sans rien avoir à envoyer, si des fichiers
+    // attendus ne suivent pas cette convention de nommage (ex. une liste
+    // de coupe pas encore renommée avec le préfixe "CUTRITE").
+    const noteNonReconnus =
+      nonReconnus.length > 0
+        ? `<p class="scies-note">${nonReconnus.length} fichier(s) sur ${fichiers.length} non reconnu(s) (nom sans "LAN" + 6 chiffres) : ${nonReconnus.map(echapperHtml).join(", ")}</p>`
+        : `<p class="scies-note">${fichiers.length} fichier(s) dans le dossier, tous reconnus.</p>`;
+
     if (groupes.size === 0) {
       zone.style.color = "var(--alerte-text)";
-      zone.textContent = "Aucun fichier de lancement reconnu dans ce dossier.";
+      zone.innerHTML = `Aucun fichier de lancement reconnu dans ce dossier.${noteNonReconnus}`;
       return;
     }
 
@@ -2761,7 +2776,7 @@ async function scannerDossierPartage() {
     }
 
     zone.style.color = "";
-    zone.innerHTML = resultats.map((l) => `<div>${echapperHtml(l)}</div>`).join("");
+    zone.innerHTML = resultats.map((l) => `<div>${echapperHtml(l)}</div>`).join("") + noteNonReconnus;
   } finally {
     if (bouton) bouton.disabled = false;
   }
