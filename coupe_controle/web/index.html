@@ -2355,9 +2355,10 @@ function lireQuantitesCtt(texte) {
   const qteParCle = new Map();
   for (const [id, entreesTC] of pieces) {
     if (!id.startsWith("P")) continue; // les identifiants "C<n>" sont des bandes/chutes, jamais des pièces
-    const reelles = entreesTC.filter(
-      (e) => !MOTIF_BANDE_MODULO.test(e.nom) && e.agglo.trim().toUpperCase() !== "PROTECTION"
-    );
+    // Les protections sont bien de vraies pièces (chacune a son propre
+    // repère TC et sa propre quantité) : seules les bandes/modulos
+    // techniques (jamais des pièces) sont à exclure ici.
+    const reelles = entreesTC.filter((e) => !MOTIF_BANDE_MODULO.test(e.nom));
     if (reelles.length === 0) continue;
     const cle = reelles[0].cle;
     if (!cle) continue;
@@ -2395,6 +2396,46 @@ function comparerScies(qteAttendueParCle, qteParCleBkp) {
 // Lance le Contrôle Scies pour une paire : lit le fichier de lancement déjà
 // sélectionné (indépendamment du contrôle STRAT/liste de coupe principal) et
 // le fichier .bkp fourni, puis affiche les écarts éventuels.
+// Quantité attendue par clé, pour le Contrôle Scies — délibérément
+// différent de lireStrat() : ce dernier exclut les protections
+// (MATERIAUX_EXCLUS) parce que le contrôle STRAT/liste de coupe a ses
+// propres raisons historiques de le faire, mais une protection est une
+// vraie pièce à envoyer en scie comme une autre, avec son propre repère
+// dans le .bkp (voir lireQuantitesCtt) — elle doit compter ici.
+function lireQuantitesAttenduesScies(workbook) {
+  const { feuille, entetes } = trouverFeuilleEtEntetes(workbook);
+  const idxCommande = entetes[COL_COMMANDE];
+  const idxLigne = entetes[COL_LIGNE];
+  const idxQte = entetes[COL_QTE];
+  const idxCle = entetes[COL_CLE];
+
+  const qteParCle = new Map();
+  const nbLignes = feuille.rowCount || 0;
+  for (let r = 2; r <= nbLignes; r++) {
+    const row = feuille.getRow(r);
+    if (!row || row.actualCellCount === 0) continue;
+
+    const commandeRaw = cellValue(row.getCell(idxCommande));
+    if (commandeRaw === null || commandeRaw === undefined) continue;
+    const commande = String(commandeRaw).trim();
+
+    const numeroLigne = cellValue(row.getCell(idxLigne));
+    let cle = idxCle ? cellValue(row.getCell(idxCle)) : null;
+    cle = cle !== null && cle !== undefined && String(cle).trim() !== "" ? String(cle).trim() : cleLigne(commande, numeroLigne);
+
+    const qteRaw = cellValue(row.getCell(idxQte));
+    const qteNum = toFloatOrNull(qteRaw) ?? 0;
+    qteParCle.set(cle, (qteParCle.get(cle) || 0) + qteNum);
+  }
+  return qteParCle;
+}
+
+function sommeValeurs(map) {
+  let total = 0;
+  for (const v of map.values()) total += v;
+  return total;
+}
+
 async function lancerControleScies(paire, div) {
   const conteneur = div.querySelector(`#scies-resultat-${paire.id}`);
   const bouton = div.querySelector('[data-action="scies"]');
@@ -2419,8 +2460,7 @@ async function lancerControleScies(paire, div) {
 
   let etape = "lecture du fichier de lancement";
   try {
-    const { lignes: lignesStrat } = lireStrat(await chargerClasseur(fichierStrat));
-    const qteAttendueParCle = new Map(lignesStrat.map((l) => [l.cle, l.qte_attendue]));
+    const qteAttendueParCle = lireQuantitesAttenduesScies(await chargerClasseur(fichierStrat));
 
     etape = "lecture du fichier .bkp";
     const nomLancement = fichierBkp.name.replace(/_\d{4}-\d{2}-\d{2}.*$/i, "").replace(/\.bkp$/i, "");
@@ -2428,7 +2468,7 @@ async function lancerControleScies(paire, div) {
 
     etape = "comparaison";
     const ecarts = comparerScies(qteAttendueParCle, qteParCleBkp);
-    afficherResultatScies(conteneur, ecarts, qteAttendueParCle.size);
+    afficherResultatScies(conteneur, ecarts, qteAttendueParCle.size, sommeValeurs(qteAttendueParCle));
   } catch (erreur) {
     const messageBrut = erreur && erreur.message ? erreur.message : String(erreur);
     conteneur.textContent = `❌ échec à l'étape « ${etape} » : ${messageBrut}`;
@@ -2437,10 +2477,11 @@ async function lancerControleScies(paire, div) {
   }
 }
 
-function afficherResultatScies(conteneur, ecarts, nbClesAttendues) {
+function afficherResultatScies(conteneur, ecarts, nbClesAttendues, totalPiecesAttendues) {
+  const bilan = `${nbClesAttendues} clé(s), ${totalPiecesAttendues} pièce(s) au total (protections comprises)`;
   if (ecarts.length === 0) {
     conteneur.className = "scies-resultat scies-ok";
-    conteneur.innerHTML = `<span class="scies-titre">✔ Contrôle Scies : tout correspond</span>${nbClesAttendues} clé(s) du fichier de lancement retrouvée(s) à l'identique dans le .bkp.`;
+    conteneur.innerHTML = `<span class="scies-titre">✔ Contrôle Scies : tout correspond</span>${bilan}, toutes retrouvées à l'identique dans le .bkp.`;
     return;
   }
   const lignes = ecarts
@@ -2451,7 +2492,7 @@ function afficherResultatScies(conteneur, ecarts, nbClesAttendues) {
     .join("");
   conteneur.className = "scies-resultat";
   conteneur.innerHTML = `
-    <span class="scies-titre">⚠ Contrôle Scies : ${ecarts.length} écart(s) sur ${nbClesAttendues} clé(s)</span>
+    <span class="scies-titre">⚠ Contrôle Scies : ${ecarts.length} écart(s) sur ${bilan}</span>
     <p class="scies-note">Comparaison entre le fichier de lancement et ce qui a été réellement optimisé (fichier .bkp) — une pièce en écart peut signaler un oubli lors de l'optimisation.</p>
     <table>
       <thead><tr><th>Clé (commande+ligne)</th><th>Attendu</th><th>Trouvé (.bkp)</th><th>Écart</th></tr></thead>
