@@ -23,7 +23,7 @@ from ..comparator import comparer
 from ..coupe_reader import CoupeFormatError, lire_coupe, lire_grain_matching
 from ..models import RapportComparaison, Statut
 from ..report_export import exporter_rapport
-from ..strat_reader import StratFormatError, lire_strat
+from ..strat_reader import StratFormatError, lire_strat, quantite_totale
 
 COULEUR_PAR_STATUT = {
     Statut.OK: QColor("#C6EFCE"),
@@ -58,6 +58,7 @@ class MainWindow(QMainWindow):
 
         self.rapport: RapportComparaison | None = None
         self.cles_strat: set[str] = set()
+        self.quantite_totale_lancement: float = 0.0
 
         central = QWidget()
         self.setCentralWidget(central)
@@ -128,6 +129,7 @@ class MainWindow(QMainWindow):
 
         try:
             lignes_strat = lire_strat(chemin_strat)
+            self.quantite_totale_lancement = quantite_totale(chemin_strat)
             cles_strat = {l.cle for l in lignes_strat}
             self.cles_strat = cles_strat
             trouve_par_cle = lire_coupe(chemin_coupe, cles_strat)
@@ -139,21 +141,22 @@ class MainWindow(QMainWindow):
             return
 
         self.rapport = comparer(lignes_strat, trouve_par_cle)
-        self._afficher_rapport(self.rapport)
+        self._afficher_rapport(self.rapport, self.quantite_totale_lancement)
         self.bouton_export.setEnabled(True)
 
-    def _afficher_rapport(self, rapport: RapportComparaison) -> None:
+    def _afficher_rapport(self, rapport: RapportComparaison, quantite_totale_lancement: float) -> None:
+        entete = f"Quantité totale du lancement (protection comprise) : {int(quantite_totale_lancement)} pièces.\n"
         if rapport.nb_anomalies == 0:
             self.label_resume.setStyleSheet("font-weight: bold; padding: 6px; color: #2e7d32;")
             self.label_resume.setText(
-                f"✔ Tout est correct — {int(rapport.total_attendu)} pièces attendues, "
+                entete + f"✔ Tout est correct — {int(rapport.total_attendu)} pièces attendues (hors protection), "
                 f"{rapport.total_trouve} trouvées."
             )
         else:
             self.label_resume.setStyleSheet("font-weight: bold; padding: 6px; color: #c62828;")
             self.label_resume.setText(
-                f"⚠ {rapport.nb_anomalies} anomalie(s) — "
-                f"{int(rapport.total_attendu)} pièces attendues, {rapport.total_trouve} trouvées "
+                entete + f"⚠ {rapport.nb_anomalies} anomalie(s) — "
+                f"{int(rapport.total_attendu)} pièces attendues (hors protection), {rapport.total_trouve} trouvées "
                 f"({rapport.nb_ok} OK)."
             )
 
@@ -220,7 +223,7 @@ class MainWindow(QMainWindow):
         if not chemin.lower().endswith(".xlsx"):
             chemin += ".xlsx"
         try:
-            exporter_rapport(self.rapport, Path(chemin))
+            exporter_rapport(self.rapport, Path(chemin), self.quantite_totale_lancement)
         except Exception as erreur:  # noqa: BLE001
             QMessageBox.critical(self, "Erreur d'export", f"Impossible d'enregistrer le rapport :\n{erreur}")
             return

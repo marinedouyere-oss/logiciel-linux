@@ -67,6 +67,30 @@ def _fmt_ligne(ligne) -> str:
         return str(ligne)
 
 
+def quantite_totale(chemin: str | Path) -> float:
+    """Somme des quantités de toutes les lignes du fichier de lancement,
+    protection comprise — la quantité totale réellement à produire."""
+
+    chemin = Path(chemin)
+    feuille, entetes = _trouver_feuille_et_entetes(chemin)
+
+    idx_commande = entetes[COL_COMMANDE]
+    idx_qte = entetes[COL_QTE]
+    nb_colonnes = feuille.max_column
+
+    def valeur(ligne_donnees, index: int | None):
+        if not index or index > len(ligne_donnees):
+            return None
+        return ligne_donnees[index - 1].value
+
+    total = 0.0
+    for ligne_donnees in feuille.iter_rows(min_row=2, max_col=nb_colonnes):
+        if valeur(ligne_donnees, idx_commande) is None:
+            continue
+        total += float(valeur(ligne_donnees, idx_qte) or 0)
+    return total
+
+
 def lire_strat(chemin: str | Path) -> list[LigneStrat]:
     """Lit le fichier de lancement et agrège les lignes par clé
     commande+ligne (une clé peut apparaître plusieurs fois dans le fichier,

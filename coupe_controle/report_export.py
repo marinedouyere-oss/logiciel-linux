@@ -26,19 +26,22 @@ REMPLISSAGE_PAR_STATUT = {
 }
 
 
-def exporter_rapport(rapport: RapportComparaison, chemin: str | Path) -> None:
+def exporter_rapport(rapport: RapportComparaison, chemin: str | Path, quantite_totale_lancement: float | None = None) -> None:
     classeur = Workbook()
     feuille = classeur.active
     feuille.title = "Contrôle coupe"
 
-    feuille.append([
-        "Total attendu",
+    ligne_totaux = [
+        "Total attendu (hors protection)",
         rapport.total_attendu,
         "Total trouvé",
         rapport.total_trouve,
         "Anomalies",
         rapport.nb_anomalies,
-    ])
+    ]
+    if quantite_totale_lancement is not None:
+        ligne_totaux += ["Quantité totale lancement (protection comprise)", quantite_totale_lancement]
+    feuille.append(ligne_totaux)
     for cellule in feuille[1]:
         cellule.font = Font(bold=True)
     feuille.append([])
