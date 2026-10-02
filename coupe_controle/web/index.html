@@ -1883,7 +1883,7 @@ function trierEtRedessinerPaire(paire, div) {
   dessinerTablePaire(div, copie);
 }
 
-function afficherRapportPaire(div, rapport, nbUnitaires, nbPiecesTrouvees, doublonsStrat, sourceTrouve) {
+function afficherRapportPaire(div, rapport, nbUnitaires, nbPiecesTrouvees, doublonsStrat) {
   const resume = div.querySelector(".resume");
   let suffixeUnitaires = "";
   if (nbUnitaires !== null && nbUnitaires !== undefined && nbPiecesTrouvees) {
@@ -1892,15 +1892,12 @@ function afficherRapportPaire(div, rapport, nbUnitaires, nbPiecesTrouvees, doubl
     const pourcentageGrain = ((nbGrainMatching / nbPiecesTrouvees) * 100).toFixed(1).replace(".", ",");
     suffixeUnitaires = `, dont ${pourcentage} % unitaire / ${pourcentageGrain} % grain matching`;
   }
-  // Pas de liste de coupe (pas toujours produite) : la comparaison s'est
-  // faite avec le .bkp à la place — jamais bloquant, juste signalé.
-  const noteSource = sourceTrouve === "bkp" ? " (comparaison basée sur le .bkp — pas de liste de coupe disponible)" : "";
   if (rapport.nbAnomalies === 0) {
     resume.style.color = "var(--ok-text)";
-    resume.textContent = `✔ Tout est correct — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées${suffixeUnitaires}.${noteSource}`;
+    resume.textContent = `✔ Tout est correct — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées${suffixeUnitaires}.`;
   } else {
     resume.style.color = "var(--alerte-text)";
-    resume.textContent = `⚠ ${rapport.nbAnomalies} anomalie(s) — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées (${rapport.nbOk} OK)${suffixeUnitaires}.${noteSource}`;
+    resume.textContent = `⚠ ${rapport.nbAnomalies} anomalie(s) — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées (${rapport.nbOk} OK)${suffixeUnitaires}.`;
   }
 
   const zoneDoublons = div.querySelector(`#doublons-${div.dataset.id}`);
@@ -3575,7 +3572,7 @@ function afficherResultatPaire(index, paire) {
   if (!paire.rapport) return;
   const panneau = creerPanneauResultat(index, paire);
   conteneur.appendChild(panneau);
-  afficherRapportPaire(panneau, paire.rapport, paire.nbUnitaires, paire.nbPiecesTrouvees, paire.doublonsStrat, paire.sourceTrouve);
+  afficherRapportPaire(panneau, paire.rapport, paire.nbUnitaires, paire.nbPiecesTrouvees, paire.doublonsStrat);
   // Brève mise en évidence pour signaler que le résultat vient d'apparaître
   // juste en dessous, sans avoir à défiler ailleurs sur la page.
   panneau.classList.add("mis-en-avant");
