@@ -1516,6 +1516,7 @@ function reinitialiserPaire(paire, div) {
   paire.doublonsStrat = undefined;
   paire.nbUnitaires = undefined;
   paire.nbPiecesTrouvees = undefined;
+  paire.sourceTrouve = undefined;
   paire.triColonne = null;
   paire.triAscendant = true;
   paire.fichierStratRestaure = undefined;
@@ -1756,6 +1757,7 @@ async function restaurerPaire(paire, div) {
     paire.semaine = donnees.semaine;
     paire.nbUnitaires = donnees.nbUnitaires;
     paire.nbPiecesTrouvees = donnees.nbPiecesTrouvees;
+    paire.sourceTrouve = donnees.sourceTrouve;
     paire.clesStrat = donnees.clesStrat instanceof Set ? donnees.clesStrat : new Set(donnees.clesStrat || []);
     paire.qteAttendueParCle =
       donnees.qteAttendueParCle instanceof Map ? donnees.qteAttendueParCle : new Map(donnees.qteAttendueParCle || []);
@@ -1881,7 +1883,7 @@ function trierEtRedessinerPaire(paire, div) {
   dessinerTablePaire(div, copie);
 }
 
-function afficherRapportPaire(div, rapport, nbUnitaires, nbPiecesTrouvees, doublonsStrat) {
+function afficherRapportPaire(div, rapport, nbUnitaires, nbPiecesTrouvees, doublonsStrat, sourceTrouve) {
   const resume = div.querySelector(".resume");
   let suffixeUnitaires = "";
   if (nbUnitaires !== null && nbUnitaires !== undefined && nbPiecesTrouvees) {
@@ -1890,12 +1892,15 @@ function afficherRapportPaire(div, rapport, nbUnitaires, nbPiecesTrouvees, doubl
     const pourcentageGrain = ((nbGrainMatching / nbPiecesTrouvees) * 100).toFixed(1).replace(".", ",");
     suffixeUnitaires = `, dont ${pourcentage} % unitaire / ${pourcentageGrain} % grain matching`;
   }
+  // Pas de liste de coupe (pas toujours produite) : la comparaison s'est
+  // faite avec le .bkp à la place — jamais bloquant, juste signalé.
+  const noteSource = sourceTrouve === "bkp" ? " (comparaison basée sur le .bkp — pas de liste de coupe disponible)" : "";
   if (rapport.nbAnomalies === 0) {
     resume.style.color = "var(--ok-text)";
-    resume.textContent = `✔ Tout est correct — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées${suffixeUnitaires}.`;
+    resume.textContent = `✔ Tout est correct — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées${suffixeUnitaires}.${noteSource}`;
   } else {
     resume.style.color = "var(--alerte-text)";
-    resume.textContent = `⚠ ${rapport.nbAnomalies} anomalie(s) — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées (${rapport.nbOk} OK)${suffixeUnitaires}.`;
+    resume.textContent = `⚠ ${rapport.nbAnomalies} anomalie(s) — ${Math.trunc(rapport.totalAttendu)} pièces attendues, ${rapport.totalTrouve} trouvées (${rapport.nbOk} OK)${suffixeUnitaires}.${noteSource}`;
   }
 
   const zoneDoublons = div.querySelector(`#doublons-${div.dataset.id}`);
@@ -3463,13 +3468,22 @@ async function lancerUnePaire(paire, div) {
 async function lancerControlePaire(index, paire) {
   const fichierStrat = fichierStratDe(paire);
   const fichierCoupe = fichierCoupeDe(paire);
-  if (!fichierStrat && !fichierCoupe) {
+  const fichierBkp = fichierBkpDe(paire);
+  if (!fichierStrat && !fichierCoupe && !fichierBkp) {
     majProgress(paire, "—", "vide (ignorée)", "progress-vide");
     return null; // paire vide, ignorée silencieusement
   }
-  if (!fichierStrat || !fichierCoupe) {
-    majProgress(paire, "❌", "fichier manquant (lancement ou coupe)", "progress-erreur");
-    return { erreur: `${paire.nom} : sélectionnez à la fois le fichier de lancement et la liste de coupe.` };
+  if (!fichierStrat) {
+    majProgress(paire, "❌", "fichier de lancement manquant", "progress-erreur");
+    return { erreur: `${paire.nom} : sélectionnez le fichier de lancement.` };
+  }
+  // La liste de coupe n'est pas toujours produite : son absence ne doit
+  // jamais bloquer le contrôle. Si elle manque mais qu'un .bkp est là, on
+  // compare avec le .bkp à la place (quantités réellement optimisées) ;
+  // sinon on attend simplement, sans erreur ni alerte.
+  if (!fichierCoupe && !fichierBkp) {
+    majProgress(paire, "—", "en attente de la liste de coupe ou du .bkp", "progress-vide");
+    return null;
   }
 
   let etape = "lecture du fichier de lancement";
@@ -3500,16 +3514,26 @@ async function lancerControlePaire(index, paire) {
     const qteAttendueParCle = new Map(lignesStrat.map((l) => [l.cle, l.qte_attendue]));
     paire.qteAttendueParCle = qteAttendueParCle; // réutilisé par la recherche globale pour détecter la colonne quantité
 
-    etape = "lecture de la liste de coupe (Cutrite)";
-    majProgress(paire, "⏳", "lecture de la liste de coupe (Cutrite)…");
-    await tick();
-    const {
-      compteur: trouveParCle,
-      nbUnitaires,
-      nbPiecesTrouvees,
-    } = await lireCoupeDepuisFichier(fichierCoupe, paire.clesStrat, qteAttendueParCle);
-    paire.nbUnitaires = nbUnitaires;
-    paire.nbPiecesTrouvees = nbPiecesTrouvees;
+    let trouveParCle;
+    if (fichierCoupe) {
+      etape = "lecture de la liste de coupe (Cutrite)";
+      majProgress(paire, "⏳", "lecture de la liste de coupe (Cutrite)…");
+      await tick();
+      const resultatCoupe = await lireCoupeDepuisFichier(fichierCoupe, paire.clesStrat, qteAttendueParCle);
+      trouveParCle = resultatCoupe.compteur;
+      paire.nbUnitaires = resultatCoupe.nbUnitaires;
+      paire.nbPiecesTrouvees = resultatCoupe.nbPiecesTrouvees;
+      paire.sourceTrouve = "coupe";
+    } else {
+      etape = "lecture du fichier .bkp";
+      majProgress(paire, "⏳", "pas de liste de coupe — comparaison avec le .bkp…");
+      await tick();
+      const nomLancement = fichierBkp.name.replace(/_\d{4}-\d{2}-\d{2}.*$/i, "").replace(/\.bkp$/i, "");
+      trouveParCle = await lireBkp(fichierBkp, nomLancement);
+      paire.nbUnitaires = null;
+      paire.nbPiecesTrouvees = null;
+      paire.sourceTrouve = "bkp";
+    }
 
     etape = "comparaison";
     majProgress(paire, "⏳", "comparaison en cours…");
@@ -3528,6 +3552,7 @@ async function lancerControlePaire(index, paire) {
       semaine: paire.semaine,
       nbUnitaires: paire.nbUnitaires,
       nbPiecesTrouvees: paire.nbPiecesTrouvees,
+      sourceTrouve: paire.sourceTrouve,
       clesStrat: paire.clesStrat,
       qteAttendueParCle: paire.qteAttendueParCle,
     });
@@ -3550,7 +3575,7 @@ function afficherResultatPaire(index, paire) {
   if (!paire.rapport) return;
   const panneau = creerPanneauResultat(index, paire);
   conteneur.appendChild(panneau);
-  afficherRapportPaire(panneau, paire.rapport, paire.nbUnitaires, paire.nbPiecesTrouvees, paire.doublonsStrat);
+  afficherRapportPaire(panneau, paire.rapport, paire.nbUnitaires, paire.nbPiecesTrouvees, paire.doublonsStrat, paire.sourceTrouve);
   // Brève mise en évidence pour signaler que le résultat vient d'apparaître
   // juste en dessous, sans avoir à défiler ailleurs sur la page.
   panneau.classList.add("mis-en-avant");
@@ -3581,7 +3606,7 @@ async function lancerTousLesControles() {
     if (erreurs.length > 0) {
       alert("Certaines paires n'ont pas pu être traitées :\n\n" + erreurs.join("\n"));
     } else if (!auMoinsUnResultat) {
-      alert("Sélectionnez au moins une paire complète (fichier de lancement + liste de coupe).");
+      alert("Sélectionnez au moins un fichier de lancement (avec, si possible, une liste de coupe ou un .bkp).");
     }
   } finally {
     btn.disabled = false;
