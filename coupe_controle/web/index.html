@@ -72,7 +72,6 @@
   }
   .panneau-recherche button { font-size: 1.05rem; padding: 12px 22px; }
   .panneau-recherche .label-recherche { font-size: 0.95rem; }
-  .recherche-aide { margin: -4px 0 10px; font-size: 0.82rem; color: #445; }
   .compteur-semaine {
     text-align: center;
     font-size: 1.1rem;
@@ -429,7 +428,6 @@
 
     <div class="panneau panneau-scan">
       <label>📂 Dossier partagé</label>
-      <p class="recherche-aide">Choisissez le dossier (un dossier Windows normal, local ou partagé) où atterrissent les fichiers de lancement et listes de coupe "CUTRITE...". Sentinelle y récupère automatiquement, pour chaque poste, le fichier le plus récent et le place dans la case de la semaine (paire/impaire) correspondante. Fonctionne uniquement sur PC (Chrome/Edge) — indisponible sur Android.</p>
       <button type="button" id="btnChoisirDossierPartage">Choisir le dossier…</button>
       <button type="button" id="btnScanPartage" disabled>Scanner le dossier partagé</button>
       <div id="resultatScanPartage" class="label-recherche"></div>
@@ -451,10 +449,9 @@
   <div class="onglet-page inactif" id="onglet-recherche">
     <div class="panneau panneau-recherche">
       <label for="rechercheGlobale">🔍 Recherche pièces sur Cutrite</label>
-      <p class="recherche-aide">Clé complète (CVC26090331003), numéro de commande seul (CVC26090331), ou numéro de bande/modulo (T9, T9/1). Fonctionne sans liste de coupe sélectionnée : recherche alors dans le .bkp si disponible (quantité réellement optimisée + bandes/modulos), sinon dans le fichier de lancement seul (clé/commande uniquement, pas de bande).</p>
       <div class="recherche-row">
-        <input type="text" id="rechercheGlobale" placeholder="ex. CVC26090331003, CVC26090331 ou T9">
         <button id="btnRechercheGlobale">Rechercher</button>
+        <input type="text" id="rechercheGlobale" placeholder="ex. CVC26090331003, CVC26090331 ou T9">
       </div>
       <div id="resultatRechercheGlobale" class="label-recherche"></div>
     </div>
