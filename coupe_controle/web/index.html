@@ -73,6 +73,22 @@
   .panneau-recherche button { font-size: 1.05rem; padding: 12px 22px; }
   .panneau-recherche .label-recherche { font-size: 0.95rem; }
   .recherche-aide { margin: -4px 0 10px; font-size: 0.82rem; color: #445; }
+  .compteur-semaine {
+    text-align: center;
+    font-size: 1.1rem;
+    background: #e3f2fd;
+    border-color: #90caf9;
+  }
+  .compteur-semaine strong { color: #0d47a1; }
+  .btn-ajouter-chantier {
+    background: none;
+    border: 1px dashed var(--border);
+    color: #1565c0;
+    font-weight: 600;
+    padding: 8px 14px;
+    margin-top: 10px;
+  }
+  .btn-ajouter-chantier:hover { background: #f0f6ff; }
   .panneau-scan {
     background: #eef7ee;
     border: 2px solid #2e7d32;
@@ -177,6 +193,7 @@
     margin-bottom: 10px;
   }
   .paire-entete strong { font-size: 0.95rem; }
+  .paire-entete-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .btn-reinitialiser {
     background: none;
     border: 1px solid var(--border);
@@ -400,14 +417,19 @@
   <h1>Sentinelle V2.0 — Contrôle de coupe (lancement / Cutrite)</h1>
 
   <div class="onglets">
-    <button type="button" class="onglet-btn actif" data-onglet="controle">Contrôle</button>
+    <button type="button" class="onglet-btn actif" data-onglet="semaine-paire">Semaine paire</button>
+    <button type="button" class="onglet-btn" data-onglet="semaine-impaire">Semaine impaire</button>
     <button type="button" class="onglet-btn" data-onglet="recherche">Recherche</button>
   </div>
 
-  <div class="onglet-page" id="onglet-controle">
+  <div class="onglet-page" id="onglet-semaine">
+    <div class="panneau compteur-semaine">
+      <strong id="compteurSemaineTexte">—</strong>
+    </div>
+
     <div class="panneau panneau-scan">
       <label>📂 Dossier partagé</label>
-      <p class="recherche-aide">Choisissez le dossier (un dossier Windows normal, local ou partagé) où atterrissent les fichiers de lancement et listes de coupe "CUTRITE...". Sentinelle y récupère automatiquement, pour chaque poste, le fichier le plus récent et le place en case "Lancement 2". Fonctionne uniquement sur PC (Chrome/Edge) — indisponible sur Android.</p>
+      <p class="recherche-aide">Choisissez le dossier (un dossier Windows normal, local ou partagé) où atterrissent les fichiers de lancement et listes de coupe "CUTRITE...". Sentinelle y récupère automatiquement, pour chaque poste, le fichier le plus récent et le place dans la case de la semaine (paire/impaire) correspondante. Fonctionne uniquement sur PC (Chrome/Edge) — indisponible sur Android.</p>
       <button type="button" id="btnChoisirDossierPartage">Choisir le dossier…</button>
       <button type="button" id="btnScanPartage" disabled>Scanner le dossier partagé</button>
       <div id="resultatScanPartage" class="label-recherche"></div>
@@ -1268,18 +1290,20 @@ async function exporterRapport(rapport, nomFichier) {
   URL.revokeObjectURL(url);
 }
 
-// ---- UI : 5 postes fixes, chacun débitant plusieurs lancements en
-// parallèle (chaque lancement = une comparaison indépendante, avec son
-// propre fichier STRAT et sa propre liste de coupe à lui comparer). ----
-const POSTES = ["Agglo 1er tour", "Feno", "Casse", "Agglo 2ème tour", "Chantiers"];
-const NB_LANCEMENTS_PAR_DEFAUT = 2;
-const NB_LANCEMENTS_PAR_POSTE = {
-  "Chantiers": 4,
-};
-function nbLancements(poste) {
-  return NB_LANCEMENTS_PAR_POSTE[poste] || NB_LANCEMENTS_PAR_DEFAUT;
-}
+// ---- UI : 4 postes fixes à une case chacun par semaine (paire/impaire —
+// l'ancienne case "Lancement 1" devient la version semaine paire, l'ancienne
+// "Lancement 2" la version semaine impaire), plus "Chantiers" qui apparaît
+// à l'identique dans les deux onglets semaine et peut en compter autant que
+// nécessaire (bouton "+ Ajouter un chantier"). ----
+const POSTES_SEMAINE = ["Agglo 1er tour", "Feno", "Casse", "Agglo 2ème tour"];
+const POSTE_CHANTIERS = "Chantiers";
+const POSTES = [...POSTES_SEMAINE, POSTE_CHANTIERS];
 const $ = (id) => document.getElementById(id);
+
+// Onglet semaine actif ("paire" ou "impaire") : filtre quelles cases des
+// 4 postes fixes sont affichées dans #pairesContainer (Chantiers, lui,
+// s'affiche toujours quel que soit l'onglet actif).
+let semaineActive = "paire";
 
 // ---- Mémorisation locale (IndexedDB) : garde une copie complète des
 // fichiers sélectionnés et du dernier résultat calculé pour chaque
@@ -1385,15 +1409,24 @@ function fichierBkpDe(paire) {
 }
 
 let prochainId = 1;
+// Compteur dédié au libellé des chantiers, jamais décrémenté ni réutilisé
+// (même après un "Retirer") : évite que deux chantiers différents se
+// retrouvent avec le même libellé "Chantier N" (et donc la même clé de
+// mémorisation) après suppression de l'un d'entre eux.
+let prochainNumeroChantier = 1;
 // Chaque paire : { id, poste, lancementLabel, nom, rapport, clesStrat, triColonne, triAscendant }
 const paires = [];
 
-function nouvellePaire(poste, lancementLabel) {
+// semaineParite : "paire" ou "impaire" pour les 4 postes fixes (une seule
+// case chacun par semaine), ou null pour un Chantier (pas de notion de
+// semaine, visible à l'identique dans les deux onglets semaine).
+function nouvellePaire(poste, lancementLabel, semaineParite) {
   const id = prochainId++;
   paires.push({
     id,
     poste,
     lancementLabel,
+    semaineParite: semaineParite || null,
     semaine: null,
     nom: `${poste} — ${lancementLabel}`,
     rapport: null,
@@ -1450,7 +1483,7 @@ function extraireSemaine(codeLancement) {
   return chiffres.slice(-4, -2);
 }
 
-// Met à jour le libellé affiché d'une paire ("Lancement 1 (sem 40)") ainsi
+// Met à jour le libellé affiché d'une paire ("Semaine paire (sem 40)") ainsi
 // que paire.nom (utilisé dans la progression et les résultats), à partir
 // de la semaine détectée automatiquement dans son fichier STRAT.
 function majLibellePaire(paire, div) {
@@ -1503,6 +1536,7 @@ function reinitialiserPaire(paire, div) {
   if (conteneurScies) conteneurScies.innerHTML = "";
 
   effacerMemoire(paire);
+  if (paire.semaineParite) majCompteurSemaine();
 }
 
 async function detecterSemainePaire(paire, div) {
@@ -1534,9 +1568,20 @@ function slug(texte) {
     .toLowerCase();
 }
 
-function redessinerPaires() {
+// Une grille par poste, construite une seule fois et jamais détruite tant
+// que la page vit : passer d'un onglet "Semaine paire"/"Semaine impaire" à
+// l'autre ne fait que masquer/montrer les cases déjà existantes
+// (appliquerFiltreSemaine), sans jamais recréer leur DOM — sinon un fichier
+// .bkp sélectionné à la main (jamais mémorisé entre sessions, contrairement
+// au fichier de lancement et à la liste de coupe) ou un résultat Contrôle
+// Scies déjà affiché seraient perdus à chaque changement d'onglet.
+const grillesParPoste = new Map();
+
+function construireStructureInitiale() {
   const container = $("pairesContainer");
   container.innerHTML = "";
+  grillesParPoste.clear();
+
   POSTES.forEach((poste) => {
     const posteDiv = document.createElement("div");
     posteDiv.className = "poste";
@@ -1548,72 +1593,136 @@ function redessinerPaires() {
 
     const grille = document.createElement("div");
     grille.className = "lancement-grille";
-    if (nbLancements(poste) === 4) grille.classList.add("lancement-grille--2x2");
-
-    paires
-      .filter((paire) => paire.poste === poste)
-      .forEach((paire) => {
-        const div = document.createElement("div");
-        div.className = "paire";
-        div.dataset.id = paire.id;
-        div.innerHTML = `
-          <div class="paire-entete">
-            <strong>${paire.lancementLabel}</strong>
-            <button type="button" class="btn-reinitialiser" data-action="reinitialiser" title="Réinitialiser ce lancement">↺ Réinitialiser</button>
-          </div>
-          <div class="ligne-fichier">
-            <label for="strat-${paire.id}">Fichier de lancement :</label>
-            <input type="file" id="strat-${paire.id}" accept=".xlsx,.xlsm">
-            <span class="validation-fichier" data-role="validation-strat"></span>
-          </div>
-          <div class="ligne-fichier">
-            <label for="coupe-${paire.id}">Liste de coupe (Cutrite) :</label>
-            <input type="file" id="coupe-${paire.id}" accept=".xlsx,.xlsm,.pdf">
-            <span class="validation-fichier" data-role="validation-coupe"></span>
-          </div>
-          <div class="paire-go-row">
-            <button type="button" class="btn-go" data-action="go">GO</button>
-          </div>
-          <div class="resultat-inline" id="resultat-inline-${paire.id}"></div>
-          <div class="ligne-fichier">
-            <label for="bkp-${paire.id}">Contrôle Scies — fichier .bkp :</label>
-            <input type="file" id="bkp-${paire.id}" accept=".bkp">
-            <span class="validation-fichier" data-role="validation-bkp"></span>
-          </div>
-          <div class="paire-go-row">
-            <button type="button" class="btn-scies" data-action="scies">Vérifier Scies</button>
-          </div>
-          <div class="scies-resultat" id="scies-resultat-${paire.id}"></div>
-        `;
-        const inputStrat = div.querySelector(`#strat-${paire.id}`);
-        const inputCoupe = div.querySelector(`#coupe-${paire.id}`);
-        const inputBkp = div.querySelector(`#bkp-${paire.id}`);
-        inputStrat.addEventListener("change", async () => {
-          if (!validerFichierSelectionne(inputStrat, "lancement", "LAN", div, "validation-strat")) return;
-          detecterSemainePaire(paire, div);
-          const fichier = inputStrat.files[0];
-          const bytes = await fichier.arrayBuffer();
-          sauvegarderDansMemoire(paire, { fichierStrat: { nom: fichier.name, type: fichier.type, bytes } });
-        });
-        inputCoupe.addEventListener("change", async () => {
-          if (!validerFichierSelectionne(inputCoupe, "liste de coupe", "coupe", div, "validation-coupe")) return;
-          const fichier = inputCoupe.files[0];
-          const bytes = await fichier.arrayBuffer();
-          sauvegarderDansMemoire(paire, { fichierCoupe: { nom: fichier.name, type: fichier.type, bytes } });
-        });
-        inputBkp.addEventListener("change", () => {
-          validerFichierSelectionne(inputBkp, "sauvegarde d'optimisation", ".bkp", div, "validation-bkp");
-        });
-        div.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(paire, div));
-        div.querySelector('[data-action="reinitialiser"]').addEventListener("click", () => reinitialiserPaire(paire, div));
-        div.querySelector('[data-action="scies"]').addEventListener("click", () => lancerControleScies(paire, div));
-        restaurerPaire(paire, div);
-        grille.appendChild(div);
-      });
-
     posteDiv.appendChild(grille);
+    grillesParPoste.set(poste, grille);
+
+    if (poste === POSTE_CHANTIERS) {
+      const btnAjouter = document.createElement("button");
+      btnAjouter.type = "button";
+      btnAjouter.className = "btn-ajouter-chantier";
+      btnAjouter.textContent = "+ Ajouter un chantier";
+      btnAjouter.addEventListener("click", ajouterChantier);
+      posteDiv.appendChild(btnAjouter);
+    }
+
     container.appendChild(posteDiv);
   });
+
+  paires.forEach((paire) => ajouterCartePaire(paire));
+  appliquerFiltreSemaine();
+}
+
+// Construit et insère la case d'une seule paire dans la grille de son
+// poste — utilisé à la construction initiale et pour chaque nouveau
+// chantier ajouté via "+ Ajouter un chantier", sans toucher aux autres
+// cases déjà en place.
+function ajouterCartePaire(paire) {
+  const grille = grillesParPoste.get(paire.poste);
+  if (!grille) return;
+
+  const div = document.createElement("div");
+  div.className = "paire";
+  div.dataset.id = paire.id;
+  if (paire.semaineParite) div.dataset.parite = paire.semaineParite;
+  const btnRetirer =
+    paire.poste === POSTE_CHANTIERS
+      ? `<button type="button" class="btn-retirer" data-action="retirer" title="Retirer ce chantier">✕ Retirer</button>`
+      : "";
+  div.innerHTML = `
+    <div class="paire-entete">
+      <strong>${paire.lancementLabel}</strong>
+      <span class="paire-entete-actions">
+        ${btnRetirer}
+        <button type="button" class="btn-reinitialiser" data-action="reinitialiser" title="Réinitialiser ce lancement">↺ Réinitialiser</button>
+      </span>
+    </div>
+    <div class="ligne-fichier">
+      <label for="strat-${paire.id}">Fichier de lancement :</label>
+      <input type="file" id="strat-${paire.id}" accept=".xlsx,.xlsm">
+      <span class="validation-fichier" data-role="validation-strat"></span>
+    </div>
+    <div class="ligne-fichier">
+      <label for="coupe-${paire.id}">Liste de coupe (Cutrite) :</label>
+      <input type="file" id="coupe-${paire.id}" accept=".xlsx,.xlsm,.pdf">
+      <span class="validation-fichier" data-role="validation-coupe"></span>
+    </div>
+    <div class="paire-go-row">
+      <button type="button" class="btn-go" data-action="go">GO</button>
+    </div>
+    <div class="resultat-inline" id="resultat-inline-${paire.id}"></div>
+    <div class="ligne-fichier">
+      <label for="bkp-${paire.id}">Contrôle Scies — fichier .bkp :</label>
+      <input type="file" id="bkp-${paire.id}" accept=".bkp">
+      <span class="validation-fichier" data-role="validation-bkp"></span>
+    </div>
+    <div class="paire-go-row">
+      <button type="button" class="btn-scies" data-action="scies">Vérifier Scies</button>
+    </div>
+    <div class="scies-resultat" id="scies-resultat-${paire.id}"></div>
+  `;
+  const inputStrat = div.querySelector(`#strat-${paire.id}`);
+  const inputCoupe = div.querySelector(`#coupe-${paire.id}`);
+  const inputBkp = div.querySelector(`#bkp-${paire.id}`);
+  inputStrat.addEventListener("change", async () => {
+    if (!validerFichierSelectionne(inputStrat, "lancement", "LAN", div, "validation-strat")) return;
+    const fichier = inputStrat.files[0];
+    paire.fichierStratRestaure = fichier;
+    detecterSemainePaire(paire, div);
+    const bytes = await fichier.arrayBuffer();
+    sauvegarderDansMemoire(paire, { fichierStrat: { nom: fichier.name, type: fichier.type, bytes } });
+  });
+  inputCoupe.addEventListener("change", async () => {
+    if (!validerFichierSelectionne(inputCoupe, "liste de coupe", "coupe", div, "validation-coupe")) return;
+    const fichier = inputCoupe.files[0];
+    paire.fichierCoupeRestaure = fichier;
+    const bytes = await fichier.arrayBuffer();
+    sauvegarderDansMemoire(paire, { fichierCoupe: { nom: fichier.name, type: fichier.type, bytes } });
+  });
+  inputBkp.addEventListener("change", () => {
+    if (!validerFichierSelectionne(inputBkp, "sauvegarde d'optimisation", ".bkp", div, "validation-bkp")) return;
+    paire.fichierBkpRestaure = inputBkp.files[0];
+    if (paire.semaineParite) majCompteurSemaine();
+  });
+  div.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(paire, div));
+  div.querySelector('[data-action="reinitialiser"]').addEventListener("click", () => reinitialiserPaire(paire, div));
+  div.querySelector('[data-action="scies"]').addEventListener("click", () => lancerControleScies(paire, div));
+  const boutonRetirer = div.querySelector('[data-action="retirer"]');
+  if (boutonRetirer) boutonRetirer.addEventListener("click", () => retirerChantier(paire, div));
+  restaurerPaire(paire, div);
+  grille.appendChild(div);
+
+  if (!paire.semaineParite) appliquerFiltreSemaine();
+}
+
+// N'affiche, parmi les cases des 4 postes fixes, que celles de l'onglet
+// semaine actif (paire ou impaire) — les Chantiers (sans parité) restent
+// toujours visibles, à l'identique dans les deux onglets.
+function appliquerFiltreSemaine() {
+  $("pairesContainer")
+    .querySelectorAll(".paire")
+    .forEach((div) => {
+      const parite = div.dataset.parite;
+      div.style.display = !parite || parite === semaineActive ? "" : "none";
+    });
+}
+
+// Ajoute un nouveau chantier (bouton "+ Ajouter un chantier") — autant que
+// nécessaire, sans limite fixe contrairement à l'ancienne grille à 4 cases.
+function ajouterChantier() {
+  const id = nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, null);
+  ajouterCartePaire(paires.find((p) => p.id === id));
+  majCompteurSemaine();
+}
+
+// Retire définitivement un chantier (case + mémoire associée) — n'existe
+// que pour les Chantiers : les 4 postes fixes ont toujours exactement une
+// case par semaine, jamais retirable.
+function retirerChantier(paire, div) {
+  if (!confirm(`Retirer définitivement "${paire.lancementLabel}" ?`)) return;
+  effacerMemoire(paire);
+  const index = paires.indexOf(paire);
+  if (index !== -1) paires.splice(index, 1);
+  div.remove();
 }
 
 // Recharge, pour une paire donnée, la copie de fichiers et/ou le dernier
@@ -2472,17 +2581,18 @@ async function lancerControleScies(paire, div) {
 
     etape = "comparaison";
     const ecarts = comparerScies(qteAttendueParCle, qteParCleBkp);
-    afficherResultatScies(conteneur, ecarts, qteAttendueParCle.size, sommeValeurs(qteAttendueParCle));
+    afficherResultatScies(conteneur, ecarts, sommeValeurs(qteAttendueParCle));
   } catch (erreur) {
     const messageBrut = erreur && erreur.message ? erreur.message : String(erreur);
     conteneur.textContent = `❌ échec à l'étape « ${etape} » : ${messageBrut}`;
   } finally {
     if (bouton) bouton.disabled = false;
+    if (paire.semaineParite) majCompteurSemaine();
   }
 }
 
-function afficherResultatScies(conteneur, ecarts, nbClesAttendues, totalPiecesAttendues) {
-  const bilan = `${nbClesAttendues} clé(s), ${totalPiecesAttendues} pièce(s) au total (protections comprises)`;
+function afficherResultatScies(conteneur, ecarts, totalPiecesAttendues) {
+  const bilan = `${totalPiecesAttendues} pièce(s) au total (protections comprises)`;
   if (ecarts.length === 0) {
     conteneur.className = "scies-resultat scies-ok";
     conteneur.innerHTML = `<span class="scies-titre">✔ Contrôle Scies : tout correspond</span>${bilan}, toutes retrouvées à l'identique dans le .bkp.`;
@@ -2503,6 +2613,37 @@ function afficherResultatScies(conteneur, ecarts, nbClesAttendues, totalPiecesAt
       <tbody>${lignes}</tbody>
     </table>
   `;
+}
+
+// Compteur en tête de chaque onglet semaine : nombre total de pièces
+// trouvées dans les .bkp des lancements de cette semaine (Agglo 1er/2ème
+// tour, Feno, Casse uniquement — les Chantiers n'ont pas de semaine et ne
+// sont pas comptés ici), séparé par semaine (paire/impaire), jamais cumulé
+// entre les deux. Un lancement sans .bkp attaché n'ajoute simplement rien.
+async function compterPiecesSemaine(parite) {
+  let total = 0;
+  for (const paire of paires) {
+    if (paire.semaineParite !== parite) continue;
+    const fichierBkp = fichierBkpDe(paire);
+    if (!fichierBkp) continue;
+    try {
+      const nomLancement = fichierBkp.name.replace(/_\d{4}-\d{2}-\d{2}.*$/i, "").replace(/\.bkp$/i, "");
+      const qteParCleBkp = await lireBkp(fichierBkp, nomLancement);
+      total += sommeValeurs(qteParCleBkp);
+    } catch (_erreur) {
+      // Fichier .bkp illisible pour l'instant : ignoré dans le compteur,
+      // l'erreur sera de toute façon visible via "Vérifier Scies".
+    }
+  }
+  return total;
+}
+
+async function majCompteurSemaine() {
+  const zone = $("compteurSemaineTexte");
+  if (!zone) return;
+  const libelleSemaine = semaineActive === "paire" ? "Semaine paire" : "Semaine impaire";
+  const total = await compterPiecesSemaine(semaineActive);
+  zone.textContent = `${libelleSemaine} — ${total} pièce(s) au total dans les .bkp (Agglo, Feno, Casse)`;
 }
 
 // ---- scan_dossier_partage ----
@@ -2542,6 +2683,15 @@ function trouverCodeLancement(nom) {
   return tousLesGroupes[0];
 }
 
+// Parité (paire/impaire) de la semaine encodée dans le code à 6 chiffres
+// (2e paire de chiffres) — détermine, pour les 4 postes fixes, laquelle des
+// deux cases semaine ("Semaine paire"/"Semaine impaire") reçoit le fichier.
+function pariteDeSemaine(code) {
+  const semaine = parseInt(code.slice(2, 4), 10);
+  if (Number.isNaN(semaine)) return null;
+  return semaine % 2 === 0 ? "paire" : "impaire";
+}
+
 function decoderNomFichierPartage(nom) {
   const code = trouverCodeLancement(nom);
   if (!code) return null;
@@ -2558,6 +2708,7 @@ function decoderNomFichierPartage(nom) {
   return {
     code,
     poste,
+    parite: pariteDeSemaine(code),
     estCutrite: /CUTRITE/i.test(nom),
     estBkp: /\.bkp$/i.test(nom),
   };
@@ -2676,9 +2827,13 @@ async function assignerFichierScanneAPaire(paire, div, role, fichier) {
   }
 }
 
-// Scanne le dossier choisi et place, pour chaque poste, le fichier de
-// lancement (+ liste de coupe) le plus récent dans la case "Lancement 2" —
-// convention de l'atelier : le lancement le plus récent va toujours là.
+// Scanne le dossier choisi et place chaque fichier de lancement (+ liste
+// de coupe, + .bkp) trouvé dans la case qui lui correspond : pour les 4
+// postes fixes (Agglo 1er/2ème tour, Feno, Casse), la case "Semaine
+// paire" ou "Semaine impaire" déduite de la semaine encodée dans le code
+// à 6 chiffres du nom de fichier ; pour un Chantier, un chantier existant
+// portant déjà ce code s'il y en a un, sinon un nouveau chantier créé à la
+// volée (voir ajouterChantier).
 async function scannerDossierPartage() {
   const zone = $("resultatScanPartage");
   const bouton = $("btnScanPartage");
@@ -2721,7 +2876,7 @@ async function scannerDossierPartage() {
         continue;
       }
       const cleGroupe = `${info.poste}|${info.code}`;
-      if (!groupes.has(cleGroupe)) groupes.set(cleGroupe, { poste: info.poste });
+      if (!groupes.has(cleGroupe)) groupes.set(cleGroupe, { poste: info.poste, code: info.code, parite: info.parite });
       const g = groupes.get(cleGroupe);
       if (info.estBkp) g.bkp = f;
       else if (info.estCutrite) g.cutrite = f;
@@ -2745,23 +2900,35 @@ async function scannerDossierPartage() {
       return;
     }
 
-    // Pour chaque poste, ne garde que le groupe le plus récent — date lue
+    // Pour les 4 postes fixes, ne garde que le groupe le plus récent par
+    // poste + parité de semaine (deux semaines différentes de même parité
+    // présentes dans le dossier : on garde la plus récente) — date lue
     // directement sur le fichier (lastModified), pas devinée sur son nom.
-    const dernierParPoste = new Map();
+    // Pour Chantiers (pas de semaine), un groupe par code distinct.
+    const ciblesFixes = new Map();
+    const ciblesChantiers = new Map();
     for (const g of groupes.values()) {
       if (!g.strat) continue; // sans fichier de lancement, rien à charger
       const fichierStrat = await g.strat.entree.getFile();
       const date = fichierStrat.lastModified;
-      const actuel = dernierParPoste.get(g.poste);
-      if (!actuel || date > actuel.date) dernierParPoste.set(g.poste, { ...g, date, fichierStrat });
+      if (g.poste === POSTE_CHANTIERS) {
+        const actuel = ciblesChantiers.get(g.code);
+        if (!actuel || date > actuel.date) ciblesChantiers.set(g.code, { ...g, date, fichierStrat });
+      } else if (g.parite) {
+        const cle = `${g.poste}|${g.parite}`;
+        const actuel = ciblesFixes.get(cle);
+        if (!actuel || date > actuel.date) ciblesFixes.set(cle, { ...g, date, fichierStrat });
+      }
     }
 
     const resultats = [];
-    for (const [poste, g] of dernierParPoste) {
-      const paireCible = paires.find((p) => p.poste === poste && p.lancementLabel === "Lancement 2");
+
+    for (const g of ciblesFixes.values()) {
+      const libelleSemaine = g.parite === "paire" ? "Semaine paire" : "Semaine impaire";
+      const paireCible = paires.find((p) => p.poste === g.poste && p.semaineParite === g.parite);
       const div = paireCible && document.querySelector(`.paire[data-id="${paireCible.id}"]`);
       if (!paireCible || !div) {
-        resultats.push(`— ${poste} : pas de case "Lancement 2" pour ce poste, ignoré.`);
+        resultats.push(`— ${g.poste} (${libelleSemaine}) : case introuvable, ignoré.`);
         continue;
       }
       try {
@@ -2777,7 +2944,7 @@ async function scannerDossierPartage() {
           await assignerFichierScanneAPaire(paireCible, div, "bkp", fichierBkp);
           suffixe += " + .bkp";
         }
-        resultats.push(`✔ ${poste} — Lancement 2 : ${g.strat.nom}${suffixe}`);
+        resultats.push(`✔ ${g.poste} — ${libelleSemaine} : ${g.strat.nom}${suffixe}`);
 
         // Le scan sert justement à éviter les clics manuels : une fois les
         // fichiers trouvés en place, lance directement l'analyse
@@ -2787,10 +2954,46 @@ async function scannerDossierPartage() {
         if (g.cutrite) await lancerUnePaire(paireCible, div);
         if (g.bkp) await lancerControleScies(paireCible, div);
       } catch (erreur) {
-        resultats.push(`❌ ${poste} : ${erreur && erreur.message ? erreur.message : erreur}`);
+        resultats.push(`❌ ${g.poste} (${libelleSemaine}) : ${erreur && erreur.message ? erreur.message : erreur}`);
       }
     }
 
+    for (const g of ciblesChantiers.values()) {
+      let paireCible = paires.find((p) => p.poste === POSTE_CHANTIERS && p.codeLancement === g.code);
+      if (!paireCible) {
+        const id = nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, null);
+        paireCible = paires.find((p) => p.id === id);
+        paireCible.codeLancement = g.code;
+        ajouterCartePaire(paireCible);
+      }
+      const div = document.querySelector(`.paire[data-id="${paireCible.id}"]`);
+      if (!div) {
+        resultats.push(`— ${paireCible.lancementLabel} : case introuvable, ignoré.`);
+        continue;
+      }
+      try {
+        await assignerFichierScanneAPaire(paireCible, div, "strat", g.fichierStrat);
+        let suffixe = "";
+        if (g.cutrite) {
+          const fichierCoupe = await g.cutrite.entree.getFile();
+          await assignerFichierScanneAPaire(paireCible, div, "coupe", fichierCoupe);
+          suffixe = " + liste de coupe";
+        }
+        if (g.bkp) {
+          const fichierBkp = await g.bkp.entree.getFile();
+          await assignerFichierScanneAPaire(paireCible, div, "bkp", fichierBkp);
+          suffixe += " + .bkp";
+        }
+        resultats.push(`✔ ${paireCible.lancementLabel} : ${g.strat.nom}${suffixe}`);
+
+        if (g.cutrite) await lancerUnePaire(paireCible, div);
+        if (g.bkp) await lancerControleScies(paireCible, div);
+      } catch (erreur) {
+        resultats.push(`❌ ${paireCible.lancementLabel} : ${erreur && erreur.message ? erreur.message : erreur}`);
+      }
+    }
+
+    await majCompteurSemaine();
     zone.style.color = "";
     zone.innerHTML = resultats.map((l) => `<div>${echapperHtml(l)}</div>`).join("") + noteNonReconnus;
   } finally {
@@ -3132,17 +3335,26 @@ $("rechercheGlobale").addEventListener("keydown", (e) => {
   if (e.key === "Enter") rechercherGrainMatchingGlobal();
 });
 
-// Les fichiers déjà sélectionnés dans l'onglet Contrôle restent utilisables
-// tels quels dans l'onglet Recherche (mêmes <input type="file">, juste
-// affichés/masqués) : pas besoin de les re-sélectionner en changeant d'onglet.
+// Les fichiers déjà sélectionnés restent utilisables tels quels en
+// changeant d'onglet (mêmes <input type="file">, juste affichés/masqués) :
+// pas besoin de les re-sélectionner. "Semaine paire" et "Semaine impaire"
+// partagent la même page (#onglet-semaine) — seul semaineActive change,
+// ce qui filtre quelles cases des 4 postes fixes sont visibles (voir
+// appliquerFiltreSemaine) sans jamais recréer leur DOM.
 document.querySelectorAll(".onglet-btn").forEach((bouton) => {
   bouton.addEventListener("click", () => {
     document.querySelectorAll(".onglet-btn").forEach((b) => b.classList.remove("actif"));
     bouton.classList.add("actif");
     const cible = bouton.dataset.onglet;
+    const idPage = cible === "semaine-paire" || cible === "semaine-impaire" ? "onglet-semaine" : `onglet-${cible}`;
     document.querySelectorAll(".onglet-page").forEach((page) => {
-      page.classList.toggle("inactif", page.id !== `onglet-${cible}`);
+      page.classList.toggle("inactif", page.id !== idPage);
     });
+    if (cible === "semaine-paire" || cible === "semaine-impaire") {
+      semaineActive = cible === "semaine-paire" ? "paire" : "impaire";
+      appliquerFiltreSemaine();
+      majCompteurSemaine();
+    }
   });
 });
 
@@ -3179,12 +3391,19 @@ function demanderConfirmation(titre, message) {
   });
 }
 
+// Une paire des 4 postes fixes n'est "visible" (donc concernée par "Lancer
+// le(s) contrôle(s)" et la liste de progression) que dans l'onglet semaine
+// qui correspond à sa parité — un Chantier (pas de parité) l'est toujours.
+function paireVisible(paire) {
+  return !paire.semaineParite || paire.semaineParite === semaineActive;
+}
+
 function creerLignesProgress() {
   const panneau = $("progressPanneau");
   const container = $("progressContainer");
   container.innerHTML = "";
   panneau.style.display = "block";
-  paires.forEach((paire) => {
+  paires.filter(paireVisible).forEach((paire) => {
     const ligne = document.createElement("div");
     ligne.className = "progress-ligne";
     ligne.id = `progress-${paire.id}`;
@@ -3344,18 +3563,19 @@ async function lancerTousLesControles() {
   const btn = $("btnLancerTout");
   btn.disabled = true;
   const erreurs = [];
-  let auMoinsUnResultat = paires.some((p) => p.rapport);
+  const paireVisibles = paires.filter(paireVisible);
+  let auMoinsUnResultat = paireVisibles.some((p) => p.rapport);
 
   try {
     creerLignesProgress();
     await tick();
 
-    for (let i = 0; i < paires.length; i++) {
-      const paire = paires[i];
-      const resultat = await lancerControlePaire(i, paire);
+    for (const paire of paireVisibles) {
+      const index = paires.indexOf(paire);
+      const resultat = await lancerControlePaire(index, paire);
       if (resultat && resultat.erreur) erreurs.push(resultat.erreur);
       if (resultat && resultat.ok) {
-        afficherResultatPaire(i, paire);
+        afficherResultatPaire(index, paire);
         auMoinsUnResultat = true;
         await tick();
       }
@@ -3373,10 +3593,13 @@ async function lancerTousLesControles() {
 
 $("btnLancerTout").addEventListener("click", lancerTousLesControles);
 
-POSTES.forEach((poste) => {
-  for (let i = 1; i <= nbLancements(poste); i++) nouvellePaire(poste, `Lancement ${i}`);
+POSTES_SEMAINE.forEach((poste) => {
+  nouvellePaire(poste, "Semaine paire", "paire");
+  nouvellePaire(poste, "Semaine impaire", "impaire");
 });
-redessinerPaires();
+nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, null);
+construireStructureInitiale();
+majCompteurSemaine();
 
 // N'a d'effet que servi en http(s)/localhost (ex. server/lancer_sentinelle.bat) :
 // les navigateurs bloquent les service workers sur file://, donc ouvert en
