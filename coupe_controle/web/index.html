@@ -2523,20 +2523,36 @@ function afficherResultatScies(conteneur, ecarts, nbClesAttendues, totalPiecesAt
 // La liste de coupe correspondante porte exactement le même identifiant
 // "LAN..." quelque part dans son nom, précédé de "CUTRITE" pour la
 // distinguer du fichier de lancement (ex. "CUTRITE_LAN264101STRAT.xlsx").
-const MOTIF_CODE_LANCEMENT_PARTAGE = /LAN(\d{6})([A-Z]*)/i;
+// Volontairement permissif : seuls les 6 chiffres du code (année+semaine+
+// tour) comptent vraiment, "LAN" n'est plus exigé juste devant (le .bkp
+// généré automatiquement par le logiciel, ou un fichier renommé à la main,
+// peut avoir autre chose avant), et les mots-clés de poste (STRAT/FENO/
+// CASSE) sont cherchés n'importe où dans le nom plutôt que juste après le
+// code — pour ne plus avoir besoin de renommer les fichiers à chaque fois
+// pour que le scan les reconnaisse. Si plusieurs groupes de 6 chiffres
+// apparaissent dans le nom (ex. une date collée sans séparateur), on
+// préfère celui immédiatement suivi de STRAT/FENO/CASSE — le plus fiable —
+// et à défaut le premier trouvé.
+function trouverCodeLancement(nom) {
+  const tousLesGroupes = [...nom.matchAll(/\d{6}/g)].map((m) => m[0]);
+  if (tousLesGroupes.length === 0) return null;
+  const motifSuffixeConnu = /\d{6}(STRAT|FENO|CASSE)/i;
+  const avecSuffixe = motifSuffixeConnu.exec(nom);
+  if (avecSuffixe) return avecSuffixe[0].slice(0, 6);
+  return tousLesGroupes[0];
+}
 
 function decoderNomFichierPartage(nom) {
-  const m = MOTIF_CODE_LANCEMENT_PARTAGE.exec(nom);
-  if (!m) return null;
-  const code = m[1];
+  const code = trouverCodeLancement(nom);
+  if (!code) return null;
   const tour = code.slice(4, 6);
-  const suffixe = m[2].toUpperCase();
+  const nomMaj = nom.toUpperCase();
 
   let poste;
-  if (suffixe.includes("FENO")) poste = "Feno";
-  else if (suffixe.includes("CASSE")) poste = "Casse";
-  else if (suffixe.includes("STRAT") && tour === "01") poste = "Agglo 1er tour";
-  else if (suffixe.includes("STRAT") && tour === "02") poste = "Agglo 2ème tour";
+  if (nomMaj.includes("FENO")) poste = "Feno";
+  else if (nomMaj.includes("CASSE")) poste = "Casse";
+  else if (nomMaj.includes("STRAT") && tour === "01") poste = "Agglo 1er tour";
+  else if (nomMaj.includes("STRAT") && tour === "02") poste = "Agglo 2ème tour";
   else poste = "Chantiers";
 
   return {
