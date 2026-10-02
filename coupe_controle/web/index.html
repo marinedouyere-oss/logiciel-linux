@@ -429,7 +429,7 @@
   <div class="onglet-page inactif" id="onglet-recherche">
     <div class="panneau panneau-recherche">
       <label for="rechercheGlobale">🔍 Recherche pièces sur Cutrite</label>
-      <p class="recherche-aide">Clé complète (CVC26090331003), numéro de commande seul (CVC26090331), ou numéro de bande/modulo (T9, T9/1). Fonctionne même sans liste de coupe sélectionnée (recherche alors dans le fichier de lancement seul) — sauf la recherche par bande/modulo, qui a besoin de la liste de coupe.</p>
+      <p class="recherche-aide">Clé complète (CVC26090331003), numéro de commande seul (CVC26090331), ou numéro de bande/modulo (T9, T9/1). Fonctionne sans liste de coupe sélectionnée : recherche alors dans le .bkp si disponible (quantité réellement optimisée + bandes/modulos), sinon dans le fichier de lancement seul (clé/commande uniquement, pas de bande).</p>
       <div class="recherche-row">
         <input type="text" id="rechercheGlobale" placeholder="ex. CVC26090331003, CVC26090331 ou T9">
         <button id="btnRechercheGlobale">Rechercher</button>
@@ -2811,6 +2811,47 @@ function clesDeLaBande(grainParCle, numeroBande) {
   return cles;
 }
 
+// Grain matching par clé, à partir du .ctt d'un .bkp — même format que
+// lireGrainMatching() pour une liste de coupe ("T9:1:1"), pour que
+// clesDeLaBande() et l'affichage marchent à l'identique quelle que soit la
+// source. Contrairement au CSV du .ctt où la position du champ grain
+// matching varie selon le sous-format de ligne (voir lireQuantitesCtt), on
+// cherche directement le motif dans le texte brut de la ligne PNL2 plutôt
+// que de viser un index de colonne fixe.
+const MOTIF_GRAIN_BKP = /\bT\d+:[\d\s]*:\d+\b/g;
+
+function lireGrainMatchingDepuisBkpTexte(texte) {
+  const resultat = new Map();
+  for (const ligne of texte.split(/\r?\n/)) {
+    if (!ligne.startsWith("PNL2,")) continue;
+    const champs = ligne.split(",");
+    const cle = champs[5] || "";
+    if (!cle) continue;
+    const valeurs = ligne.match(MOTIF_GRAIN_BKP);
+    if (!valeurs) continue;
+    if (!resultat.has(cle)) resultat.set(cle, []);
+    for (const v of valeurs) {
+      if (!resultat.get(cle).includes(v)) resultat.get(cle).push(v);
+    }
+  }
+  return resultat;
+}
+
+// Lit le .bkp d'une paire et renvoie à la fois les quantités (déjà utilisées
+// par le Contrôle Scies) et le grain matching par clé, pour que la
+// recherche (clé, commande ou bande/modulo) fonctionne directement sur le
+// .bkp — la seule source qui soit (quasiment) toujours disponible, au
+// contraire de la liste de coupe qui n'est pas produite systématiquement.
+async function lireDonneesRechercheBkp(fichierBkp) {
+  const bytes = await fichierBkp.arrayBuffer();
+  const entrees = await listerEntreesZip(bytes);
+  const nomLancement = fichierBkp.name.replace(/_\d{4}-\d{2}-\d{2}.*$/i, "").replace(/\.bkp$/i, "");
+  const entreeCtt = trouverEntreeCttMaitre(entrees, nomLancement);
+  const donnees = await extraireEntreeZip(bytes, entreeCtt);
+  const texte = new TextDecoder("iso-8859-1").decode(donnees);
+  return { qteParCle: lireQuantitesCtt(texte), grainParCle: lireGrainMatchingDepuisBkpTexte(texte) };
+}
+
 // Recherche une clé, une commande ou une bande/modulo dans TOUTES les
 // listes de coupe actuellement sélectionnées (peu importe la paire, lancée
 // ou non).
@@ -2822,13 +2863,12 @@ async function rechercherGrainMatchingGlobal() {
     return;
   }
 
-  // La liste de coupe n'est plus obligatoire : si seul le fichier de
-  // lancement est disponible pour un poste (pas encore de liste de coupe
-  // sélectionnée, ou juste après un scan qui n'en a pas trouvé), la
-  // recherche par clé/commande fonctionne quand même directement dessus —
-  // seule la recherche par bande/modulo reste limitée à la liste de coupe
-  // (ces numéros n'existent pas dans le fichier de lancement).
-  const pairesRecherche = paires.filter((paire) => fichierCoupeDe(paire) || fichierStratDe(paire));
+  // La liste de coupe n'est plus obligatoire : la recherche se replie sur
+  // le .bkp quand il est là (quasiment toujours produit, contrairement à
+  // la liste de coupe) — quantité réellement optimisée ET bandes/modulos,
+  // comme avec une liste de coupe — et sinon sur le fichier de lancement
+  // seul (clé/commande uniquement, pas de bande).
+  const pairesRecherche = paires.filter((paire) => fichierCoupeDe(paire) || fichierBkpDe(paire) || fichierStratDe(paire));
   if (pairesRecherche.length === 0) {
     zone.style.color = "var(--alerte-text)";
     zone.style.fontWeight = "normal";
@@ -2850,7 +2890,61 @@ async function rechercherGrainMatchingGlobal() {
     const fichierStrat = fichierStratDe(paire);
 
     if (!fichierCoupe) {
-      // Pas de liste de coupe pour ce poste : recherche directe dans le
+      const fichierBkp = fichierBkpDe(paire);
+
+      if (fichierBkp) {
+        // Pas de liste de coupe, mais un .bkp : on s'en sert comme source —
+        // quantité réellement optimisée, ET recherche par bande/modulo
+        // (le .bkp porte le même type de champ grain matching que la
+        // liste de coupe, voir lireGrainMatchingDepuisBkpTexte).
+        try {
+          const { qteParCle: qteParCleBkp, grainParCle: grainParCleBkp } = await lireDonneesRechercheBkp(fichierBkp);
+
+          let clesCibles;
+          if (numeroBande) {
+            clesCibles = clesDeLaBande(grainParCleBkp, numeroBande);
+          } else if (qteParCleBkp.has(requete)) {
+            clesCibles = new Set([requete]);
+          } else {
+            clesCibles = new Set([...qteParCleBkp.keys()].filter((c) => c.startsWith(requete)));
+          }
+
+          for (const cle of clesCibles) {
+            let champsDetail = null;
+            if (fichierStrat) {
+              try {
+                const ligneStrat = lireStrat(await chargerClasseur(fichierStrat)).lignes.find((l) => l.cle === cle);
+                if (ligneStrat) {
+                  champsDetail = {
+                    lancement: ligneStrat.lancement || null,
+                    assemblage: ligneStrat.assemblage || null,
+                    longueurFinie: ligneStrat.longueurFinie ?? null,
+                    largeurFinie: ligneStrat.largeurFinie ?? null,
+                    epaisseurFinie: ligneStrat.epaisseurFinie ?? null,
+                    toutesDonneesLan: ligneStrat.toutesDonnees || null,
+                  };
+                }
+              } catch (_erreurStrat) {
+                // Le fichier de lancement reste optionnel ici aussi.
+              }
+            }
+            trouvailles.push({
+              paire,
+              cle,
+              valeurs: grainParCleBkp.get(cle) || [],
+              quantite: qteParCleBkp.has(cle) ? qteParCleBkp.get(cle) : null,
+              champsDetail,
+              sansCoupe: true,
+              sourceBkp: true,
+            });
+          }
+        } catch (erreur) {
+          erreurs.push(`${paire.nom} : ${erreur && erreur.message ? erreur.message : erreur}`);
+        }
+        continue;
+      }
+
+      // Ni liste de coupe ni .bkp pour ce poste : recherche directe dans le
       // fichier de lancement (clé exacte ou préfixe de commande), sans
       // grain matching ni quantité "réellement trouvée" — juste ce que le
       // fichier de lancement attend.
@@ -2947,13 +3041,13 @@ async function rechercherGrainMatchingGlobal() {
   if (trouvailles.length === 0) {
     zone.style.color = "var(--alerte-text)";
     const quoi = numeroBande ? `bande/modulo T${numeroBande}` : `clé ou commande ${requete}`;
-    zone.textContent = `${quoi} introuvable dans les ${pairesRecherche.length} poste(s)/lancement(s) sélectionné(s) (liste de coupe et/ou fichier de lancement).`;
+    zone.textContent = `${quoi} introuvable dans les ${pairesRecherche.length} poste(s)/lancement(s) sélectionné(s) (liste de coupe, .bkp et/ou fichier de lancement).`;
   } else {
     zone.style.color = "var(--ok-text)";
     zone.innerHTML = trouvailles
-      .map(({ paire, cle, valeurs, quantite, champsDetail, sansCoupe }) => {
+      .map(({ paire, cle, valeurs, quantite, champsDetail, sansCoupe, sourceBkp }) => {
         const quantiteTexte = quantite !== null && quantite !== undefined ? String(quantite) : "?";
-        const quantiteLabel = sansCoupe ? "Quantité attendue (fichier de lancement)" : "Quantité trouvée";
+        const quantiteLabel = sourceBkp ? "Quantité trouvée (.bkp)" : sansCoupe ? "Quantité attendue (fichier de lancement)" : "Quantité trouvée";
         const grainHtml =
           !valeurs || valeurs.length === 0
             ? `<span class="grain-vide">Unitaire (pas de grain matching)</span>`
@@ -2991,10 +3085,16 @@ async function rechercherGrainMatchingGlobal() {
               <span class="resultat-poste">${paire.nom}</span>
             </div>
             ${schemaHtml}
-            ${sansCoupe ? `<p class="scies-note">Pas de liste de coupe pour ce poste — données du fichier de lancement uniquement.</p>` : ""}
+            ${
+              sourceBkp
+                ? `<p class="scies-note">Pas de liste de coupe pour ce poste — données du .bkp (réellement optimisé).</p>`
+                : sansCoupe
+                  ? `<p class="scies-note">Pas de liste de coupe ni de .bkp pour ce poste — données du fichier de lancement uniquement.</p>`
+                  : ""
+            }
             <div class="resultat-recherche-champs">
               <div class="resultat-champ"><span class="resultat-champ-label">${quantiteLabel}</span><span class="resultat-champ-valeur">${quantiteTexte}</span></div>
-              ${sansCoupe ? "" : `<div class="resultat-champ"><span class="resultat-champ-label">Grain matching</span><span class="resultat-champ-valeur">${grainHtml}</span></div>`}
+              ${valeurs === null ? "" : `<div class="resultat-champ"><span class="resultat-champ-label">Grain matching</span><span class="resultat-champ-valeur">${grainHtml}</span></div>`}
               ${lancementHtml}
               ${epaisseurHtml}
               ${assemblageHtml}
