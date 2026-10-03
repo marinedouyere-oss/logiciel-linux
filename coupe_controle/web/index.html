@@ -3074,19 +3074,34 @@ async function scannerDossierPartage() {
       decodes.push({ f, info });
     }
 
-    // Couple les fichiers d'un même lancement par leur code à 6 chiffres
-    // avant de déterminer leur poste : un .bkp (généré automatiquement,
-    // parfois sans le mot-clé FENO/CASSE/STRAT d'origine) ou une liste de
-    // coupe juste nommée "CUTRITE_<code>..." héritent du poste du fichier
-    // de lancement qui partage le même code, plutôt que d'être classés à
-    // tort en "Chantiers" faute de mot-clé dans leur propre nom.
-    // Le code seul n'est pas un identifiant unique (Agglo, Feno, Casse
-    // peuvent tous porter le même code la même semaine) : on ne s'en sert
-    // donc que pour les fichiers qui n'ont pas de mot-clé de poste propre,
-    // jamais pour re-classer un fichier qui en a déjà un.
+    // Couple les fichiers d'un même lancement par leur code avant de
+    // déterminer leur poste : un .bkp (généré automatiquement, parfois
+    // sans le mot-clé FENO/CASSE/STRAT d'origine) ou une liste de coupe
+    // juste nommée "CUTRITE_<code>..." hérite du poste du fichier de
+    // lancement qui partage le même code, plutôt que d'être classé à tort
+    // en "Chantiers" faute de mot-clé dans son propre nom.
+    // Le code seul n'est PAS un identifiant unique : Agglo, Feno, Casse et
+    // plusieurs Chantiers différents peuvent tous partager le même code la
+    // même semaine. Quand le fichier sans mot-clé porte lui-même un nom
+    // propre distinctif après le code (ex. "TRIGANO", "FENOG-F" — son
+    // "suffixe"), on exige que ce nom corresponde EXACTEMENT à celui d'un
+    // fichier de lancement déjà identifié avant de les coupler, pour ne
+    // pas rattacher à tort une liste de coupe "TRIGANO" à un fichier
+    // "FENO" juste parce qu'ils partagent la même semaine. Ce n'est que
+    // lorsque le fichier n'a aucun nom propre du tout après son code
+    // (cas d'un .bkp générique) qu'on retombe sur le seul autre fichier
+    // partageant ce code, faute de mieux.
     const posteParCode = new Map();
+    const posteParCodeEtSuffixe = new Map();
     for (const { info } of decodes) {
-      if (info.poste && !posteParCode.has(info.code)) posteParCode.set(info.code, info.poste);
+      if (!info.poste) continue;
+      if (!posteParCode.has(info.code)) posteParCode.set(info.code, info.poste);
+      posteParCodeEtSuffixe.set(`${info.code}|${info.suffixe}`, info.poste);
+    }
+    function resoudrePoste(info) {
+      if (info.poste) return info.poste;
+      if (info.suffixe) return posteParCodeEtSuffixe.get(`${info.code}|${info.suffixe}`) || POSTE_CHANTIERS;
+      return posteParCode.get(info.code) || POSTE_CHANTIERS;
     }
 
     // Pour Chantiers uniquement : plusieurs chantiers différents de la
@@ -3098,7 +3113,7 @@ async function scannerDossierPartage() {
     // semaine, code seul suffisant.
     const groupes = new Map();
     for (const { f, info } of decodes) {
-      const poste = info.poste || posteParCode.get(info.code) || POSTE_CHANTIERS;
+      const poste = resoudrePoste(info);
       const cleGroupe = poste === POSTE_CHANTIERS ? `${poste}|${info.code}|${info.suffixe}` : `${poste}|${info.code}`;
       if (!groupes.has(cleGroupe))
         groupes.set(cleGroupe, { poste, code: info.code, suffixe: info.suffixe, parite: info.parite });
