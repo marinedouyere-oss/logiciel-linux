@@ -2691,18 +2691,25 @@ function pariteDeSemaine(code) {
   return semaine % 2 === 0 ? "paire" : "impaire";
 }
 
+// poste vaut null quand aucun mot-clé (FENO/CASSE/STRAT) n'est trouvé dans
+// CE nom de fichier précis — fréquent pour un .bkp (généré automatiquement
+// par le logiciel d'optimisation, parfois sans le mot-clé d'origine) ou une
+// liste de coupe juste nommée "CUTRITE_<code>...". Le poste réel est alors
+// déduit plus loin (voir scannerDossierPartage) à partir des autres
+// fichiers du dossier qui partagent le même code à 6 chiffres — les
+// fichiers d'un même lancement doivent être couplés par leur code, pas
+// classés chacun isolément sur son seul nom.
 function decoderNomFichierPartage(nom) {
   const code = trouverCodeLancement(nom);
   if (!code) return null;
   const tour = code.slice(4, 6);
   const nomMaj = nom.toUpperCase();
 
-  let poste;
+  let poste = null;
   if (nomMaj.includes("FENO")) poste = "Feno";
   else if (nomMaj.includes("CASSE")) poste = "Casse";
   else if (nomMaj.includes("STRAT") && tour === "01") poste = "Agglo 1er tour";
   else if (nomMaj.includes("STRAT") && tour === "02") poste = "Agglo 2ème tour";
-  else poste = "Chantiers";
 
   return {
     code,
@@ -2941,14 +2948,10 @@ async function scannerDossierPartage() {
       return;
     }
 
-    // Regroupe les fichiers par identifiant "LAN......" partagé entre le
-    // STRAT, sa liste de coupe CUTRITE et son éventuel .bkp.
-    // Le code à 6 chiffres (année+semaine+tour) n'est PAS un identifiant
-    // unique à lui seul : Agglo, Feno, Casse peuvent tous porter le même
-    // code la même semaine (seul le suffixe du nom les distingue). Il faut
-    // donc regrouper par poste + code, pas par code seul, sous peine
-    // qu'un fichier Feno écrase le fichier Agglo de la même semaine.
-    const groupes = new Map();
+    // Décode chaque fichier individuellement, sépare ceux dont le nom ne
+    // contient même pas de code à 6 chiffres (vraiment non reconnus) des
+    // autres.
+    const decodes = [];
     const nonReconnus = [];
     for (const f of fichiers) {
       const info = decoderNomFichierPartage(f.nom);
@@ -2956,8 +2959,29 @@ async function scannerDossierPartage() {
         nonReconnus.push(f.nom);
         continue;
       }
-      const cleGroupe = `${info.poste}|${info.code}`;
-      if (!groupes.has(cleGroupe)) groupes.set(cleGroupe, { poste: info.poste, code: info.code, parite: info.parite });
+      decodes.push({ f, info });
+    }
+
+    // Couple les fichiers d'un même lancement par leur code à 6 chiffres
+    // avant de déterminer leur poste : un .bkp (généré automatiquement,
+    // parfois sans le mot-clé FENO/CASSE/STRAT d'origine) ou une liste de
+    // coupe juste nommée "CUTRITE_<code>..." héritent du poste du fichier
+    // de lancement qui partage le même code, plutôt que d'être classés à
+    // tort en "Chantiers" faute de mot-clé dans leur propre nom.
+    // Le code seul n'est pas un identifiant unique (Agglo, Feno, Casse
+    // peuvent tous porter le même code la même semaine) : on ne s'en sert
+    // donc que pour les fichiers qui n'ont pas de mot-clé de poste propre,
+    // jamais pour re-classer un fichier qui en a déjà un.
+    const posteParCode = new Map();
+    for (const { info } of decodes) {
+      if (info.poste && !posteParCode.has(info.code)) posteParCode.set(info.code, info.poste);
+    }
+
+    const groupes = new Map();
+    for (const { f, info } of decodes) {
+      const poste = info.poste || posteParCode.get(info.code) || POSTE_CHANTIERS;
+      const cleGroupe = `${poste}|${info.code}`;
+      if (!groupes.has(cleGroupe)) groupes.set(cleGroupe, { poste, code: info.code, parite: info.parite });
       const g = groupes.get(cleGroupe);
       if (info.estBkp) g.bkp = f;
       else if (info.estCutrite) g.cutrite = f;
