@@ -2816,11 +2816,12 @@ function associerFichierSansCode(nom, ancrages) {
     );
     if (parTour.length >= 1) return parTour[0];
   }
-  // Toujours ambigu : on rattache quand même au premier candidat plutôt
-  // que d'ignorer le fichier (jamais bloquant), au prix d'un risque
-  // d'erreur rare dans ce cas précis (même semaine, plusieurs postes,
-  // aucun indice pour les distinguer).
-  return candidats[0];
+  // Toujours ambigu (même semaine, plusieurs postes/chantiers candidats,
+  // aucun indice pour les distinguer) : on laisse le fichier de côté
+  // plutôt que de deviner — un faux rattachement fausserait une
+  // comparaison ailleurs (voir le cas Feno/Trigano), ce qui est pire que
+  // ne rien faire.
+  return null;
 }
 
 function motCleFenoCasse(nom) {
@@ -3121,7 +3122,14 @@ async function scannerDossierPartage() {
       let poste = resoudrePoste(info);
       if (poste !== POSTE_CHANTIERS) {
         const existant = groupes.get(`${poste}|${info.code}`);
-        if (existant && existant.suffixe && existant.suffixe !== info.suffixe) poste = POSTE_CHANTIERS;
+        // Un fichier SANS nom propre (ex. un .bkp générique, suffixe vide)
+        // n'a aucune raison d'être traité comme "différent" de la case déjà
+        // en place : seul un fichier qui porte lui-même un nom distinct
+        // (suffixe non vide) ET différent de celui déjà présent signale un
+        // second lancement réel.
+        if (existant && info.suffixe && existant.suffixe && existant.suffixe !== info.suffixe) {
+          poste = POSTE_CHANTIERS;
+        }
       }
       const cleGroupe = poste === POSTE_CHANTIERS ? `${poste}|${info.code}|${info.suffixe}` : `${poste}|${info.code}`;
       if (!groupes.has(cleGroupe))
