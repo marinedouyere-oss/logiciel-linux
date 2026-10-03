@@ -2701,13 +2701,16 @@ async function majCompteurSemaine() {
 // apparaissent dans le nom (ex. une date collée sans séparateur), on
 // préfère celui immédiatement suivi de STRAT/FENO/CASSE — le plus fiable —
 // et à défaut le premier trouvé.
-function trouverCodeLancement(nom) {
-  const tousLesGroupes = [...nom.matchAll(/\d{6}/g)].map((m) => m[0]);
-  if (tousLesGroupes.length === 0) return null;
-  const motifSuffixeConnu = /\d{6}(STRAT|START|FENO|CASSE)/i;
-  const avecSuffixe = motifSuffixeConnu.exec(nom);
-  if (avecSuffixe) return avecSuffixe[0].slice(0, 6);
-  return tousLesGroupes[0];
+function trouverCodeLancement(nomBrut) {
+  const nom = nomBrut.replace(/_\d{4}-\d{2}-\d{2}_\d{3,4}.*$/i, "");
+  const motifMotCle = /\d{4,6}(?=(STRAT|START|FENO|CASSE))/i;
+  const avecMotCle = motifMotCle.exec(nom);
+  if (avecMotCle) return avecMotCle[0];
+  const groupe6 = /\d{6}/.exec(nom);
+  if (groupe6) return groupe6[0];
+  const groupe4 = /\d{4}/.exec(nom);
+  if (groupe4) return groupe4[0];
+  return null;
 }
 
 // Parité (paire/impaire) de la semaine encodée dans le code à 6 chiffres
@@ -2731,10 +2734,22 @@ function pariteDeSemaine(code) {
 // coquille de frappe réelle rencontrée dans des noms de listes de coupe.
 const MOTIF_STRAT = /STRAT|START/;
 
+// Le nom du chantier (ex. "TRIGANO", "EQUI76") : tout ce qui suit
+// directement le code dans le nom du fichier — seul repère permettant de
+// distinguer deux chantiers différents partageant le même code à 4
+// chiffres (année+semaine, sans numéro de séquence).
+function extraireSuffixeLancement(nomBrut, code) {
+  const nom = nomBrut.replace(/_\d{4}-\d{2}-\d{2}_\d{3,4}.*$/i, "");
+  const pos = nom.indexOf(code);
+  if (pos === -1) return "";
+  const m = /^[A-Za-zÀ-ÖØ-öø-ÿ0-9-]+/.exec(nom.slice(pos + code.length));
+  return m ? m[0].toUpperCase() : "";
+}
+
 function decoderNomFichierPartage(nom) {
   const code = trouverCodeLancement(nom);
   if (!code) return null;
-  const tour = code.slice(4, 6);
+  const tour = code.length === 6 ? code.slice(4, 6) : null;
   const nomMaj = nom.toUpperCase();
 
   let poste = null;
@@ -2746,6 +2761,7 @@ function decoderNomFichierPartage(nom) {
   return {
     code,
     poste,
+    suffixe: extraireSuffixeLancement(nom, code),
     parite: pariteDeSemaine(code),
     // Un .pdf ne peut de toute façon jamais être un fichier de lancement
     // (toujours .xlsx/.xlsm) : il ne peut s'agir que d'une liste de coupe,
@@ -3073,11 +3089,19 @@ async function scannerDossierPartage() {
       if (info.poste && !posteParCode.has(info.code)) posteParCode.set(info.code, info.poste);
     }
 
+    // Pour Chantiers uniquement : plusieurs chantiers différents de la
+    // même semaine partagent le même code (année+semaine, sans numéro de
+    // séquence) — rien d'autre que le nom (ex. "TRIGANO", "EQUI76") ne les
+    // distingue. On ajoute donc ce nom (tout ce qui suit le code dans le
+    // nom du fichier) à la clé de regroupement, pour Chantiers seulement :
+    // les 4 postes fixes, eux, n'ont jamais qu'un seul lancement actif par
+    // semaine, code seul suffisant.
     const groupes = new Map();
     for (const { f, info } of decodes) {
       const poste = info.poste || posteParCode.get(info.code) || POSTE_CHANTIERS;
-      const cleGroupe = `${poste}|${info.code}`;
-      if (!groupes.has(cleGroupe)) groupes.set(cleGroupe, { poste, code: info.code, parite: info.parite });
+      const cleGroupe = poste === POSTE_CHANTIERS ? `${poste}|${info.code}|${info.suffixe}` : `${poste}|${info.code}`;
+      if (!groupes.has(cleGroupe))
+        groupes.set(cleGroupe, { poste, code: info.code, suffixe: info.suffixe, parite: info.parite });
       const g = groupes.get(cleGroupe);
       if (info.estBkp) g.bkp = f;
       else if (info.estCutrite) g.cutrite = f;
@@ -3134,8 +3158,9 @@ async function scannerDossierPartage() {
       const fichierStrat = await g.strat.entree.getFile();
       const date = fichierStrat.lastModified;
       if (g.poste === POSTE_CHANTIERS) {
-        const actuel = ciblesChantiers.get(g.code);
-        if (!actuel || date > actuel.date) ciblesChantiers.set(g.code, { ...g, date, fichierStrat });
+        const cleChantier = `${g.code}|${g.suffixe}`;
+        const actuel = ciblesChantiers.get(cleChantier);
+        if (!actuel || date > actuel.date) ciblesChantiers.set(cleChantier, { ...g, date, fichierStrat });
       } else if (g.parite) {
         const cle = `${g.poste}|${g.parite}`;
         const actuel = ciblesFixes.get(cle);
@@ -3181,11 +3206,12 @@ async function scannerDossierPartage() {
     }
 
     for (const g of ciblesChantiers.values()) {
-      let paireCible = paires.find((p) => p.poste === POSTE_CHANTIERS && p.codeLancement === g.code);
+      const identifiantChantier = `${g.code}|${g.suffixe}`;
+      let paireCible = paires.find((p) => p.poste === POSTE_CHANTIERS && p.codeLancement === identifiantChantier);
       if (!paireCible) {
         const id = nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, null);
         paireCible = paires.find((p) => p.id === id);
-        paireCible.codeLancement = g.code;
+        paireCible.codeLancement = identifiantChantier;
         ajouterCartePaire(paireCible);
       }
       const div = document.querySelector(`.paire[data-id="${paireCible.id}"]`);
