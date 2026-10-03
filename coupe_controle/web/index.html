@@ -2720,6 +2720,64 @@ function decoderNomFichierPartage(nom) {
   };
 }
 
+// Un fichier de lancement porte toujours un code fiable à 6 chiffres
+// (année+semaine+tour) : c'est le seul repère solide. Une liste de coupe
+// ou un .bkp, en revanche, peut être nommé de façon totalement
+// imprévisible (ex. "Liste de coupe 40.01.pdf", "40-feno-coupe.pdf"...) —
+// pas la peine de deviner un format précis pour ces fichiers-là. On se
+// contente de repérer, parmi tous les groupes de chiffres isolés par des
+// séparateurs (espace, point, tiret, underscore...) présents dans leur
+// nom, celui qui correspond à la semaine (2 chiffres) d'un fichier de
+// lancement déjà identifié dans le même dossier, pour les rapprocher —
+// peu importe comment ils s'appellent par ailleurs.
+function extraireGroupesChiffres(nom) {
+  return [...nom.matchAll(/\d+/g)].map((m) => m[0]);
+}
+
+// Associe un fichier sans code à 6 chiffres (coupe/bkp au nom
+// imprévisible) à l'un des fichiers de lancement déjà reconnus dans le
+// dossier (ancrages), en se basant uniquement sur la semaine (2 chiffres)
+// partagée — et, si plusieurs ancrages ont la même semaine (Agglo/Feno/
+// Casse la même semaine), en affinant avec un mot-clé de poste (FENO/
+// CASSE) ou un numéro de tour (01/02) trouvé dans son nom si présent.
+function associerFichierSansCode(nom, ancrages) {
+  const groupesChiffres = extraireGroupesChiffres(nom);
+  if (groupesChiffres.length === 0) return null;
+  const motCle = motCleFenoCasse(nom);
+
+  const candidats = ancrages.filter((a) => groupesChiffres.includes(a.semaine));
+  if (candidats.length === 0) return null;
+  if (candidats.length === 1) return candidats[0];
+
+  if (motCle) {
+    const parMotCle = candidats.filter((a) => a.poste === motCle);
+    if (parMotCle.length >= 1) return parMotCle[0];
+  }
+  // "01"/"02" ne désigne un tour que pour les deux candidats Agglo — pour
+  // Feno/Casse, les 2 derniers chiffres de leur code sont juste un numéro
+  // de séquence sans rapport, les comparer les ferait matcher à tort par
+  // pure coïncidence (Agglo et Feno/Casse peuvent partager le même code).
+  const tourTrouve = groupesChiffres.find((g) => g === "01" || g === "02");
+  if (tourTrouve) {
+    const parTour = candidats.filter(
+      (a) => (a.poste === "Agglo 1er tour" || a.poste === "Agglo 2ème tour") && a.tour === tourTrouve
+    );
+    if (parTour.length >= 1) return parTour[0];
+  }
+  // Toujours ambigu : on rattache quand même au premier candidat plutôt
+  // que d'ignorer le fichier (jamais bloquant), au prix d'un risque
+  // d'erreur rare dans ce cas précis (même semaine, plusieurs postes,
+  // aucun indice pour les distinguer).
+  return candidats[0];
+}
+
+function motCleFenoCasse(nom) {
+  const nomMaj = nom.toUpperCase();
+  if (nomMaj.includes("FENO")) return "Feno";
+  if (nomMaj.includes("CASSE")) return "Casse";
+  return null;
+}
+
 // Dans la WebView Android (APK), showDirectoryPicker n'existe pas : on
 // passe alors par le pont natif AndroidDossierPartage (voir MainActivity.java),
 // qui ouvre le sélecteur de dossier système d'Android (Storage Access
@@ -2948,15 +3006,17 @@ async function scannerDossierPartage() {
       return;
     }
 
-    // Décode chaque fichier individuellement, sépare ceux dont le nom ne
-    // contient même pas de code à 6 chiffres (vraiment non reconnus) des
-    // autres.
+    // Décode chaque fichier individuellement, sépare ceux qui portent un
+    // code à 6 chiffres reconnaissable des autres (ex. une liste de coupe
+    // au nom imprévisible, sans code ni mot-clé "CUTRITE") — ces derniers
+    // seront rattachés plus loin par leur seule semaine (voir
+    // associerFichierSansCode), pas ignorés d'office.
     const decodes = [];
-    const nonReconnus = [];
+    const sansCode = [];
     for (const f of fichiers) {
       const info = decoderNomFichierPartage(f.nom);
       if (!info) {
-        nonReconnus.push(f.nom);
+        sansCode.push(f);
         continue;
       }
       decodes.push({ f, info });
@@ -2988,15 +3048,36 @@ async function scannerDossierPartage() {
       else g.strat = f;
     }
 
-    // Affiché systématiquement (succès ou non) : le nom d'un fichier ne
-    // contenant pas "LAN" suivi de 6 chiffres est ignoré silencieusement
-    // par le scan (voir decoderNomFichierPartage) — les lister permet de
-    // voir directement, sans rien avoir à envoyer, si des fichiers
-    // attendus ne suivent pas cette convention de nommage (ex. une liste
-    // de coupe pas encore renommée avec le préfixe "CUTRITE").
+    // Rattache les fichiers sans code à 6 chiffres (listes de coupe au nom
+    // imprévisible, .bkp renommés...) à un fichier de lancement déjà
+    // identifié ci-dessus, par leur seule semaine — peu importe leur nom
+    // par ailleurs (voir associerFichierSansCode).
+    const ancrages = [...groupes.values()].map((g) => ({
+      poste: g.poste,
+      code: g.code,
+      semaine: g.code.slice(2, 4),
+      tour: g.code.slice(4, 6),
+    }));
+    const nonReconnus = [];
+    for (const f of sansCode) {
+      const ancrage = associerFichierSansCode(f.nom, ancrages);
+      const g = ancrage && groupes.get(`${ancrage.poste}|${ancrage.code}`);
+      if (!g) {
+        nonReconnus.push(f.nom);
+        continue;
+      }
+      if (/\.bkp$/i.test(f.nom)) g.bkp = f;
+      else g.cutrite = f;
+    }
+
+    // Affiché systématiquement (succès ou non) : un fichier dont le nom ne
+    // contient ni code à 6 chiffres ni semaine reconnaissable (aucun
+    // chiffre en commun avec un fichier de lancement du dossier) reste
+    // non reconnu — les lister permet de voir directement si des fichiers
+    // attendus manquent un repère exploitable.
     const noteNonReconnus =
       nonReconnus.length > 0
-        ? `<p class="scies-note">${nonReconnus.length} fichier(s) sur ${fichiers.length} non reconnu(s) (nom sans "LAN" + 6 chiffres) : ${nonReconnus.map(echapperHtml).join(", ")}</p>`
+        ? `<p class="scies-note">${nonReconnus.length} fichier(s) sur ${fichiers.length} non reconnu(s) (aucun code ni semaine reconnaissable) : ${nonReconnus.map(echapperHtml).join(", ")}</p>`
         : `<p class="scies-note">${fichiers.length} fichier(s) dans le dossier, tous reconnus.</p>`;
 
     if (groupes.size === 0) {
