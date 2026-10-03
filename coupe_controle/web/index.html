@@ -436,6 +436,7 @@
     <div class="panneau">
       <div class="actions-row">
         <button id="btnLancerTout">Lancer le(s) contrôle(s)</button>
+        <button type="button" class="secondaire" id="btnReinitialiserSemaine">↺ Réinitialiser la semaine</button>
       </div>
       <div id="pairesContainer"></div>
     </div>
@@ -3802,6 +3803,22 @@ async function lancerTousLesControles() {
 }
 
 $("btnLancerTout").addEventListener("click", lancerTousLesControles);
+
+// Réinitialise d'un coup toutes les cases visibles dans l'onglet semaine
+// actif (les 4 postes fixes de cette semaine + Chantiers, qui n'ont pas
+// de semaine propre) — même périmètre que "Lancer le(s) contrôle(s)",
+// sans avoir à cliquer "↺ Réinitialiser" case par case.
+function reinitialiserSemaine() {
+  const concernees = paires.filter(paireVisible);
+  if (concernees.length === 0) return;
+  const libelle = semaineActive === "paire" ? "Semaine paire" : "Semaine impaire";
+  if (!confirm(`Réinitialiser toutes les cases de "${libelle}" (y compris Chantiers) ? Cette action est irréversible.`)) return;
+  concernees.forEach((paire) => {
+    const div = document.querySelector(`.paire[data-id="${paire.id}"]`);
+    if (div) reinitialiserPaire(paire, div);
+  });
+}
+$("btnReinitialiserSemaine").addEventListener("click", reinitialiserSemaine);
 
 POSTES_SEMAINE.forEach((poste) => {
   nouvellePaire(poste, "Semaine paire", "paire");
