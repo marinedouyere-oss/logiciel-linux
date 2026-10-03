@@ -1582,6 +1582,10 @@ async function detecterSemainePaire(paire, div) {
     paire.semaine = null;
   }
   majLibellePaire(paire, div);
+  // Un chantier ajouté à la main (bouton "+ Ajouter un chantier", pas de
+  // code connu via le scan) ne révèle sa semaine qu'une fois son fichier
+  // de lancement chargé : re-trie la liste à ce moment-là.
+  if (paire.poste === POSTE_CHANTIERS) trierChantiers();
 }
 
 function slug(texte) {
@@ -1713,6 +1717,41 @@ function ajouterCartePaire(paire) {
   grille.appendChild(div);
 
   if (!paire.semaineParite) appliquerFiltreSemaine();
+  if (paire.poste === POSTE_CHANTIERS) trierChantiers();
+}
+
+// Numéro de semaine d'un chantier, pour le tri — déduit en priorité de
+// l'identifiant attribué par le scan (code|suffixe, connu dès la création
+// de la case), sinon de la semaine détectée dans le contenu du fichier une
+// fois chargé (voir detecterSemainePaire). Un chantier sans semaine connue
+// (pas encore de fichier) passe en fin de liste plutôt qu'en tête.
+function semaineDeChantier(paire) {
+  if (paire && paire.codeLancement) {
+    const code = paire.codeLancement.split("|")[0];
+    const s = parseInt(code.slice(2, 4), 10);
+    if (!Number.isNaN(s)) return s;
+  }
+  if (paire && paire.semaine) {
+    const s = parseInt(paire.semaine, 10);
+    if (!Number.isNaN(s)) return s;
+  }
+  return Infinity;
+}
+
+// Réordonne les cases de Chantiers par semaine croissante, sans jamais
+// recréer leur DOM (appendChild sur un nœud déjà enfant du même parent le
+// déplace simplement à la fin, dans l'ordre où on l'appelle) — préserve
+// donc les fichiers déjà choisis et les résultats déjà affichés.
+function trierChantiers() {
+  const grille = grillesParPoste.get(POSTE_CHANTIERS);
+  if (!grille) return;
+  const cartes = [...grille.children];
+  cartes.sort((divA, divB) => {
+    const paireA = paires.find((p) => p.id === Number(divA.dataset.id));
+    const paireB = paires.find((p) => p.id === Number(divB.dataset.id));
+    return semaineDeChantier(paireA) - semaineDeChantier(paireB);
+  });
+  cartes.forEach((div) => grille.appendChild(div));
 }
 
 // N'affiche, parmi les cases des 4 postes fixes, que celles de l'onglet
