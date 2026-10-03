@@ -2704,7 +2704,7 @@ async function majCompteurSemaine() {
 function trouverCodeLancement(nom) {
   const tousLesGroupes = [...nom.matchAll(/\d{6}/g)].map((m) => m[0]);
   if (tousLesGroupes.length === 0) return null;
-  const motifSuffixeConnu = /\d{6}(STRAT|FENO|CASSE)/i;
+  const motifSuffixeConnu = /\d{6}(STRAT|START|FENO|CASSE)/i;
   const avecSuffixe = motifSuffixeConnu.exec(nom);
   if (avecSuffixe) return avecSuffixe[0].slice(0, 6);
   return tousLesGroupes[0];
@@ -2727,6 +2727,10 @@ function pariteDeSemaine(code) {
 // fichiers du dossier qui partagent le même code à 6 chiffres — les
 // fichiers d'un même lancement doivent être couplés par leur code, pas
 // classés chacun isolément sur son seul nom.
+// "START" est accepté comme équivalent de "STRAT" (lettres interverties) —
+// coquille de frappe réelle rencontrée dans des noms de listes de coupe.
+const MOTIF_STRAT = /STRAT|START/;
+
 function decoderNomFichierPartage(nom) {
   const code = trouverCodeLancement(nom);
   if (!code) return null;
@@ -2736,8 +2740,8 @@ function decoderNomFichierPartage(nom) {
   let poste = null;
   if (nomMaj.includes("FENO")) poste = "Feno";
   else if (nomMaj.includes("CASSE")) poste = "Casse";
-  else if (nomMaj.includes("STRAT") && tour === "01") poste = "Agglo 1er tour";
-  else if (nomMaj.includes("STRAT") && tour === "02") poste = "Agglo 2ème tour";
+  else if (MOTIF_STRAT.test(nomMaj) && tour === "01") poste = "Agglo 1er tour";
+  else if (MOTIF_STRAT.test(nomMaj) && tour === "02") poste = "Agglo 2ème tour";
 
   return {
     code,
