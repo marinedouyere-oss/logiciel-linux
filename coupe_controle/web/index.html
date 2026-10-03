@@ -1492,10 +1492,17 @@ function validerFichierSelectionne(input, typeLabel, motCle, div, roleValidation
 // Le code de lancement (colonne "comprod_lancement" du fichier STRAT, ex.
 // "LAN264004") encode l'année, la semaine et un numéro de séquence sur ses
 // 6 derniers chiffres (ex. 26 / 40 / 04) : la semaine est l'avant-dernière
-// paire de chiffres.
+// paire de chiffres. Pour Feno/Casse/Chantiers, qui n'ont pas de tour (donc
+// pas de 3e paire), le code ne fait que 4 chiffres (année+semaine) : la
+// semaine y est alors la DERNIÈRE paire, pas l'avant-dernière — sans ce
+// cas particulier, ces 4 chiffres étaient lus comme "avant-dernière paire
+// absente, donc on recule", ce qui renvoyait l'année à la place de la
+// semaine (ex. "26" au lieu de "41"), avec le mauvais numéro — et donc la
+// mauvaise parité — affichés sur la case.
 function extraireSemaine(codeLancement) {
   if (!codeLancement) return null;
   const chiffres = String(codeLancement).replace(/\D/g, "");
+  if (chiffres.length === 4) return chiffres.slice(2, 4);
   if (chiffres.length < 4) return null;
   return chiffres.slice(-4, -2);
 }
@@ -3049,6 +3056,17 @@ async function scannerDossierPartage() {
       zone.textContent = `Impossible de lire le dossier "${dossierPartageHandle.name}" : ${erreurLecture.message}. Recliquez sur "Choisir le dossier…".`;
       return;
     }
+
+    // L'ordre renvoyé par le système de fichiers n'est pas garanti stable
+    // d'un scan à l'autre (dépend du système de fichiers, du cache...). Or
+    // plusieurs décisions plus bas dépendent de l'ordre de traitement (quel
+    // fichier garde la case fixe d'un poste quand un second lancement
+    // apparaît, lequel des deux l'emporte en cas de nom identique...) : un
+    // ordre instable ferait réapparaître un nouveau chantier en double à
+    // chaque re-scan au lieu de retrouver celui déjà créé. On trie donc les
+    // fichiers une fois pour toutes, pour que deux scans du même dossier
+    // produisent toujours exactement le même résultat.
+    fichiers.sort((a, b) => a.nom.localeCompare(b.nom));
 
     // Décode chaque fichier individuellement, sépare ceux qui portent un
     // code à 6 chiffres reconnaissable des autres (ex. une liste de coupe
