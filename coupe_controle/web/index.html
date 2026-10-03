@@ -1394,6 +1394,32 @@ async function chargerDepuisMemoire(paire) {
   }
 }
 
+// Liste les chantiers mémorisés d'une session précédente (clés
+// "Chantiers||Chantier N") pour les recréer tous au chargement de la
+// page — sans ça, seul le premier chantier était recréé par défaut, et
+// tous les autres (pourtant encore dans la mémoire, avec leurs fichiers)
+// disparaissaient de l'écran à chaque redémarrage de l'appli (fréquent
+// sur Android : mise en arrière-plan, rotation, manque de mémoire).
+async function listerChantiersMemorises() {
+  try {
+    const db = await ouvrirBaseMemoire();
+    return await new Promise((resolve) => {
+      const tx = db.transaction(MAGASIN_PAIRES, "readonly");
+      const req = tx.objectStore(MAGASIN_PAIRES).getAllKeys();
+      req.onsuccess = () => {
+        const prefixe = `${POSTE_CHANTIERS}||`;
+        const labels = (req.result || [])
+          .filter((cle) => typeof cle === "string" && cle.startsWith(prefixe))
+          .map((cle) => cle.slice(prefixe.length));
+        resolve(labels);
+      };
+      req.onerror = () => resolve([]);
+    });
+  } catch (_erreur) {
+    return [];
+  }
+}
+
 async function effacerMemoire(paire) {
   try {
     const db = await ouvrirBaseMemoire();
@@ -1770,7 +1796,12 @@ function appliquerFiltreSemaine() {
 // nécessaire, sans limite fixe contrairement à l'ancienne grille à 4 cases.
 function ajouterChantier() {
   const id = nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, null);
-  ajouterCartePaire(paires.find((p) => p.id === id));
+  const paire = paires.find((p) => p.id === id);
+  // Mémorise l'existence du chantier dès sa création, même sans fichier
+  // encore choisi : sinon un redémarrage de l'appli avant toute sélection
+  // ferait disparaître la case elle-même, pas seulement son contenu.
+  sauvegarderDansMemoire(paire, {});
+  ajouterCartePaire(paire);
   majCompteurSemaine();
 }
 
@@ -1793,6 +1824,11 @@ function retirerChantier(paire, div) {
 async function restaurerPaire(paire, div) {
   const donnees = await chargerDepuisMemoire(paire);
   if (!donnees) return;
+
+  // Identifiant du chantier (code|suffixe) attribué par le scan : sans lui,
+  // un re-scan après redémarrage de l'appli ne reconnaîtrait pas que ce
+  // chantier existe déjà et en recréerait un en double.
+  if (donnees.codeLancement) paire.codeLancement = donnees.codeLancement;
 
   if (donnees.fichierStrat) {
     paire.fichierStratRestaure = new File([donnees.fichierStrat.bytes], donnees.fichierStrat.nom, {
@@ -3292,6 +3328,11 @@ async function scannerDossierPartage() {
         const id = nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, null);
         paireCible = paires.find((p) => p.id === id);
         paireCible.codeLancement = identifiantChantier;
+        // Mémorisé tout de suite (pas seulement le code) : sans ça, un
+        // redémarrage de l'appli avant d'avoir sélectionné un fichier dans
+        // cette case ferait perdre jusqu'au chantier lui-même, pas
+        // seulement le fichier.
+        sauvegarderDansMemoire(paireCible, { codeLancement: identifiantChantier });
         ajouterCartePaire(paireCible);
       }
       const div = document.querySelector(`.paire[data-id="${paireCible.id}"]`);
@@ -3961,9 +4002,32 @@ POSTES_SEMAINE.forEach((poste) => {
   nouvellePaire(poste, "Semaine paire", "paire");
   nouvellePaire(poste, "Semaine impaire", "impaire");
 });
-nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, null);
-construireStructureInitiale();
-majCompteurSemaine();
+
+// Recrée tous les chantiers d'une session précédente (pas seulement le
+// premier) à partir de ce qui est mémorisé — voir listerChantiersMemorises.
+// S'il n'y en a aucun (première utilisation, ou mémoire indisponible), on
+// repart avec un seul chantier vide comme avant.
+async function initialiserChantiers() {
+  const labelsMemorises = await listerChantiersMemorises();
+  if (labelsMemorises.length === 0) {
+    const id = nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, null);
+    // Mémorisé dès sa création (même logique que ajouterChantier()) :
+    // sinon ce tout premier chantier, jamais passé par "+ Ajouter", ne
+    // survivrait pas lui-même à un redémarrage tant qu'on n'y a pas
+    // encore choisi de fichier.
+    sauvegarderDansMemoire(paires.find((p) => p.id === id), {});
+    return;
+  }
+  const numero = (label) => parseInt(label.replace(/\D/g, ""), 10) || 0;
+  labelsMemorises.sort((a, b) => numero(a) - numero(b));
+  labelsMemorises.forEach((label) => nouvellePaire(POSTE_CHANTIERS, label, null));
+  prochainNumeroChantier = Math.max(...labelsMemorises.map(numero)) + 1;
+}
+
+initialiserChantiers().then(() => {
+  construireStructureInitiale();
+  majCompteurSemaine();
+});
 
 // N'a d'effet que servi en http(s)/localhost (ex. server/lancer_sentinelle.bat) :
 // les navigateurs bloquent les service workers sur file://, donc ouvert en
