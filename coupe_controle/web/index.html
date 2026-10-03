@@ -3104,16 +3104,25 @@ async function scannerDossierPartage() {
       return posteParCode.get(info.code) || POSTE_CHANTIERS;
     }
 
-    // Pour Chantiers uniquement : plusieurs chantiers différents de la
-    // même semaine partagent le même code (année+semaine, sans numéro de
-    // séquence) — rien d'autre que le nom (ex. "TRIGANO", "EQUI76") ne les
-    // distingue. On ajoute donc ce nom (tout ce qui suit le code dans le
-    // nom du fichier) à la clé de regroupement, pour Chantiers seulement :
-    // les 4 postes fixes, eux, n'ont jamais qu'un seul lancement actif par
-    // semaine, code seul suffisant.
+    // Pour Chantiers : plusieurs chantiers différents de la même semaine
+    // partagent le même code (année+semaine, sans numéro de séquence) —
+    // rien d'autre que le nom (ex. "TRIGANO", "EQUI76") ne les distingue.
+    // On ajoute donc ce nom (tout ce qui suit le code dans le nom du
+    // fichier) à la clé de regroupement, pour Chantiers seulement.
+    //
+    // Un poste fixe (Agglo/Feno/Casse) n'a normalement qu'un seul
+    // lancement actif par semaine — mais si un second apparaît quand même
+    // (même poste, même code, nom différent, ex. deux lancements Feno la
+    // même semaine), il est redirigé vers Chantiers plutôt que d'écraser
+    // le premier : le premier lancement rencontré pour ce poste+code garde
+    // sa case fixe, tout lancement supplémentaire devient un chantier.
     const groupes = new Map();
     for (const { f, info } of decodes) {
-      const poste = resoudrePoste(info);
+      let poste = resoudrePoste(info);
+      if (poste !== POSTE_CHANTIERS) {
+        const existant = groupes.get(`${poste}|${info.code}`);
+        if (existant && existant.suffixe && existant.suffixe !== info.suffixe) poste = POSTE_CHANTIERS;
+      }
       const cleGroupe = poste === POSTE_CHANTIERS ? `${poste}|${info.code}|${info.suffixe}` : `${poste}|${info.code}`;
       if (!groupes.has(cleGroupe))
         groupes.set(cleGroupe, { poste, code: info.code, suffixe: info.suffixe, parite: info.parite });
