@@ -2715,7 +2715,11 @@ function decoderNomFichierPartage(nom) {
     code,
     poste,
     parite: pariteDeSemaine(code),
-    estCutrite: /CUTRITE/i.test(nom),
+    // Un .pdf ne peut de toute façon jamais être un fichier de lancement
+    // (toujours .xlsx/.xlsm) : il ne peut s'agir que d'une liste de coupe,
+    // quel que soit le reste de son nom — "CUTRITE" ou "COUPE" couvrent
+    // en plus les listes de coupe au format Excel.
+    estCutrite: /CUTRITE/i.test(nom) || /COUPE/i.test(nom) || /\.pdf$/i.test(nom),
     estBkp: /\.bkp$/i.test(nom),
   };
 }
