@@ -2713,8 +2713,60 @@ function decoderNomFichierPartage(nom) {
   };
 }
 
+// Dans la WebView Android (APK), showDirectoryPicker n'existe pas : on
+// passe alors par le pont natif AndroidDossierPartage (voir MainActivity.java),
+// qui ouvre le sélecteur de dossier système d'Android (Storage Access
+// Framework) — "Google Drive" y apparaît comme une source si l'appli Drive
+// est installée et connectée sur l'appareil, exactement comme un dossier
+// local.
+function androidDossierPartageDisponible() {
+  return typeof window.AndroidDossierPartage !== "undefined";
+}
+
 function scanPartageDisponible() {
-  return typeof window.showDirectoryPicker === "function";
+  return typeof window.showDirectoryPicker === "function" || androidDossierPartageDisponible();
+}
+
+function b64ToBytes(b64) {
+  const bin = atob(b64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  return arr;
+}
+
+// Construit un objet imitant un FileSystemDirectoryHandle (même forme que
+// celui renvoyé par showDirectoryPicker : kind/name/entries()/queryPermission()/
+// requestPermission()) à partir d'un dossier choisi côté natif Android, pour
+// que scannerDossierPartage() fonctionne à l'identique sans distinguer les
+// deux origines.
+function creerPoigneeDossierAndroid(treeUri, nom) {
+  return {
+    kind: "directory",
+    name: nom,
+    async *entries() {
+      const brut = window.AndroidDossierPartage.listerFichiers(treeUri);
+      const fichiers = JSON.parse(brut || "[]");
+      for (const f of fichiers) {
+        yield [
+          f.nom,
+          {
+            kind: "file",
+            name: f.nom,
+            async getFile() {
+              const b64 = window.AndroidDossierPartage.lireFichierBase64(f.uri);
+              return new File([b64ToBytes(b64)], f.nom, { lastModified: f.lastModified });
+            },
+          },
+        ];
+      }
+    },
+    async queryPermission() {
+      return "granted";
+    },
+    async requestPermission() {
+      return "granted";
+    },
+  };
 }
 
 // Mémorise la référence au dossier choisi (une "poignée" FileSystemHandle,
@@ -2766,7 +2818,21 @@ async function choisirDossierPartage() {
   const zone = $("resultatScanPartage");
   if (!scanPartageDisponible()) {
     zone.style.color = "var(--alerte-text)";
-    zone.textContent = "Non disponible dans ce navigateur : fonctionne sur Chrome ou Edge, sur PC.";
+    zone.textContent = "Non disponible : fonctionne sur Chrome ou Edge sur PC, ou dans l'appli Android.";
+    return;
+  }
+  if (androidDossierPartageDisponible()) {
+    // Le sélecteur système d'Android répond de façon asynchrone, via un
+    // rappel JS déclenché par MainActivity une fois le dossier choisi
+    // (impossible d'attendre une Promise ici comme avec showDirectoryPicker,
+    // l'activité Android revient après le retour de cette fonction).
+    window.__androidDossierChoisi = (treeUri, nom) => {
+      dossierPartageHandle = creerPoigneeDossierAndroid(treeUri, nom);
+      $("btnScanPartage").disabled = false;
+      zone.style.color = "var(--ok-text)";
+      zone.textContent = `Dossier choisi : ${nom}`;
+    };
+    window.AndroidDossierPartage.choisirDossier();
     return;
   }
   try {
@@ -2781,10 +2847,26 @@ async function choisirDossierPartage() {
 }
 
 // Au chargement de la page, retrouve le dossier choisi la dernière fois
-// si le navigateur accorde encore la permission sans avoir à la
-// redemander (sinon l'utilisateur reclique "Choisir le dossier…").
+// si la permission est toujours valable, sans avoir à la redemander
+// (sinon l'utilisateur reclique "Choisir le dossier…").
 async function restaurerDossierPartage() {
   if (!scanPartageDisponible()) return;
+
+  if (androidDossierPartageDisponible()) {
+    try {
+      const brut = window.AndroidDossierPartage.dossierMemorise();
+      const memoire = brut && brut !== "null" ? JSON.parse(brut) : null;
+      if (memoire) {
+        dossierPartageHandle = creerPoigneeDossierAndroid(memoire.treeUri, memoire.nom);
+        $("btnScanPartage").disabled = false;
+        $("resultatScanPartage").textContent = `Dossier mémorisé : ${memoire.nom}`;
+      }
+    } catch (_erreur) {
+      // Pas de dossier mémorisé côté Android : rien à faire.
+    }
+    return;
+  }
+
   const handle = await chargerPoigneeDossierPartage();
   if (!handle) return;
   try {

@@ -26,6 +26,13 @@ android {
     }
 }
 
+dependencies {
+    // DocumentFile : lecture d'un dossier choisi via le sélecteur système
+    // (Storage Access Framework), y compris un dossier Google Drive si
+    // l'appli Drive est installée et connectée sur l'appareil.
+    implementation "androidx.documentfile:documentfile:1.0.1"
+}
+
 // Recopie coupe_controle/web/index.html (déjà autonome, ExcelJS inclus) dans les
 // assets à chaque build, pour ne jamais avoir de copie figée qui se périme.
 tasks.register("syncAppHtml", Copy) {
