@@ -1467,9 +1467,11 @@ let prochainNumeroChantier = 1;
 // Chaque paire : { id, poste, lancementLabel, nom, rapport, clesStrat, triColonne, triAscendant }
 const paires = [];
 
-// semaineParite : "paire" ou "impaire" pour les 4 postes fixes (une seule
-// case chacun par semaine), ou null pour un Chantier (pas de notion de
-// semaine, visible à l'identique dans les deux onglets semaine).
+// semaineParite : "paire" ou "impaire", toujours — y compris pour un
+// Chantier (voir initialiserChantiers/ajouterChantier/scannerDossierPartage,
+// qui lui attribuent toujours l'une des deux). Null n'est accepté que de
+// façon transitoire, avant migration ; aucune case ne doit jamais rester
+// sans parité, sous peine de redevenir visible dans aucun onglet.
 function nouvellePaire(poste, lancementLabel, semaineParite) {
   const id = prochainId++;
   paires.push({
@@ -1685,7 +1687,7 @@ function ajouterCartePaire(paire) {
   const div = document.createElement("div");
   div.className = "paire";
   div.dataset.id = paire.id;
-  if (paire.semaineParite) div.dataset.parite = paire.semaineParite;
+  div.dataset.parite = paire.semaineParite || "";
   const btnRetirer =
     paire.poste === POSTE_CHANTIERS
       ? `<button type="button" class="btn-retirer" data-action="retirer" title="Retirer ce chantier">✕ Retirer</button>`
@@ -1749,7 +1751,6 @@ function ajouterCartePaire(paire) {
   restaurerPaire(paire, div);
   grille.appendChild(div);
 
-  if (!paire.semaineParite) appliquerFiltreSemaine();
   if (paire.poste === POSTE_CHANTIERS) trierChantiers();
 }
 
@@ -1787,15 +1788,15 @@ function trierChantiers() {
   cartes.forEach((div) => grille.appendChild(div));
 }
 
-// N'affiche, parmi les cases des 4 postes fixes, que celles de l'onglet
-// semaine actif (paire ou impaire) — les Chantiers (sans parité) restent
-// toujours visibles, à l'identique dans les deux onglets.
+// N'affiche que les cases dont la parité correspond exactement à l'onglet
+// semaine actif (paire ou impaire) — règle stricte, sans exception, y
+// compris pour Chantiers : aucune case n'est jamais visible dans les deux
+// onglets à la fois.
 function appliquerFiltreSemaine() {
   $("pairesContainer")
     .querySelectorAll(".paire")
     .forEach((div) => {
-      const parite = div.dataset.parite;
-      div.style.display = !parite || parite === semaineActive ? "" : "none";
+      div.style.display = div.dataset.parite === semaineActive ? "" : "none";
     });
 }
 
@@ -2733,10 +2734,9 @@ function afficherResultatScies(conteneur, ecarts, totalPiecesAttendues) {
 async function compterPiecesSemaine(parite) {
   let total = 0;
   for (const paire of paires) {
-    // Même règle que paireVisible() : un chantier sans parité (créé avant
-    // l'étanchéité paire/impaire) compte dans les deux semaines, un
-    // chantier avec une parité propre ne compte que dans la sienne.
-    if (paire.semaineParite && paire.semaineParite !== parite) continue;
+    // Même règle stricte que paireVisible() : aucune exception, une case
+    // ne compte que dans la semaine qui correspond exactement à sa parité.
+    if (paire.semaineParite !== parite) continue;
     const fichierBkp = fichierBkpDe(paire);
     if (!fichierBkp) continue;
     try {
@@ -3808,11 +3808,12 @@ function demanderConfirmation(titre, message) {
   });
 }
 
-// Une paire des 4 postes fixes n'est "visible" (donc concernée par "Lancer
-// le(s) contrôle(s)" et la liste de progression) que dans l'onglet semaine
-// qui correspond à sa parité — un Chantier (pas de parité) l'est toujours.
+// Une paire (poste fixe ou Chantier) n'est "visible" (donc concernée par
+// "Lancer le(s) contrôle(s)" et la liste de progression) que dans l'onglet
+// semaine qui correspond exactement à sa parité — règle stricte, sans
+// exception : aucune case n'est jamais commune aux deux onglets.
 function paireVisible(paire) {
-  return !paire.semaineParite || paire.semaineParite === semaineActive;
+  return paire.semaineParite === semaineActive;
 }
 
 function creerLignesProgress() {
@@ -4055,20 +4056,30 @@ POSTES_SEMAINE.forEach((poste) => {
 // premier) à partir de ce qui est mémorisé — voir listerChantiersMemorises.
 // S'il n'y en a aucun (première utilisation, ou mémoire indisponible), on
 // repart avec un seul chantier vide comme avant.
+//
+// Étanchéité SANS AUCUNE EXCEPTION : un chantier n'est jamais visible dans
+// les deux onglets à la fois, y compris un chantier créé avant l'ajout de
+// cette règle (donc sans parité mémorisée) — il est alors rattaché
+// définitivement à "Semaine paire" dès ce chargement, et ce choix est
+// aussitôt mémorisé pour ne plus jamais redevenir ambigu.
 async function initialiserChantiers() {
   const chantiersMemorises = await listerChantiersMemorises();
   if (chantiersMemorises.length === 0) {
-    const id = nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, null);
+    const id = nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, "paire");
     // Mémorisé dès sa création (même logique que ajouterChantier()) :
     // sinon ce tout premier chantier, jamais passé par "+ Ajouter", ne
     // survivrait pas lui-même à un redémarrage tant qu'on n'y a pas
     // encore choisi de fichier.
-    sauvegarderDansMemoire(paires.find((p) => p.id === id), {});
+    sauvegarderDansMemoire(paires.find((p) => p.id === id), { semaineParite: "paire" });
     return;
   }
   const numero = (label) => parseInt(label.replace(/\D/g, ""), 10) || 0;
   chantiersMemorises.sort((a, b) => numero(a.label) - numero(b.label));
-  chantiersMemorises.forEach(({ label, semaineParite }) => nouvellePaire(POSTE_CHANTIERS, label, semaineParite));
+  chantiersMemorises.forEach(({ label, semaineParite }) => {
+    const parite = semaineParite || "paire";
+    const id = nouvellePaire(POSTE_CHANTIERS, label, parite);
+    if (!semaineParite) sauvegarderDansMemoire(paires.find((p) => p.id === id), { semaineParite: parite });
+  });
   prochainNumeroChantier = Math.max(...chantiersMemorises.map((c) => numero(c.label))) + 1;
 }
 
