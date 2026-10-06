@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V2.2 — Contrôle de coupe</title>
+<title>Sentinelle V2.3 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -432,7 +432,7 @@
 </style>
 </head>
 <body>
-  <h1>Sentinelle V2.2 — Contrôle de coupe (lancement / Cutrite)</h1>
+  <h1>Sentinelle V2.3 — Contrôle de coupe (lancement / Cutrite)</h1>
 
   <div class="onglets">
     <button type="button" class="onglet-btn actif" data-onglet="semaine-paire">Semaine paire</button>
@@ -1322,6 +1322,10 @@ const $ = (id) => document.getElementById(id);
 // s'affiche toujours quel que soit l'onglet actif).
 let semaineActive = "paire";
 
+function libelleSemaine(parite) {
+  return parite === "paire" ? "Semaine paire" : "Semaine impaire";
+}
+
 // ---- Mémorisation locale (IndexedDB) : garde une copie complète des
 // fichiers sélectionnés et du dernier résultat calculé pour chaque
 // lancement, indépendante du fichier d'origine (qui peut être déplacé ou
@@ -1400,18 +1404,21 @@ async function chargerDepuisMemoire(paire) {
 // tous les autres (pourtant encore dans la mémoire, avec leurs fichiers)
 // disparaissaient de l'écran à chaque redémarrage de l'appli (fréquent
 // sur Android : mise en arrière-plan, rotation, manque de mémoire).
+// Renvoie aussi la parité mémorisée de chaque chantier (absente pour un
+// chantier créé avant l'ajout de l'étanchéité paire/impaire : il reste
+// alors visible dans les deux onglets, comme avant).
 async function listerChantiersMemorises() {
   try {
     const db = await ouvrirBaseMemoire();
     return await new Promise((resolve) => {
       const tx = db.transaction(MAGASIN_PAIRES, "readonly");
-      const req = tx.objectStore(MAGASIN_PAIRES).getAllKeys();
+      const req = tx.objectStore(MAGASIN_PAIRES).getAll();
       req.onsuccess = () => {
         const prefixe = `${POSTE_CHANTIERS}||`;
-        const labels = (req.result || [])
-          .filter((cle) => typeof cle === "string" && cle.startsWith(prefixe))
-          .map((cle) => cle.slice(prefixe.length));
-        resolve(labels);
+        const chantiers = (req.result || [])
+          .filter((rec) => rec && typeof rec.cleMemoire === "string" && rec.cleMemoire.startsWith(prefixe))
+          .map((rec) => ({ label: rec.cleMemoire.slice(prefixe.length), semaineParite: rec.semaineParite || null }));
+        resolve(chantiers);
       };
       req.onerror = () => resolve([]);
     });
@@ -1794,13 +1801,16 @@ function appliquerFiltreSemaine() {
 
 // Ajoute un nouveau chantier (bouton "+ Ajouter un chantier") — autant que
 // nécessaire, sans limite fixe contrairement à l'ancienne grille à 4 cases.
+// Rattaché à l'onglet semaine actif au moment du clic (étanchéité totale
+// entre "Semaine paire" et "Semaine impaire", y compris pour Chantiers) :
+// il ne sera visible, ni compté, que dans cet onglet-là.
 function ajouterChantier() {
-  const id = nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, null);
+  const id = nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, semaineActive);
   const paire = paires.find((p) => p.id === id);
   // Mémorise l'existence du chantier dès sa création, même sans fichier
   // encore choisi : sinon un redémarrage de l'appli avant toute sélection
   // ferait disparaître la case elle-même, pas seulement son contenu.
-  sauvegarderDansMemoire(paire, {});
+  sauvegarderDansMemoire(paire, { semaineParite: semaineActive });
   ajouterCartePaire(paire);
   majCompteurSemaine();
 }
@@ -2723,7 +2733,10 @@ function afficherResultatScies(conteneur, ecarts, totalPiecesAttendues) {
 async function compterPiecesSemaine(parite) {
   let total = 0;
   for (const paire of paires) {
-    if (paire.semaineParite !== parite && paire.poste !== POSTE_CHANTIERS) continue;
+    // Même règle que paireVisible() : un chantier sans parité (créé avant
+    // l'étanchéité paire/impaire) compte dans les deux semaines, un
+    // chantier avec une parité propre ne compte que dans la sienne.
+    if (paire.semaineParite && paire.semaineParite !== parite) continue;
     const fichierBkp = fichierBkpDe(paire);
     if (!fichierBkp) continue;
     try {
@@ -2964,9 +2977,13 @@ function creerPoigneeDossierAndroid(treeUri, nom) {
 // clonable telle quelle dans IndexedDB) pour ne pas avoir à le rechoisir à
 // chaque ouverture — le navigateur redemande juste une confirmation
 // d'autorisation, sans reproposer l'Explorateur.
+//
+// Étanchéité totale entre les deux onglets semaine : un dossier partagé
+// distinct par parité, mémorisé séparément, jamais partagé entre
+// "Semaine paire" et "Semaine impaire".
 const DB_DOSSIER_PARTAGE_NOM = "sentinelle-dossier-partage";
 const MAGASIN_DOSSIER_PARTAGE = "poignee";
-let dossierPartageHandle = null;
+let dossierPartageHandles = { paire: null, impaire: null };
 
 function ouvrirBaseDossierPartage() {
   return new Promise((resolve, reject) => {
@@ -2977,12 +2994,12 @@ function ouvrirBaseDossierPartage() {
   });
 }
 
-async function sauvegarderPoigneeDossierPartage(handle) {
+async function sauvegarderPoigneeDossierPartage(handle, parite) {
   try {
     const db = await ouvrirBaseDossierPartage();
     await new Promise((resolve, reject) => {
       const tx = db.transaction(MAGASIN_DOSSIER_PARTAGE, "readwrite");
-      tx.objectStore(MAGASIN_DOSSIER_PARTAGE).put(handle, "dossier");
+      tx.objectStore(MAGASIN_DOSSIER_PARTAGE).put(handle, `dossier-${parite}`);
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error);
     });
@@ -2992,17 +3009,31 @@ async function sauvegarderPoigneeDossierPartage(handle) {
   }
 }
 
-async function chargerPoigneeDossierPartage() {
+async function chargerPoigneeDossierPartage(parite) {
   try {
     const db = await ouvrirBaseDossierPartage();
     return await new Promise((resolve, reject) => {
-      const requete = db.transaction(MAGASIN_DOSSIER_PARTAGE, "readonly").objectStore(MAGASIN_DOSSIER_PARTAGE).get("dossier");
+      const requete = db
+        .transaction(MAGASIN_DOSSIER_PARTAGE, "readonly")
+        .objectStore(MAGASIN_DOSSIER_PARTAGE)
+        .get(`dossier-${parite}`);
       requete.onsuccess = () => resolve(requete.result || null);
       requete.onerror = () => reject(requete.error);
     });
   } catch (_erreur) {
     return null;
   }
+}
+
+// Reflète dans le panneau de scan le dossier mémorisé pour l'onglet semaine
+// actuellement actif — appelé au chargement et à chaque changement d'onglet,
+// puisque chaque onglet a désormais son propre dossier indépendant.
+function afficherDossierActif() {
+  const zone = $("resultatScanPartage");
+  const handle = dossierPartageHandles[semaineActive];
+  $("btnScanPartage").disabled = !handle;
+  zone.style.color = "";
+  zone.textContent = handle ? `Dossier mémorisé (${libelleSemaine(semaineActive)}) : ${handle.name}` : "";
 }
 
 async function choisirDossierPartage() {
@@ -3012,63 +3043,61 @@ async function choisirDossierPartage() {
     zone.textContent = "Non disponible : fonctionne sur Chrome ou Edge sur PC, ou dans l'appli Android.";
     return;
   }
+  const parite = semaineActive;
   if (androidDossierPartageDisponible()) {
     // Le sélecteur système d'Android répond de façon asynchrone, via un
     // rappel JS déclenché par MainActivity une fois le dossier choisi
     // (impossible d'attendre une Promise ici comme avec showDirectoryPicker,
-    // l'activité Android revient après le retour de cette fonction).
-    window.__androidDossierChoisi = (treeUri, nom) => {
-      dossierPartageHandle = creerPoigneeDossierAndroid(treeUri, nom);
-      $("btnScanPartage").disabled = false;
-      zone.style.color = "var(--ok-text)";
-      zone.textContent = `Dossier choisi : ${nom}`;
+    // l'activité Android revient après le retour de cette fonction). La
+    // parité demandée est renvoyée par le rappel pour ranger la poignée
+    // dans le bon onglet même si l'utilisateur a changé d'onglet entretemps.
+    window.__androidDossierChoisi = (treeUri, nom, pariteChoisie) => {
+      dossierPartageHandles[pariteChoisie] = creerPoigneeDossierAndroid(treeUri, nom);
+      if (pariteChoisie === semaineActive) afficherDossierActif();
     };
-    window.AndroidDossierPartage.choisirDossier();
+    window.AndroidDossierPartage.choisirDossier(parite);
     return;
   }
   try {
-    dossierPartageHandle = await window.showDirectoryPicker();
-    sauvegarderPoigneeDossierPartage(dossierPartageHandle);
-    $("btnScanPartage").disabled = false;
-    zone.style.color = "var(--ok-text)";
-    zone.textContent = `Dossier choisi : ${dossierPartageHandle.name}`;
+    const handle = await window.showDirectoryPicker();
+    dossierPartageHandles[parite] = handle;
+    sauvegarderPoigneeDossierPartage(handle, parite);
+    if (parite === semaineActive) afficherDossierActif();
   } catch (_erreurAnnulation) {
     // Sélection annulée par l'utilisateur : rien à faire.
   }
 }
 
-// Au chargement de la page, retrouve le dossier choisi la dernière fois
-// si la permission est toujours valable, sans avoir à la redemander
-// (sinon l'utilisateur reclique "Choisir le dossier…").
+// Au chargement de la page, retrouve pour chaque onglet le dossier choisi
+// la dernière fois si la permission est toujours valable, sans avoir à la
+// redemander (sinon l'utilisateur reclique "Choisir le dossier…").
 async function restaurerDossierPartage() {
   if (!scanPartageDisponible()) return;
 
   if (androidDossierPartageDisponible()) {
-    try {
-      const brut = window.AndroidDossierPartage.dossierMemorise();
-      const memoire = brut && brut !== "null" ? JSON.parse(brut) : null;
-      if (memoire) {
-        dossierPartageHandle = creerPoigneeDossierAndroid(memoire.treeUri, memoire.nom);
-        $("btnScanPartage").disabled = false;
-        $("resultatScanPartage").textContent = `Dossier mémorisé : ${memoire.nom}`;
+    for (const parite of ["paire", "impaire"]) {
+      try {
+        const brut = window.AndroidDossierPartage.dossierMemorise(parite);
+        const memoire = brut && brut !== "null" ? JSON.parse(brut) : null;
+        if (memoire) dossierPartageHandles[parite] = creerPoigneeDossierAndroid(memoire.treeUri, memoire.nom);
+      } catch (_erreur) {
+        // Pas de dossier mémorisé côté Android pour cette semaine.
       }
-    } catch (_erreur) {
-      // Pas de dossier mémorisé côté Android : rien à faire.
     }
+    afficherDossierActif();
     return;
   }
 
-  const handle = await chargerPoigneeDossierPartage();
-  if (!handle) return;
-  try {
-    if ((await handle.queryPermission({ mode: "read" })) === "granted") {
-      dossierPartageHandle = handle;
-      $("btnScanPartage").disabled = false;
-      $("resultatScanPartage").textContent = `Dossier mémorisé : ${handle.name}`;
+  for (const parite of ["paire", "impaire"]) {
+    const handle = await chargerPoigneeDossierPartage(parite);
+    if (!handle) continue;
+    try {
+      if ((await handle.queryPermission({ mode: "read" })) === "granted") dossierPartageHandles[parite] = handle;
+    } catch (_erreur) {
+      // Poignée invalide (dossier déplacé/supprimé depuis) : ignorée, l'utilisateur en rechoisit un.
     }
-  } catch (_erreur) {
-    // Poignée invalide (dossier déplacé/supprimé depuis) : ignorée, l'utilisateur en rechoisit un.
   }
+  afficherDossierActif();
 }
 
 // Simule la sélection d'un fichier depuis le dossier partagé — impossible de
@@ -3109,7 +3138,9 @@ async function assignerFichierScanneAPaire(paire, div, role, fichier) {
 async function scannerDossierPartage() {
   const zone = $("resultatScanPartage");
   const bouton = $("btnScanPartage");
-  if (!dossierPartageHandle) {
+  const pariteScan = semaineActive;
+  const handle = dossierPartageHandles[pariteScan];
+  if (!handle) {
     zone.style.color = "var(--alerte-text)";
     zone.textContent = "Choisissez d'abord un dossier.";
     return;
@@ -3123,12 +3154,12 @@ async function scannerDossierPartage() {
   try {
     const fichiers = [];
     try {
-      for await (const [nom, entree] of dossierPartageHandle.entries()) {
+      for await (const [nom, entree] of handle.entries()) {
         if (entree.kind === "file") fichiers.push({ nom, entree });
       }
     } catch (erreurLecture) {
       zone.style.color = "var(--alerte-text)";
-      zone.textContent = `Impossible de lire le dossier "${dossierPartageHandle.name}" : ${erreurLecture.message}. Recliquez sur "Choisir le dossier…".`;
+      zone.textContent = `Impossible de lire le dossier "${handle.name}" : ${erreurLecture.message}. Recliquez sur "Choisir le dossier…".`;
       return;
     }
 
@@ -3267,31 +3298,44 @@ async function scannerDossierPartage() {
     // présentes dans le dossier : on garde la plus récente) — date lue
     // directement sur le fichier (lastModified), pas devinée sur son nom.
     // Pour Chantiers (pas de semaine), un groupe par code distinct.
+    //
+    // Étanchéité totale : un groupe dont la semaine déduite du nom de
+    // fichier ne correspond pas à l'onglet depuis lequel le scan a été
+    // lancé est ignoré purement et simplement (ni placé ici, ni "corrigé"
+    // dans l'autre onglet) — chaque onglet n'avale que son propre dossier.
     const ciblesFixes = new Map();
     const ciblesChantiers = new Map();
+    let ignoresAutreSemaine = 0;
     for (const g of groupes.values()) {
       if (!g.strat) continue; // sans fichier de lancement, rien à charger
+      if (g.parite !== pariteScan) {
+        ignoresAutreSemaine++;
+        continue;
+      }
       const fichierStrat = await g.strat.entree.getFile();
       const date = fichierStrat.lastModified;
       if (g.poste === POSTE_CHANTIERS) {
         const cleChantier = `${g.code}|${g.suffixe}`;
         const actuel = ciblesChantiers.get(cleChantier);
         if (!actuel || date > actuel.date) ciblesChantiers.set(cleChantier, { ...g, date, fichierStrat });
-      } else if (g.parite) {
+      } else {
         const cle = `${g.poste}|${g.parite}`;
         const actuel = ciblesFixes.get(cle);
         if (!actuel || date > actuel.date) ciblesFixes.set(cle, { ...g, date, fichierStrat });
       }
     }
+    const noteIgnores =
+      ignoresAutreSemaine > 0
+        ? `<p class="scies-note">${ignoresAutreSemaine} fichier(s) ignoré(s) : semaine différente de l'onglet actif (${libelleSemaine(pariteScan)}).</p>`
+        : "";
 
     const resultats = [];
 
     for (const g of ciblesFixes.values()) {
-      const libelleSemaine = g.parite === "paire" ? "Semaine paire" : "Semaine impaire";
       const paireCible = paires.find((p) => p.poste === g.poste && p.semaineParite === g.parite);
       const div = paireCible && document.querySelector(`.paire[data-id="${paireCible.id}"]`);
       if (!paireCible || !div) {
-        resultats.push(`— ${g.poste} (${libelleSemaine}) : case introuvable, ignoré.`);
+        resultats.push(`— ${g.poste} (${libelleSemaine(g.parite)}) : case introuvable, ignoré.`);
         continue;
       }
       try {
@@ -3307,7 +3351,7 @@ async function scannerDossierPartage() {
           await assignerFichierScanneAPaire(paireCible, div, "bkp", fichierBkp);
           suffixe += " + .bkp";
         }
-        resultats.push(`✔ ${g.poste} — ${libelleSemaine} : ${g.strat.nom}${suffixe}`);
+        resultats.push(`✔ ${g.poste} — ${libelleSemaine(g.parite)} : ${g.strat.nom}${suffixe}`);
 
         // Le scan sert justement à éviter les clics manuels : une fois les
         // fichiers trouvés en place, lance directement l'analyse
@@ -3317,7 +3361,7 @@ async function scannerDossierPartage() {
         if (g.cutrite) await lancerUnePaire(paireCible, div);
         if (g.bkp) await lancerControleScies(paireCible, div);
       } catch (erreur) {
-        resultats.push(`❌ ${g.poste} (${libelleSemaine}) : ${erreur && erreur.message ? erreur.message : erreur}`);
+        resultats.push(`❌ ${g.poste} (${libelleSemaine(g.parite)}) : ${erreur && erreur.message ? erreur.message : erreur}`);
       }
     }
 
@@ -3325,14 +3369,15 @@ async function scannerDossierPartage() {
       const identifiantChantier = `${g.code}|${g.suffixe}`;
       let paireCible = paires.find((p) => p.poste === POSTE_CHANTIERS && p.codeLancement === identifiantChantier);
       if (!paireCible) {
-        const id = nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, null);
+        const id = nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, g.parite);
         paireCible = paires.find((p) => p.id === id);
         paireCible.codeLancement = identifiantChantier;
         // Mémorisé tout de suite (pas seulement le code) : sans ça, un
         // redémarrage de l'appli avant d'avoir sélectionné un fichier dans
         // cette case ferait perdre jusqu'au chantier lui-même, pas
-        // seulement le fichier.
-        sauvegarderDansMemoire(paireCible, { codeLancement: identifiantChantier });
+        // seulement le fichier. La parité est mémorisée aussi, pour que ce
+        // chantier reste cantonné au même onglet après un redémarrage.
+        sauvegarderDansMemoire(paireCible, { codeLancement: identifiantChantier, semaineParite: g.parite });
         ajouterCartePaire(paireCible);
       }
       const div = document.querySelector(`.paire[data-id="${paireCible.id}"]`);
@@ -3363,8 +3408,10 @@ async function scannerDossierPartage() {
     }
 
     await majCompteurSemaine();
-    zone.style.color = "";
-    zone.innerHTML = resultats.map((l) => `<div>${echapperHtml(l)}</div>`).join("") + noteNonReconnus;
+    zone.style.color = resultats.length === 0 ? "var(--alerte-text)" : "";
+    const enteteVide =
+      resultats.length === 0 ? `<p>Aucun fichier de "${libelleSemaine(pariteScan)}" trouvé dans ce dossier.</p>` : "";
+    zone.innerHTML = enteteVide + resultats.map((l) => `<div>${echapperHtml(l)}</div>`).join("") + noteNonReconnus + noteIgnores;
   } finally {
     if (bouton) bouton.disabled = false;
   }
@@ -3723,6 +3770,7 @@ document.querySelectorAll(".onglet-btn").forEach((bouton) => {
       semaineActive = cible === "semaine-paire" ? "paire" : "impaire";
       appliquerFiltreSemaine();
       majCompteurSemaine();
+      afficherDossierActif();
     }
   });
 });
@@ -4008,8 +4056,8 @@ POSTES_SEMAINE.forEach((poste) => {
 // S'il n'y en a aucun (première utilisation, ou mémoire indisponible), on
 // repart avec un seul chantier vide comme avant.
 async function initialiserChantiers() {
-  const labelsMemorises = await listerChantiersMemorises();
-  if (labelsMemorises.length === 0) {
+  const chantiersMemorises = await listerChantiersMemorises();
+  if (chantiersMemorises.length === 0) {
     const id = nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, null);
     // Mémorisé dès sa création (même logique que ajouterChantier()) :
     // sinon ce tout premier chantier, jamais passé par "+ Ajouter", ne
@@ -4019,9 +4067,9 @@ async function initialiserChantiers() {
     return;
   }
   const numero = (label) => parseInt(label.replace(/\D/g, ""), 10) || 0;
-  labelsMemorises.sort((a, b) => numero(a) - numero(b));
-  labelsMemorises.forEach((label) => nouvellePaire(POSTE_CHANTIERS, label, null));
-  prochainNumeroChantier = Math.max(...labelsMemorises.map(numero)) + 1;
+  chantiersMemorises.sort((a, b) => numero(a.label) - numero(b.label));
+  chantiersMemorises.forEach(({ label, semaineParite }) => nouvellePaire(POSTE_CHANTIERS, label, semaineParite));
+  prochainNumeroChantier = Math.max(...chantiersMemorises.map((c) => numero(c.label))) + 1;
 }
 
 initialiserChantiers().then(() => {

@@ -28,11 +28,19 @@ public class MainActivity extends Activity {
     private static final int FILE_CHOOSER_REQUEST = 1;
     private static final int OPEN_TREE_REQUEST = 2;
     private static final String PREFS = "sentinelle_dossier_partage";
-    private static final String PREF_TREE_URI = "treeUri";
-    private static final String PREF_NOM = "nom";
+    // Clés préfixées par la parité ("paire"/"impaire") : chaque onglet
+    // semaine mémorise son propre dossier, totalement indépendant de
+    // l'autre (étanchéité demandée entre "Semaine paire" et "Semaine
+    // impaire", y compris pour les Chantiers).
+    private static final String PREF_TREE_URI_PREFIXE = "treeUri_";
+    private static final String PREF_NOM_PREFIXE = "nom_";
 
     private ValueCallback<Uri[]> filePathCallback;
     private WebView webView;
+    // Parité pour laquelle choisirDossier() a été appelé — l'activité de
+    // sélection système revient de façon asynchrone dans onActivityResult,
+    // qui a donc besoin de se souvenir quel onglet a demandé ce dossier.
+    private String choisirDossierParitePendante;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -85,16 +93,18 @@ public class MainActivity extends Activity {
             return;
         }
         if (requestCode == OPEN_TREE_REQUEST) {
-            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null) {
+            String parite = choisirDossierParitePendante;
+            choisirDossierParitePendante = null;
+            if (resultCode == Activity.RESULT_OK && data != null && data.getData() != null && parite != null) {
                 Uri treeUri = data.getData();
                 getContentResolver().takePersistableUriPermission(treeUri,
                         Intent.FLAG_GRANT_READ_URI_PERMISSION);
                 String nom = nomDossier(treeUri);
                 getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                        .putString(PREF_TREE_URI, treeUri.toString())
-                        .putString(PREF_NOM, nom)
+                        .putString(PREF_TREE_URI_PREFIXE + parite, treeUri.toString())
+                        .putString(PREF_NOM_PREFIXE + parite, nom)
                         .apply();
-                notifierDossierChoisi(treeUri.toString(), nom);
+                notifierDossierChoisi(treeUri.toString(), nom, parite);
             }
             return;
         }
@@ -107,14 +117,15 @@ public class MainActivity extends Activity {
         return nom != null ? nom : "Dossier";
     }
 
-    // Appelle window.__androidDossierChoisi(treeUri, nom) côté JS une fois
-    // le dossier sélectionné — l'activité ne peut pas renvoyer sa réponse
-    // de façon synchrone (onActivityResult arrive après le retour de
-    // choisirDossier()), d'où ce rappel asynchrone plutôt qu'une valeur de
-    // retour directe.
-    private void notifierDossierChoisi(String treeUri, String nom) {
+    // Appelle window.__androidDossierChoisi(treeUri, nom, parite) côté JS
+    // une fois le dossier sélectionné — l'activité ne peut pas renvoyer sa
+    // réponse de façon synchrone (onActivityResult arrive après le retour
+    // de choisirDossier()), d'où ce rappel asynchrone plutôt qu'une valeur
+    // de retour directe. La parité est renvoyée pour que le JS range la
+    // poignée dans le bon onglet même si l'utilisateur en a changé entretemps.
+    private void notifierDossierChoisi(String treeUri, String nom, String parite) {
         String js = "window.__androidDossierChoisi && window.__androidDossierChoisi("
-                + JSONObject.quote(treeUri) + "," + JSONObject.quote(nom) + ")";
+                + JSONObject.quote(treeUri) + "," + JSONObject.quote(nom) + "," + JSONObject.quote(parite) + ")";
         runOnUiThread(() -> webView.evaluateJavascript(js, null));
     }
 
@@ -126,8 +137,12 @@ public class MainActivity extends Activity {
     // l'appareil, exactement comme pour un dossier local.
     private class DossierPartageBridge {
 
+        // parite : "paire" ou "impaire" — l'onglet depuis lequel le bouton
+        // "Choisir le dossier…" a été cliqué, mémorisé pour que
+        // onActivityResult sache dans quelle case ranger le résultat.
         @JavascriptInterface
-        public void choisirDossier() {
+        public void choisirDossier(String parite) {
+            choisirDossierParitePendante = parite;
             runOnUiThread(() -> {
                 Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
                 intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
@@ -137,18 +152,19 @@ public class MainActivity extends Activity {
                 } catch (Exception e) {
                     // Aucun sélecteur disponible : rien à faire, le JS reste
                     // sans réponse et l'utilisateur peut réessayer.
+                    choisirDossierParitePendante = null;
                 }
             });
         }
 
-        // Dossier déjà choisi lors d'une session précédente, si la
-        // permission tenue par Android est toujours valable — évite de
-        // redemander le sélecteur à chaque ouverture de l'appli.
+        // Dossier déjà choisi lors d'une session précédente pour cette
+        // parité, si la permission tenue par Android est toujours valable —
+        // évite de redemander le sélecteur à chaque ouverture de l'appli.
         @JavascriptInterface
-        public String dossierMemorise() {
+        public String dossierMemorise(String parite) {
             SharedPreferences prefs = getSharedPreferences(PREFS, Context.MODE_PRIVATE);
-            String treeUriString = prefs.getString(PREF_TREE_URI, null);
-            String nom = prefs.getString(PREF_NOM, null);
+            String treeUriString = prefs.getString(PREF_TREE_URI_PREFIXE + parite, null);
+            String nom = prefs.getString(PREF_NOM_PREFIXE + parite, null);
             if (treeUriString == null) return "null";
 
             boolean permissionValide = false;
