@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V2.3 — Contrôle de coupe</title>
+<title>Sentinelle V2.4 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -161,6 +161,76 @@
   .schema-dvr { fill: none; stroke: #6a1b9a; stroke-width: 1.5; stroke-dasharray: 4 3; }
   .schema-dvr-label { font-size: 9px; fill: #6a1b9a; font-weight: 700; }
   .schema-chapelle { fill: #fff; stroke: #2e7d32; stroke-width: 1.3; }
+  .schema-commande {
+    color: #222;
+    background: #fff;
+    border: 2px solid #1565c0;
+    border-radius: 8px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
+  }
+  .schema-commande > summary { font-weight: 700; color: #1565c0; cursor: pointer; font-size: 1rem; }
+  .schema-ensembles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 12px;
+    margin-top: 10px;
+  }
+  .schema-ensemble { border: 1px solid #e0e6ec; border-radius: 8px; padding: 8px 10px; min-width: 0; }
+  .schema-ensemble.pleine-largeur { grid-column: 1 / -1; }
+  .schema-ensemble-titre { font-size: 0.9rem; font-weight: 700; margin: 0 0 6px; color: #263238; }
+  .sc-details > summary { font-size: 0.82rem; color: #1565c0; cursor: pointer; margin-top: 6px; }
+  .schema-commande-svg {
+    display: block;
+    width: 100%;
+    max-width: 560px;
+    height: auto;
+    background: #fbfcfd;
+    border: 1px solid #e0e6ec;
+    border-radius: 6px;
+  }
+  .schema-commande-svg * { vector-effect: non-scaling-stroke; }
+  .sc-plan { fill: #eef3f9; stroke: #37474f; stroke-width: 1.4; }
+  .sc-plan.forme { stroke-dasharray: 6 4; }
+  .sc-plan.surligne, .sc-credence.surligne { fill: #fff59d; stroke: #1565c0; stroke-width: 2.6; }
+  .sc-chant { stroke: #b26a00; stroke-width: 3.5; stroke-linecap: round; }
+  .sc-credence { fill: #e0f2f1; stroke: #00796b; stroke-width: 1.2; }
+  .sc-joint { stroke: #1565c0; stroke-width: 3; stroke-dasharray: 7 4; }
+  .sc-chapelle { fill: #fff; stroke: #2e7d32; stroke-width: 1.2; }
+  .sc-orphelin { stroke: #c62828; stroke-width: 3; stroke-dasharray: 3 3; }
+  .sc-dvr { fill: none; stroke: #6a1b9a; stroke-width: 1.4; stroke-dasharray: 5 3; }
+  .sc-dvr.predecoupe { stroke-dasharray: 2 3; }
+  .sc-texte, .sc-texte-cote, .sc-texte-credence, .sc-texte-alerte {
+    paint-order: stroke;
+    stroke: #fff;
+    stroke-width: 3px;
+    stroke-linejoin: round;
+  }
+  .sc-texte { fill: #263238; font-weight: 700; }
+  .sc-texte-cote { fill: #455a64; font-weight: 600; }
+  .sc-texte-credence { fill: #00695c; font-weight: 700; }
+  .sc-texte-alerte { fill: #c62828; font-weight: 700; }
+  .sc-pieces { margin-top: 4px; font-size: 0.84rem; }
+  .sc-piece { display: flex; gap: 8px; padding: 5px 2px; border-bottom: 1px solid #eceff1; }
+  .sc-piece:last-child { border-bottom: none; }
+  .sc-piece.surligne { background: #fff59d; }
+  .sc-num {
+    flex: 0 0 auto;
+    min-width: 26px;
+    height: 22px;
+    padding: 0 4px;
+    border-radius: 11px;
+    background: #e3f2fd;
+    color: #0d47a1;
+    font-weight: 700;
+    font-size: 0.8rem;
+    line-height: 22px;
+    text-align: center;
+  }
+  .sc-piece.credence .sc-num { background: #e0f2f1; color: #00695c; }
+  .sc-info { color: #555; font-size: 0.8rem; margin-top: 2px; }
+  .sc-article { color: #78909c; font-size: 0.78rem; }
+  .sc-alerte { color: #c62828; font-weight: 600; }
   .poste { margin-bottom: 18px; }
   .poste-titre {
     font-size: 1rem;
@@ -432,7 +502,7 @@
 </style>
 </head>
 <body>
-  <h1>Sentinelle V2.3 — Contrôle de coupe (lancement / Cutrite)</h1>
+  <h1>Sentinelle V2.4 — Contrôle de coupe (lancement / Cutrite)</h1>
 
   <div class="onglets">
     <button type="button" class="onglet-btn actif" data-onglet="semaine-paire">Semaine paire</button>
@@ -2040,6 +2110,18 @@ async function chargerClasseur(file) {
   return workbook;
 }
 
+// Une recherche par commande consulte le même fichier de lancement pour
+// chaque ligne trouvée : il n'est dézippé et lu qu'une fois par fichier.
+const cacheLignesStrat = new WeakMap();
+function lignesStratEnCache(fichier) {
+  if (!cacheLignesStrat.has(fichier)) {
+    const lecture = chargerClasseur(fichier).then((workbook) => lireStrat(workbook).lignes);
+    lecture.catch(() => cacheLignesStrat.delete(fichier));
+    cacheLignesStrat.set(fichier, lecture);
+  }
+  return cacheLignesStrat.get(fichier);
+}
+
 // ---- lecture PDF (liste de coupe exportée en PDF depuis Cutrite) ----
 // Alternative à l'Excel/copier-coller manuel : ce PDF liste, pour chaque
 // pièce, une ligne "N°. Description  Code matériau  Long.  Largeur  Qté..."
@@ -2300,6 +2382,603 @@ function construireSchemaPieceSvg(champs) {
       ${chapellesSvg}
     </svg>
   `;
+}
+
+// ---- schéma d'ensemble d'une commande (onglet Recherche) ----
+// Aucune position n'est écrite telle quelle dans le fichier de lancement :
+// elle est déduite. Assemblage d'angle = un code F (frontal) côté D/G reçoit
+// sur son chant avant l'extrémité du plan portant L (latéral) côté opposé ;
+// le nombre du F est la profondeur du plan L, celui du L sa propre
+// profondeur (vérifié sur les commandes réelles). LD face à LG de même
+// profondeur = deux plans aboutés en ligne. Les crédences qui suivent un
+// plan et dont les longueurs font exactement la sienne vont au fond ; ce
+// qui ne se déduit pas avec certitude est listé à part, jamais placé au hasard.
+
+const TOLERANCE_CREDENCE_MM = 3;
+const TYPES_PLAN = new Set(["plan", "ilot", "forme"]);
+const LIBELLE_TYPE_PIECE = {
+  plan: "Plan",
+  ilot: "Îlot",
+  forme: "Forme spéciale",
+  credence: "Crédence",
+  jambage: "Jambage",
+  facade: "Façade",
+  autre: "Autre",
+};
+const LIBELLE_USINAGE_ANGLE = { EP13: "angle arrondi", EP15: "pan coupé", EP12: "pan coupé faible arrondi", EP14: "entaille" };
+const LIBELLE_COIN = { ARG: "arrière gauche", ARD: "arrière droit", AVD: "avant droit", AVG: "avant gauche" };
+
+function typePieceCommande(article) {
+  const a = String(article || "").toUpperCase();
+  if (a.startsWith("CRED")) return "credence";
+  if (a.startsWith("JAMB")) return "jambage";
+  if (a.startsWith("PORTE")) return "facade";
+  if (a.startsWith("ILOT")) return "ilot";
+  if (a.startsWith("DECSPE")) return "forme";
+  if (/^(TPPVC|TD\d|TPA)/.test(a)) return "plan";
+  return "autre";
+}
+
+function pieceCommandeDepuisLigne(l) {
+  const d = l.toutesDonnees || {};
+  const dimension = (finie, colonne) => finie || toFloatOrNull(d[colonne]) || null;
+  // "info 3 atelier" porte les découpes ; "info atelier assemblage" n'en est
+  // qu'une copie quand la pièce n'a pas d'assemblage (ne pas compter deux fois).
+  const codesAtelier = d["info 3 atelier"] || l.assemblage || "";
+  return {
+    cle: l.cle,
+    ligne: Number(l.ligne) || 0,
+    article: l.article,
+    type: typePieceCommande(l.article),
+    L: dimension(l.longueurFinie, "conf_longueur"),
+    W: dimension(l.largeurFinie, "conf_largeur"),
+    E: dimension(l.epaisseurFinie, "conf_epaisseur"),
+    qte: l.qte_attendue,
+    chants: { AV: !!d.conf_chantavant, AR: !!d.conf_chantarriere, G: !!d.conf_chantgauche, D: !!d.conf_chantdroit },
+    angles: {
+      ARG: d["Usinage angle arrière gauche"] || null,
+      ARD: d["Usinage angle arrière droit"] || null,
+      AVD: d["Usinage angle avant droit"] || null,
+      AVG: d["Usinage angle avant gauche"] || null,
+    },
+    assemblages: (l.assemblage || "")
+      .split(/\s*-\s*/)
+      .map((code) => analyserCodeAssemblage(code))
+      .filter(Boolean),
+    decoupes: (codesAtelier.match(/DVR1|DVR/gi) || []).map((c) => c.toUpperCase()),
+    commentaire: d.commentaire || null,
+  };
+}
+
+function apparierAssemblagesCommande(plans) {
+  const codes = plans.flatMap((piece) => piece.assemblages.map((a) => ({ piece, a, n: Number(a.valeur), partenaire: null })));
+  const libres = (filtre) => codes.filter((c) => !c.partenaire && filtre(c));
+  const ecartLignes = (x, y) => Math.abs(x.piece.ligne - y.piece.ligne);
+  const joints = [];
+
+  for (const f of libres((c) => c.a.type === "frontal")) {
+    const coteAttendu = f.a.cote === "droite" ? "gauche" : "droite";
+    const candidats = libres(
+      (c) =>
+        c.a.type === "latéral" &&
+        c.a.cote === coteAttendu &&
+        c.piece !== f.piece &&
+        c.piece.W - f.n >= -2 &&
+        c.piece.W - f.n <= 12
+    );
+    if (candidats.length === 0) continue;
+    candidats.sort((x, y) => Math.abs(x.piece.W - f.n) - Math.abs(y.piece.W - f.n) || ecartLignes(x, f) - ecartLignes(y, f));
+    const l = candidats[0];
+    f.partenaire = l;
+    l.partenaire = f;
+    joints.push({ type: "angle", f, l });
+  }
+
+  for (const d of libres((c) => c.a.type === "latéral" && c.a.cote === "droite")) {
+    if (d.partenaire) continue;
+    const candidats = libres(
+      (c) => c.a.type === "latéral" && c.a.cote === "gauche" && c.piece !== d.piece && Math.abs(c.piece.W - d.piece.W) <= 2
+    );
+    if (candidats.length === 0) continue;
+    candidats.sort((x, y) => ecartLignes(x, d) - ecartLignes(y, d));
+    const g = candidats[0];
+    d.partenaire = g;
+    g.partenaire = d;
+    joints.push({ type: "ligne", d, g });
+  }
+
+  return { joints, orphelins: codes.filter((c) => !c.partenaire) };
+}
+
+// Matrices affines {a,b,c,d,e,f} (convention SVG) : repère local d'un plan =
+// x le long de la longueur (0 = extrémité gauche vue de face), y en
+// profondeur (0 = chant arrière contre le mur, W = chant avant).
+const MATRICE_IDENTITE = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+
+function composerMatrices(m1, m2) {
+  return {
+    a: m1.a * m2.a + m1.c * m2.b,
+    b: m1.b * m2.a + m1.d * m2.b,
+    c: m1.a * m2.c + m1.c * m2.d,
+    d: m1.b * m2.c + m1.d * m2.d,
+    e: m1.a * m2.e + m1.c * m2.f + m1.e,
+    f: m1.b * m2.e + m1.d * m2.f + m1.f,
+  };
+}
+
+function inverserMatrice(m) {
+  const det = m.a * m.d - m.b * m.c;
+  return {
+    a: m.d / det,
+    b: -m.b / det,
+    c: -m.c / det,
+    d: m.a / det,
+    e: (m.c * m.f - m.d * m.e) / det,
+    f: (m.b * m.e - m.a * m.f) / det,
+  };
+}
+
+function appliquerMatrice(m, x, y) {
+  return [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f];
+}
+
+function disposerEnsemblesCommande(plans, joints) {
+  const voisins = new Map(plans.map((p) => [p, []]));
+  for (const joint of joints) {
+    let P;
+    let Q;
+    let m; // repère local de Q -> repère local de P
+    if (joint.type === "angle") {
+      P = joint.f.piece;
+      Q = joint.l.piece;
+      m =
+        joint.f.a.cote === "droite"
+          ? { a: 0, b: 1, c: -1, d: 0, e: P.L, f: P.W }
+          : { a: 0, b: -1, c: 1, d: 0, e: 0, f: P.W + Q.L };
+    } else {
+      P = joint.d.piece;
+      Q = joint.g.piece;
+      m = { a: 1, b: 0, c: 0, d: 1, e: P.L, f: 0 };
+    }
+    voisins.get(P).push({ piece: Q, m, joint });
+    voisins.get(Q).push({ piece: P, m: inverserMatrice(m), joint });
+  }
+
+  const transformes = new Map();
+  const ensembles = [];
+  for (const racine of [...plans].sort((x, y) => x.ligne - y.ligne)) {
+    if (transformes.has(racine)) continue;
+    const ensemble = { pieces: [], joints: new Set() };
+    transformes.set(racine, MATRICE_IDENTITE);
+    const aVisiter = [racine];
+    while (aVisiter.length > 0) {
+      const p = aVisiter.shift();
+      ensemble.pieces.push(p);
+      for (const v of voisins.get(p)) {
+        ensemble.joints.add(v.joint);
+        if (transformes.has(v.piece)) continue;
+        transformes.set(v.piece, composerMatrices(transformes.get(p), v.m));
+        aVisiter.push(v.piece);
+      }
+    }
+    ensemble.pieces.sort((x, y) => x.ligne - y.ligne);
+    ensembles.push(ensemble);
+  }
+  return { ensembles, transformes };
+}
+
+function sousEnsembleDeLongueur(credences, longueur) {
+  const n = credences.length;
+  if (n === 0 || n > 14) return null;
+  let meilleur = null;
+  for (let masque = 1; masque < 1 << n; masque++) {
+    let somme = 0;
+    let nb = 0;
+    for (let i = 0; i < n; i++) {
+      if (masque & (1 << i)) {
+        somme += credences[i].L;
+        nb++;
+      }
+    }
+    if (Math.abs(somme - longueur) <= TOLERANCE_CREDENCE_MM && (!meilleur || nb > meilleur.nb)) meilleur = { masque, nb };
+  }
+  return meilleur ? credences.filter((_, i) => meilleur.masque & (1 << i)) : null;
+}
+
+function placerCredencesCommande(plans, credences) {
+  const placement = new Map(plans.map((p) => [p, { fond: [], retours: { gauche: null, droite: null } }]));
+  const restantes = new Set(credences);
+
+  const groupes = new Map(plans.map((p) => [p, []]));
+  let planCourant = null;
+  for (const piece of [...plans, ...credences].sort((x, y) => x.ligne - y.ligne)) {
+    if (piece.type === "credence") {
+      if (planCourant) groupes.get(planCourant).push(piece);
+    } else {
+      planCourant = piece;
+    }
+  }
+  // Crédences intercalées après leur plan (plan, crédences, plan,
+  // crédences...) : chaque groupe appartient au plan qui le précède. Si au
+  // contraire toutes les crédences sont regroupées après le dernier plan,
+  // ce groupe n'appartient pas au seul dernier plan : on passe directement
+  // à l'appariement par longueur ci-dessous.
+  const intercalees = plans.length <= 1 || plans.filter((p) => groupes.get(p).length > 0).length >= 2;
+
+  for (const plan of intercalees ? plans : []) {
+    const groupe = groupes.get(plan);
+    const fond = sousEnsembleDeLongueur(groupe, plan.L);
+    if (!fond) continue;
+    const place = placement.get(plan);
+    place.fond = fond;
+    fond.forEach((c) => restantes.delete(c));
+    const premiereLigneFond = Math.min(...fond.map((c) => c.ligne));
+    const extremitesAssemblees = new Set(plan.assemblages.map((a) => a.cote));
+    for (const c of groupe) {
+      if (!restantes.has(c) || c.L > plan.W + TOLERANCE_CREDENCE_MM || c.L < plan.W - 30) continue;
+      const prefere = c.ligne < premiereLigneFond ? "gauche" : "droite";
+      const cote = [prefere, prefere === "gauche" ? "droite" : "gauche"].find(
+        (k) => !extremitesAssemblees.has(k) && !place.retours[k]
+      );
+      if (!cote) continue;
+      place.retours[cote] = c;
+      restantes.delete(c);
+    }
+  }
+
+  // Une crédence exactement de la longueur d'un plan encore sans crédence va
+  // à son fond. Les crédences regroupées suivent l'ordre des plans : entre
+  // deux plans de même longueur, on prend le premier situé après le plan
+  // apparié à la crédence précédente.
+  const plansParLigne = [...plans].sort((x, y) => x.ligne - y.ligne);
+  let indexDernierPlan = -1;
+  for (const c of [...restantes].sort((x, y) => x.ligne - y.ligne)) {
+    const candidats = plansParLigne
+      .map((p, index) => ({ p, index }))
+      .filter(({ p }) => placement.get(p).fond.length === 0 && Math.abs(p.L - c.L) <= TOLERANCE_CREDENCE_MM);
+    if (candidats.length === 0) continue;
+    const choix = candidats.find(({ index }) => index > indexDernierPlan) || candidats[0];
+    placement.get(choix.p).fond = [c];
+    restantes.delete(c);
+    indexDernierPlan = choix.index;
+  }
+
+  return { placement, nonPlacees: [...restantes].sort((x, y) => x.ligne - y.ligne) };
+}
+
+// Contour d'un plan dans son repère local, usinages d'angle compris. Le
+// contour est parcouru dans le sens horaire à l'écran (fond en haut) :
+// chaque coin est défini par sa direction d'arrivée et de départ.
+const COINS_PLAN = [
+  { nom: "ARG", x: (p) => 0, y: (p) => 0, arrivee: [0, -1], depart: [1, 0] },
+  { nom: "ARD", x: (p) => p.L, y: (p) => 0, arrivee: [1, 0], depart: [0, 1] },
+  { nom: "AVD", x: (p) => p.L, y: (p) => p.W, arrivee: [0, 1], depart: [-1, 0] },
+  { nom: "AVG", x: (p) => 0, y: (p) => p.W, arrivee: [-1, 0], depart: [0, -1] },
+];
+
+function geometrieContourPlan(p, m) {
+  const taille = Math.min(Math.max(Math.min(p.L, p.W) * 0.18, 50), 220);
+  const entailleL = Math.min(p.L * 0.3, 400);
+  const entailleW = Math.min(p.W * 0.35, 250);
+  const pt = (x, y) => appliquerMatrice(m, x, y);
+  const fmt = ([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`;
+
+  const coins = COINS_PLAN.map((coin) => {
+    const cx = coin.x(p);
+    const cy = coin.y(p);
+    const [ax, ay] = coin.arrivee;
+    const [dx, dy] = coin.depart;
+    const code = (p.angles[coin.nom] || "").toUpperCase();
+    if (code === "EP13" || code === "EP15" || code === "EP12") {
+      const entree = pt(cx - ax * taille, cy - ay * taille);
+      const sortie = pt(cx + dx * taille, cy + dy * taille);
+      const rayon = code === "EP13" ? taille : code === "EP12" ? taille * 2.2 : null;
+      return { entree, sortie, trace: rayon ? `A ${rayon.toFixed(1)} ${rayon.toFixed(1)} 0 0 1 ${fmt(sortie)}` : `L ${fmt(sortie)}` };
+    }
+    if (code === "EP14") {
+      const aArrivee = ax !== 0 ? entailleL : entailleW;
+      const aDepart = dx !== 0 ? entailleL : entailleW;
+      const entree = pt(cx - ax * aArrivee, cy - ay * aArrivee);
+      const interieur = pt(cx - ax * aArrivee + dx * aDepart, cy - ay * aArrivee + dy * aDepart);
+      const sortie = pt(cx + dx * aDepart, cy + dy * aDepart);
+      return { entree, sortie, trace: `L ${fmt(interieur)} L ${fmt(sortie)}` };
+    }
+    const sommet = pt(cx, cy);
+    return { entree: sommet, sortie: sommet, trace: "" };
+  });
+
+  const [arg, ard, avd, avg] = coins;
+  const chemin =
+    `M ${fmt(arg.sortie)} L ${fmt(ard.entree)} ${ard.trace} L ${fmt(avd.entree)} ${avd.trace} ` +
+    `L ${fmt(avg.entree)} ${avg.trace} L ${fmt(arg.entree)} ${arg.trace} Z`;
+  const bords = {
+    AR: [arg.sortie, ard.entree],
+    D: [ard.sortie, avd.entree],
+    AV: [avd.sortie, avg.entree],
+    G: [avg.sortie, arg.entree],
+  };
+  const points = coins.flatMap((c) => [c.entree, c.sortie]);
+  return { chemin, bords, points };
+}
+
+function construireSvgEnsembleCommande(ensemble, transformes, placement, orphelinsParPiece, cleSurlignee) {
+  const ECART_RABATTEMENT = 60;
+  const formes = []; // { genre, points|segment|centre, ... } en coordonnées globales (mm)
+  const tousPoints = [];
+
+  const polygone = (m, coinsLocaux) => coinsLocaux.map(([x, y]) => appliquerMatrice(m, x, y));
+
+  for (const p of ensemble.pieces) {
+    const m = transformes.get(p);
+    const contour = geometrieContourPlan(p, m);
+    tousPoints.push(...contour.points);
+    formes.push({ genre: "plan", piece: p, contour, centre: appliquerMatrice(m, p.L / 2, p.W / 2) });
+
+    p.decoupes.forEach((code, i) => {
+      const n = p.decoupes.length;
+      const cx = (p.L * (i + 1)) / (n + 1);
+      const largeur = Math.min(520, (0.8 * p.L) / n);
+      const hauteur = Math.min(0.45 * p.W, 350);
+      formes.push({
+        genre: "decoupe",
+        code,
+        points: polygone(m, [
+          [cx - largeur / 2, p.W / 2 - hauteur / 2],
+          [cx + largeur / 2, p.W / 2 - hauteur / 2],
+          [cx + largeur / 2, p.W / 2 + hauteur / 2],
+          [cx - largeur / 2, p.W / 2 + hauteur / 2],
+        ]),
+      });
+    });
+
+    const place = placement.get(p);
+    let x = 0;
+    for (const c of place.fond) {
+      const pts = polygone(m, [
+        [x, -ECART_RABATTEMENT - c.W],
+        [x + c.L, -ECART_RABATTEMENT - c.W],
+        [x + c.L, -ECART_RABATTEMENT],
+        [x, -ECART_RABATTEMENT],
+      ]);
+      tousPoints.push(...pts);
+      formes.push({ genre: "credence", piece: c, points: pts });
+      x += c.L;
+    }
+    for (const [cote, c] of Object.entries(place.retours)) {
+      if (!c) continue;
+      const x0 = cote === "gauche" ? -ECART_RABATTEMENT - c.W : p.L + ECART_RABATTEMENT;
+      const pts = polygone(m, [
+        [x0, p.W - c.L],
+        [x0 + c.W, p.W - c.L],
+        [x0 + c.W, p.W],
+        [x0, p.W],
+      ]);
+      tousPoints.push(...pts);
+      formes.push({ genre: "credence", piece: c, points: pts });
+    }
+
+    for (const o of orphelinsParPiece.get(p) || []) {
+      const droite = o.a.cote === "droite";
+      const segment =
+        o.a.type === "frontal"
+          ? droite
+            ? [[p.L - (o.n || p.W * 0.3), p.W], [p.L, p.W]]
+            : [[0, p.W], [o.n || p.W * 0.3, p.W]]
+          : droite
+            ? [[p.L, 0], [p.L, p.W]]
+            : [[0, 0], [0, p.W]];
+      formes.push({ genre: "orphelin", code: o.a.brut, points: polygone(m, segment) });
+    }
+  }
+
+  for (const joint of ensemble.joints) {
+    const P = joint.type === "angle" ? joint.f.piece : joint.d.piece;
+    const m = transformes.get(P);
+    let segment;
+    if (joint.type === "angle") {
+      const n = joint.l.piece.W;
+      segment = joint.f.a.cote === "droite" ? [[P.L - n, P.W], [P.L, P.W]] : [[0, P.W], [n, P.W]];
+    } else {
+      segment = [[P.L, 0], [P.L, P.W]];
+    }
+    const codes = joint.type === "angle" ? `${joint.f.a.brut} / ${joint.l.a.brut}` : `${joint.d.a.brut} / ${joint.g.a.brut}`;
+    formes.push({ genre: "joint", codes, points: polygone(m, segment) });
+  }
+
+  const xs = tousPoints.map((q) => q[0]);
+  const ys = tousPoints.map((q) => q[1]);
+  const largeurGeo = Math.max(...xs) - Math.min(...xs) || 1;
+  const hauteurGeo = Math.max(...ys) - Math.min(...ys) || 1;
+  // L'unité du dessin est le mm : la taille du texte suit celle de
+  // l'ensemble pour rester lisible (~13 px) une fois affiché sur ~280 px.
+  const police = Math.max(largeurGeo, hauteurGeo * 0.9) / 18;
+  const marge = 1.2 * police;
+  const minX = Math.min(...xs) - marge;
+  const minY = Math.min(...ys) - marge;
+  const vbW = largeurGeo + 2 * marge;
+  const vbH = hauteurGeo + 2 * marge;
+  const pxParMm = 280 / vbW;
+
+  const f1 = (v) => v.toFixed(1);
+  const listePoints = (pts) => pts.map(([x, y]) => `${f1(x)},${f1(y)}`).join(" ");
+  const texte = (x, y, contenu, classe, taille = police) =>
+    `<text x="${f1(x)}" y="${f1(y)}" class="${classe}" font-size="${f1(taille)}" text-anchor="middle" dominant-baseline="middle">${echapperHtml(contenu)}</text>`;
+
+  const svg = [];
+  for (const forme of formes.filter((fo) => fo.genre === "credence")) {
+    const c = forme.piece;
+    const surligne = c.cle === cleSurlignee ? " surligne" : "";
+    const cx = forme.points.reduce((s, q) => s + q[0], 0) / 4;
+    const cy = forme.points.reduce((s, q) => s + q[1], 0) / 4;
+    svg.push(
+      `<polygon points="${listePoints(forme.points)}" class="sc-credence${surligne}"><title>Ligne ${c.ligne} — crédence ${fmtDim(c.L)} × ${fmtDim(c.W)} mm</title></polygon>`,
+      texte(cx, cy, String(c.ligne), "sc-texte-credence", police * 0.85)
+    );
+  }
+  for (const forme of formes.filter((fo) => fo.genre === "plan")) {
+    const p = forme.piece;
+    const classes = `sc-plan${p.type === "forme" ? " forme" : ""}${p.cle === cleSurlignee ? " surligne" : ""}`;
+    svg.push(`<path d="${forme.contour.chemin}" class="${classes}"><title>Ligne ${p.ligne} — ${echapperHtml(p.article)} ${fmtDim(p.L)} × ${fmtDim(p.W)} mm</title></path>`);
+    for (const [cote, [a, b]] of Object.entries(forme.contour.bords)) {
+      if (p.chants[cote]) svg.push(`<line x1="${f1(a[0])}" y1="${f1(a[1])}" x2="${f1(b[0])}" y2="${f1(b[1])}" class="sc-chant" />`);
+    }
+  }
+  for (const forme of formes.filter((fo) => fo.genre === "decoupe")) {
+    svg.push(
+      `<polygon points="${listePoints(forme.points)}" class="sc-dvr${forme.code === "DVR1" ? " predecoupe" : ""}"><title>${forme.code === "DVR1" ? "Prédécoupe évier/cuisson non débouchante (DVR1)" : "Découpe évier/cuisson (DVR)"} — centrée par convention, position réelle non indiquée dans le fichier</title></polygon>`
+    );
+  }
+  for (const forme of formes.filter((fo) => fo.genre === "joint")) {
+    const [[x1, y1], [x2, y2]] = forme.points;
+    svg.push(`<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}" class="sc-joint"><title>Assemblage ${echapperHtml(forme.codes)}</title></line>`);
+    for (const t of [0.25, 0.5, 0.75]) {
+      svg.push(`<circle cx="${f1(x1 + (x2 - x1) * t)}" cy="${f1(y1 + (y2 - y1) * t)}" r="${f1(0.2 * police)}" class="sc-chapelle" />`);
+    }
+  }
+  for (const forme of formes.filter((fo) => fo.genre === "orphelin")) {
+    const [[x1, y1], [x2, y2]] = forme.points;
+    svg.push(
+      `<line x1="${f1(x1)}" y1="${f1(y1)}" x2="${f1(x2)}" y2="${f1(y2)}" class="sc-orphelin"><title>Assemblage ${echapperHtml(forme.code)} : pièce associée introuvable dans les fichiers chargés</title></line>`,
+      texte((x1 + x2) / 2, (y1 + y2) / 2 - police, `${forme.code} ?`, "sc-texte-alerte", police * 0.85)
+    );
+  }
+  for (const forme of formes.filter((fo) => fo.genre === "plan")) {
+    const p = forme.piece;
+    const [cx, cy] = forme.centre;
+    const etroit = Math.min(p.L, p.W) * pxParMm < 36;
+    svg.push(texte(cx, etroit ? cy : cy - police * 0.6, `${p.ligne}`, "sc-texte"));
+    if (!etroit) svg.push(texte(cx, cy + police * 0.7, `${fmtDim(p.L)} × ${fmtDim(p.W)}`, "sc-texte-cote", police * 0.85));
+  }
+
+  return `<svg viewBox="${f1(minX)} ${f1(minY)} ${f1(vbW)} ${f1(vbH)}" class="schema-commande-svg" role="img" aria-label="Schéma de l'ensemble">${svg.join("")}</svg>`;
+}
+
+function descriptionFormeEnsemble(ensemble, transformes) {
+  if (ensemble.pieces.length === 1) return "";
+  const orientations = new Set(
+    ensemble.pieces.map((p) => {
+      const m = transformes.get(p);
+      return Math.round((Math.atan2(m.b, m.a) * 180) / Math.PI + 360) % 360;
+    })
+  );
+  const opposees = [...orientations].some((o) => orientations.has((o + 180) % 360));
+  const perpendiculaires = [...orientations].some((o) => orientations.has((o + 90) % 360));
+  if (opposees && perpendiculaires) return " · plan en U";
+  if (perpendiculaires) return " · plan en L";
+  return " · plans aboutés en ligne";
+}
+
+function construireSchemaCommandeHtml(commande, lignes, cleSurlignee) {
+  const pieces = lignes.map(pieceCommandeDepuisLigne).sort((x, y) => x.ligne - y.ligne);
+  const plans = pieces.filter((p) => TYPES_PLAN.has(p.type) && p.L && p.W);
+  const credences = pieces.filter((p) => p.type === "credence" && p.L && p.W);
+  const autres = pieces.filter((p) => !plans.includes(p) && !credences.includes(p));
+
+  const { joints, orphelins } = apparierAssemblagesCommande(plans);
+  const { ensembles, transformes } = disposerEnsemblesCommande(plans, joints);
+  const { placement, nonPlacees } = placerCredencesCommande(plans, credences);
+  const orphelinsParPiece = new Map();
+  for (const o of orphelins) {
+    if (!orphelinsParPiece.has(o.piece)) orphelinsParPiece.set(o.piece, []);
+    orphelinsParPiece.get(o.piece).push(o);
+  }
+  const partenaires = new Map(); // code d'assemblage -> ligne de la pièce associée
+  for (const j of joints) {
+    const [x, y] = j.type === "angle" ? [j.f, j.l] : [j.d, j.g];
+    partenaires.set(x, y.piece.ligne);
+    partenaires.set(y, x.piece.ligne);
+  }
+  const codesParPiece = new Map();
+  for (const j of joints) {
+    for (const c of j.type === "angle" ? [j.f, j.l] : [j.d, j.g]) {
+      if (!codesParPiece.has(c.piece)) codesParPiece.set(c.piece, []);
+      codesParPiece.get(c.piece).push(c);
+    }
+  }
+
+  const dims = (p) => `${fmtDim(p.L)} × ${fmtDim(p.W)}${p.E ? ` × ${fmtDim(p.E)}` : ""} mm${p.qte > 1 ? ` (×${p.qte})` : ""}`;
+  const ligneTableau = (p, details) => `
+    <div class="sc-piece ${p.type}${p.cle === cleSurlignee ? " surligne" : ""}">
+      <span class="sc-num">${p.ligne}</span>
+      <div>
+        <strong>${LIBELLE_TYPE_PIECE[p.type]}</strong> <span class="sc-article">${echapperHtml(p.article)}</span> · ${dims(p)}
+        ${details
+          .filter(Boolean)
+          .map((t) => `<div class="sc-info">${t}</div>`)
+          .join("")}
+      </div>
+    </div>`;
+  const tableau = (lignesHtml) => `<div class="sc-pieces">${lignesHtml.join("")}</div>`;
+
+  const detailsPlan = (p) => [
+    ...(codesParPiece.get(p) || []).map(
+      (c) => `${c.a.type === "frontal" ? "Reçoit" : "S'assemble sur"} la ligne ${partenaires.get(c)} (${echapperHtml(c.a.brut)})`
+    ),
+    ...(orphelinsParPiece.get(p) || []).map((o) => `<span class="sc-alerte">${echapperHtml(o.a.brut)} : pièce associée absente des fichiers chargés</span>`),
+    ...Object.entries(p.angles)
+      .filter(([, code]) => code)
+      .map(([coin, code]) => `Angle ${LIBELLE_COIN[coin]} : ${echapperHtml(code)}${LIBELLE_USINAGE_ANGLE[code] ? ` (${LIBELLE_USINAGE_ANGLE[code]})` : ""}`),
+    p.decoupes.length ? `${p.decoupes.join(" + ")} : découpe évier/cuisson (centrée sur le dessin, position réelle non indiquée)` : null,
+    p.type === "forme" ? "Forme spéciale : contour réel sur le plan client" : null,
+    p.commentaire ? `<em>${echapperHtml(p.commentaire)}</em>` : null,
+  ];
+
+  const blocsEnsembles = ensembles.map((ensemble, i) => {
+    const lignesHtml = [];
+    for (const p of ensemble.pieces) {
+      lignesHtml.push(ligneTableau(p, detailsPlan(p)));
+      const place = placement.get(p);
+      place.fond.forEach((c, k) =>
+        lignesHtml.push(ligneTableau(c, [`Fond du plan ligne ${p.ligne}, ${k + 1}${k === 0 ? "re" : "e"} en partant de la gauche`]))
+      );
+      for (const [cote, c] of Object.entries(place.retours)) {
+        if (c) lignesHtml.push(ligneTableau(c, [`Retour ${cote} du plan ligne ${p.ligne}`]));
+      }
+    }
+    const nbCredences = ensemble.pieces.reduce((s, p) => s + placement.get(p).fond.length + Object.values(placement.get(p).retours).filter(Boolean).length, 0);
+    const titre =
+      `Ensemble ${i + 1} · ${ensemble.pieces.length > 1 ? `lignes ${ensemble.pieces.map((p) => p.ligne).join(", ")}` : `ligne ${ensemble.pieces[0].ligne}`}` +
+      descriptionFormeEnsemble(ensemble, transformes) +
+      (nbCredences ? ` · ${nbCredences} crédence(s)` : "");
+    // Détail déplié d'office pour une petite commande ou pour l'ensemble qui
+    // contient la ligne recherchée ; replié sinon, pour garder la vue
+    // d'ensemble lisible sur une grosse commande.
+    const ouvert = ensembles.length <= 3 || lignesHtml.some((html) => html.includes("surligne"));
+    return `
+      <div class="schema-ensemble">
+        <p class="schema-ensemble-titre">${titre}</p>
+        ${construireSvgEnsembleCommande(ensemble, transformes, placement, orphelinsParPiece, cleSurlignee)}
+        <details class="sc-details"${ouvert ? " open" : ""}>
+          <summary>Détail des pièces (${lignesHtml.length})</summary>
+          ${tableau(lignesHtml)}
+        </details>
+      </div>`;
+  });
+
+  const blocNonPlacees = nonPlacees.length
+    ? `<div class="schema-ensemble pleine-largeur">
+        <p class="schema-ensemble-titre">Crédences sans position déductible (${nonPlacees.length})</p>
+        <p class="scies-note">Leurs longueurs ne correspondent à aucun plan de la commande : position à lire sur le plan client.</p>
+        ${tableau(nonPlacees.map((c) => ligneTableau(c, [c.commentaire ? `<em>${echapperHtml(c.commentaire)}</em>` : null])))}
+      </div>`
+    : "";
+  const blocAutres = autres.length
+    ? `<div class="schema-ensemble pleine-largeur">
+        <p class="schema-ensemble-titre">Autres pièces (${autres.length})</p>
+        ${tableau(autres.map((p) => ligneTableau(p, [p.commentaire ? `<em>${echapperHtml(p.commentaire)}</em>` : null])))}
+      </div>`
+    : "";
+
+  return `
+    <details class="schema-commande" open>
+      <summary>Schéma de la commande ${echapperHtml(commande)} — ${pieces.length} pièce(s)</summary>
+      <p class="scies-note">Vue de dessus, plans à l'échelle, crédences rabattues derrière leur plan. Disposition déduite des codes d'assemblage et de l'ordre des lignes du fichier de lancement.</p>
+      <div class="schema-ensembles">
+        ${blocsEnsembles.join("")}
+        ${blocNonPlacees}
+        ${blocAutres}
+      </div>
+    </details>`;
 }
 
 // Comme les autres comparaisons de codes de ce fichier (matériau, type de
@@ -3487,6 +4166,24 @@ async function lireDonneesRechercheBkp(fichierBkp) {
   return { qteParCle: lireQuantitesCtt(texte), grainParCle: lireGrainMatchingDepuisBkpTexte(texte) };
 }
 
+async function lignesStratDeLaCommande(commande) {
+  const parCle = new Map();
+  for (const paire of paires) {
+    const fichierStrat = fichierStratDe(paire);
+    if (!fichierStrat) continue;
+    let lignes;
+    try {
+      lignes = await lignesStratEnCache(fichierStrat);
+    } catch (_erreurLecture) {
+      continue; // fichier illisible : déjà signalé par la recherche elle-même
+    }
+    for (const l of lignes) {
+      if (l.commande === commande && !parCle.has(l.cle)) parCle.set(l.cle, l);
+    }
+  }
+  return [...parCle.values()];
+}
+
 // Recherche une clé, une commande ou une bande/modulo dans TOUTES les
 // listes de coupe actuellement sélectionnées (peu importe la paire, lancée
 // ou non).
@@ -3548,7 +4245,7 @@ async function rechercherGrainMatchingGlobal() {
             let champsDetail = null;
             if (fichierStrat) {
               try {
-                const ligneStrat = lireStrat(await chargerClasseur(fichierStrat)).lignes.find((l) => l.cle === cle);
+                const ligneStrat = (await lignesStratEnCache(fichierStrat)).find((l) => l.cle === cle);
                 if (ligneStrat) {
                   champsDetail = {
                     lancement: ligneStrat.lancement || null,
@@ -3585,7 +4282,7 @@ async function rechercherGrainMatchingGlobal() {
       // fichier de lancement attend.
       if (numeroBande || !fichierStrat) continue;
       try {
-        const { lignes: lignesStrat } = lireStrat(await chargerClasseur(fichierStrat));
+        const lignesStrat = await lignesStratEnCache(fichierStrat);
         const lignesCibles = lignesStrat.filter((l) => l.cle === requete || l.cle.startsWith(requete));
         for (const ligneStrat of lignesCibles) {
           const champsDetail = {
@@ -3649,7 +4346,7 @@ async function rechercherGrainMatchingGlobal() {
         const fichierStrat = fichierStratDe(paire);
         if (fichierStrat) {
           try {
-            const ligneStrat = lireStrat(await chargerClasseur(fichierStrat)).lignes.find((l) => l.cle === cle);
+            const ligneStrat = (await lignesStratEnCache(fichierStrat)).find((l) => l.cle === cle);
             if (ligneStrat) {
               champsDetail = {
                 ...(champsDetail || {}),
@@ -3673,13 +4370,29 @@ async function rechercherGrainMatchingGlobal() {
     }
   }
 
+  // Recherche ne portant que sur une seule commande (numéro de commande, ou
+  // clé d'une de ses lignes) : schéma d'ensemble de toute la commande en
+  // tête des résultats, toutes lignes de tous les fichiers de lancement
+  // chargés confondues.
+  let schemaCommandeHtml = "";
+  const commandesTrouvees = new Set(trouvailles.map((t) => t.cle.slice(0, -3)));
+  if (!numeroBande && commandesTrouvees.size === 1) {
+    const commande = [...commandesTrouvees][0];
+    try {
+      const lignesCommande = await lignesStratDeLaCommande(commande);
+      if (lignesCommande.length > 0) schemaCommandeHtml = construireSchemaCommandeHtml(commande, lignesCommande, requete);
+    } catch (erreur) {
+      erreurs.push(`Schéma de la commande : ${erreur && erreur.message ? erreur.message : erreur}`);
+    }
+  }
+
   if (trouvailles.length === 0) {
     zone.style.color = "var(--alerte-text)";
     const quoi = numeroBande ? `bande/modulo T${numeroBande}` : `clé ou commande ${requete}`;
     zone.textContent = `${quoi} introuvable dans les ${pairesRecherche.length} poste(s)/lancement(s) sélectionné(s) (liste de coupe, .bkp et/ou fichier de lancement).`;
   } else {
     zone.style.color = "var(--ok-text)";
-    zone.innerHTML = trouvailles
+    zone.innerHTML = schemaCommandeHtml + trouvailles
       .map(({ paire, cle, valeurs, quantite, champsDetail, sansCoupe, sourceBkp }) => {
         const quantiteTexte = quantite !== null && quantite !== undefined ? String(quantite) : "?";
         const quantiteLabel = sourceBkp ? "Quantité trouvée (.bkp)" : sansCoupe ? "Quantité attendue (fichier de lancement)" : "Quantité trouvée";
