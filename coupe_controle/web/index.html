@@ -2328,8 +2328,10 @@ function construireSchemaPieceSvg(champs) {
   // donc dessiné centré sur la pièce (convention indiquée par l'atelier) —
   // et réparti équitablement le long de la pièce s'il y en a plusieurs
   // (compté par le nombre d'occurrences de "DVR" dans le code, ex.
-  // "DVRDVR1" = 2).
-  const nbDvr = champs.assemblage ? (champs.assemblage.match(/DVR/gi) || []).length : 0;
+  // "DVRDVR1" = 2). "info 3 atelier" porte la découpe même quand
+  // "info atelier assemblage" contient un code d'assemblage (ex. FD600).
+  const codesDecoupe = (champs.toutesDonneesLan && champs.toutesDonneesLan["info 3 atelier"]) || champs.assemblage || "";
+  const nbDvr = (codesDecoupe.match(/DVR/gi) || []).length;
   let dvrSvg = "";
   if (nbDvr > 0) {
     const cy = y0 + rectH / 2;
