@@ -2569,9 +2569,41 @@ function disposerEnsemblesCommande(plans, joints) {
   return { ensembles, transformes };
 }
 
-function sousEnsembleDeLongueur(credences, longueur) {
+// Mur derrière chaque plan, dans le repère du plan (x de "debut" à "fin") :
+// sa longueur, c'est celle du plan. Quand un plan vient s'assembler sur un
+// autre en L, son mur continue derrière l'autre plan : il s'allonge de la
+// profondeur de cet autre plan, du côté de l'assemblage.
+function mursDesPlans(ensembles) {
+  const murs = new Map();
+  for (const ensemble of ensembles) {
+    for (const p of ensemble.pieces) murs.set(p, { debut: 0, fin: p.L, assemble: false, derriere: null });
+    for (const j of ensemble.joints) {
+      if (j.type !== "angle") continue;
+      const murL = murs.get(j.l.piece);
+      if (j.l.a.cote === "gauche") murL.debut -= j.f.piece.W;
+      else murL.fin += j.f.piece.W;
+      murL.assemble = true;
+      murL.derriere = j.f.piece;
+      murs.get(j.f.piece).assemble = true;
+    }
+  }
+  return murs;
+}
+
+// Longueurs de crédences acceptées pour un mur : la longueur exacte du plan
+// (±3 mm) pour un plan seul ; pour un plan assemblé en L, jusqu'à 30 mm de
+// moins (une crédence s'arrête contre celle du mur voisin, épaisseur et
+// jeu d'assemblage compris) et 15 mm de plus.
+function longueurAccepteePourMur(mur, somme) {
+  const cible = mur.fin - mur.debut;
+  if (!mur.assemble) return Math.abs(somme - cible) <= TOLERANCE_CREDENCE_MM;
+  return somme >= cible - 30 && somme <= cible + 15;
+}
+
+function sousEnsemblePourMur(credences, mur) {
   const n = credences.length;
   if (n === 0 || n > 14) return null;
+  const cible = mur.fin - mur.debut;
   let meilleur = null;
   for (let masque = 1; masque < 1 << n; masque++) {
     let somme = 0;
@@ -2582,70 +2614,100 @@ function sousEnsembleDeLongueur(credences, longueur) {
         nb++;
       }
     }
-    if (Math.abs(somme - longueur) <= TOLERANCE_CREDENCE_MM && (!meilleur || nb > meilleur.nb)) meilleur = { masque, nb };
+    if (!longueurAccepteePourMur(mur, somme)) continue;
+    const ecart = Math.abs(somme - cible);
+    if (!meilleur || nb > meilleur.nb || (nb === meilleur.nb && ecart < meilleur.ecart)) meilleur = { masque, nb, ecart };
   }
   return meilleur ? credences.filter((_, i) => meilleur.masque & (1 << i)) : null;
 }
 
-function placerCredencesCommande(plans, credences) {
-  const placement = new Map(plans.map((p) => [p, { fond: [], retours: { gauche: null, droite: null } }]));
+function placerCredencesCommande(ensembles, plans, credences) {
+  const murs = mursDesPlans(ensembles);
+  const placement = new Map(plans.map((p) => [p, { fond: [], debutFond: 0, retours: { gauche: null, droite: null } }]));
   const restantes = new Set(credences);
+  const ensembleDe = new Map();
+  for (const e of ensembles) for (const p of e.pieces) ensembleDe.set(p, e);
 
-  const groupes = new Map(plans.map((p) => [p, []]));
-  let planCourant = null;
-  for (const piece of [...plans, ...credences].sort((x, y) => x.ligne - y.ligne)) {
-    if (piece.type === "credence") {
-      if (planCourant) groupes.get(planCourant).push(piece);
-    } else {
-      planCourant = piece;
-    }
-  }
-  // Crédences intercalées après leur plan (plan, crédences, plan,
-  // crédences...) : chaque groupe appartient au plan qui le précède. Si au
-  // contraire toutes les crédences sont regroupées après le dernier plan,
-  // ce groupe n'appartient pas au seul dernier plan : on passe directement
-  // à l'appariement par longueur ci-dessous.
-  const intercalees = plans.length <= 1 || plans.filter((p) => groupes.get(p).length > 0).length >= 2;
-
-  for (const plan of intercalees ? plans : []) {
-    const groupe = groupes.get(plan);
-    const fond = sousEnsembleDeLongueur(groupe, plan.L);
-    if (!fond) continue;
+  const poserFond = (plan, fond) => {
+    const mur = murs.get(plan);
+    const total = fond.reduce((s, c) => s + c.L, 0);
+    const cotesAssembles = new Set(plan.assemblages.map((a) => a.cote));
+    // Une crédence plus courte que le mur reste calée côté extrémité libre :
+    // le manque est du côté de l'assemblage, contre la crédence voisine.
+    const calerADroite = cotesAssembles.has("gauche") && !cotesAssembles.has("droite");
     const place = placement.get(plan);
     place.fond = fond;
+    place.debutFond = calerADroite ? mur.fin - total : mur.debut;
     fond.forEach((c) => restantes.delete(c));
-    const premiereLigneFond = Math.min(...fond.map((c) => c.ligne));
-    const extremitesAssemblees = new Set(plan.assemblages.map((a) => a.cote));
-    for (const c of groupe) {
+  };
+
+  const poserRetours = (plan, candidats) => {
+    const place = placement.get(plan);
+    if (place.fond.length === 0) return;
+    const premiereLigneFond = Math.min(...place.fond.map((c) => c.ligne));
+    const cotesAssembles = new Set(plan.assemblages.map((a) => a.cote));
+    for (const c of candidats) {
       if (!restantes.has(c) || c.L > plan.W + TOLERANCE_CREDENCE_MM || c.L < plan.W - 30) continue;
       const prefere = c.ligne < premiereLigneFond ? "gauche" : "droite";
-      const cote = [prefere, prefere === "gauche" ? "droite" : "gauche"].find(
-        (k) => !extremitesAssemblees.has(k) && !place.retours[k]
-      );
+      const cote = [prefere, prefere === "gauche" ? "droite" : "gauche"].find((k) => !cotesAssembles.has(k) && !place.retours[k]);
       if (!cote) continue;
       place.retours[cote] = c;
       restantes.delete(c);
     }
+  };
+
+  // Crédences intercalées après leurs plans (plans, crédences, plans,
+  // crédences...) : chaque groupe appartient à l'ensemble de plans qui le
+  // précède. Si toutes les crédences sont regroupées après le dernier plan,
+  // on passe directement à l'appariement crédence par crédence ci-dessous.
+  const groupes = new Map(ensembles.map((e) => [e, []]));
+  let ensembleCourant = null;
+  for (const piece of [...plans, ...credences].sort((x, y) => x.ligne - y.ligne)) {
+    if (piece.type === "credence") {
+      if (ensembleCourant) groupes.get(ensembleCourant).push(piece);
+    } else {
+      ensembleCourant = ensembleDe.get(piece);
+    }
+  }
+  const intercalees = ensembles.length <= 1 || ensembles.filter((e) => groupes.get(e).length > 0).length >= 2;
+
+  for (const ensemble of intercalees ? ensembles : []) {
+    const groupe = groupes.get(ensemble);
+    const plansOrdonnes = [...ensemble.pieces].sort((a, b) => murs.get(a).assemble - murs.get(b).assemble || a.ligne - b.ligne);
+    for (const plan of plansOrdonnes) {
+      const fond = sousEnsemblePourMur(
+        groupe.filter((c) => restantes.has(c)),
+        murs.get(plan)
+      );
+      if (fond) poserFond(plan, fond);
+    }
+    for (const plan of ensemble.pieces) poserRetours(plan, groupe);
   }
 
-  // Une crédence exactement de la longueur d'un plan encore sans crédence va
-  // à son fond. Les crédences regroupées suivent l'ordre des plans : entre
-  // deux plans de même longueur, on prend le premier situé après le plan
-  // apparié à la crédence précédente.
+  // Une crédence de la longueur du mur d'un plan encore sans crédence va à
+  // son fond. Les crédences regroupées suivent l'ordre des plans : entre
+  // deux plans possibles, on prend le premier situé après le plan apparié
+  // à la crédence précédente ; la crédence qui suit, de la profondeur du
+  // plan, en est le retour.
   const plansParLigne = [...plans].sort((x, y) => x.ligne - y.ligne);
+  const credencesParLigne = [...credences].sort((x, y) => x.ligne - y.ligne);
   let indexDernierPlan = -1;
-  for (const c of [...restantes].sort((x, y) => x.ligne - y.ligne)) {
+  for (const c of credencesParLigne) {
+    if (!restantes.has(c)) continue;
     const candidats = plansParLigne
       .map((p, index) => ({ p, index }))
-      .filter(({ p }) => placement.get(p).fond.length === 0 && Math.abs(p.L - c.L) <= TOLERANCE_CREDENCE_MM);
+      .filter(({ p }) => placement.get(p).fond.length === 0 && longueurAccepteePourMur(murs.get(p), c.L));
     if (candidats.length === 0) continue;
     const choix = candidats.find(({ index }) => index > indexDernierPlan) || candidats[0];
-    placement.get(choix.p).fond = [c];
-    restantes.delete(c);
+    poserFond(choix.p, [c]);
     indexDernierPlan = choix.index;
+    const suivante = credencesParLigne[credencesParLigne.indexOf(c) + 1];
+    const suivanteVaAuFondDUnAutrePlan =
+      suivante && plansParLigne.some((p) => placement.get(p).fond.length === 0 && longueurAccepteePourMur(murs.get(p), suivante.L));
+    if (suivante && !suivanteVaAuFondDUnAutrePlan) poserRetours(choix.p, [suivante]);
   }
 
-  return { placement, nonPlacees: [...restantes].sort((x, y) => x.ligne - y.ligne) };
+  return { placement, murs, nonPlacees: [...restantes].sort((x, y) => x.ligne - y.ligne) };
 }
 
 // Contour d'un plan dans son repère local, usinages d'angle compris. Le
@@ -2734,7 +2796,7 @@ function construireSvgEnsembleCommande(ensemble, transformes, placement, orpheli
     });
 
     const place = placement.get(p);
-    let x = 0;
+    let x = place.debutFond;
     for (const c of place.fond) {
       const pts = polygone(m, [
         [x, -ECART_RABATTEMENT - c.W],
@@ -2878,7 +2940,7 @@ function construireSchemaCommandeHtml(commande, lignes, cleSurlignee) {
 
   const { joints, orphelins } = apparierAssemblagesCommande(plans);
   const { ensembles, transformes } = disposerEnsemblesCommande(plans, joints);
-  const { placement, nonPlacees } = placerCredencesCommande(plans, credences);
+  const { placement, murs, nonPlacees } = placerCredencesCommande(ensembles, plans, credences);
   const orphelinsParPiece = new Map();
   for (const o of orphelins) {
     if (!orphelinsParPiece.has(o.piece)) orphelinsParPiece.set(o.piece, []);
@@ -2930,8 +2992,16 @@ function construireSchemaCommandeHtml(commande, lignes, cleSurlignee) {
     for (const p of ensemble.pieces) {
       lignesHtml.push(ligneTableau(p, detailsPlan(p)));
       const place = placement.get(p);
+      const finFond = place.debutFond + place.fond.reduce((s, c) => s + c.L, 0);
+      const derriere = murs.get(p).derriere;
+      const continueDerriere = derriere && (place.debutFond < -TOLERANCE_CREDENCE_MM || finFond > p.L + TOLERANCE_CREDENCE_MM);
       place.fond.forEach((c, k) =>
-        lignesHtml.push(ligneTableau(c, [`Fond du plan ligne ${p.ligne}, ${k + 1}${k === 0 ? "re" : "e"} en partant de la gauche`]))
+        lignesHtml.push(
+          ligneTableau(c, [
+            `Fond du plan ligne ${p.ligne}, ${k + 1}${k === 0 ? "re" : "e"} en partant de la gauche` +
+              (continueDerriere ? ` (le mur continue derrière le plan ligne ${derriere.ligne})` : ""),
+          ])
+        )
       );
       for (const [cote, c] of Object.entries(place.retours)) {
         if (c) lignesHtml.push(ligneTableau(c, [`Retour ${cote} du plan ligne ${p.ligne}`]));
