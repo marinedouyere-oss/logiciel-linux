@@ -1,6 +1,7 @@
 package com.marinedouyere.sentinelle.moteur;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -99,5 +100,28 @@ public final class Js {
     /** Équivalent de Math.trunc() puis String(). */
     public static String entierTronque(double d) {
         return nombre(d < 0 ? Math.ceil(d) : Math.floor(d));
+    }
+
+    /** Équivalent de Number.prototype.toFixed(). */
+    public static String toFixed(double x, int chiffres) {
+        if (Double.isNaN(x)) return "NaN";
+        if (Double.isInfinite(x) || Math.abs(x) >= 1e21) return nombre(x);
+        boolean negatif = x < 0;
+        String corps = new BigDecimal(Math.abs(x)).setScale(chiffres, RoundingMode.HALF_UP).toPlainString();
+        return negatif ? "-" + corps : corps;
+    }
+
+    /** Équivalent de Number(texte) (NaN si le texte n'est pas un nombre). */
+    public static double nombreStrict(String s) {
+        if (s == null) return 0;
+        String t = trim(s);
+        if (t.isEmpty()) return 0;
+        if (!t.matches("[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?")) return Double.NaN;
+        return Double.parseDouble(t);
+    }
+
+    /** Équivalent de Number.isInteger(v) ? String(v) : v.toFixed(1) (fmtDim de l'appli web). */
+    public static String dimension(double v) {
+        return v == Math.rint(v) && !Double.isInfinite(v) ? nombre(v) : toFixed(v, 1);
     }
 }

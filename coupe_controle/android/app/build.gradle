@@ -45,6 +45,9 @@ android {
     packagingOptions {
         resources {
             excludes += ["META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*"]
+            // Tables des algorithmes post-quantiques de Bouncy Castle (dépendance de
+            // PDFBox), jamais utilisées pour lire une liste de coupe.
+            excludes += ["org/bouncycastle/pqc/**/*.properties"]
         }
     }
 }

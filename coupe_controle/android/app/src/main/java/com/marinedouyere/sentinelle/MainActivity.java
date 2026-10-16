@@ -26,11 +26,17 @@ import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.tabs.TabLayout;
 import com.marinedouyere.sentinelle.moteur.Comparateur;
 import com.marinedouyere.sentinelle.moteur.ErreurLecture;
+import com.marinedouyere.sentinelle.moteur.ExportRapport;
 import com.marinedouyere.sentinelle.moteur.Js;
 import com.marinedouyere.sentinelle.moteur.LecteurBkp;
 import com.marinedouyere.sentinelle.moteur.LecteurStrat;
+import com.marinedouyere.sentinelle.moteur.ScanDossier;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -62,6 +68,16 @@ public class MainActivity extends AppCompatActivity {
     private String cleEnAttente;
     private String roleEnAttente;
 
+    private ActivityResultLauncher<Uri> choixDossier;
+    private String pariteDossierEnAttente;
+    /** Compte rendu du dernier scan, par semaine (lignes, et s'il s'agit d'une erreur). */
+    private final Map<String, List<String>> resultatsScan = new HashMap<>();
+    private final Set<String> scanEnErreur = new HashSet<>();
+    private final Set<String> scansEnCours = new HashSet<>();
+
+    private ActivityResultLauncher<String> creationRapport;
+    private String cleExport;
+
     @Override
     protected void onCreate(Bundle etat) {
         super.onCreate(etat);
@@ -73,8 +89,13 @@ public class MainActivity extends AppCompatActivity {
             onglet = etat.getString("onglet", Depot.PAIRE);
             cleEnAttente = etat.getString("cleEnAttente");
             roleEnAttente = etat.getString("roleEnAttente");
+            pariteDossierEnAttente = etat.getString("pariteDossierEnAttente");
+            cleExport = etat.getString("cleExport");
         }
         choixFichier = registerForActivityResult(new ActivityResultContracts.OpenDocument(), this::fichierChoisi);
+        choixDossier = registerForActivityResult(new ActivityResultContracts.OpenDocumentTree(), this::dossierChoisi);
+        creationRapport = registerForActivityResult(new ActivityResultContracts.CreateDocument(ExportRapport.TYPE_MIME),
+                this::emplacementRapportChoisi);
 
         LinearLayout racine = ui.colonne();
         racine.setBackgroundColor(ui.couleur(R.color.fond));
@@ -132,6 +153,14 @@ public class MainActivity extends AppCompatActivity {
         etat.putString("onglet", onglet);
         etat.putString("cleEnAttente", cleEnAttente);
         etat.putString("roleEnAttente", roleEnAttente);
+        etat.putString("pariteDossierEnAttente", pariteDossierEnAttente);
+        etat.putString("cleExport", cleExport);
+    }
+
+    /** Onglet Recherche (créé à la première visite). */
+    RechercheVue recherche() {
+        if (recherche == null) recherche = new RechercheVue(this, ui, app);
+        return recherche;
     }
 
     private boolean ongletSemaine() {
@@ -147,8 +176,7 @@ public class MainActivity extends AppCompatActivity {
         if (ongletSemaine()) {
             construireSemaine(onglet);
         } else {
-            if (recherche == null) recherche = new RechercheVue(this, ui, app);
-            contenu.addView(recherche.vue());
+            contenu.addView(recherche().vue());
         }
     }
 
@@ -163,6 +191,8 @@ public class MainActivity extends AppCompatActivity {
         carteCompteur.addView(texteCompteur);
         contenu.addView(carteCompteur);
         majCompteur();
+
+        contenu.addView(carteDossierPartage(parite));
 
         LinearLayout actions = ui.rangee();
         MaterialButton lancerTout = ui.bouton("Lancer le(s) contrôle(s)");
@@ -322,7 +352,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         List<Comparateur.LigneRapport> anomalies = r.anomalies();
-        if (anomalies.isEmpty()) return;
         boolean tout = listesDepliees.contains(p) || anomalies.size() <= LIMITE_LIGNES;
         int n = tout ? anomalies.size() : LIMITE_LIGNES;
         for (int i = 0; i < n; i++) corps.addView(ligneAnomalie(anomalies.get(i)));
@@ -334,6 +363,9 @@ public class MainActivity extends AppCompatActivity {
             });
             corps.addView(plus);
         }
+        MaterialButton exporter = ui.boutonContour("Exporter le rapport (.xlsx)");
+        exporter.setOnClickListener(v -> exporterRapport(p));
+        corps.addView(exporter, ui.marges(6, 0));
     }
 
     private static String pourcent(double v) {
@@ -637,12 +669,18 @@ public class MainActivity extends AppCompatActivity {
     }
 
     void lancerControleScies(Paire p) {
+        lancerControleScies(p, null);
+    }
+
+    void lancerControleScies(Paire p, Runnable fin) {
         if (p.strat == null) {
             alerte(p.nomComplet() + " : sélectionnez d'abord le fichier de lancement.");
+            if (fin != null) fin.run();
             return;
         }
         if (p.bkp == null) {
             alerte(p.nomComplet() + " : sélectionnez le fichier .bkp à vérifier.");
+            if (fin != null) fin.run();
             return;
         }
         p.enCours = true;
@@ -664,6 +702,7 @@ public class MainActivity extends AppCompatActivity {
                 p.etat = null;
                 rafraichir(p);
                 majCompteur();
+                if (fin != null) fin.run();
             });
         });
     }
@@ -683,6 +722,263 @@ public class MainActivity extends AppCompatActivity {
             depot.retirerChantier(p);
             afficher();
             majCompteur();
+        });
+    }
+
+    // ---- dossier partagé ----
+
+    private View carteDossierPartage(String parite) {
+        MaterialCardView carte = ui.carte();
+        LinearLayout corps = ui.colonne();
+        corps.setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(12));
+        carte.addView(corps);
+        corps.addView(ui.texte("📂 Dossier partagé", 16, true, 0xFF263238));
+        DossierPartage dossier = DossierPartage.memorise(this, parite);
+        String info = dossier != null
+                ? "Dossier mémorisé (" + Depot.libelleSemaine(parite) + ") : " + dossier.nom
+                : "Choisissez le dossier où arrivent les fichiers de cette semaine (téléphone, Google Drive…) : "
+                        + "le scan les range tout seul dans les bonnes cases et lance les contrôles.";
+        corps.addView(ui.texte(info, 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 6));
+
+        LinearLayout boutons = ui.rangee();
+        MaterialButton choisir = ui.boutonContour("Choisir le dossier…");
+        choisir.setOnClickListener(v -> choisirDossier(parite));
+        boutons.addView(choisir, ui.poids(1));
+        boutons.addView(new View(this), new LinearLayout.LayoutParams(ui.dp(8), 1));
+        MaterialButton scanner = ui.bouton("Scanner le dossier");
+        scanner.setEnabled(dossier != null && !scansEnCours.contains(parite));
+        scanner.setOnClickListener(v -> scannerDossier(parite));
+        boutons.addView(scanner, ui.poids(1));
+        corps.addView(boutons);
+
+        List<String> lignes = resultatsScan.get(parite);
+        if (lignes != null) {
+            TextView resultat = ui.texte(TextUtils.join("\n", lignes), 13, false,
+                    scanEnErreur.contains(parite) ? ui.couleur(R.color.alerte_texte) : 0xFF263238);
+            resultat.setLineSpacing(ui.dp(2), 1f);
+            corps.addView(resultat, ui.marges(8, 0));
+        }
+        return carte;
+    }
+
+    void choisirDossier(String parite) {
+        pariteDossierEnAttente = parite;
+        try {
+            choixDossier.launch(null);
+        } catch (Exception e) {
+            alerte("Impossible d'ouvrir le sélecteur de dossier : " + e.getMessage());
+        }
+    }
+
+    void dossierChoisi(Uri uri) {
+        String parite = pariteDossierEnAttente;
+        pariteDossierEnAttente = null;
+        if (uri == null || parite == null) return;
+        DossierPartage.memoriser(this, parite, uri);
+        resultatsScan.remove(parite);
+        scanEnErreur.remove(parite);
+        if (parite.equals(onglet)) afficher();
+    }
+
+    private void compteRendu(String parite, List<String> lignes, boolean erreur) {
+        resultatsScan.put(parite, lignes);
+        if (erreur) scanEnErreur.add(parite);
+        else scanEnErreur.remove(parite);
+        if (parite.equals(onglet)) afficher();
+    }
+
+    /** Une case à remplir par le scan : le lancement trouvé et la case qui le reçoit. */
+    private static final class Affectation {
+        final ScanDossier.Cible cible;
+        final Paire paire;
+        final String libelle;
+        boolean copie;
+
+        Affectation(ScanDossier.Cible cible, Paire paire, String libelle) {
+            this.cible = cible;
+            this.paire = paire;
+            this.libelle = libelle;
+        }
+    }
+
+    /** Scan du dossier partagé de la semaine, comme scannerDossierPartage() de l'appli web. */
+    void scannerDossier(String parite) {
+        final DossierPartage dossier = DossierPartage.memorise(this, parite);
+        if (dossier == null) {
+            compteRendu(parite, java.util.Collections.singletonList("Choisissez d'abord un dossier."), true);
+            return;
+        }
+        if (!scansEnCours.add(parite)) return;
+        compteRendu(parite, java.util.Collections.singletonList("Scan en cours…"), false);
+        app.annexe.execute(() -> {
+            List<ScanDossier.Fichier> fichiers;
+            try {
+                fichiers = dossier.lister(this);
+            } catch (Exception e) {
+                principal.post(() -> {
+                    scansEnCours.remove(parite);
+                    compteRendu(parite, java.util.Collections.singletonList("Impossible de lire le dossier \"" + dossier.nom + "\" : "
+                            + e.getMessage() + ". Recliquez sur \"Choisir le dossier…\"."), true);
+                });
+                return;
+            }
+            android.icu.text.Collator ordre = android.icu.text.Collator.getInstance(android.icu.util.ULocale.ROOT);
+            ScanDossier.Resultat r = ScanDossier.scanner(fichiers, parite, ordre::compare);
+            principal.post(() -> placerFichiersScannes(parite, r));
+        });
+    }
+
+    private void placerFichiersScannes(String parite, ScanDossier.Resultat r) {
+        String libelleSemaine = Depot.libelleSemaine(parite);
+        if (r.aucunLancement) {
+            scansEnCours.remove(parite);
+            List<String> lignes = new ArrayList<>();
+            lignes.add("Aucun fichier de lancement reconnu dans ce dossier.");
+            lignes.add(ScanDossier.noteNonReconnus(r));
+            compteRendu(parite, lignes, true);
+            return;
+        }
+        final List<String> lignes = new ArrayList<>();
+        final List<Affectation> affectations = new ArrayList<>();
+        for (ScanDossier.Cible g : r.fixes) {
+            Paire p = depot.paireFixe(g.poste, g.parite);
+            if (p == null) {
+                lignes.add("— " + g.poste + " (" + Depot.libelleSemaine(g.parite) + ") : case introuvable, ignoré.");
+                continue;
+            }
+            affectations.add(new Affectation(g, p, g.poste + " — " + Depot.libelleSemaine(g.parite)));
+        }
+        for (ScanDossier.Cible g : r.chantiers) {
+            String identite = g.identiteChantier();
+            Paire p = null;
+            for (Paire c : depot.paires) if (c.estChantier() && identite.equals(c.codeLancement)) p = c;
+            if (p == null) {
+                p = depot.ajouterChantier(g.parite);
+                p.codeLancement = identite;
+                depot.enregistrer(p);
+            }
+            affectations.add(new Affectation(g, p, p.label));
+        }
+        for (Affectation a : affectations) {
+            a.paire.etat = "⏳ fichiers du dossier partagé…";
+            a.paire.etatErreur = false;
+        }
+        afficher();
+        app.annexe.execute(() -> {
+            for (Affectation a : affectations) {
+                Paire p = a.paire;
+                ScanDossier.Cible g = a.cible;
+                try {
+                    copierDepuisDossier(p, Paire.STRAT, g.strat);
+                    p.semaine = controles.detecterSemaine(p);
+                    String suffixe = "";
+                    if (g.coupe != null) {
+                        copierDepuisDossier(p, Paire.COUPE, g.coupe);
+                        suffixe = " + liste de coupe";
+                    }
+                    if (g.bkp != null) {
+                        copierDepuisDossier(p, Paire.BKP, g.bkp);
+                        suffixe += " + .bkp";
+                    }
+                    depot.enregistrer(p);
+                    a.copie = true;
+                    lignes.add("✔ " + a.libelle + " : " + g.strat.nom + suffixe);
+                } catch (Exception e) {
+                    depot.enregistrer(p);
+                    lignes.add("❌ " + a.libelle + " : " + (e.getMessage() != null ? e.getMessage() : e));
+                }
+            }
+            principal.post(() -> {
+                for (Affectation a : affectations) {
+                    a.paire.etat = null;
+                    a.paire.etatErreur = false;
+                }
+                List<String> compte = new ArrayList<>();
+                if (lignes.isEmpty()) compte.add("Aucun fichier de \"" + libelleSemaine + "\" trouvé dans ce dossier.");
+                compte.addAll(lignes);
+                compte.add(ScanDossier.noteNonReconnus(r));
+                String ignores = ScanDossier.noteIgnores(r, libelleSemaine);
+                if (ignores != null) compte.add(ignores);
+                compteRendu(parite, compte, lignes.isEmpty());
+                majCompteur();
+                // Le scan sert à éviter les clics : les contrôles possibles partent tout seuls.
+                lancerControlesScannes(parite, affectations, 0, compte);
+            });
+        });
+    }
+
+    private void copierDepuisDossier(Paire p, String role, ScanDossier.Fichier f) throws IOException {
+        try (InputStream entree = DossierPartage.ouvrir(this, f)) {
+            depot.copierFichier(p, role, f.nom, entree);
+        }
+    }
+
+    private void lancerControlesScannes(String parite, List<Affectation> affectations, int i, List<String> compte) {
+        if (i >= affectations.size()) {
+            scansEnCours.remove(parite);
+            if (parite.equals(onglet)) afficher();
+            return;
+        }
+        Affectation a = affectations.get(i);
+        Runnable suivant = () -> lancerControlesScannes(parite, affectations, i + 1, compte);
+        if (!a.copie) {
+            suivant.run();
+            return;
+        }
+        Runnable scies = () -> {
+            if (a.cible.bkp != null) lancerControleScies(a.paire, suivant);
+            else suivant.run();
+        };
+        if (a.cible.coupe != null) {
+            lancerUnePaire(a.paire, (erreur, resultat) -> {
+                if (erreur != null) {
+                    compte.add("❌ " + erreur);
+                    resultatsScan.put(parite, compte);
+                }
+                scies.run();
+            });
+        } else {
+            scies.run();
+        }
+    }
+
+    // ---- export du rapport ----
+
+    void exporterRapport(Paire p) {
+        if (p.rapport == null) return;
+        cleExport = p.cle();
+        try {
+            creationRapport.launch(ExportRapport.nomFichier(p.poste + " — " + p.label));
+        } catch (Exception e) {
+            cleExport = null;
+            alerte("Impossible d'enregistrer le rapport :\n" + e.getMessage());
+        }
+    }
+
+    void emplacementRapportChoisi(Uri uri) {
+        Paire p = cleExport == null ? null : paireParCle(cleExport);
+        cleExport = null;
+        if (uri == null || p == null || p.rapport == null) return;
+        exporterVers(p, uri);
+    }
+
+    void exporterVers(Paire p, Uri uri) {
+        final Comparateur.Rapport rapport = p.rapport;
+        app.annexe.execute(() -> {
+            String erreur = null;
+            try (OutputStream sortie = "file".equals(uri.getScheme())
+                    ? new FileOutputStream(new File(uri.getPath()))
+                    : getContentResolver().openOutputStream(uri, "wt")) {
+                if (sortie == null) throw new IOException("emplacement inaccessible");
+                sortie.write(ExportRapport.xlsx(rapport));
+            } catch (Exception e) {
+                erreur = e.getMessage() != null ? e.getMessage() : e.toString();
+            }
+            final String err = erreur;
+            principal.post(() -> {
+                if (err != null) alerte("Impossible d'enregistrer le rapport :\n" + err);
+                else android.widget.Toast.makeText(this, "Rapport enregistré : " + nomAffiche(this, uri), android.widget.Toast.LENGTH_LONG).show();
+            });
         });
     }
 

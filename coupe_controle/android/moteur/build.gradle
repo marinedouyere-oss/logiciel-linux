@@ -14,11 +14,14 @@ dependencies {
     testImplementation "junit:junit:4.13.2"
     testImplementation "org.apache.pdfbox:pdfbox:2.0.31"
     testImplementation "org.json:json:20240303"
+    // Tri des noms de fichiers comme le navigateur (ICU) pour le scan du dossier partagé.
+    testImplementation "com.ibm.icu:icu4j:74.2"
 }
 
 test {
     systemProperty "sentinelle.fixtures", System.getenv("SENTINELLE_FIXTURES") ?: ""
     systemProperty "sentinelle.reference", System.getenv("SENTINELLE_REFERENCE") ?: ""
+    systemProperty "sentinelle.captures", System.getenv("SENTINELLE_CAPTURES") ?: ""
     maxHeapSize = "2g"
     testLogging {
         events "failed", "skipped"

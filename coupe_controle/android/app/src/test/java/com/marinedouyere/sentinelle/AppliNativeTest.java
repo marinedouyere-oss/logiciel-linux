@@ -19,6 +19,7 @@ import androidx.test.core.app.ApplicationProvider;
 import com.google.android.material.tabs.TabLayout;
 import com.marinedouyere.sentinelle.moteur.Classeur;
 import com.marinedouyere.sentinelle.moteur.Comparateur;
+import com.marinedouyere.sentinelle.moteur.Feuille;
 import com.marinedouyere.sentinelle.moteur.LecteurBkp;
 import com.marinedouyere.sentinelle.moteur.LecteurStrat;
 import com.marinedouyere.sentinelle.moteur.Js;
@@ -237,5 +238,132 @@ public class AppliNativeTest {
         t.getTabAt(2).select();
         ShadowLooper.idleMainLooper();
         assertTrue(texteEcran(a).contains("Recherche"));
+    }
+    /** Dossier partagé simulé, rempli de fichiers aux noms réels de l'atelier. */
+    private File dossierPartage(String... fixturesEtNoms) throws IOException {
+        File d = new File(ApplicationProvider.getApplicationContext().getCacheDir(), "partage" + System.nanoTime());
+        //noinspection ResultOfMethodCallIgnored
+        d.mkdirs();
+        for (int i = 0; i < fixturesEtNoms.length; i += 2) {
+            File cible = new File(d, fixturesEtNoms[i + 1]);
+            if (fixturesEtNoms[i] == null) {
+                java.nio.file.Files.write(cible.toPath(), "notes".getBytes());
+                continue;
+            }
+            try (InputStream in = new FileInputStream(new File(dossier, fixturesEtNoms[i])); OutputStream out = new FileOutputStream(cible)) {
+                byte[] b = new byte[65536];
+                int n;
+                while ((n = in.read(b)) != -1) out.write(b, 0, n);
+            }
+        }
+        return d;
+    }
+
+    @Test
+    public void scanDuDossierPartageRangeEtLanceLesControles() throws Exception {
+        String bkp = "LAN264101STRAT_2026-09-22_0923_v12backup.bkp";
+        File partage = dossierPartage(
+                "strat_264101.xlsx", "LAN264101STRAT.xlsx",
+                "coupe_41_01.xlsx", "CUTRITE_LAN264101STRAT.xlsx",
+                bkp, bkp,
+                "strat_264101.xlsx", "LAN2641TRIGANO.xlsx",
+                "strat_264001.xlsx", "LAN264001STRAT.xlsx",
+                null, "notes.txt");
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().get();
+        SentinelleApp app = (SentinelleApp) a.getApplication();
+        TabLayout t = onglets(a.getWindow().getDecorView());
+        t.getTabAt(1).select();
+        ShadowLooper.idleMainLooper();
+        assertTrue(texteEcran(a).contains("📂 Dossier partagé"));
+
+        a.choisirDossier(Depot.IMPAIRE);
+        a.dossierChoisi(Uri.fromFile(partage));
+        assertTrue(texteEcran(a).contains("Dossier mémorisé (Semaine impaire) : " + partage.getName()));
+        // Chaque semaine a son propre dossier.
+        assertNull(DossierPartage.memorise(a, Depot.PAIRE));
+
+        a.scannerDossier(Depot.IMPAIRE);
+        Paire agglo = app.depot().paireFixe("Agglo 1er tour", Depot.IMPAIRE);
+        attendre("scan et contrôles", () -> agglo.rapport != null && agglo.ecartsScies != null && !agglo.enCours
+                && texteEcran(a).contains("non reconnu"));
+        attendre("fin des contrôles", () -> !texteEcran(a).contains("⏳"));
+        assertEquals("LAN264101STRAT.xlsx", agglo.strat.nom);
+        assertEquals("CUTRITE_LAN264101STRAT.xlsx", agglo.coupe.nom);
+        assertEquals(bkp, agglo.bkp.nom);
+        assertEquals("41", agglo.semaine);
+        assertEquals("coupe", agglo.source);
+        String ecran = texteEcran(a);
+        assertTrue(ecran, ecran.contains("✔ Agglo 1er tour — Semaine impaire : LAN264101STRAT.xlsx + liste de coupe + .bkp"));
+        assertTrue(ecran, ecran.contains("1 fichier(s) sur 6 non reconnu(s) (aucun code ni semaine reconnaissable) : notes.txt"));
+        assertTrue(ecran, ecran.contains("1 fichier(s) ignoré(s) : semaine différente de l'onglet actif (Semaine impaire)."));
+        assertTrue(ecran, ecran.contains("Contrôle Scies : "));
+
+        // Le lancement TRIGANO devient un chantier de la semaine impaire.
+        Paire trigano = null;
+        for (Paire c : app.depot().chantiers(Depot.IMPAIRE)) if ("2641|TRIGANO".equals(c.codeLancement)) trigano = c;
+        assertNotNull(trigano);
+        assertEquals("LAN2641TRIGANO.xlsx", trigano.strat.nom);
+        assertTrue(ecran, ecran.contains("✔ " + trigano.label + " : LAN2641TRIGANO.xlsx"));
+        int nbChantiers = app.depot().chantiers(Depot.IMPAIRE).size();
+
+        // L'autre semaine n'a rien reçu.
+        assertNull(app.depot().paireFixe("Agglo 1er tour", Depot.PAIRE).strat);
+
+        // Un second scan retrouve le même chantier au lieu d'en créer un autre.
+        a.scannerDossier(Depot.IMPAIRE);
+        attendre("second scan", () -> !texteEcran(a).contains("Scan en cours") && !texteEcran(a).contains("⏳"));
+        attendre("contrôles du second scan", () -> !agglo.enCours && !texteEcran(a).contains("⏳"));
+        assertEquals(nbChantiers, app.depot().chantiers(Depot.IMPAIRE).size());
+
+        // Export du rapport en Excel.
+        File xlsx = new File(ApplicationProvider.getApplicationContext().getCacheDir(), "rapport.xlsx");
+        a.exporterVers(agglo, Uri.fromFile(xlsx));
+        attendre("export", () -> xlsx.exists() && xlsx.length() > 0);
+        Thread.sleep(200);
+        Classeur relu = Classeur.lire(Controles.lireOctets(xlsx));
+        Feuille f = relu.feuilles.get(0);
+        assertEquals("Contrôle coupe", f.nom);
+        assertEquals("Total attendu", f.valeur(1, 1));
+        assertEquals(agglo.rapport.lignes.size() + 3, f.nbLignes());
+    }
+
+    @Test
+    public void rechercheAvecSchemaDeLaCommande() throws Exception {
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().get();
+        SentinelleApp app = (SentinelleApp) a.getApplication();
+        Paire p = app.depot().paireFixe("Feno", Depot.IMPAIRE);
+        choisir(a, p, Paire.STRAT, original("strat_264101.xlsx", "LAN264101STRAT.xlsx"));
+        choisir(a, p, Paire.COUPE, original("coupe_41_01.xlsx", "Liste_de_coupe_41.01.xlsx"));
+
+        TabLayout t = onglets(a.getWindow().getDecorView());
+        t.getTabAt(2).select();
+        ShadowLooper.idleMainLooper();
+        RechercheVue r = a.recherche();
+        r.rechercher("cvc26090464001");
+        attendre("recherche", () -> !r.enCours);
+        String ecran = texteEcran(a);
+        assertTrue(ecran, ecran.contains("CVC26090464001"));
+        assertTrue(ecran, ecran.contains("Feno — Semaine impaire"));
+        assertTrue(ecran, ecran.contains("Schéma de la commande CVC26090464 —"));
+        assertTrue(ecran, ecran.contains("plan en L"));
+        assertTrue(ecran, ecran.contains("QUANTITÉ TROUVÉE"));
+        assertTrue(compter(a.getWindow().getDecorView(), SchemaVue.class) >= 2);
+
+        r.rechercher("ZZZ");
+        attendre("recherche vide", () -> !r.enCours);
+        assertTrue(texteEcran(a).contains("clé ou commande ZZZ introuvable dans les 1 poste(s)/lancement(s) sélectionné(s)"));
+
+        r.rechercher("T9");
+        attendre("bande", () -> !r.enCours);
+        assertTrue(texteEcran(a), texteEcran(a).contains("résultat(s)"));
+    }
+
+    private static int compter(View v, Class<?> type) {
+        int n = type.isInstance(v) ? 1 : 0;
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) n += compter(g.getChildAt(i), type);
+        }
+        return n;
     }
 }
