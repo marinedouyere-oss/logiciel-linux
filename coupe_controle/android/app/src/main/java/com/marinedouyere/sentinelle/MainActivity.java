@@ -31,6 +31,7 @@ import com.marinedouyere.sentinelle.moteur.Js;
 import com.marinedouyere.sentinelle.moteur.LecteurBkp;
 import com.marinedouyere.sentinelle.moteur.LecteurStrat;
 import com.marinedouyere.sentinelle.moteur.ScanDossier;
+import com.marinedouyere.sentinelle.moteur.Semaines;
 
 import java.io.File;
 import java.io.FileOutputStream;
@@ -38,6 +39,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Calendar;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -60,6 +62,9 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout contenu;
     private ScrollView defilement;
     private TextView texteCompteur;
+    private TabLayout onglets;
+    private LinearLayout zoneRecap;
+    private int generationRecap;
     private final Map<Paire, LinearLayout> cartes = new HashMap<>();
     private final Set<Paire> listesDepliees = new HashSet<>();
     private RechercheVue recherche;
@@ -108,12 +113,12 @@ public class MainActivity extends AppCompatActivity {
         barre.setSubtitleTextColor(0xDDFFFFFF);
         racine.addView(barre, ui.pleineLargeur());
 
-        TabLayout onglets = new TabLayout(this);
+        onglets = new TabLayout(this);
         onglets.setBackgroundColor(0xFFFFFFFF);
         onglets.setTabMode(TabLayout.MODE_FIXED);
         onglets.setTabGravity(TabLayout.GRAVITY_FILL);
-        onglets.addTab(onglets.newTab().setText("Semaine paire").setTag(Depot.PAIRE));
-        onglets.addTab(onglets.newTab().setText("Semaine impaire").setTag(Depot.IMPAIRE));
+        onglets.addTab(onglets.newTab().setText(libelleOnglet(Depot.PAIRE)).setTag(Depot.PAIRE));
+        onglets.addTab(onglets.newTab().setText(libelleOnglet(Depot.IMPAIRE)).setTag(Depot.IMPAIRE));
         onglets.addTab(onglets.newTab().setText("Recherche").setTag(ONGLET_RECHERCHE));
         racine.addView(onglets, ui.pleineLargeur());
 
@@ -163,6 +168,40 @@ public class MainActivity extends AppCompatActivity {
         return recherche;
     }
 
+    /** Vrai numéro de la semaine d'un onglet (celle des lancements chargés, sinon le calendrier). */
+    int numeroSemaine(String parite) {
+        List<String> semaines = new ArrayList<>();
+        for (Paire p : depot.pairesDeLaSemaine(parite)) if (p.strat != null) semaines.add(p.semaine);
+        return Semaines.semaineAffichee(semaines, parite, Calendar.getInstance());
+    }
+
+    /** « Semaine 41 » : nom de l'onglet, du compteur et des messages. */
+    String libelleOnglet(String parite) {
+        return "Semaine " + numeroSemaine(parite);
+    }
+
+    /** Met les vrais numéros de semaine sur les onglets ; vrai si celui de l'onglet affiché a changé. */
+    private boolean majOnglets() {
+        if (onglets == null) return false;
+        boolean ongletAfficheChange = false;
+        for (int i = 0; i < onglets.getTabCount(); i++) {
+            TabLayout.Tab t = onglets.getTabAt(i);
+            if (t == null || ONGLET_RECHERCHE.equals(t.getTag())) continue;
+            String libelle = libelleOnglet((String) t.getTag());
+            if (t.getText() == null || !libelle.contentEquals(t.getText())) {
+                t.setText(libelle);
+                if (t.getTag().equals(onglet)) ongletAfficheChange = true;
+            }
+        }
+        return ongletAfficheChange;
+    }
+
+    /** Titre d'une case : sa semaine pour un poste fixe (celle de l'onglet si aucun fichier). */
+    private String titreCase(Paire p) {
+        if (!p.estChantier() && p.semaine == null) return libelleOnglet(p.parite);
+        return p.titre();
+    }
+
     private boolean ongletSemaine() {
         return Depot.PAIRE.equals(onglet) || Depot.IMPAIRE.equals(onglet);
     }
@@ -173,6 +212,8 @@ public class MainActivity extends AppCompatActivity {
         contenu.removeAllViews();
         cartes.clear();
         texteCompteur = null;
+        zoneRecap = null;
+        majOnglets();
         if (ongletSemaine()) {
             construireSemaine(onglet);
         } else {
@@ -184,13 +225,23 @@ public class MainActivity extends AppCompatActivity {
         MaterialCardView carteCompteur = ui.carte();
         carteCompteur.setCardBackgroundColor(0xFFE3F2FD);
         carteCompteur.setStrokeColor(0xFF90CAF9);
-        texteCompteur = ui.texte(Depot.libelleSemaine(parite) + " — calcul du nombre de pièces…", 16, true,
+        texteCompteur = ui.texte(libelleOnglet(parite) + " — calcul du nombre de pièces…", 16, true,
                 ui.couleur(R.color.bleu_fonce));
         texteCompteur.setGravity(Gravity.CENTER);
         texteCompteur.setPadding(ui.dp(12), ui.dp(14), ui.dp(12), ui.dp(14));
         carteCompteur.addView(texteCompteur);
         contenu.addView(carteCompteur);
         majCompteur();
+
+        MaterialCardView carteRecap = ui.carte();
+        LinearLayout corpsRecap = ui.colonne();
+        corpsRecap.setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(12));
+        carteRecap.addView(corpsRecap);
+        corpsRecap.addView(ui.texte("📋 Récapitulatif des lancements", 16, true, 0xFF263238), ui.marges(0, 6));
+        zoneRecap = ui.colonne();
+        corpsRecap.addView(zoneRecap, ui.pleineLargeur());
+        contenu.addView(carteRecap);
+        majRecap();
 
         contenu.addView(carteDossierPartage(parite));
 
@@ -243,11 +294,43 @@ public class MainActivity extends AppCompatActivity {
             corps.removeAllViews();
             remplirCarte(corps, p);
         }
+        // Nouvelle semaine pour l'onglet (premier fichier chargé...) : compteur, dossier et cases en dépendent.
+        if (majOnglets()) afficher();
+        else majRecap();
+    }
+
+    // ---- récapitulatif des lancements ----
+
+    private void majRecap() {
+        if (!ongletSemaine() || zoneRecap == null) return;
+        final String parite = onglet;
+        final int numero = ++generationRecap;
+        final List<RecapLancements.Ligne> lignes = RecapLancements.lignes(depot.pairesDeLaSemaine(parite), controles);
+        zoneRecap.removeAllViews();
+        zoneRecap.addView(RecapLancements.tableau(this, ui, lignes, this::allerALaCase));
+        if (!RecapLancements.incomplet(lignes)) return;
+        // Lecture des fichiers pour les totaux manquants, puis nouvel affichage.
+        app.annexe.execute(() -> {
+            for (RecapLancements.Ligne l : lignes) {
+                controles.totalStrat(l.paire.strat);
+                if (l.paire.bkp != null) controles.totalBkp(l.paire.bkp);
+            }
+            principal.post(() -> {
+                if (numero == generationRecap && parite.equals(onglet)) majRecap();
+            });
+        });
+    }
+
+    private void allerALaCase(Paire p) {
+        LinearLayout corps = cartes.get(p);
+        if (corps == null || !(corps.getParent() instanceof View)) return;
+        View carte = (View) corps.getParent();
+        defilement.smoothScrollTo(0, Math.max(0, carte.getTop() - ui.dp(40)));
     }
 
     private void remplirCarte(LinearLayout corps, Paire p) {
         LinearLayout entete = ui.rangee();
-        TextView titre = ui.texte(p.titre(), 16, true, 0xFF1F2933);
+        TextView titre = ui.texte(titreCase(p), 16, true, 0xFF1F2933);
         entete.addView(titre, ui.poids(1));
         if (p.estChantier()) {
             MaterialButton retirer = ui.boutonTexte("✕ Retirer");
@@ -256,7 +339,7 @@ public class MainActivity extends AppCompatActivity {
             entete.addView(retirer);
         }
         MaterialButton reinit = ui.boutonTexte("↺ Réinitialiser");
-        reinit.setOnClickListener(v -> confirmer("Réinitialiser « " + p.titre() + " » ?",
+        reinit.setOnClickListener(v -> confirmer("Réinitialiser « " + titreCase(p) + " » ?",
                 "Les fichiers et résultats de cette case seront effacés.", () -> {
                     depot.reinitialiser(p);
                     listesDepliees.remove(p);
@@ -442,7 +525,7 @@ public class MainActivity extends AppCompatActivity {
             final double t = total;
             principal.post(() -> {
                 if (texteCompteur != null && parite.equals(onglet)) {
-                    texteCompteur.setText(Depot.libelleSemaine(parite) + " — " + Js.nombre(t) + " pièce(s) au total dans les .bkp");
+                    texteCompteur.setText(libelleOnglet(parite) + " — " + Js.nombre(t) + " pièce(s) au total dans les .bkp");
                 }
             });
         });
@@ -709,7 +792,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void reinitialiserSemaine() {
         final String parite = onglet;
-        confirmer("Réinitialiser « " + Depot.libelleSemaine(parite) + " » ?",
+        confirmer("Réinitialiser « " + libelleOnglet(parite) + " » ?",
                 "Toutes les cases de cette semaine (y compris Chantiers) seront vidées. Cette action est irréversible.", () -> {
                     for (Paire p : depot.pairesDeLaSemaine(parite)) depot.reinitialiser(p);
                     listesDepliees.clear();
@@ -735,7 +818,7 @@ public class MainActivity extends AppCompatActivity {
         corps.addView(ui.texte("📂 Dossier partagé", 16, true, 0xFF263238));
         DossierPartage dossier = DossierPartage.memorise(this, parite);
         String info = dossier != null
-                ? "Dossier mémorisé (" + Depot.libelleSemaine(parite) + ") : " + dossier.nom
+                ? "Dossier mémorisé (" + libelleOnglet(parite) + ") : " + dossier.nom
                 : "Choisissez le dossier où arrivent les fichiers de cette semaine (téléphone, Google Drive…) : "
                         + "le scan les range tout seul dans les bonnes cases et lance les contrôles.";
         corps.addView(ui.texte(info, 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 6));
@@ -829,7 +912,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void placerFichiersScannes(String parite, ScanDossier.Resultat r) {
-        String libelleSemaine = Depot.libelleSemaine(parite);
         if (r.aucunLancement) {
             scansEnCours.remove(parite);
             List<String> lignes = new ArrayList<>();
@@ -843,10 +925,10 @@ public class MainActivity extends AppCompatActivity {
         for (ScanDossier.Cible g : r.fixes) {
             Paire p = depot.paireFixe(g.poste, g.parite);
             if (p == null) {
-                lignes.add("— " + g.poste + " (" + Depot.libelleSemaine(g.parite) + ") : case introuvable, ignoré.");
+                lignes.add("— " + g.poste + " (Semaine " + g.code.substring(2, 4) + ") : case introuvable, ignoré.");
                 continue;
             }
-            affectations.add(new Affectation(g, p, g.poste + " — " + Depot.libelleSemaine(g.parite)));
+            affectations.add(new Affectation(g, p, g.poste + " — Semaine " + g.code.substring(2, 4)));
         }
         for (ScanDossier.Cible g : r.chantiers) {
             String identite = g.identiteChantier();
@@ -893,6 +975,7 @@ public class MainActivity extends AppCompatActivity {
                     a.paire.etat = null;
                     a.paire.etatErreur = false;
                 }
+                String libelleSemaine = libelleOnglet(parite);
                 List<String> compte = new ArrayList<>();
                 if (lignes.isEmpty()) compte.add("Aucun fichier de \"" + libelleSemaine + "\" trouvé dans ce dossier.");
                 compte.addAll(lignes);
@@ -948,7 +1031,7 @@ public class MainActivity extends AppCompatActivity {
         if (p.rapport == null) return;
         cleExport = p.cle();
         try {
-            creationRapport.launch(ExportRapport.nomFichier(p.poste + " — " + p.label));
+            creationRapport.launch(ExportRapport.nomFichier(p.nomComplet()));
         } catch (Exception e) {
             cleExport = null;
             alerte("Impossible d'enregistrer le rapport :\n" + e.getMessage());

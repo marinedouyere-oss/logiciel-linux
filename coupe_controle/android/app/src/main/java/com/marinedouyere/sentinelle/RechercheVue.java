@@ -124,7 +124,7 @@ final class RechercheVue {
 
         @Override
         public String nom() {
-            return p.poste + " — " + p.label;
+            return p.nomComplet();
         }
 
         @Override

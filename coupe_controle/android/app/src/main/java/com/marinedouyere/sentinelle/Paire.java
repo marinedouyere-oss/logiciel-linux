@@ -74,6 +74,7 @@ public final class Paire {
     }
 
     public String titre() {
+        if (!estChantier()) return semaine != null ? "Semaine " + semaine : label;
         return semaine != null ? label + " (sem " + semaine + ")" : label;
     }
 

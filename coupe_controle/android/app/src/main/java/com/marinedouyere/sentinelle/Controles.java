@@ -122,13 +122,21 @@ final class Controles {
         p.erreurScies = null;
     }
 
+    private static String cleCache(String quoi, Paire.Fichier f) {
+        return quoi + "|" + f.chemin + "|" + f.fichier().lastModified() + "|" + f.fichier().length();
+    }
+
+    /** Total déjà calculé (null s'il reste à calculer). */
+    Double totalEnCache(String quoi, Paire.Fichier f) {
+        synchronized (totauxBkp) {
+            return totauxBkp.get(cleCache(quoi, f));
+        }
+    }
+
     /** Nombre de pièces réellement optimisées dans un .bkp (mis en cache : le fichier ne change pas). */
     double totalBkp(Paire.Fichier f) {
-        String cle = f.chemin + "|" + f.fichier().lastModified() + "|" + f.fichier().length();
-        synchronized (totauxBkp) {
-            Double t = totauxBkp.get(cle);
-            if (t != null) return t;
-        }
+        Double t = totalEnCache("bkp", f);
+        if (t != null) return t;
         double total;
         try {
             total = LecteurBkp.somme(lireBkp(f));
@@ -136,7 +144,23 @@ final class Controles {
             total = 0; // .bkp illisible : l'erreur sera visible via "Vérifier Scies"
         }
         synchronized (totauxBkp) {
-            totauxBkp.put(cle, total);
+            totauxBkp.put(cleCache("bkp", f), total);
+        }
+        return total;
+    }
+
+    /** Nombre de pièces prévues par un fichier de lancement (hors protections), NaN s'il est illisible. */
+    double totalStrat(Paire.Fichier f) {
+        Double t = totalEnCache("strat", f);
+        if (t != null) return t;
+        double total = 0;
+        try {
+            for (LecteurStrat.LigneStrat l : LecteurStrat.lire(classeur(f)).lignes) total += l.qteAttendue;
+        } catch (Exception e) {
+            total = Double.NaN;
+        }
+        synchronized (totauxBkp) {
+            totauxBkp.put(cleCache("strat", f), total);
         }
         return total;
     }
