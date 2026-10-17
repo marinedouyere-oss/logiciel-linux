@@ -146,7 +146,6 @@ public class AppliNativeTest {
         assertEquals("40", p.semaine);
         // L'onglet et la case prennent le vrai numéro de la semaine du lancement.
         assertEquals("Semaine 40", onglets(a.getWindow().getDecorView()).getTabAt(0).getText().toString());
-        assertTrue(texteEcran(a).contains("Semaine 40 — "));
         assertFalse(texteEcran(a).contains("Semaine paire"));
         choisir(a, p, Paire.COUPE, original("coupe_40_01.xlsx", "Liste_de_coupe_sem_40.01.xlsx"));
 
@@ -160,12 +159,12 @@ public class AppliNativeTest {
         assertEquals(519, p.rapport.lignes.size());
         // Récapitulatif des lancements de la semaine.
         String prevues = Js.nombre(p.rapport.totalAttendu);
-        attendre("récapitulatif", () -> texteEcran(a).contains("Total semaine 40 (1 lancement)") && texteEcran(a).contains(prevues));
+        attendre("récapitulatif", () -> texteEcran(a).contains("Total") && texteEcran(a).contains(prevues));
         String ecran = texteEcran(a);
-        assertTrue(ecran, ecran.contains("📋 Récapitulatif des lancements"));
+        assertTrue(ecran, ecran.contains("📋 Lancements"));
         assertTrue(ecran, ecran.contains("Agglo 1er tour\nLAN264001STRAT"));
         assertTrue(ecran, ecran.contains("✔ OK"));
-        assertTrue(ecran, ecran.contains("✔ Tout est correct — " + Js.entierTronque(p.rapport.totalAttendu) + " pièces attendues"));
+        assertTrue(ecran, ecran.contains("✔ Tout est correct — " + Js.entierTronque(p.rapport.totalAttendu) + " pièces"));
         assertTrue(ecran.contains("% grain matching"));
 
         // Redémarrage de l'appli : tout est relu depuis la mémoire.
@@ -214,7 +213,7 @@ public class AppliNativeTest {
         Classeur strat = Classeur.lire(Controles.lireOctets(new File(dossier, "strat_264101.xlsx")));
         java.util.Map<String, Double> bkp = LecteurBkp.lire(Controles.lireOctets(new File(dossier, nomBkp)), nomBkp);
         assertEquals(LecteurBkp.comparerScies(LecteurStrat.quantitesAttenduesScies(strat), bkp).size(), p.ecartsScies.size());
-        assertTrue(texteEcran(a).contains("Contrôle Scies : " + p.ecartsScies.size() + " écart(s)"));
+        assertTrue(texteEcran(a).contains("Scies : " + p.ecartsScies.size() + " écart(s)"));
 
         // Sans liste de coupe, GO compare avec le .bkp (aucune confirmation : une seule semaine).
         a.lancerUnePaire(p, null);
@@ -223,7 +222,8 @@ public class AppliNativeTest {
         assertEquals(attendu.nbAnomalies, p.rapport.nbAnomalies);
         assertEquals("bkp", p.source);
 
-        String compteur = "Semaine 41 — " + Js.nombre(LecteurBkp.somme(bkp)) + " pièce(s) au total dans les .bkp";
+        assertEquals("Semaine 41", t.getTabAt(1).getText().toString());
+        String compteur = Js.nombre(LecteurBkp.somme(bkp)) + " pièces dans les .bkp";
         attendre("compteur", () -> texteEcran(a).contains(compteur));
 
         // L'autre semaine reste étanche : aucune pièce comptée.
@@ -231,8 +231,8 @@ public class AppliNativeTest {
         // Onglet sans lancement : semaine du calendrier ayant la bonne parité.
         String semainePaire = "Semaine " + Semaines.semaineCalendrier(Calendar.getInstance(), Depot.PAIRE);
         assertEquals(semainePaire, t.getTabAt(0).getText().toString());
-        attendre("compteur semaine paire", () -> texteEcran(a).contains(semainePaire + " — 0 pièce(s) au total dans les .bkp"));
-        assertTrue(texteEcran(a).contains("Aucun lancement chargé pour cette semaine."));
+        attendre("compteur semaine paire", () -> texteEcran(a).contains("0 pièces dans les .bkp"));
+        assertTrue(texteEcran(a).contains("Aucun lancement."));
     }
 
     @Test
@@ -293,14 +293,14 @@ public class AppliNativeTest {
 
         a.choisirDossier(Depot.IMPAIRE);
         a.dossierChoisi(Uri.fromFile(partage));
-        assertTrue(texteEcran(a).contains("Dossier mémorisé (" + a.libelleOnglet(Depot.IMPAIRE) + ") : " + partage.getName()));
+        assertTrue(texteEcran(a).contains(partage.getName()));
         // Chaque semaine a son propre dossier.
         assertNull(DossierPartage.memorise(a, Depot.PAIRE));
 
         a.scannerDossier(Depot.IMPAIRE);
         Paire agglo = app.depot().paireFixe("Agglo 1er tour", Depot.IMPAIRE);
         attendre("scan et contrôles", () -> agglo.rapport != null && agglo.ecartsScies != null && !agglo.enCours
-                && texteEcran(a).contains("non reconnu"));
+                && texteEcran(a).contains("Non reconnu(s)"));
         attendre("fin des contrôles", () -> !texteEcran(a).contains("⏳"));
         assertEquals("LAN264101STRAT.xlsx", agglo.strat.nom);
         assertEquals("CUTRITE_LAN264101STRAT.xlsx", agglo.coupe.nom);
@@ -308,11 +308,10 @@ public class AppliNativeTest {
         assertEquals("41", agglo.semaine);
         assertEquals("coupe", agglo.source);
         String ecran = texteEcran(a);
-        assertTrue(ecran, ecran.contains("✔ Agglo 1er tour — Semaine 41 : LAN264101STRAT.xlsx + liste de coupe + .bkp"));
+        assertTrue(ecran, ecran.contains("✔ Agglo 1er tour : LAN264101STRAT.xlsx + coupe + .bkp"));
         assertEquals("Semaine 41", t.getTabAt(1).getText().toString());
-        assertTrue(ecran, ecran.contains("1 fichier(s) sur 6 non reconnu(s) (aucun code ni semaine reconnaissable) : notes.txt"));
-        assertTrue(ecran, ecran.contains("1 fichier(s) ignoré(s) : semaine différente de l'onglet actif (Semaine 41)."));
-        assertTrue(ecran, ecran.contains("Contrôle Scies : "));
+        assertTrue(ecran, ecran.contains("Non reconnu(s) : notes.txt"));
+        assertTrue(ecran, ecran.contains("Scies : "));
 
         // Le lancement TRIGANO devient un chantier de la semaine impaire.
         Paire trigano = null;
@@ -321,7 +320,7 @@ public class AppliNativeTest {
         assertEquals("LAN2641TRIGANO.xlsx", trigano.strat.nom);
         assertTrue(ecran, ecran.contains("✔ " + trigano.label + " : LAN2641TRIGANO.xlsx"));
         int nbChantiers = app.depot().chantiers(Depot.IMPAIRE).size();
-        attendre("récapitulatif", () -> texteEcran(a).contains("Total semaine 41 (2 lancements)"));
+        attendre("récapitulatif", () -> texteEcran(a).contains("LAN2641TRIGANO") && !texteEcran(a).contains("…"));
         ecran = texteEcran(a);
         assertTrue(ecran, ecran.contains("Agglo 1er tour\nLAN264101STRAT"));
         assertTrue(ecran, ecran.contains(trigano.label + "\nLAN2641TRIGANO"));
@@ -371,7 +370,7 @@ public class AppliNativeTest {
 
         r.rechercher("ZZZ");
         attendre("recherche vide", () -> !r.enCours);
-        assertTrue(texteEcran(a).contains("clé ou commande ZZZ introuvable dans les 1 poste(s)/lancement(s) sélectionné(s)"));
+        assertTrue(texteEcran(a).contains("« ZZZ » introuvable."));
 
         r.rechercher("T9");
         attendre("bande", () -> !r.enCours);

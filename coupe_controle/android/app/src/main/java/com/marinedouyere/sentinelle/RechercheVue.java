@@ -68,13 +68,10 @@ final class RechercheVue {
         LinearLayout corps = ui.colonne();
         corps.setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(12));
         carte.addView(corps);
-        corps.addView(ui.texte("🔍 Recherche pièces sur Cutrite", 16, true, 0xFF263238));
-        TextView aide = ui.texte("Clé (commande + ligne), commande seule ou bande/modulo, dans les fichiers chargés des deux semaines.",
-                13, false, ui.couleur(R.color.gris_texte));
-        corps.addView(aide, ui.marges(2, 8));
+        corps.addView(ui.texte("🔍 Recherche", 16, true, 0xFF263238), ui.marges(0, 4));
         LinearLayout ligne = ui.rangee();
         champ = new EditText(activite);
-        champ.setHint("ex. CVC26090331003, CVC26090331 ou T9");
+        champ.setHint("CVC26090331003, CVC26090331 ou T9");
         champ.setSingleLine(true);
         champ.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         champ.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
@@ -243,13 +240,13 @@ final class RechercheVue {
         zone.removeAllViews();
         if (r == null) return;
         if (r.nbSources == 0) {
-            zone.addView(ui.texte(Recherche.MESSAGE_AUCUNE_SOURCE, 14, false, ui.couleur(R.color.alerte_texte)), ui.marges(6, 0));
+            zone.addView(ui.texte("Aucun fichier chargé.", 14, false, ui.couleur(R.color.alerte_texte)), ui.marges(6, 0));
             return;
         }
         List<String> erreurs = new ArrayList<>(r.erreurs);
         if (erreurSchema != null) erreurs.add(erreurSchema);
         if (r.trouvailles.isEmpty()) {
-            zone.addView(ui.texte(Recherche.messageIntrouvable(r), 14, false, ui.couleur(R.color.alerte_texte)), ui.marges(6, 0));
+            zone.addView(ui.texte("« " + r.requete + " » introuvable.", 14, false, ui.couleur(R.color.alerte_texte)), ui.marges(6, 0));
         } else {
             TextView bilan = ui.texte(r.trouvailles.size() + " résultat(s)", 14, true, ui.couleur(R.color.ok_texte));
             zone.addView(bilan, ui.marges(6, 2));
@@ -300,8 +297,10 @@ final class RechercheVue {
                 corps.addView(vue, ui.marges(6, 8));
             }
         }
-        String note = Recherche.noteSource(t);
-        if (note != null) corps.addView(ui.texte(note, 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 6));
+        if (t.sourceBkp || t.sansCoupe) {
+            corps.addView(ui.texte(t.sourceBkp ? "Source : .bkp" : "Source : lancement", 13, false, ui.couleur(R.color.gris_texte)),
+                    ui.marges(2, 4));
+        }
 
         corps.addView(champ(Recherche.libelleQuantite(t), t.quantite != null ? Js.nombre(t.quantite) : "?"));
         if (t.valeurs != null) corps.addView(champGrain(t.valeurs));
@@ -343,7 +342,7 @@ final class RechercheVue {
 
     private View donneesLancement(Map<String, String> donnees) {
         LinearLayout bloc = ui.colonne();
-        MaterialButton titre = ui.boutonTexte("▸ Toutes les données du fichier de lancement (" + donnees.size() + ")");
+        MaterialButton titre = ui.boutonTexte("▸ Toutes les données (" + donnees.size() + ")");
         titre.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
         LinearLayout table = ui.colonne();
         table.setVisibility(View.GONE);
@@ -362,7 +361,7 @@ final class RechercheVue {
         titre.setOnClickListener(v -> {
             boolean ouvrir = table.getVisibility() != View.VISIBLE;
             table.setVisibility(ouvrir ? View.VISIBLE : View.GONE);
-            titre.setText((ouvrir ? "▾" : "▸") + " Toutes les données du fichier de lancement (" + donnees.size() + ")");
+            titre.setText((ouvrir ? "▾" : "▸") + " Toutes les données (" + donnees.size() + ")");
         });
         bloc.addView(titre, ui.marges(4, 0));
         bloc.addView(table, ui.pleineLargeur());
@@ -390,7 +389,6 @@ final class RechercheVue {
             titre.setText((ouvrir ? "▾ " : "▸ ") + SchemaCommande.titre(s));
         });
         corps.addView(titre, ui.pleineLargeur());
-        contenu.addView(ui.texte(SchemaCommande.NOTE, 13, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 6));
 
         for (SchemaCommande.Bloc bloc : SchemaCommande.blocs(s, cleSurlignee)) {
             LinearLayout b = ui.colonne();
@@ -407,7 +405,6 @@ final class RechercheVue {
                 vue.setContentDescription("Schéma de l'ensemble");
                 b.addView(vue, ui.pleineLargeur());
             }
-            if (bloc.note != null) b.addView(ui.texte(bloc.note, 13, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 4));
             b.addView(detailPieces(bloc, cleSurlignee));
             contenu.addView(b, ui.marges(4, 6));
         }

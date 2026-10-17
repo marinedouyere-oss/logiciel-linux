@@ -196,10 +196,9 @@ public class MainActivity extends AppCompatActivity {
         return ongletAfficheChange;
     }
 
-    /** Titre d'une case : sa semaine pour un poste fixe (celle de l'onglet si aucun fichier). */
-    private String titreCase(Paire p) {
-        if (!p.estChantier() && p.semaine == null) return libelleOnglet(p.parite);
-        return p.titre();
+    /** Titre d'une case : le poste (la semaine est déjà sur l'onglet), ou le chantier. */
+    private static String titreCase(Paire p) {
+        return p.estChantier() ? p.titre() : p.poste;
     }
 
     private boolean ongletSemaine() {
@@ -225,7 +224,7 @@ public class MainActivity extends AppCompatActivity {
         MaterialCardView carteCompteur = ui.carte();
         carteCompteur.setCardBackgroundColor(0xFFE3F2FD);
         carteCompteur.setStrokeColor(0xFF90CAF9);
-        texteCompteur = ui.texte(libelleOnglet(parite) + " — calcul du nombre de pièces…", 16, true,
+        texteCompteur = ui.texte("…", 16, true,
                 ui.couleur(R.color.bleu_fonce));
         texteCompteur.setGravity(Gravity.CENTER);
         texteCompteur.setPadding(ui.dp(12), ui.dp(14), ui.dp(12), ui.dp(14));
@@ -237,7 +236,7 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout corpsRecap = ui.colonne();
         corpsRecap.setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(12));
         carteRecap.addView(corpsRecap);
-        corpsRecap.addView(ui.texte("📋 Récapitulatif des lancements", 16, true, 0xFF263238), ui.marges(0, 6));
+        corpsRecap.addView(ui.texte("📋 Lancements", 16, true, 0xFF263238), ui.marges(0, 6));
         zoneRecap = ui.colonne();
         corpsRecap.addView(zoneRecap, ui.pleineLargeur());
         contenu.addView(carteRecap);
@@ -256,10 +255,7 @@ public class MainActivity extends AppCompatActivity {
         actions.addView(reinit, ui.poids(1));
         contenu.addView(actions, ui.marges(4, 8));
 
-        for (String poste : Depot.POSTES_SEMAINE) {
-            contenu.addView(titrePoste(poste));
-            contenu.addView(carteDe(depot.paireFixe(poste, parite)));
-        }
+        for (String poste : Depot.POSTES_SEMAINE) contenu.addView(carteDe(depot.paireFixe(poste, parite)));
 
         contenu.addView(titrePoste(Depot.POSTE_CHANTIERS));
         for (Paire c : depot.chantiers(parite)) contenu.addView(carteDe(c));
@@ -349,9 +345,9 @@ public class MainActivity extends AppCompatActivity {
         entete.addView(reinit);
         corps.addView(entete);
 
-        corps.addView(ligneFichier(p, Paire.STRAT, "Fichier de lancement"));
-        corps.addView(ligneFichier(p, Paire.COUPE, "Liste de coupe (Cutrite)"));
-        corps.addView(ligneFichier(p, Paire.BKP, "Contrôle Scies — fichier .bkp"));
+        corps.addView(ligneFichier(p, Paire.STRAT, "Lancement"));
+        corps.addView(ligneFichier(p, Paire.COUPE, "Liste de coupe"));
+        corps.addView(ligneFichier(p, Paire.BKP, "Fichier .bkp"));
 
         LinearLayout boutons = ui.rangee();
         MaterialButton go = ui.bouton("GO");
@@ -396,31 +392,29 @@ public class MainActivity extends AppCompatActivity {
     private void afficherRapport(LinearLayout corps, Paire p) {
         Comparateur.Rapport r = p.rapport;
         corps.addView(ui.separateur());
-        String suffixe = "";
+        String attendu = Js.entierTronque(r.totalAttendu);
+        if (r.nbAnomalies == 0) {
+            corps.addView(ui.bandeau("✔ Tout est correct — " + attendu + " pièces",
+                    ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte)));
+        } else {
+            corps.addView(ui.bandeau("⚠ " + r.nbAnomalies + " anomalie(s) — " + attendu + " attendues, "
+                    + Js.nombre(r.totalTrouve) + " trouvées",
+                    ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)));
+        }
+        List<String> details = new ArrayList<>();
+        if ("bkp".equals(p.source)) details.add("Comparé au .bkp");
         if (p.nbUnitaires != null && p.nbPiecesTrouvees != null && p.nbPiecesTrouvees != 0) {
             double unitaire = p.nbUnitaires * 100.0 / p.nbPiecesTrouvees;
             double grain = (p.nbPiecesTrouvees - p.nbUnitaires) * 100.0 / p.nbPiecesTrouvees;
-            suffixe = ", dont " + pourcent(unitaire) + " % unitaire / " + pourcent(grain) + " % grain matching";
+            details.add(pourcent(unitaire) + " % unitaire · " + pourcent(grain) + " % grain matching");
         }
-        String attendu = Js.entierTronque(r.totalAttendu);
-        if (r.nbAnomalies == 0) {
-            corps.addView(ui.bandeau("✔ Tout est correct — " + attendu + " pièces attendues, "
-                    + Js.nombre(r.totalTrouve) + " trouvées" + suffixe + ".",
-                    ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte)));
-        } else {
-            corps.addView(ui.bandeau("⚠ " + r.nbAnomalies + " anomalie(s) — " + attendu + " pièces attendues, "
-                    + Js.nombre(r.totalTrouve) + " trouvées (" + r.nbOk + " OK)" + suffixe + ".",
-                    ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)));
-        }
-        if ("bkp".equals(p.source)) {
-            corps.addView(ui.texte("Pas de liste de coupe : comparaison avec le .bkp (quantités réellement optimisées).",
-                    13, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
+        if (!details.isEmpty()) {
+            corps.addView(ui.texte(TextUtils.join(" · ", details), 13, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
         }
 
         if (!p.doublons.isEmpty()) {
             StringBuilder sb = new StringBuilder();
-            sb.append("⚠ ").append(p.doublons.size()).append(" doublon(s) dans le fichier de lancement\n");
-            sb.append("Une même clé commande+ligne apparaît sur plusieurs lignes du fichier de lancement (hors panneaux de protection) — vérifiez qu'il ne s'agit pas d'une pièce lancée deux fois par erreur.");
+            sb.append("⚠ ").append(p.doublons.size()).append(" doublon(s) dans le lancement");
             for (LecteurStrat.Doublon d : p.doublons) {
                 List<String> q = new ArrayList<>();
                 for (Double v : d.quantites) q.add(Js.nombre(v));
@@ -491,21 +485,18 @@ public class MainActivity extends AppCompatActivity {
     private void afficherScies(LinearLayout corps, Paire p) {
         corps.addView(ui.separateur());
         if (p.erreurScies != null) {
-            corps.addView(ui.bandeau("❌ " + p.erreurScies, ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)));
+            corps.addView(ui.bandeau("❌ Scies : " + p.erreurScies, ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)));
             return;
         }
-        String bilan = Js.nombre(p.totalScies == null ? 0 : p.totalScies) + " pièce(s) au total (protections comprises)";
+        String pieces = Js.nombre(p.totalScies == null ? 0 : p.totalScies) + " pièces";
         if (p.ecartsScies.isEmpty()) {
-            corps.addView(ui.bandeau("✔ Contrôle Scies : tout correspond — " + bilan
-                    + ", toutes retrouvées à l'identique dans le .bkp.", ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte)));
+            corps.addView(ui.bandeau("✔ Scies : tout correspond — " + pieces, ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte)));
             return;
         }
-        corps.addView(ui.bandeau("⚠ Contrôle Scies : " + p.ecartsScies.size() + " écart(s) sur " + bilan,
+        corps.addView(ui.bandeau("⚠ Scies : " + p.ecartsScies.size() + " écart(s) sur " + pieces,
                 ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)));
-        corps.addView(ui.texte("Comparaison entre le fichier de lancement et ce qui a été réellement optimisé (.bkp) — une pièce en écart peut signaler un oubli lors de l'optimisation.",
-                13, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
         for (LecteurBkp.Ecart e : p.ecartsScies) {
-            TextView t = ui.texte(e.cle + " — attendu " + Js.nombre(e.attendu) + ", trouvé (.bkp) " + Js.nombre(e.trouve)
+            TextView t = ui.texte(e.cle + " — attendu " + Js.nombre(e.attendu) + ", .bkp " + Js.nombre(e.trouve)
                     + " — " + e.type(), 13, false, 0xFF3E4C59);
             t.setPadding(0, ui.dp(4), 0, 0);
             corps.addView(t);
@@ -525,7 +516,7 @@ public class MainActivity extends AppCompatActivity {
             final double t = total;
             principal.post(() -> {
                 if (texteCompteur != null && parite.equals(onglet)) {
-                    texteCompteur.setText(libelleOnglet(parite) + " — " + Js.nombre(t) + " pièce(s) au total dans les .bkp");
+                    texteCompteur.setText(Js.nombre(t) + " pièces dans les .bkp");
                 }
             });
         });
@@ -624,7 +615,7 @@ public class MainActivity extends AppCompatActivity {
     void lancerUnePaire(Paire p, FinControle fin) {
         final boolean seul = fin == null;
         if (p.strat == null && p.coupe == null && p.bkp == null) {
-            p.etat = "— vide (ignorée)";
+            p.etat = null;
             p.etatErreur = false;
             rafraichir(p);
             if (fin != null) fin.fini(null, false);
@@ -640,7 +631,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         if (p.coupe == null && p.bkp == null) {
-            p.etat = "— en attente de la liste de coupe ou du .bkp";
+            p.etat = "Il manque la liste de coupe ou le .bkp";
             p.etatErreur = false;
             rafraichir(p);
             if (fin != null) fin.fini(null, false);
@@ -693,7 +684,7 @@ public class MainActivity extends AppCompatActivity {
     private void finirControle(Paire p, LecteurStrat.Resultat strat, Controles.Etape etape, FinControle fin) {
         try {
             principal.post(() -> {
-                p.etat = p.coupe != null ? "⏳ lecture de la liste de coupe (Cutrite)…" : "⏳ pas de liste de coupe — comparaison avec le .bkp…";
+                p.etat = p.coupe != null ? "⏳ lecture de la liste de coupe…" : "⏳ comparaison avec le .bkp…";
                 rafraichir(p);
             });
             controles.comparer(p, strat, etape);
@@ -701,9 +692,7 @@ public class MainActivity extends AppCompatActivity {
             principal.post(() -> {
                 p.enCours = false;
                 p.etatErreur = false;
-                p.etat = p.rapport.nbAnomalies == 0
-                        ? "✅ terminé — tout est correct (" + p.rapport.lignes.size() + " pièce(s))"
-                        : "⚠️ terminé — " + p.rapport.nbAnomalies + " anomalie(s)";
+                p.etat = null;
                 listesDepliees.remove(p);
                 rafraichir(p);
                 if (fin != null) fin.fini(null, true);
@@ -767,7 +756,7 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         p.enCours = true;
-        p.etat = "⏳ Contrôle Scies : lecture des fichiers…";
+        p.etat = "⏳ contrôle Scies…";
         p.etatErreur = false;
         rafraichir(p);
         app.fond.execute(() -> {
@@ -817,18 +806,15 @@ public class MainActivity extends AppCompatActivity {
         carte.addView(corps);
         corps.addView(ui.texte("📂 Dossier partagé", 16, true, 0xFF263238));
         DossierPartage dossier = DossierPartage.memorise(this, parite);
-        String info = dossier != null
-                ? "Dossier mémorisé (" + libelleOnglet(parite) + ") : " + dossier.nom
-                : "Choisissez le dossier où arrivent les fichiers de cette semaine (téléphone, Google Drive…) : "
-                        + "le scan les range tout seul dans les bonnes cases et lance les contrôles.";
-        corps.addView(ui.texte(info, 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 6));
+        if (dossier != null) corps.addView(ui.texte(dossier.nom, 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 0));
+        corps.addView(ui.espace(6));
 
         LinearLayout boutons = ui.rangee();
-        MaterialButton choisir = ui.boutonContour("Choisir le dossier…");
+        MaterialButton choisir = ui.boutonContour(dossier != null ? "Changer" : "Choisir le dossier");
         choisir.setOnClickListener(v -> choisirDossier(parite));
         boutons.addView(choisir, ui.poids(1));
         boutons.addView(new View(this), new LinearLayout.LayoutParams(ui.dp(8), 1));
-        MaterialButton scanner = ui.bouton("Scanner le dossier");
+        MaterialButton scanner = ui.bouton("Scanner");
         scanner.setEnabled(dossier != null && !scansEnCours.contains(parite));
         scanner.setOnClickListener(v -> scannerDossier(parite));
         boutons.addView(scanner, ui.poids(1));
@@ -900,8 +886,8 @@ public class MainActivity extends AppCompatActivity {
             } catch (Exception e) {
                 principal.post(() -> {
                     scansEnCours.remove(parite);
-                    compteRendu(parite, java.util.Collections.singletonList("Impossible de lire le dossier \"" + dossier.nom + "\" : "
-                            + e.getMessage() + ". Recliquez sur \"Choisir le dossier…\"."), true);
+                    compteRendu(parite, java.util.Collections.singletonList("Dossier illisible : " + e.getMessage()
+                            + ". Rechoisissez-le."), true);
                 });
                 return;
             }
@@ -915,8 +901,7 @@ public class MainActivity extends AppCompatActivity {
         if (r.aucunLancement) {
             scansEnCours.remove(parite);
             List<String> lignes = new ArrayList<>();
-            lignes.add("Aucun fichier de lancement reconnu dans ce dossier.");
-            lignes.add(ScanDossier.noteNonReconnus(r));
+            lignes.add("Aucun lancement dans ce dossier.");
             compteRendu(parite, lignes, true);
             return;
         }
@@ -925,10 +910,10 @@ public class MainActivity extends AppCompatActivity {
         for (ScanDossier.Cible g : r.fixes) {
             Paire p = depot.paireFixe(g.poste, g.parite);
             if (p == null) {
-                lignes.add("— " + g.poste + " (Semaine " + g.code.substring(2, 4) + ") : case introuvable, ignoré.");
+                lignes.add("— " + g.poste + " : case introuvable");
                 continue;
             }
-            affectations.add(new Affectation(g, p, g.poste + " — Semaine " + g.code.substring(2, 4)));
+            affectations.add(new Affectation(g, p, g.poste));
         }
         for (ScanDossier.Cible g : r.chantiers) {
             String identite = g.identiteChantier();
@@ -956,7 +941,7 @@ public class MainActivity extends AppCompatActivity {
                     String suffixe = "";
                     if (g.coupe != null) {
                         copierDepuisDossier(p, Paire.COUPE, g.coupe);
-                        suffixe = " + liste de coupe";
+                        suffixe = " + coupe";
                     }
                     if (g.bkp != null) {
                         copierDepuisDossier(p, Paire.BKP, g.bkp);
@@ -975,13 +960,10 @@ public class MainActivity extends AppCompatActivity {
                     a.paire.etat = null;
                     a.paire.etatErreur = false;
                 }
-                String libelleSemaine = libelleOnglet(parite);
                 List<String> compte = new ArrayList<>();
-                if (lignes.isEmpty()) compte.add("Aucun fichier de \"" + libelleSemaine + "\" trouvé dans ce dossier.");
+                if (lignes.isEmpty()) compte.add("Aucun lancement de cette semaine dans ce dossier.");
                 compte.addAll(lignes);
-                compte.add(ScanDossier.noteNonReconnus(r));
-                String ignores = ScanDossier.noteIgnores(r, libelleSemaine);
-                if (ignores != null) compte.add(ignores);
+                if (!r.nonReconnus.isEmpty()) compte.add("Non reconnu(s) : " + TextUtils.join(", ", r.nonReconnus));
                 compteRendu(parite, compte, lignes.isEmpty());
                 majCompteur();
                 // Le scan sert à éviter les clics : les contrôles possibles partent tout seuls.

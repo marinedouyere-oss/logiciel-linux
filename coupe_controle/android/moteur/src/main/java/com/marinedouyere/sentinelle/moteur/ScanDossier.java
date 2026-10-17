@@ -328,19 +328,6 @@ public final class ScanDossier {
         return res;
     }
 
-    /** Note affichée après chaque scan : fichiers non reconnus, ou tous reconnus. */
-    public static String noteNonReconnus(Resultat r) {
-        if (r.nonReconnus.isEmpty()) return r.nbFichiers + " fichier(s) dans le dossier, tous reconnus.";
-        return r.nonReconnus.size() + " fichier(s) sur " + r.nbFichiers
-                + " non reconnu(s) (aucun code ni semaine reconnaissable) : " + String.join(", ", r.nonReconnus);
-    }
-
-    /** Note sur les lancements de l'autre semaine, laissés de côté (null s'il n'y en a pas). */
-    public static String noteIgnores(Resultat r, String libelleSemaine) {
-        if (r.ignoresAutreSemaine == 0) return null;
-        return r.ignoresAutreSemaine + " fichier(s) ignoré(s) : semaine différente de l'onglet actif (" + libelleSemaine + ").";
-    }
-
     private static String valeurOu(String poste) {
         return poste != null ? poste : POSTE_CHANTIERS;
     }

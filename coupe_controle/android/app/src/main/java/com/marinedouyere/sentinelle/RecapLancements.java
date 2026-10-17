@@ -90,11 +90,11 @@ final class RecapLancements {
         return t;
     }
 
-    private static final String[] TITRES = {"Poste / lancement", "Prévues", ".bkp", "Contrôle", "Scies"};
+    private static final String[] TITRES = {"Poste", "Prévues", ".bkp", "Contrôle", "Scies"};
 
     private static TableRow ligneTitreSemaine(Context c, Ui ui, String semaine) {
         TableRow r = new TableRow(c);
-        TextView t = cellule(c, ui, semaine != null ? "Semaine " + semaine : "Semaine inconnue", true, 0xFF0D47A1, Gravity.START);
+        TextView t = cellule(c, ui, "Semaine " + (semaine != null ? semaine : "?"), true, 0xFF0D47A1, Gravity.START);
         t.setTextSize(14);
         t.setPadding(ui.dp(5), ui.dp(10), ui.dp(5), ui.dp(4));
         TableRow.LayoutParams lp = new TableRow.LayoutParams();
@@ -112,10 +112,8 @@ final class RecapLancements {
         boolean auMoinsUnBkp;
         int anomalies;
         int ecarts;
-        int nb;
 
         void ajouter(Ligne l) {
-            nb++;
             if (l.prevues == null || l.prevues.isNaN()) prevuesConnues = false;
             else prevues += l.prevues;
             if (l.paire.bkp != null) {
@@ -131,7 +129,7 @@ final class RecapLancements {
     private static TableRow ligneTotal(Context c, Ui ui, String libelle, Totaux t) {
         TableRow r = new TableRow(c);
         r.setBackgroundColor(0xFFECEFF1);
-        r.addView(cellule(c, ui, libelle + " (" + t.nb + " lancement" + (t.nb > 1 ? "s" : "") + ")", true, 0xFF263238, Gravity.START));
+        r.addView(cellule(c, ui, libelle, true, 0xFF263238, Gravity.START));
         r.addView(cellule(c, ui, t.prevuesConnues ? Js.nombre(t.prevues) : "…", true, 0xFF263238, Gravity.END));
         r.addView(cellule(c, ui, !t.auMoinsUnBkp ? "—" : t.bkpConnus ? Js.nombre(t.bkp) : "…", true, 0xFF263238, Gravity.END));
         r.addView(cellule(c, ui, t.anomalies > 0 ? "⚠ " + t.anomalies : "", true, ui.couleur(R.color.alerte_texte), Gravity.CENTER_HORIZONTAL));
@@ -142,7 +140,7 @@ final class RecapLancements {
     static View tableau(Context c, Ui ui, List<Ligne> lignes, SurClic surClic) {
         LinearLayout bloc = ui.colonne();
         if (lignes.isEmpty()) {
-            bloc.addView(ui.texte("Aucun lancement chargé pour cette semaine.", 14, false, ui.couleur(R.color.gris_texte)));
+            bloc.addView(ui.texte("Aucun lancement.", 14, false, ui.couleur(R.color.gris_texte)));
             return bloc;
         }
         TableLayout table = new TableLayout(c);
@@ -157,13 +155,15 @@ final class RecapLancements {
         }
         table.addView(entete);
 
+        // Sous-titres et sous-totaux par semaine seulement si l'onglet en mélange plusieurs.
+        java.util.Set<String> semaines = new java.util.HashSet<>();
+        for (Ligne l : lignes) semaines.add(l.semaine);
+        boolean plusieurs = semaines.size() > 1;
         Totaux general = new Totaux();
-        int nbSemaines = 0;
         int i = 0;
         while (i < lignes.size()) {
             String semaine = lignes.get(i).semaine;
-            table.addView(ligneTitreSemaine(c, ui, semaine));
-            nbSemaines++;
+            if (plusieurs) table.addView(ligneTitreSemaine(c, ui, semaine));
             Totaux totalSemaine = new Totaux();
             int n = 0;
             for (; i < lignes.size() && java.util.Objects.equals(lignes.get(i).semaine, semaine); i++) {
@@ -212,13 +212,11 @@ final class RecapLancements {
                 }
                 table.addView(ligne);
             }
-            table.addView(ligneTotal(c, ui, "Total semaine " + (semaine != null ? semaine : "?"), totalSemaine));
+            if (plusieurs) table.addView(ligneTotal(c, ui, "Total sem. " + (semaine != null ? semaine : "?"), totalSemaine));
         }
-        if (nbSemaines > 1) table.addView(ligneTotal(c, ui, "Total de l'onglet", general));
+        table.addView(ligneTotal(c, ui, "Total", general));
 
         bloc.addView(table, ui.pleineLargeur());
-        bloc.addView(ui.texte("✔ OK : rien à signaler · ⚠ : nombre d'anomalies (Contrôle) ou d'écarts (Scies) · — : pas encore "
-                + "lancé. Touchez une ligne pour aller à sa case.", 12, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 0));
         return bloc;
     }
 }

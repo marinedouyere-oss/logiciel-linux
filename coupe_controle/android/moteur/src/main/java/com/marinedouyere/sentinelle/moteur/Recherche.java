@@ -351,25 +351,9 @@ public final class Recherche {
         return res;
     }
 
-    public static final String MESSAGE_AUCUNE_SOURCE = "Sélectionnez au moins un fichier de lancement ou une liste de coupe.";
-
-    /** Message quand rien n'est trouvé. */
-    public static String messageIntrouvable(Resultat r) {
-        String quoi = r.numeroBande != null ? "bande/modulo T" + r.numeroBande : "clé ou commande " + r.requete;
-        return quoi + " introuvable dans les " + r.nbSources
-                + " poste(s)/lancement(s) sélectionné(s) (liste de coupe, .bkp et/ou fichier de lancement).";
-    }
-
     /** Libellé de la quantité affichée pour une trouvaille. */
     public static String libelleQuantite(Trouvaille t) {
         return t.sourceBkp ? "Quantité trouvée (.bkp)" : t.sansCoupe ? "Quantité attendue (fichier de lancement)" : "Quantité trouvée";
-    }
-
-    /** Note sous l'en-tête d'une trouvaille (null si la liste de coupe a servi). */
-    public static String noteSource(Trouvaille t) {
-        if (t.sourceBkp) return "Pas de liste de coupe pour ce poste — données du .bkp (réellement optimisé).";
-        if (t.sansCoupe) return "Pas de liste de coupe ni de .bkp pour ce poste — données du fichier de lancement uniquement.";
-        return null;
     }
 
     /** Toutes les lignes d'une commande, tous fichiers de lancement chargés confondus (une par clé). */

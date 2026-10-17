@@ -1114,7 +1114,6 @@ public final class SchemaCommande {
 
     public static final class Bloc {
         public String titre;
-        public String note;
         public Ensemble ensemble;
         public boolean ouvert;
         public final List<LignePiece> lignes = new ArrayList<>();
@@ -1219,7 +1218,6 @@ public final class SchemaCommande {
         if (!s.nonPlacees.isEmpty()) {
             Bloc bloc = new Bloc();
             bloc.titre = "Crédences sans position déductible (" + s.nonPlacees.size() + ")";
-            bloc.note = "Leurs longueurs ne correspondent à aucun plan de la commande : position à lire sur le plan client.";
             bloc.ouvert = true;
             for (Piece c : s.nonPlacees) bloc.lignes.add(avecCommentaire(c));
             blocs.add(bloc);
@@ -1237,8 +1235,4 @@ public final class SchemaCommande {
     public static String titre(Schema s) {
         return "Schéma de la commande " + s.commande + " — " + s.pieces.size() + " pièce(s)";
     }
-
-    public static final String NOTE =
-            "Vue de dessus, plans à l'échelle, crédences rabattues derrière leur plan. Disposition déduite des codes "
-                    + "d'assemblage et de l'ordre des lignes du fichier de lancement.";
 }

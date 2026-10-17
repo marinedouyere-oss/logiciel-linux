@@ -111,13 +111,37 @@ public class PariteEtape2Test {
             } else if (toutes.isEmpty()) {
                 assertTrue(cas, texte.startsWith("Aucun fichier de \"" + libelle(parts[1]) + "\" trouvé dans ce dossier."));
             }
-            assertTrue(cas + " : " + texte, texte.contains(ScanDossier.noteNonReconnus(r)));
-            String ignores = ScanDossier.noteIgnores(r, libelle(parts[1]));
+            assertTrue(cas + " : " + texte, texte.contains(noteNonReconnus(r)));
+            String ignores = noteIgnores(r, libelle(parts[1]));
             if (ignores != null) assertTrue(cas, texte.contains(ignores));
             else assertFalse(cas, texte.contains("ignoré(s)"));
             verifies++;
         }
         assertEquals(18, verifies);
+    }
+
+    // Textes de l'appli web, pour vérifier que le moteur donne les mêmes informations.
+    private static String noteNonReconnus(ScanDossier.Resultat r) {
+        if (r.nonReconnus.isEmpty()) return r.nbFichiers + " fichier(s) dans le dossier, tous reconnus.";
+        return r.nonReconnus.size() + " fichier(s) sur " + r.nbFichiers
+                + " non reconnu(s) (aucun code ni semaine reconnaissable) : " + String.join(", ", r.nonReconnus);
+    }
+
+    private static String noteIgnores(ScanDossier.Resultat r, String libelleSemaine) {
+        if (r.ignoresAutreSemaine == 0) return null;
+        return r.ignoresAutreSemaine + " fichier(s) ignoré(s) : semaine différente de l'onglet actif (" + libelleSemaine + ").";
+    }
+
+    private static String messageIntrouvable(Recherche.Resultat r) {
+        String quoi = r.numeroBande != null ? "bande/modulo T" + r.numeroBande : "clé ou commande " + r.requete;
+        return quoi + " introuvable dans les " + r.nbSources
+                + " poste(s)/lancement(s) sélectionné(s) (liste de coupe, .bkp et/ou fichier de lancement).";
+    }
+
+    private static String noteSource(Recherche.Trouvaille t) {
+        if (t.sourceBkp) return "Pas de liste de coupe pour ce poste — données du .bkp (réellement optimisé).";
+        if (t.sansCoupe) return "Pas de liste de coupe ni de .bkp pour ce poste — données du fichier de lancement uniquement.";
+        return null;
     }
 
     private static String libelle(String parite) {
@@ -289,7 +313,7 @@ public class PariteEtape2Test {
             assertEquals(requete, attendu.getJSONArray("erreurs").length(), r.erreurs.size());
             assertEquals(requete + " : nombre de résultats", resultats.length(), r.trouvailles.size());
             if (resultats.length() == 0) {
-                assertEquals(requete, attendu.getString("texte").trim(), Recherche.messageIntrouvable(r));
+                assertEquals(requete, attendu.getString("texte").trim(), messageIntrouvable(r));
             }
             for (int i = 0; i < resultats.length(); i++) {
                 JSONObject a = resultats.getJSONObject(i);
@@ -297,7 +321,7 @@ public class PariteEtape2Test {
                 String quoi = requete + " n°" + i + " (" + a.getString("cle") + ")";
                 assertEquals(quoi, a.getString("cle"), t.cle);
                 assertEquals(quoi, a.getString("poste"), t.source.nom());
-                assertEquals(quoi, nul(a.get("note")), Recherche.noteSource(t));
+                assertEquals(quoi, nul(a.get("note")), noteSource(t));
                 List<String> champs = new ArrayList<>();
                 JSONArray ca = a.getJSONArray("champs");
                 for (int k = 0; k < ca.length(); k++) champs.add(ca.getJSONArray(k).getString(0) + "=" + ca.getJSONArray(k).getString(1));
