@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="bleu">#1565C0</color>
+    <color name="bleu_fonce">#0D47A1</color>
+    <color name="fond">#F3F5F8</color>
+    <color name="ok_texte">#2E7D32</color>
+    <color name="ok_fond">#E3F4E6</color>
+    <color name="alerte_texte">#C62828</color>
+    <color name="alerte_fond">#FDE7E9</color>
+    <color name="attention_fond">#FFF4D6</color>
+    <color name="attention_texte">#8A5A00</color>
+    <color name="gris_texte">#5F6B76</color>
+    <color name="bordure">#DCE3EA</color>
+</resources>
