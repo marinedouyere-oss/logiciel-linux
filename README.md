@@ -90,5 +90,5 @@ oracle_budget/
 ## Autre projet du dépôt
 
 `filtre-demarchage-montre/` : appli Wear OS qui bloque les appels de
-démarchage sur une montre eSIM autonome, sur le modèle de Prefixtel. Voir
+démarchage sur une montre eSIM autonome, à partir des préfixes ARCEP. Voir
 [son README](filtre-demarchage-montre/README.md).

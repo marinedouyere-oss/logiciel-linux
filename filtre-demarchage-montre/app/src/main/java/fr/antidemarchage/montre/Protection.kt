@@ -8,7 +8,7 @@ import android.content.pm.PackageManager
 /**
  * Deux façons de bloquer selon ce que la montre permet :
  * - filtre système : l'appli est choisie comme « filtre d'appels » et Android lui
- *   soumet chaque appel avant de faire sonner (comme Prefixtel) ;
+ *   soumet chaque appel avant de faire sonner ;
  * - mode secours : si la montre ne propose pas ce rôle, l'appli raccroche dès
  *   que la sonnerie démarre.
  */

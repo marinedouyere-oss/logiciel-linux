@@ -2,8 +2,8 @@
 
 Appli **Wear OS** (Galaxy Watch4 et suivantes, Pixel Watch…) qui bloque les
 appels de démarchage directement sur une montre **eSIM autonome**, sans
-téléphone associé. Elle reprend le principe de **Prefixtel** : bloquer les
-préfixes que l'ARCEP réserve aux plateformes d'appels automatisés.
+téléphone associé. Elle bloque les préfixes que l'ARCEP réserve aux
+plateformes d'appels automatisés, comme les applis de blocage par préfixe.
 
 ## Fonctionnalités
 
@@ -27,7 +27,7 @@ Les numéros sont reconnus quelle que soit leur présentation : `01 62…`,
 
 L'appli choisit automatiquement la meilleure méthode disponible :
 
-1. **Filtrage avant sonnerie** (méthode de Prefixtel) : l'appli devient le
+1. **Filtrage avant sonnerie** : l'appli devient le
    « filtre d'appels » d'Android. Chaque appel lui est soumis avant que la
    montre sonne, et les appels de démarchage sont rejetés sans sonnerie ni
    notification.
@@ -88,7 +88,7 @@ l'ancienne version (`adb uninstall fr.antidemarchage.montre`).
 
 ## Limites
 
-- Comme Prefixtel, la liste ARCEP bloque aussi les appels automatisés
+- La liste ARCEP bloque aussi les appels automatisés
   légitimes qui utilisent ces préfixes (rappels de rendez-vous,
   livraisons…).
 - L'ARCEP peut faire évoluer la liste : elle se met à jour dans

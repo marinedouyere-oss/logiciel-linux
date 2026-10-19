@@ -2,8 +2,8 @@ package fr.antidemarchage.montre
 
 /**
  * Préfixes que l'ARCEP réserve aux systèmes automatisés d'appel (plateformes de
- * démarchage), décision n° 2022-1583 en vigueur depuis le 1er janvier 2023.
- * C'est la liste que bloque Prefixtel.
+ * démarchage), décision n° 2022-1583 en vigueur depuis le 1er janvier 2023
+ * (catégorie « numéros polyvalents vérifiés » du plan de numérotation).
  */
 object PrefixesArcep {
     val METROPOLE = listOf(
