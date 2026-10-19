@@ -86,3 +86,9 @@ oracle_budget/
   backup.py         export CSV
   ui/                interface PySide6 (fenêtre principale + 5 onglets)
 ```
+
+## Autre projet du dépôt
+
+`filtre-demarchage-montre/` : appli Wear OS qui bloque les appels de
+démarchage sur une montre eSIM autonome, sur le modèle de Prefixtel. Voir
+[son README](filtre-demarchage-montre/README.md).
