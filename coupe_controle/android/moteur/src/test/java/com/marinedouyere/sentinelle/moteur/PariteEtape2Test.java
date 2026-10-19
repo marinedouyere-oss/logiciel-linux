@@ -144,6 +144,10 @@ public class PariteEtape2Test {
         return null;
     }
 
+    private static String libelleQuantite(Recherche.Trouvaille t) {
+        return t.sourceBkp ? "Quantité trouvée (.bkp)" : t.sansCoupe ? "Quantité attendue (fichier de lancement)" : "Quantité trouvée";
+    }
+
     private static String libelle(String parite) {
         return parite.equals("paire") ? "Semaine paire" : "Semaine impaire";
     }
@@ -287,7 +291,7 @@ public class PariteEtape2Test {
 
     private static List<String> champsNatifs(Recherche.Trouvaille t) {
         List<String> c = new ArrayList<>();
-        c.add(Recherche.libelleQuantite(t) + "=" + (t.quantite != null ? Js.nombre(t.quantite) : "?"));
+        c.add(libelleQuantite(t) + "=" + (t.quantite != null ? Js.nombre(t.quantite) : "?"));
         if (t.valeurs != null) c.add("Grain matching=" + (t.valeurs.isEmpty() ? "Unitaire (pas de grain matching)" : String.join("", t.valeurs)));
         Recherche.ChampsDetail d = t.champs;
         if (d != null && d.lancement != null) c.add("Lancement=" + d.lancement);

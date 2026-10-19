@@ -351,9 +351,40 @@ public final class Recherche {
         return res;
     }
 
-    /** Libellé de la quantité affichée pour une trouvaille. */
-    public static String libelleQuantite(Trouvaille t) {
-        return t.sourceBkp ? "Quantité trouvée (.bkp)" : t.sansCoupe ? "Quantité attendue (fichier de lancement)" : "Quantité trouvée";
+    /** Une pièce (une clé) et tout ce qu'en disent les différents fichiers où elle a été trouvée. */
+    public static final class PieceTrouvee {
+        public final String cle;
+        public final List<Trouvaille> sources = new ArrayList<>();
+        /** Grain matching, toutes sources confondues. */
+        public final List<String> grains = new ArrayList<>();
+        /** Détail le plus complet disponible (avec dimensions de préférence). */
+        public ChampsDetail champs;
+
+        PieceTrouvee(String cle) {
+            this.cle = cle;
+        }
+
+        public String commande() {
+            return cle.length() >= 3 ? cle.substring(0, cle.length() - 3) : "";
+        }
+    }
+
+    /** Regroupe les trouvailles par clé, dans l'ordre des clés (commande puis ligne). */
+    public static List<PieceTrouvee> regrouper(List<Trouvaille> trouvailles) {
+        Map<String, PieceTrouvee> parCle = new java.util.TreeMap<>();
+        for (Trouvaille t : trouvailles) {
+            PieceTrouvee p = parCle.get(t.cle);
+            if (p == null) {
+                p = new PieceTrouvee(t.cle);
+                parCle.put(t.cle, p);
+            }
+            p.sources.add(t);
+            if (t.valeurs != null) for (String v : t.valeurs) if (!p.grains.contains(v)) p.grains.add(v);
+            if (t.champs != null && (p.champs == null || (p.champs.longueurFinie == null && t.champs.longueurFinie != null))) {
+                p.champs = t.champs;
+            }
+        }
+        return new ArrayList<>(parCle.values());
     }
 
     /** Toutes les lignes d'une commande, tous fichiers de lancement chargés confondus (une par clé). */

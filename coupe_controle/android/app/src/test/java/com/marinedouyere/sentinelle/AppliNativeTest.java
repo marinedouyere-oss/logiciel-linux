@@ -361,12 +361,16 @@ public class AppliNativeTest {
         r.rechercher("cvc26090464001");
         attendre("recherche", () -> !r.enCours);
         String ecran = texteEcran(a);
-        assertTrue(ecran, ecran.contains("CVC26090464001"));
-        assertTrue(ecran, ecran.contains("Feno — Semaine 41"));
-        assertTrue(ecran, ecran.contains("Schéma de la commande CVC26090464 —"));
+        // Une fiche pour la commande : son schéma, puis une ligne par pièce, la pièce cherchée ouverte.
+        assertTrue(ecran, ecran.contains("Commande CVC26090464"));
+        assertTrue(ecran, ecran.contains("6 pièce(s)"));
         assertTrue(ecran, ecran.contains("plan en L"));
-        assertTrue(ecran, ecran.contains("QUANTITÉ TROUVÉE"));
-        assertTrue(compter(a.getWindow().getDecorView(), SchemaVue.class) >= 2);
+        assertTrue(ecran, ecran.contains("CVC26090464001"));
+        assertTrue(ecran, ecran.contains("Plan TPPVC29551 · 1120 × 600 × 29 mm"));
+        assertTrue(ecran, ecran.contains("Feno ×1"));
+        assertTrue(ecran, ecran.contains("S'assemble sur la ligne 2 (LD600)"));
+        // Un dessin pour l'ensemble en L + le dessin de la pièce cherchée, pas un par pièce.
+        assertEquals(2, compterVisibles(a.getWindow().getDecorView(), SchemaVue.class));
 
         r.rechercher("ZZZ");
         attendre("recherche vide", () -> !r.enCours);
@@ -374,14 +378,16 @@ public class AppliNativeTest {
 
         r.rechercher("T9");
         attendre("bande", () -> !r.enCours);
-        assertTrue(texteEcran(a), texteEcran(a).contains("résultat(s)"));
+        assertTrue(texteEcran(a), texteEcran(a).contains("Bande T9 : "));
+        assertTrue(texteEcran(a), texteEcran(a).contains("Voir la commande"));
     }
 
-    private static int compter(View v, Class<?> type) {
+    private static int compterVisibles(View v, Class<?> type) {
+        if (v.getVisibility() != View.VISIBLE) return 0;
         int n = type.isInstance(v) ? 1 : 0;
         if (v instanceof ViewGroup) {
             ViewGroup g = (ViewGroup) v;
-            for (int i = 0; i < g.getChildCount(); i++) n += compter(g.getChildAt(i), type);
+            for (int i = 0; i < g.getChildCount(); i++) n += compterVisibles(g.getChildAt(i), type);
         }
         return n;
     }
