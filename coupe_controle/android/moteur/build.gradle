@@ -22,6 +22,7 @@ test {
     systemProperty "sentinelle.fixtures", System.getenv("SENTINELLE_FIXTURES") ?: ""
     systemProperty "sentinelle.reference", System.getenv("SENTINELLE_REFERENCE") ?: ""
     systemProperty "sentinelle.captures", System.getenv("SENTINELLE_CAPTURES") ?: ""
+    systemProperty "sentinelle.dossier", System.getenv("SENTINELLE_DOSSIER") ?: ""
     maxHeapSize = "2g"
     testLogging {
         events "failed", "skipped"

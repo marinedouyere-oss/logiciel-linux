@@ -32,8 +32,16 @@ public final class LecteurStrat {
     private static final Pattern MOTIF_DIMENSIONS_FINIES =
             Pattern.compile("([\\d.,]+)\\s*X\\s*([\\d.,]+)\\s*X\\s*([\\d.,]+)", Pattern.CASE_INSENSITIVE);
 
-    /** Un panneau de protection n'est pas une pièce commandée par le client. */
-    public static final Set<String> MATERIAUX_EXCLUS = Collections.singleton("PROTECTION");
+    /**
+     * Panneau de protection : il accompagne une pièce sans en être une (ce
+     * n'est pas une pièce commandée par le client). Selon
+     * les fichiers il s'appelle « PROTECTION » ou « PROTECTION-PF » (le
+     * logiciel d'optimisation passe parfois de l'un à l'autre).
+     */
+    public static boolean estProtection(Object materiau) {
+        if (materiau == null) return false;
+        return Js.trim(Js.texte(materiau)).toUpperCase(Locale.ROOT).startsWith("PROTECTION");
+    }
 
     public static final class LigneStrat {
         public String cle;
@@ -47,6 +55,23 @@ public final class LecteurStrat {
         public Double largeurFinie;
         public Double epaisseurFinie;
         public Map<String, String> toutesDonnees;
+        /** Données de chacune des lignes du fichier portant cette clé (hors protections). */
+        public List<Map<String, String>> lignesBrutes = new ArrayList<>();
+        /**
+         * Nombre de pièces finies. Une pièce assemblée (ex. Feno : compact décor
+         * + support collés) occupe une ligne par couche, toutes avec la même
+         * clé : elle ne compte qu'une fois. Calcul : par matière (agglo), la
+         * somme des quantités, puis la plus grande.
+         */
+        public double pieces;
+        /** Couches par pièce (1 pour une pièce simple). */
+        public int couches = 1;
+
+        /** Couches attendues pour une quantité de couches donnée → pièces complètes. */
+        public double piecesCompletes(double nbCouches) {
+            if (pieces <= 0 || qteAttendue <= 0) return nbCouches;
+            return Math.floor(nbCouches * pieces / qteAttendue + 1e-9);
+        }
     }
 
     public static final class Doublon {
@@ -62,6 +87,8 @@ public final class LecteurStrat {
         public String annee;
         public String semaine;
         public int nbPieces;
+        /** Clés des pièces à livrer cette semaine-là. */
+        public List<String> cles = new ArrayList<>();
     }
 
     public static final class Resultat {
@@ -148,7 +175,9 @@ public final class LecteurStrat {
         Map<String, Double> qteParCle = new LinkedHashMap<>();
         Map<String, LigneStrat> infosParCle = new LinkedHashMap<>();
         Map<String, List<Object[]>> lignesBrutesParCle = new LinkedHashMap<>(); // {signature, article, qte}
+        Map<String, List<Map<String, String>>> donneesParCle = new LinkedHashMap<>();
         Map<String, Integer> comptePieceParSemaine = new LinkedHashMap<>();
+        Map<String, List<String>> clesParSemaine = new LinkedHashMap<>();
 
         for (int r = 2; r <= f.nbLignes(); r++) {
             if (f.ligneVide(r)) continue;
@@ -157,7 +186,7 @@ public final class LecteurStrat {
             String commande = Js.trim(Js.texte(commandeBrute));
 
             Object agglo = cellule(f, r, idxAgglo);
-            if (agglo != null && MATERIAUX_EXCLUS.contains(Js.trim(Js.texte(agglo)).toUpperCase(Locale.ROOT))) continue;
+            if (estProtection(agglo)) continue;
 
             Object numeroLigne = cellule(f, r, idxLigne);
             Object articleBrut = cellule(f, r, idxArticle);
@@ -206,6 +235,13 @@ public final class LecteurStrat {
             infos.largeurFinie = dimFinies != null ? Js.nombreOuNull(dimFinies.group(2)) : null;
             infos.epaisseurFinie = dimFinies != null ? Js.nombreOuNull(dimFinies.group(3)) : null;
             infos.toutesDonnees = toutesDonnees;
+            List<Map<String, String>> donnees = donneesParCle.get(cle);
+            if (donnees == null) {
+                donnees = new ArrayList<>();
+                donneesParCle.put(cle, donnees);
+            }
+            donnees.add(toutesDonnees);
+            infos.lignesBrutes = donnees;
             infosParCle.put(cle, infos);
 
             String signature = String.join("\u0001",
@@ -228,6 +264,12 @@ public final class LecteurStrat {
                 String cleSemaine = (livan == null ? "" : Js.texte(livan)) + "-" + Js.texte(livsem);
                 Integer n = comptePieceParSemaine.get(cleSemaine);
                 comptePieceParSemaine.put(cleSemaine, (n == null ? 0 : n) + 1);
+                List<String> cles = clesParSemaine.get(cleSemaine);
+                if (cles == null) {
+                    cles = new ArrayList<>();
+                    clesParSemaine.put(cleSemaine, cles);
+                }
+                if (!cles.contains(cle)) cles.add(cle);
             }
         }
 
@@ -235,6 +277,17 @@ public final class LecteurStrat {
         for (Map.Entry<String, Double> q : qteParCle.entrySet()) {
             LigneStrat l = infosParCle.get(q.getKey());
             l.qteAttendue = q.getValue();
+            Map<String, Double> parMatiere = new LinkedHashMap<>();
+            for (Map<String, String> d : l.lignesBrutes) {
+                String matiere = d.get(COL_AGGLO) == null ? "" : d.get(COL_AGGLO).toUpperCase(Locale.ROOT);
+                Double qd = Js.nombreOuNull(d.get(COL_QTE));
+                Double avant = parMatiere.get(matiere);
+                parMatiere.put(matiere, (avant == null ? 0 : avant) + (qd == null ? 0 : qd));
+            }
+            double pieces = 0;
+            for (double v : parMatiere.values()) pieces = Math.max(pieces, v);
+            l.pieces = parMatiere.isEmpty() ? l.qteAttendue : pieces;
+            l.couches = Math.max(1, parMatiere.size());
             resultat.lignes.add(l);
         }
 
@@ -272,6 +325,7 @@ public final class LecteurStrat {
             sem.annee = morceaux[0];
             sem.semaine = morceaux.length > 1 ? morceaux[1] : null;
             sem.nbPieces = s.getValue();
+            sem.cles = clesParSemaine.get(s.getKey());
             resultat.semaines.add(sem);
         }
         Collections.sort(resultat.semaines, (a, b) -> (a.annee + a.semaine).compareTo(b.annee + b.semaine));

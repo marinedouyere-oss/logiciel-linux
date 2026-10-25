@@ -1,6 +1,7 @@
 package com.marinedouyere.sentinelle;
 
 import com.marinedouyere.sentinelle.moteur.Comparateur;
+import com.marinedouyere.sentinelle.moteur.ControleCouleurs;
 import com.marinedouyere.sentinelle.moteur.LecteurBkp;
 import com.marinedouyere.sentinelle.moteur.LecteurStrat;
 
@@ -46,6 +47,8 @@ public final class Paire {
 
     public Comparateur.Rapport rapport;
     public List<LecteurStrat.Doublon> doublons = new ArrayList<>();
+    /** Semaines de livraison des pièces du lancement (relevées au contrôle). */
+    public List<LecteurStrat.SemaineLivraison> semainesLivraison = new ArrayList<>();
     public Integer nbUnitaires;
     public Integer nbPiecesTrouvees;
     public String source;
@@ -53,6 +56,8 @@ public final class Paire {
     public List<LecteurBkp.Ecart> ecartsScies;
     public Double totalScies;
     public String erreurScies;
+    /** Contrôle des couleurs (fait avec Vérifier Scies) : null tant qu'il n'a pas été fait. */
+    public ControleCouleurs.Resultat couleurs;
 
     /** Message d'état affiché sous les boutons (progression, erreur...). Non mémorisé. */
     public transient String etat;
@@ -115,12 +120,14 @@ public final class Paire {
         semaine = null;
         rapport = null;
         doublons = new ArrayList<>();
+        semainesLivraison = new ArrayList<>();
         nbUnitaires = null;
         nbPiecesTrouvees = null;
         source = null;
         ecartsScies = null;
         totalScies = null;
         erreurScies = null;
+        couleurs = null;
         etat = null;
         etatErreur = false;
     }
@@ -155,11 +162,13 @@ public final class Paire {
             JSONObject r = new JSONObject();
             r.put("totalAttendu", rapport.totalAttendu).put("totalTrouve", rapport.totalTrouve);
             r.put("nbOk", rapport.nbOk).put("nbAnomalies", rapport.nbAnomalies);
+            r.put("piecesAttendues", rapport.piecesAttendues).put("piecesTrouvees", rapport.piecesTrouvees);
             JSONArray lignes = new JSONArray();
             for (Comparateur.LigneRapport l : rapport.lignes) {
                 lignes.put(new JSONObject().put("cle", l.cle).put("commande", l.commande).put("ligne", l.ligne)
                         .put("article", l.article).put("lancement", l.lancement).put("qa", l.qteAttendue)
-                        .put("qt", l.qteTrouvee).put("statut", l.statut).put("ecart", l.ecart));
+                        .put("qt", l.qteTrouvee).put("statut", l.statut).put("ecart", l.ecart)
+                        .put("couches", l.couches).put("pieces", l.piecesAttendues));
             }
             r.put("lignes", lignes);
             o.put("rapport", r);
@@ -172,6 +181,12 @@ public final class Paire {
                     .put("nbLignes", d.nbLignes).put("articles", new JSONArray(d.articles)).put("quantites", q));
         }
         o.put("doublons", ds);
+        JSONArray sl = new JSONArray();
+        for (LecteurStrat.SemaineLivraison s : semainesLivraison) {
+            sl.put(new JSONObject().put("annee", ouNull(s.annee)).put("semaine", ouNull(s.semaine)).put("nb", s.nbPieces)
+                    .put("cles", new JSONArray(s.cles)));
+        }
+        o.put("semainesLivraison", sl);
         if (ecartsScies != null) {
             JSONArray es = new JSONArray();
             for (LecteurBkp.Ecart e : ecartsScies) {
@@ -181,6 +196,15 @@ public final class Paire {
             o.put("totalScies", ouNull(totalScies));
         }
         o.put("erreurScies", ouNull(erreurScies));
+        if (couleurs != null) {
+            JSONArray abs = new JSONArray();
+            for (ControleCouleurs.Absente a : couleurs.absentes) {
+                abs.put(new JSONObject().put("couleur", a.couleur).put("face", a.face).put("nbPieces", a.nbPieces)
+                        .put("cles", new JSONArray(a.cles)));
+            }
+            o.put("couleurs", new JSONObject().put("sansStratifie", couleurs.sansStratifie).put("nbCouleurs", couleurs.nbCouleurs)
+                    .put("absentes", abs));
+        }
         return o;
     }
 
@@ -209,6 +233,9 @@ public final class Paire {
             rapport.totalTrouve = r.optDouble("totalTrouve");
             rapport.nbOk = r.optInt("nbOk");
             rapport.nbAnomalies = r.optInt("nbAnomalies");
+            // Rapport enregistré par une version précédente : pas encore de comptage en pièces.
+            rapport.piecesAttendues = r.optDouble("piecesAttendues", 0);
+            rapport.piecesTrouvees = r.optDouble("piecesTrouvees", 0);
             JSONArray lignes = r.optJSONArray("lignes");
             for (int i = 0; lignes != null && i < lignes.length(); i++) {
                 JSONObject l = lignes.getJSONObject(i);
@@ -222,6 +249,8 @@ public final class Paire {
                 lr.qteTrouvee = l.optDouble("qt");
                 lr.statut = l.optString("statut");
                 lr.ecart = l.optDouble("ecart");
+                lr.couches = l.optInt("couches", 1);
+                lr.piecesAttendues = l.optDouble("pieces", lr.qteAttendue);
                 rapport.lignes.add(lr);
             }
             p.rapport = rapport;
@@ -240,6 +269,17 @@ public final class Paire {
             for (int k = 0; q != null && k < q.length(); k++) db.quantites.add(q.optDouble(k));
             p.doublons.add(db);
         }
+        JSONArray sl = o.optJSONArray("semainesLivraison");
+        for (int i = 0; sl != null && i < sl.length(); i++) {
+            JSONObject s = sl.getJSONObject(i);
+            LecteurStrat.SemaineLivraison sem = new LecteurStrat.SemaineLivraison();
+            sem.annee = texte(s, "annee");
+            sem.semaine = texte(s, "semaine");
+            sem.nbPieces = s.optInt("nb");
+            JSONArray cles = s.optJSONArray("cles");
+            for (int k = 0; cles != null && k < cles.length(); k++) sem.cles.add(cles.optString(k));
+            p.semainesLivraison.add(sem);
+        }
         JSONArray es = o.optJSONArray("ecartsScies");
         if (es != null) {
             p.ecartsScies = new ArrayList<>();
@@ -254,6 +294,23 @@ public final class Paire {
             p.totalScies = o.isNull("totalScies") ? null : o.optDouble("totalScies");
         }
         p.erreurScies = texte(o, "erreurScies");
+        JSONObject c = o.optJSONObject("couleurs");
+        if (c != null) {
+            p.couleurs = new ControleCouleurs.Resultat();
+            p.couleurs.sansStratifie = c.optBoolean("sansStratifie");
+            p.couleurs.nbCouleurs = c.optInt("nbCouleurs");
+            JSONArray abs = c.optJSONArray("absentes");
+            for (int i = 0; abs != null && i < abs.length(); i++) {
+                JSONObject a = abs.getJSONObject(i);
+                ControleCouleurs.Absente ab = new ControleCouleurs.Absente();
+                ab.couleur = a.optString("couleur");
+                ab.face = a.optString("face");
+                ab.nbPieces = a.optDouble("nbPieces");
+                JSONArray cles = a.optJSONArray("cles");
+                for (int k = 0; cles != null && k < cles.length(); k++) ab.cles.add(cles.optString(k));
+                p.couleurs.absentes.add(ab);
+            }
+        }
         return p;
     }
 }

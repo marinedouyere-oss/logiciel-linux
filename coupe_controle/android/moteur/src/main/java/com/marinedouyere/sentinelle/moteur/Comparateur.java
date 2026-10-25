@@ -32,6 +32,10 @@ public final class Comparateur {
         public double qteTrouvee;
         public String statut;
         public double ecart;
+        /** Couches par pièce : plus d'une pour une pièce assemblée (les quantités ci-dessus sont alors en couches). */
+        public int couches = 1;
+        /** Pièces finies attendues (= qteAttendue pour une pièce simple). */
+        public double piecesAttendues;
     }
 
     public static final class Rapport {
@@ -40,12 +44,31 @@ public final class Comparateur {
         public double totalTrouve;
         public int nbOk;
         public int nbAnomalies;
+        /** Pièces finies (une pièce assemblée compte une fois), attendues et trouvées complètes. */
+        public double piecesAttendues;
+        public double piecesTrouvees;
 
         public List<LigneRapport> anomalies() {
             List<LigneRapport> a = new ArrayList<>();
             for (LigneRapport l : lignes) if (!OK.equals(l.statut)) a.add(l);
             return a;
         }
+    }
+
+    /**
+     * Pièces finies d'un fichier d'optimisation (.bkp ou liste de coupe) pour
+     * un lancement : une pièce assemblée ne compte que si toutes ses couches
+     * sont là, et une seule fois.
+     */
+    public static double pieces(List<LecteurStrat.LigneStrat> lignesStrat, Map<String, Double> trouveParCle) {
+        Map<String, LecteurStrat.LigneStrat> stratParCle = new LinkedHashMap<>();
+        for (LecteurStrat.LigneStrat l : lignesStrat) stratParCle.put(l.cle, l);
+        double total = 0;
+        for (Map.Entry<String, Double> e : trouveParCle.entrySet()) {
+            LecteurStrat.LigneStrat s = stratParCle.get(e.getKey());
+            total += s != null ? s.piecesCompletes(e.getValue()) : e.getValue();
+        }
+        return total;
     }
 
     public static Rapport comparer(List<LecteurStrat.LigneStrat> lignesStrat, Map<String, Double> trouveParCle) {
@@ -83,6 +106,15 @@ public final class Comparateur {
             l.qteAttendue = qteAttendue;
             l.qteTrouvee = qteTrouvee;
             l.ecart = qteTrouvee - qteAttendue;
+            if (strat != null) {
+                l.couches = strat.couches;
+                l.piecesAttendues = strat.pieces > 0 ? strat.pieces : qteAttendue;
+                rapport.piecesAttendues += l.piecesAttendues;
+                rapport.piecesTrouvees += strat.piecesCompletes(qteTrouvee);
+            } else {
+                l.piecesAttendues = 0;
+                rapport.piecesTrouvees += qteTrouvee;
+            }
             rapport.lignes.add(l);
         }
 

@@ -158,7 +158,9 @@ public final class ScanDossier {
         info.suffixe = extraireSuffixeLancement(nom, code);
         info.parite = pariteDeSemaine(code);
         String min = nom.toLowerCase(Locale.ROOT);
-        info.estCutrite = contientI(nom, "CUTRITE") || contientI(nom, "COUPE") || min.endsWith(".pdf");
+        // Liste de coupe : le nom le dit (CUTRITE / COUPE). Un PDF qui ne le dit pas (ex. récapitulatif
+        // des couleurs « LAN264501STRAT.pdf ») n'en est pas une.
+        info.estCutrite = contientI(nom, "CUTRITE") || contientI(nom, "COUPE");
         info.estBkp = min.endsWith(".bkp");
         return info;
     }
@@ -182,6 +184,7 @@ public final class ScanDossier {
         String code;
         String semaine;
         String tour;
+        Cible groupe;
     }
 
     private static String tranche(String s, int debut, int fin) {
@@ -253,15 +256,26 @@ public final class ScanDossier {
             posteParCodeEtSuffixe.put(d.info.code + "|" + d.info.suffixe, d.info.poste);
         }
 
+        // 1. Les fichiers de lancement (Excel uniquement) font les groupes.
         Map<String, Cible> groupes = new LinkedHashMap<>();
+        List<Decode> rattaches = new ArrayList<>();
         for (Decode d : decodes) {
             InfoNom info = d.info;
+            if (info.estBkp || info.estCutrite) {
+                rattaches.add(d);
+                continue;
+            }
+            if (!estFichierDeLancement(d.f.nom)) {
+                res.nonReconnus.add(d.f.nom);
+                continue;
+            }
             String poste;
             if (info.poste != null) poste = info.poste;
             else if (!info.suffixe.isEmpty()) poste = valeurOu(posteParCodeEtSuffixe.get(info.code + "|" + info.suffixe));
             else poste = valeurOu(posteParCode.get(info.code));
             if (!poste.equals(POSTE_CHANTIERS)) {
                 Cible existant = groupes.get(poste + "|" + info.code);
+                // Un second lancement du même poste, au nom différent, devient un chantier.
                 if (existant != null && !info.suffixe.isEmpty() && !existant.suffixe.isEmpty()
                         && !existant.suffixe.equals(info.suffixe)) {
                     poste = POSTE_CHANTIERS;
@@ -276,12 +290,29 @@ public final class ScanDossier {
                 g.poste = poste;
                 g.code = info.code;
                 g.suffixe = info.suffixe;
-                g.parite = info.parite;
+                g.parite = poste.equals("Casse") ? pariteCasse(info.code) : info.parite;
                 groupes.put(cleGroupe, g);
             }
-            if (info.estBkp) g.bkp = d.f;
-            else if (info.estCutrite) g.coupe = d.f;
-            else g.strat = d.f;
+            g.strat = d.f;
+        }
+
+        // 2. Chaque liste de coupe et chaque .bkp rejoint le lancement qui porte le même code.
+        Map<Cible, Integer> qualiteCoupe = new HashMap<>();
+        Map<Cible, Integer> qualiteBkp = new HashMap<>();
+        for (Decode d : rattaches) {
+            int[] qualite = new int[1];
+            Cible g = choisirLancement(d.info, new ArrayList<>(groupes.values()), posteParCode, qualite);
+            if (g == null) {
+                res.nonReconnus.add(d.f.nom);
+                continue;
+            }
+            Map<Cible, Integer> qualites = d.info.estBkp ? qualiteBkp : qualiteCoupe;
+            Integer avant = qualites.get(g);
+            // Un nom qui correspond exactement l'emporte sur un nom approchant ; à égalité, le dernier (ordre des noms).
+            if (avant != null && avant > qualite[0]) continue;
+            qualites.put(g, qualite[0]);
+            if (d.info.estBkp) g.bkp = d.f;
+            else g.coupe = d.f;
         }
 
         List<Ancrage> ancrages = new ArrayList<>();
@@ -291,19 +322,26 @@ public final class ScanDossier {
             a.code = g.code;
             a.semaine = tranche(g.code, 2, 4);
             a.tour = tranche(g.code, 4, 6);
+            a.groupe = g;
             ancrages.add(a);
         }
         for (Fichier f : sansCode) {
-            Ancrage ancrage = associerFichierSansCode(f.nom, ancrages);
-            Cible g = ancrage == null ? null : groupes.get(ancrage.poste + "|" + ancrage.code);
-            if (g == null) {
+            String min = f.nom.toLowerCase(Locale.ROOT);
+            boolean bkp = min.endsWith(".bkp");
+            boolean coupe = contientI(f.nom, "COUPE") || contientI(f.nom, "CUTRITE");
+            Ancrage ancrage = bkp || coupe ? associerFichierSansCode(f.nom, ancrages) : null;
+            if (ancrage == null) {
                 res.nonReconnus.add(f.nom);
                 continue;
             }
-            if (f.nom.toLowerCase(Locale.ROOT).endsWith(".bkp")) g.bkp = f;
-            else g.coupe = f;
+            if (bkp) {
+                if (!qualiteBkp.containsKey(ancrage.groupe)) ancrage.groupe.bkp = f;
+            } else if (!qualiteCoupe.containsKey(ancrage.groupe)) {
+                ancrage.groupe.coupe = f;
+            }
         }
 
+        Collections.sort(res.nonReconnus, ordreDesNoms);
         if (groupes.isEmpty()) {
             res.aucunLancement = true;
             return res;
@@ -326,6 +364,89 @@ public final class ScanDossier {
         res.fixes.addAll(ciblesFixes.values());
         res.chantiers.addAll(ciblesChantiers.values());
         return res;
+    }
+
+    private static final Pattern MOTIF_FIN_SAUVEGARDE = Pattern.compile("(V\\d+)?B+ACKUP$");
+
+    /** « STRATBACKUP » → « STRAT » : le mot ajouté par le logiciel d'optimisation ne fait pas partie du nom. */
+    static String suffixeSansSauvegarde(String suffixe) {
+        return MOTIF_FIN_SAUVEGARDE.matcher(suffixe).replaceFirst("");
+    }
+
+    /** Fichier de lancement : un vrai classeur Excel (pas une copie .bak, ni le fichier de verrou « ~$ » d'Excel). */
+    static boolean estFichierDeLancement(String nom) {
+        String min = nom.toLowerCase(Locale.ROOT);
+        if (min.startsWith("~$")) return false;
+        return min.endsWith(".xlsx") || min.endsWith(".xlsm") || min.endsWith(".xls");
+    }
+
+    /**
+     * La casse porte le numéro de la semaine précédente (LAN2644CASSE est
+     * fabriquée en semaine 45, avec les lancements de la 45) : elle va dans
+     * l'onglet de la semaine qui suit son numéro.
+     */
+    static String pariteCasse(String code) {
+        int semaine;
+        try {
+            semaine = Integer.parseInt(tranche(code, 2, 4));
+        } catch (NumberFormatException e) {
+            return pariteDeSemaine(code);
+        }
+        int suivante = semaine >= 52 ? 1 : semaine + 1; // fin d'année : la suivante est la semaine 1 (ou 53, impaire aussi)
+        return suivante % 2 == 0 ? PAIRE : IMPAIRE;
+    }
+
+    private static int prefixeCommun(String a, String b) {
+        int n = 0;
+        while (n < a.length() && n < b.length() && a.charAt(n) == b.charAt(n)) n++;
+        return n;
+    }
+
+    /**
+     * Lancement auquel rattacher une liste de coupe ou un .bkp : même code,
+     * puis même nom (qualité 3), nom absent (2), nom approchant — faute de
+     * frappe « STRA », mot ajouté — (1), ou à défaut même poste (0).
+     */
+    static Cible choisirLancement(InfoNom info, List<Cible> groupes, Map<String, String> posteParCode, int[] qualite) {
+        List<Cible> candidats = new ArrayList<>();
+        for (Cible g : groupes) if (g.code.equals(info.code)) candidats.add(g);
+        if (candidats.isEmpty()) return null;
+        String s = suffixeSansSauvegarde(info.suffixe);
+        for (Cible g : candidats) {
+            if (g.suffixe.equals(s)) {
+                qualite[0] = 3;
+                return g;
+            }
+        }
+        if (s.isEmpty()) {
+            qualite[0] = 2;
+            String poste = info.poste != null ? info.poste : posteParCode.get(info.code);
+            for (Cible g : candidats) if (g.poste.equals(poste)) return g;
+            return candidats.size() == 1 ? candidats.get(0) : null;
+        }
+        Cible meilleur = null;
+        int longueur = 0;
+        for (Cible g : candidats) {
+            if (g.suffixe.isEmpty() || !(s.startsWith(g.suffixe) || g.suffixe.startsWith(s))) continue;
+            int n = prefixeCommun(s, g.suffixe);
+            if (n > longueur || (n == longueur && info.poste != null && g.poste.equals(info.poste))) {
+                meilleur = g;
+                longueur = n;
+            }
+        }
+        if (meilleur != null) {
+            qualite[0] = 1;
+            return meilleur;
+        }
+        if (info.poste != null) {
+            for (Cible g : candidats) {
+                if (g.poste.equals(info.poste)) {
+                    qualite[0] = 0;
+                    return g;
+                }
+            }
+        }
+        return null;
     }
 
     private static String valeurOu(String poste) {

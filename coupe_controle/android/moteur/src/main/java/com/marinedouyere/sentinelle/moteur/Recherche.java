@@ -98,7 +98,7 @@ public final class Recherche {
         List<LecteurBkp.EntreeZip> entrees = LecteurBkp.listerEntrees(octets);
         LecteurBkp.EntreeZip ctt = LecteurBkp.trouverCttMaitre(entrees, LecteurBkp.nomLancement(nomFichier));
         String texte = new String(LecteurBkp.extraire(octets, ctt), StandardCharsets.ISO_8859_1);
-        return new DonneesBkp(LecteurBkp.quantitesCtt(texte), grainMatchingCtt(texte));
+        return new DonneesBkp(LecteurBkp.quantitesCtt(texte, true), grainMatchingCtt(texte));
     }
 
     /** Ce qu'on sait d'une pièce pour la dessiner et l'afficher. */

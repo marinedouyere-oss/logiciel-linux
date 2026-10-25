@@ -134,7 +134,7 @@ public final class LecteurCoupePdf {
     public static boolean estPieceReelle(Enregistrement r) {
         if (!estDescriptionPieceReelle(r.desc)) return false;
         return r.materiau == null || r.materiau.isEmpty()
-                || !LecteurStrat.MATERIAUX_EXCLUS.contains(Js.trim(r.materiau).toUpperCase(Locale.ROOT));
+                || !LecteurStrat.estProtection(r.materiau);
     }
 
     public static LecteurCoupe.Resultat compter(List<Enregistrement> records) throws ErreurLecture {

@@ -4,6 +4,7 @@ import android.content.Context;
 
 import com.marinedouyere.sentinelle.moteur.Classeur;
 import com.marinedouyere.sentinelle.moteur.Comparateur;
+import com.marinedouyere.sentinelle.moteur.ControleCouleurs;
 import com.marinedouyere.sentinelle.moteur.ErreurLecture;
 import com.marinedouyere.sentinelle.moteur.LecteurBkp;
 import com.marinedouyere.sentinelle.moteur.LecteurCoupe;
@@ -16,16 +17,17 @@ import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /** Exécution des contrôles sur les fichiers d'une case (toujours hors du fil d'affichage). */
 final class Controles {
 
     private final Context context;
     private ExtracteurPdfAndroid extracteurPdf;
-    private final Map<String, Double> totauxBkp = new HashMap<>();
 
     Controles(Context context) {
         this.context = context.getApplicationContext();
@@ -58,7 +60,14 @@ final class Controles {
         if (p.strat == null) return null;
         try {
             for (LecteurStrat.LigneStrat l : lireStrat(p).lignes) {
-                if (l.lancement != null && !l.lancement.isEmpty()) return LecteurStrat.extraireSemaine(l.lancement);
+                if (l.lancement == null || l.lancement.isEmpty()) continue;
+                String semaine = LecteurStrat.extraireSemaine(l.lancement);
+                // La casse a toujours une semaine de décalage : la casse 43 se fabrique en semaine 44.
+                if (semaine != null && "Casse".equals(p.poste)) {
+                    int n = Integer.parseInt(semaine);
+                    semaine = String.format(java.util.Locale.ROOT, "%02d", n >= 52 ? 1 : n + 1);
+                }
+                return semaine;
             }
         } catch (Exception ignoree) {
             // fichier pas (encore) exploitable : l'erreur apparaîtra au contrôle
@@ -86,6 +95,7 @@ final class Controles {
      */
     void comparer(Paire p, LecteurStrat.Resultat strat, Etape etape) throws IOException, ErreurLecture {
         p.doublons = strat.doublons;
+        p.semainesLivraison = strat.semaines;
         Map<String, Double> trouve;
         if (p.coupe != null) {
             etape.nom = "lecture de la liste de coupe (Cutrite)";
@@ -101,7 +111,8 @@ final class Controles {
             p.source = "coupe";
         } else {
             etape.nom = "lecture du fichier .bkp";
-            trouve = lireBkp(p.bkp);
+            // Les panneaux de protection du .bkp ne sont pas des pièces (le lancement ne les compte pas).
+            trouve = LecteurBkp.lireSansProtections(lireOctets(p.bkp.fichier()), p.bkp.nom);
             p.nbUnitaires = null;
             p.nbPiecesTrouvees = null;
             p.source = "bkp";
@@ -113,56 +124,72 @@ final class Controles {
     /** Contrôle Scies : lancement (protections comprises) contre ce qui a été réellement optimisé. */
     void controleScies(Paire p, Etape etape) throws IOException, ErreurLecture {
         etape.nom = "lecture du fichier de lancement";
-        Map<String, Double> attendues = LecteurStrat.quantitesAttenduesScies(classeur(p.strat));
+        Classeur strat = classeur(p.strat);
+        Map<String, Double> attendues = LecteurStrat.quantitesAttenduesScies(strat);
         etape.nom = "lecture du fichier .bkp";
-        Map<String, Double> bkp = lireBkp(p.bkp);
+        byte[] octetsBkp = lireOctets(p.bkp.fichier());
+        Map<String, Double> bkp = LecteurBkp.lire(octetsBkp, p.bkp.nom);
         etape.nom = "comparaison";
         p.ecartsScies = LecteurBkp.comparerScies(attendues, bkp);
         p.totalScies = LecteurBkp.somme(attendues);
+        etape.nom = "contrôle des couleurs";
+        p.couleurs = ControleCouleurs.controler(LecteurStrat.lire(strat).lignes, LecteurBkp.couleurs(octetsBkp, p.bkp.nom));
         p.erreurScies = null;
     }
 
-    private static String cleCache(String quoi, Paire.Fichier f) {
-        return quoi + "|" + f.chemin + "|" + f.fichier().lastModified() + "|" + f.fichier().length();
+    private static String cleCache(Paire.Fichier f) {
+        return f == null ? "-" : f.chemin + "|" + f.fichier().lastModified() + "|" + f.fichier().length();
     }
 
-    /** Total déjà calculé (null s'il reste à calculer). */
-    Double totalEnCache(String quoi, Paire.Fichier f) {
-        synchronized (totauxBkp) {
-            return totauxBkp.get(cleCache(quoi, f));
+    /** Ce que le tableau des lancements et le compteur savent d'une case. */
+    static final class Resume {
+        /** Pièces prévues par le lancement (une pièce assemblée compte une fois) ; NaN si illisible. */
+        double prevues = Double.NaN;
+        /** Pièces complètes dans le .bkp (null : pas de .bkp ; NaN : illisible). */
+        Double bkp;
+        /** Clés des pièces du lancement. */
+        final Set<String> cles = new HashSet<>();
+    }
+
+    private final Map<String, Resume> resumes = new HashMap<>();
+
+    /** Résumé déjà calculé (null s'il reste à lire les fichiers). */
+    Resume resumeEnCache(Paire.Fichier strat, Paire.Fichier bkp) {
+        synchronized (resumes) {
+            return resumes.get(cleCache(strat) + "#" + cleCache(bkp));
         }
     }
 
-    /** Nombre de pièces réellement optimisées dans un .bkp (mis en cache : le fichier ne change pas). */
-    double totalBkp(Paire.Fichier f) {
-        Double t = totalEnCache("bkp", f);
-        if (t != null) return t;
-        double total;
-        try {
-            total = LecteurBkp.somme(lireBkp(f));
-        } catch (Exception e) {
-            total = 0; // .bkp illisible : l'erreur sera visible via "Vérifier Scies"
+    /** Résumé d'une case (mis en cache : les fichiers copiés ne changent pas). */
+    Resume resume(Paire.Fichier strat, Paire.Fichier bkp) {
+        Resume r = resumeEnCache(strat, bkp);
+        if (r != null) return r;
+        r = new Resume();
+        List<LecteurStrat.LigneStrat> lignes = null;
+        if (strat != null) {
+            try {
+                lignes = LecteurStrat.lire(classeur(strat)).lignes;
+                r.prevues = 0;
+                for (LecteurStrat.LigneStrat l : lignes) {
+                    r.prevues += l.pieces;
+                    r.cles.add(l.cle);
+                }
+            } catch (Exception e) {
+                lignes = null; // lancement illisible : l'erreur apparaîtra au contrôle
+            }
         }
-        synchronized (totauxBkp) {
-            totauxBkp.put(cleCache("bkp", f), total);
+        if (bkp != null) {
+            try {
+                Map<String, Double> trouve = LecteurBkp.lireSansProtections(lireOctets(bkp.fichier()), bkp.nom);
+                r.bkp = lignes != null ? Comparateur.pieces(lignes, trouve) : LecteurBkp.somme(trouve);
+            } catch (Exception e) {
+                r.bkp = Double.NaN; // .bkp illisible : l'erreur sera visible via « Vérifier Scies »
+            }
         }
-        return total;
-    }
-
-    /** Nombre de pièces prévues par un fichier de lancement (hors protections), NaN s'il est illisible. */
-    double totalStrat(Paire.Fichier f) {
-        Double t = totalEnCache("strat", f);
-        if (t != null) return t;
-        double total = 0;
-        try {
-            for (LecteurStrat.LigneStrat l : LecteurStrat.lire(classeur(f)).lignes) total += l.qteAttendue;
-        } catch (Exception e) {
-            total = Double.NaN;
+        synchronized (resumes) {
+            resumes.put(cleCache(strat) + "#" + cleCache(bkp), r);
         }
-        synchronized (totauxBkp) {
-            totauxBkp.put(cleCache("strat", f), total);
-        }
-        return total;
+        return r;
     }
 
     /** Étape en cours, pour le message d'erreur ("échec à l'étape « ... »"). */

@@ -161,7 +161,7 @@ public final class LecteurCoupe {
             if (colCle >= ligne.length || ligne[colCle] == null) continue;
             String cle = texteTrim(ligne[colCle]);
             Object materiau = valeurA(ligne, colMateriau);
-            if (materiau != null && LecteurStrat.MATERIAUX_EXCLUS.contains(texteTrim(materiau).toUpperCase(Locale.ROOT))) continue;
+            if (LecteurStrat.estProtection(materiau)) continue;
             if (!estLignePiece(ligne, colTypeTrace)) continue;
             if (exclusion != null) {
                 Object v = valeurA(ligne, exclusion.col);

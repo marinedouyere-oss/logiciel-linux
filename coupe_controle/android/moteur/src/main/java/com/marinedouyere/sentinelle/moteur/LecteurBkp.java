@@ -136,8 +136,17 @@ public final class LecteurBkp {
         return i < c.length ? c[i] : null;
     }
 
-    /** Quantités réellement optimisées par clé, d'après le texte du .ctt maître. */
+    /** Quantités réellement optimisées par clé, d'après le texte du .ctt maître (protections comprises). */
     static Map<String, Double> quantitesCtt(String texte) {
+        return quantitesCtt(texte, false);
+    }
+
+    /**
+     * Quantités réellement optimisées par clé. Sans les protections, pour
+     * comparer au fichier de lancement (qui ne les compte pas) quand il n'y
+     * a pas de liste de coupe.
+     */
+    static Map<String, Double> quantitesCtt(String texte, boolean sansProtections) {
         String[] lignes = texte.split("\\r?\\n", -1);
         String[] pnl1Nom = null;
         int pnl1Qte = 0;
@@ -148,7 +157,7 @@ public final class LecteurBkp {
         for (String ligne : lignes) {
             if (ligne.startsWith("PNL1,")) {
                 String[] c = ligne.split(",", -1);
-                pnl1Nom = new String[] {champ(c, 1)};
+                pnl1Nom = new String[] {champ(c, 1), champ(c, 2)};
                 pnl1Qte = Js.parseIntOuZero(champ(c, 5));
                 pnl1 = true;
             } else if (ligne.startsWith("PNL2,")) {
@@ -166,7 +175,7 @@ public final class LecteurBkp {
                         liste = new ArrayList<>();
                         pieces.put(id, liste);
                     }
-                    liste.add(new Object[] {pnl1Nom[0], pnl1Qte, pnl2Cle});
+                    liste.add(new Object[] {pnl1Nom[0], pnl1Qte, pnl2Cle, pnl1Nom[1]});
                 }
             }
         }
@@ -177,6 +186,8 @@ public final class LecteurBkp {
             List<Object[]> reelles = new ArrayList<>();
             for (Object[] tc : e.getValue()) {
                 String nom = (String) tc[0];
+                String materiau = (String) tc[3];
+                if (sansProtections && LecteurStrat.estProtection(materiau)) continue;
                 if (nom == null || !MOTIF_BANDE_MODULO.matcher(nom).find()) reelles.add(tc);
             }
             if (reelles.isEmpty()) continue;
@@ -190,12 +201,57 @@ public final class LecteurBkp {
         return qteParCle;
     }
 
-    /** Lit un .bkp et renvoie les quantités réellement optimisées par clé. */
-    public static Map<String, Double> lire(byte[] octets, String nomFichier) throws ErreurLecture {
+    /** Texte du .ctt maître d'un .bkp. */
+    static String texteCtt(byte[] octets, String nomFichier) throws ErreurLecture {
         List<EntreeZip> entrees = listerEntrees(octets);
         EntreeZip ctt = trouverCttMaitre(entrees, nomLancement(nomFichier));
-        String texte = new String(extraire(octets, ctt), StandardCharsets.ISO_8859_1);
-        return quantitesCtt(texte);
+        return new String(extraire(octets, ctt), StandardCharsets.ISO_8859_1);
+    }
+
+    /** Lit un .bkp et renvoie les quantités réellement optimisées par clé (protections comprises : Contrôle Scies). */
+    public static Map<String, Double> lire(byte[] octets, String nomFichier) throws ErreurLecture {
+        return quantitesCtt(texteCtt(octets, nomFichier));
+    }
+
+    /** Quantités par clé sans les panneaux de protection (contrôle principal sans liste de coupe). */
+    public static Map<String, Double> lireSansProtections(byte[] octets, String nomFichier) throws ErreurLecture {
+        return quantitesCtt(texteCtt(octets, nomFichier), true);
+    }
+
+    /** Couleurs de stratifié présentes dans un .bkp : dessus (TF) et dessous (TB), avec le nombre de feuilles. */
+    public static final class Couleurs {
+        public final Map<String, Integer> dessus = new LinkedHashMap<>();
+        public final Map<String, Integer> dessous = new LinkedHashMap<>();
+
+        public boolean sansStratifie() {
+            return dessus.isEmpty() && dessous.isEmpty();
+        }
+    }
+
+    static Couleurs couleursCtt(String texte) {
+        Couleurs c = new Couleurs();
+        String materiau = null;
+        int qte = 0;
+        for (String ligne : texte.split("\\r?\\n", -1)) {
+            if (ligne.startsWith("PNL1,")) {
+                String[] champs = ligne.split(",", -1);
+                materiau = champ(champs, 2);
+                qte = Js.parseIntOuZero(champ(champs, 5));
+            } else if (ligne.startsWith("PNL3,") && materiau != null && !materiau.isEmpty()) {
+                Matcher m = MOTIF_PNL3.matcher(ligne);
+                if (!m.find()) continue;
+                Map<String, Integer> face = m.group(2).equals("TF") ? c.dessus : m.group(2).equals("TB") ? c.dessous : null;
+                if (face == null) continue;
+                String cle = Js.trim(materiau);
+                Integer avant = face.get(cle);
+                face.put(cle, (avant == null ? 0 : avant) + qte);
+            }
+        }
+        return c;
+    }
+
+    public static Couleurs couleurs(byte[] octets, String nomFichier) throws ErreurLecture {
+        return couleursCtt(texteCtt(octets, nomFichier));
     }
 
     public static final class Ecart {

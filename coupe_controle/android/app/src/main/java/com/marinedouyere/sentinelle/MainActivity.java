@@ -25,6 +25,7 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.tabs.TabLayout;
 import com.marinedouyere.sentinelle.moteur.Comparateur;
+import com.marinedouyere.sentinelle.moteur.ControleCouleurs;
 import com.marinedouyere.sentinelle.moteur.ErreurLecture;
 import com.marinedouyere.sentinelle.moteur.ExportRapport;
 import com.marinedouyere.sentinelle.moteur.Js;
@@ -301,16 +302,16 @@ public class MainActivity extends AppCompatActivity {
         if (!ongletSemaine() || zoneRecap == null) return;
         final String parite = onglet;
         final int numero = ++generationRecap;
+        final String autre = Depot.PAIRE.equals(parite) ? Depot.IMPAIRE : Depot.PAIRE;
         final List<RecapLancements.Ligne> lignes = RecapLancements.lignes(depot.pairesDeLaSemaine(parite), controles);
+        final List<RecapLancements.Ligne> autres = RecapLancements.lignes(depot.pairesDeLaSemaine(autre), controles);
         zoneRecap.removeAllViews();
-        zoneRecap.addView(RecapLancements.tableau(this, ui, lignes, this::allerALaCase));
-        if (!RecapLancements.incomplet(lignes)) return;
+        zoneRecap.addView(RecapLancements.tableau(this, ui, lignes, autres, libelleOnglet(autre), this::allerALaCase));
+        if (!RecapLancements.incomplet(lignes) && !RecapLancements.incomplet(autres)) return;
         // Lecture des fichiers pour les totaux manquants, puis nouvel affichage.
         app.annexe.execute(() -> {
-            for (RecapLancements.Ligne l : lignes) {
-                controles.totalStrat(l.paire.strat);
-                if (l.paire.bkp != null) controles.totalBkp(l.paire.bkp);
-            }
+            for (RecapLancements.Ligne l : lignes) controles.resume(l.paire.strat, l.paire.bkp);
+            for (RecapLancements.Ligne l : autres) controles.resume(l.paire.strat, l.paire.bkp);
             principal.post(() -> {
                 if (numero == generationRecap && parite.equals(onglet)) majRecap();
             });
@@ -392,13 +393,16 @@ public class MainActivity extends AppCompatActivity {
     private void afficherRapport(LinearLayout corps, Paire p) {
         Comparateur.Rapport r = p.rapport;
         corps.addView(ui.separateur());
-        String attendu = Js.entierTronque(r.totalAttendu);
+        // En pièces finies : une pièce assemblée (Feno : compact + support) compte une fois.
+        boolean enPieces = r.piecesAttendues > 0 || r.piecesTrouvees > 0;
+        String attendu = Js.entierTronque(enPieces ? r.piecesAttendues : r.totalAttendu);
+        String trouve = Js.nombre(enPieces ? r.piecesTrouvees : r.totalTrouve);
         if (r.nbAnomalies == 0) {
             corps.addView(ui.bandeau("✔ Tout est correct — " + attendu + " pièces",
                     ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte)));
         } else {
             corps.addView(ui.bandeau("⚠ " + r.nbAnomalies + " anomalie(s) — " + attendu + " attendues, "
-                    + Js.nombre(r.totalTrouve) + " trouvées",
+                    + trouve + " trouvées",
                     ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)));
         }
         List<String> details = new ArrayList<>();
@@ -411,6 +415,8 @@ public class MainActivity extends AppCompatActivity {
         if (!details.isEmpty()) {
             corps.addView(ui.texte(TextUtils.join(" · ", details), 13, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
         }
+
+        afficherSemainesLivraison(corps, p);
 
         if (!p.doublons.isEmpty()) {
             StringBuilder sb = new StringBuilder();
@@ -473,8 +479,15 @@ public class MainActivity extends AppCompatActivity {
         StringBuilder detail = new StringBuilder();
         if (!l.article.isEmpty()) detail.append(l.article).append(" · ");
         if (!l.lancement.isEmpty()) detail.append(l.lancement).append(" · ");
-        detail.append("attendu ").append(Js.nombre(l.qteAttendue)).append(", trouvé ").append(Js.nombre(l.qteTrouvee))
-                .append(" (écart ").append(Js.nombre(l.ecart)).append(")");
+        if (l.couches > 1) {
+            // Pièce assemblée : les quantités comptent les couches (compact, support…).
+            detail.append(Js.nombre(l.piecesAttendues)).append(" pièce(s) de ").append(l.couches).append(" couches : ")
+                    .append(Js.nombre(l.qteAttendue)).append(" couches attendues, ").append(Js.nombre(l.qteTrouvee))
+                    .append(" trouvée(s)");
+        } else {
+            detail.append("attendu ").append(Js.nombre(l.qteAttendue)).append(", trouvé ").append(Js.nombre(l.qteTrouvee))
+                    .append(" (écart ").append(Js.nombre(l.ecart)).append(")");
+        }
         ligne.addView(ui.texte(detail, 13, false, 0xFF3E4C59));
         LinearLayout.LayoutParams lp = ui.pleineLargeur();
         lp.setMargins(0, ui.dp(5), 0, 0);
@@ -488,16 +501,59 @@ public class MainActivity extends AppCompatActivity {
             corps.addView(ui.bandeau("❌ Scies : " + p.erreurScies, ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)));
             return;
         }
-        String pieces = Js.nombre(p.totalScies == null ? 0 : p.totalScies) + " pièces";
+        String panneaux = Js.nombre(p.totalScies == null ? 0 : p.totalScies) + " panneaux";
         if (p.ecartsScies.isEmpty()) {
-            corps.addView(ui.bandeau("✔ Scies : tout correspond — " + pieces, ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte)));
+            corps.addView(ui.bandeau("✔ Scies : tout correspond — " + panneaux, ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte)));
+        } else {
+            corps.addView(ui.bandeau("⚠ Scies : " + p.ecartsScies.size() + " écart(s) sur " + panneaux,
+                    ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)));
+            for (LecteurBkp.Ecart e : p.ecartsScies) {
+                TextView t = ui.texte(e.cle + " — attendu " + Js.nombre(e.attendu) + ", .bkp " + Js.nombre(e.trouve)
+                        + " — " + e.type(), 13, false, 0xFF3E4C59);
+                t.setPadding(0, ui.dp(4), 0, 0);
+                corps.addView(t);
+            }
+        }
+        afficherCouleurs(corps, p.couleurs);
+    }
+
+    /** Pièces d'un lancement à livrer une autre semaine que les autres (en retard, le plus souvent). */
+    private void afficherSemainesLivraison(LinearLayout corps, Paire p) {
+        if (p.semainesLivraison.size() <= 1 || "Casse".equals(p.poste)) return;
+        LecteurStrat.SemaineLivraison principale = p.semainesLivraison.get(0);
+        for (LecteurStrat.SemaineLivraison s : p.semainesLivraison) if (s.nbPieces > principale.nbPieces) principale = s;
+        StringBuilder sb = new StringBuilder("⚠ Livraison de plusieurs semaines (principale : semaine " + principale.semaine + ")");
+        for (LecteurStrat.SemaineLivraison s : p.semainesLivraison) {
+            if (s == principale) continue;
+            int n = s.cles.size();
+            sb.append("\nSemaine ").append(s.semaine).append(" : ").append(s.nbPieces).append(" pièce(s) — ")
+                    .append(n <= 6 ? String.join(", ", s.cles) : String.join(", ", s.cles.subList(0, 6)) + "…");
+        }
+        TextView t = ui.bandeau(sb, ui.couleur(R.color.attention_fond), ui.couleur(R.color.attention_texte));
+        t.setTypeface(null, android.graphics.Typeface.NORMAL);
+        corps.addView(t, ui.marges(6, 0));
+    }
+
+    /** Contrôle des couleurs : chaque coloris du lancement doit avoir été optimisé dans le .bkp. */
+    private void afficherCouleurs(LinearLayout corps, ControleCouleurs.Resultat c) {
+        if (c == null) return;
+        if (c.sansStratifie) {
+            corps.addView(ui.texte("Couleurs : pas de stratifié dans ce .bkp", 13, false, ui.couleur(R.color.gris_texte)),
+                    ui.marges(6, 0));
             return;
         }
-        corps.addView(ui.bandeau("⚠ Scies : " + p.ecartsScies.size() + " écart(s) sur " + pieces,
-                ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)));
-        for (LecteurBkp.Ecart e : p.ecartsScies) {
-            TextView t = ui.texte(e.cle + " — attendu " + Js.nombre(e.attendu) + ", .bkp " + Js.nombre(e.trouve)
-                    + " — " + e.type(), 13, false, 0xFF3E4C59);
+        if (c.absentes.isEmpty()) {
+            corps.addView(ui.bandeau("✔ Couleurs : les " + c.nbCouleurs + " couleurs sont dans le .bkp",
+                    ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte)), ui.marges(6, 0));
+            return;
+        }
+        corps.addView(ui.bandeau("⚠ Couleurs : " + c.absentes.size() + " absente(s) du .bkp",
+                ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)), ui.marges(6, 0));
+        for (ControleCouleurs.Absente a : c.absentes) {
+            int n = a.cles.size();
+            String pieces = n <= 4 ? String.join(", ", a.cles) : String.join(", ", a.cles.subList(0, 4)) + "… (" + n + ")";
+            TextView t = ui.texte(a.couleur + " (" + a.face + ") — " + Js.nombre(a.nbPieces) + " pièce(s) : " + pieces,
+                    13, false, 0xFF3E4C59);
             t.setPadding(0, ui.dp(4), 0, 0);
             corps.addView(t);
         }
@@ -508,11 +564,14 @@ public class MainActivity extends AppCompatActivity {
     private void majCompteur() {
         if (!ongletSemaine()) return;
         final String parite = onglet;
-        final List<Paire.Fichier> bkps = new ArrayList<>();
-        for (Paire p : depot.pairesDeLaSemaine(parite)) if (p.bkp != null) bkps.add(p.bkp);
+        final List<Paire.Fichier[]> cases = new ArrayList<>();
+        for (Paire p : depot.pairesDeLaSemaine(parite)) if (p.bkp != null) cases.add(new Paire.Fichier[] {p.strat, p.bkp});
         app.annexe.execute(() -> {
             double total = 0;
-            for (Paire.Fichier f : bkps) total += controles.totalBkp(f);
+            for (Paire.Fichier[] f : cases) {
+                Double b = controles.resume(f[0], f[1]).bkp;
+                if (b != null && !b.isNaN()) total += b;
+            }
             final double t = total;
             principal.post(() -> {
                 if (texteCompteur != null && parite.equals(onglet)) {
@@ -645,7 +704,8 @@ public class MainActivity extends AppCompatActivity {
             final Controles.Etape etape = new Controles.Etape();
             try {
                 final LecteurStrat.Resultat strat = controles.lireStrat(p);
-                if (strat.semaines.size() > 1) {
+                // Une casse reprend par nature des pièces de plusieurs semaines : pas de confirmation.
+                if (strat.semaines.size() > 1 && !"Casse".equals(p.poste)) {
                     StringBuilder detail = new StringBuilder();
                     for (LecteurStrat.SemaineLivraison s : strat.semaines) {
                         detail.append("— semaine ").append(s.semaine).append("/").append(s.annee).append(" : ")
@@ -994,7 +1054,8 @@ public class MainActivity extends AppCompatActivity {
             if (a.cible.bkp != null) lancerControleScies(a.paire, suivant);
             else suivant.run();
         };
-        if (a.cible.coupe != null) {
+        // GO avec la liste de coupe, ou à défaut avec le .bkp (semaines de livraison, pièces manquantes…).
+        if (a.paire.coupe != null || a.paire.bkp != null) {
             lancerUnePaire(a.paire, (erreur, resultat) -> {
                 if (erreur != null) {
                     compte.add("❌ " + erreur);

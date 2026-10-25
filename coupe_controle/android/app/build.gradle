@@ -10,8 +10,8 @@ android {
         applicationId "com.marinedouyere.sentinelle"
         minSdk 24
         targetSdk 34
-        versionCode 13
-        versionName "3.3"
+        versionCode 14
+        versionName "3.4"
     }
 
     buildTypes {
@@ -32,6 +32,8 @@ android {
                 systemProperty "robolectric.dependency.repo.url", "https://maven-central.storage-download.googleapis.com/maven2/"
                 systemProperty "sentinelle.fixtures", System.getenv("SENTINELLE_FIXTURES") ?: ""
                 systemProperty "sentinelle.captures", System.getenv("SENTINELLE_CAPTURES") ?: ""
+                systemProperty "sentinelle.semaine44", System.getenv("SENTINELLE_SEMAINE44") ?: ""
+                systemProperty "sentinelle.semaine45", System.getenv("SENTINELLE_SEMAINE45") ?: ""
                 maxHeapSize = "3g"
                 testLogging {
                     events "failed", "skipped"
