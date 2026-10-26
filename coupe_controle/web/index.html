@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V3.6 — Contrôle de coupe</title>
+<title>Sentinelle V3.7 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -205,7 +205,7 @@
 
   <header class="barre">
     <h1>Sentinelle</h1>
-    <div class="sous-titre">Contrôle de coupe · V3.6</div>
+    <div class="sous-titre">Contrôle de coupe · V3.7</div>
   </header>
   <nav class="onglets">
     <button type="button" class="onglet-btn actif" data-onglet="paire">Semaine</button>
@@ -226,6 +226,7 @@
     </div>
   </main>
   <input type="file" id="choixFichier" hidden>
+  <input type="file" id="choixSommaire" accept=".pdf" hidden>
 
   <div class="modale-fond masquee" id="modaleConfirmation">
     <div class="modale-boite">
@@ -2916,6 +2917,317 @@ function lireDiakonos(workbook) {
 
 const dimensionsDiakonos = (m) => (m.longueur === null || m.largeur === null ? "" : `${fmtDim(m.longueur)} × ${fmtDim(m.largeur)}`);
 
+// ---- Sommaire des matériaux Cut Rite → 3 rapports PDF ----
+// Le sommaire (imprimé en PDF depuis Cut Rite) donne, pour chaque matière du
+// lancement, le nombre de panneaux et de restes. On en tire trois rapports :
+// agglo (panneaux et restes), strats, et couleurs de la feuille de réception
+// (+ hors gamme), avec le nombre de pièces et la couleur de la semaine.
+
+// Couleurs de la feuille de réception (La Chapelle), dans son ordre ; largeur de leur format.
+const COULEURS_FEUILLE = ["1136", "1132", "1109", "1065", "1062", "1048", "1047", "1136-PF", "1132-PF", "1065-PF", "1062-PF", "1048-PF", "1047-PF"];
+const LARGEUR_FEUILLE = "2060";
+// Couleurs des semaines, dans l'ordre du cycle (46 : rose, 47 : bleu, 48 : blanc…) ; la casse est en jaune.
+const CYCLE_COULEURS = ["BLANC", "ROSE", "BLEU"];
+const COULEUR_CASSE = "JAUNE";
+
+const couleurSemaine = (semaine, casse) => (casse ? COULEUR_CASSE : CYCLE_COULEURS[((semaine % 3) + 3) % 3]);
+
+function epaisseurMateriau(m) {
+  const e = /Epaisseur\s+(\d+(?:\.\d+)?)/.exec(m.description) || /(\d+)\s*MM\b/.exec(m.description);
+  return e ? parseFloat(e[1]) : null;
+}
+// Panneau d'agglo (ou mélaminé, martyr) : tout ce qui n'est pas un stratifié.
+const estAggloMateriau = (m) => (epaisseurMateriau(m) || 0) >= 2 || /^(SAG|SMEL|PROTECTION)/.test(m.code);
+const designationMateriau = (m) =>
+  m.description
+    .replace(/\s*Epaiss.*$/, "")
+    .replace(/^STRAT\s+/, "")
+    .replace(/\.\.\./g, "")
+    .trim();
+// « 4110 × 2060 » ; largeur coupée dans le sommaire : celle de la feuille de réception.
+function formatMateriau(m) {
+  const f = /(\d{4})\*(\d*)/.exec(m.description);
+  if (!f) return "—";
+  return `${f[1]} × ${f[2].length === 4 ? f[2] : LARGEUR_FEUILLE}`;
+}
+
+// Le texte arrive ligne par ligne : « CODE DESCRIPTION… Epaisseur x Pqt. n », puis
+// « [CODE] [STRAT] panneaux restes » ; à la fin, le total.
+function lireSommaireCutRite(lignes) {
+  const s = { lancement: "", date: "", materiaux: [], totalPanneaux: 0, totalRestes: 0 };
+  const parCode = new Map();
+  let courant = null;
+  let total = null;
+  for (const brute of lignes) {
+    const l = String(brute).replace(/\s+/g, " ").trim();
+    const lancement = /(LAN\w+?)-Code/.exec(l);
+    if (!s.lancement && lancement) s.lancement = lancement[1];
+    const date = /(?:Lundi|Mardi|Mercredi|Jeudi|Vendredi|Samedi|Dimanche) (\d+ \S+ \d{4}) (\d\d:\d\d)/.exec(l);
+    if (!s.date && date) s.date = `${date[1]} ${date[2]}`;
+    const q = /^(?:(\S+)\s+)?(?:STRAT\s+)?(\d+)\s+(\d+)$/.exec(l);
+    if (q) {
+      const code = q[1];
+      if (courant && courant.panneaux < 0 && (!code || code === courant.code || code === "STRAT")) {
+        courant.panneaux = parseInt(q[2], 10);
+        courant.restes = parseInt(q[3], 10);
+      } else if (!code) {
+        total = [parseInt(q[2], 10), parseInt(q[3], 10)];
+      }
+      continue;
+    }
+    const mots = l.split(" ");
+    // Une suite de description (« 38.0 Pqt. 1 ») ne commence pas par un code matière.
+    if (mots.length < 3 || !/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(mots[0])) continue;
+    if (["LAISNE", "Sommaire", "Code"].includes(mots[0]) || parCode.has(mots[0])) continue;
+    courant = { code: mots[0], description: l.slice(mots[0].length).trim(), panneaux: -1, restes: -1 };
+    parCode.set(courant.code, courant);
+  }
+  for (const m of parCode.values()) {
+    if (m.panneaux < 0) throw new Error(`Sommaire Cut Rite : quantités introuvables pour « ${m.code} ».`);
+    s.materiaux.push(m);
+    s.totalPanneaux += m.panneaux;
+    s.totalRestes += m.restes;
+  }
+  if (!s.materiaux.length) throw new Error("Ce PDF n'est pas un sommaire des matériaux Cut Rite.");
+  if (total && (total[0] !== s.totalPanneaux || total[1] !== s.totalRestes)) {
+    throw new Error(`Sommaire Cut Rite mal lu : total ${total[0]} / ${total[1]}, lu ${s.totalPanneaux} / ${s.totalRestes}.`);
+  }
+  return s;
+}
+
+const aggloSommaire = (s) => s.materiaux.filter(estAggloMateriau);
+const stratsSommaire = (s) => s.materiaux.filter((m) => !estAggloMateriau(m));
+const couleursFeuilleSommaire = (s) => COULEURS_FEUILLE.map((c) => s.materiaux.find((m) => m.code === c)).filter(Boolean);
+const couleursAbsentesSommaire = (s) => COULEURS_FEUILLE.filter((c) => !s.materiaux.some((m) => m.code === c));
+// Hors gamme : couleur dont le code commence par une lettre (le contrebalancement RCB n'en est pas une).
+const horsGammeSommaire = (s) => stratsSommaire(s).filter((m) => /^[A-Za-z]/.test(m.code) && !m.code.startsWith("RCB"));
+const totalMateriaux = (liste, champ) => liste.reduce((t, m) => t + m[champ], 0);
+// « LAN264601START » → « LAN264601 ».
+const baseSommaire = (s) => s.lancement.replace(/(STRAT|START)$/, "") || "Sommaire";
+
+// ---- Petit générateur de PDF (A4, Helvetica standard, texte et rectangles) ----
+
+const PDF_LARGEUR = 595.28;
+const PDF_HAUTEUR = 841.89;
+const PDF_MM = 72 / 25.4;
+// Largeurs des caractères 32 à 255 (codage WinAnsi), en millièmes de la taille.
+const LARGEURS_HELVETICA = [278,278,355,556,556,889,667,191,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,278,278,584,584,584,556,1015,667,667,722,722,667,611,778,722,278,500,667,556,833,722,778,667,778,722,667,611,722,667,944,667,667,611,278,278,278,469,556,333,556,556,500,556,556,278,556,556,222,222,500,222,833,556,556,556,556,333,500,278,556,500,722,500,500,500,334,260,334,584,350,556,350,222,556,333,1000,556,556,333,1000,667,333,1000,350,611,350,350,222,222,333,333,350,556,1000,333,1000,500,333,944,350,500,667,278,333,556,556,556,556,260,556,333,737,370,556,584,333,737,333,400,584,333,333,333,556,537,278,333,333,365,556,834,834,834,611,667,667,667,667,667,667,1000,722,667,667,667,667,278,278,278,278,722,722,778,778,778,778,778,584,778,722,722,722,722,667,667,611,556,556,556,556,556,556,889,500,556,556,556,556,278,278,278,278,556,556,556,556,556,556,556,584,611,556,556,556,556,500,556,500];
+const LARGEURS_HELVETICA_GRAS = [278,333,474,556,556,889,722,238,333,333,389,584,278,333,278,278,556,556,556,556,556,556,556,556,556,556,333,333,584,584,584,611,975,722,722,722,722,667,611,778,722,278,556,722,611,833,722,778,667,778,722,667,611,722,667,944,667,667,611,333,278,333,584,556,333,556,611,556,611,556,333,611,611,278,278,556,278,889,611,611,611,611,389,556,333,611,556,778,556,556,500,389,280,389,584,350,556,350,278,556,500,1000,556,556,333,1000,667,333,1000,350,611,350,350,278,278,500,500,350,556,1000,333,1000,556,333,944,350,500,667,278,333,556,556,556,556,280,556,333,737,370,556,584,333,737,333,400,584,333,333,333,611,556,278,333,333,365,556,834,834,834,611,722,722,722,722,722,722,1000,722,667,667,667,667,278,278,278,278,722,722,778,778,778,778,778,584,778,722,722,722,722,667,667,611,556,556,556,556,556,556,889,556,556,556,556,556,278,278,278,278,611,611,611,611,611,611,611,584,611,611,611,611,611,556,611,556];
+const WINANSI_SPECIAUX = { "€": 0x80, "‚": 0x82, "ƒ": 0x83, "„": 0x84, "…": 0x85, "†": 0x86, "‡": 0x87, "ˆ": 0x88, "‰": 0x89, "Š": 0x8a, "‹": 0x8b, "Œ": 0x8c, "Ž": 0x8e, "‘": 0x91, "’": 0x92, "“": 0x93, "”": 0x94, "•": 0x95, "–": 0x96, "—": 0x97, "˜": 0x98, "™": 0x99, "š": 0x9a, "›": 0x9b, "œ": 0x9c, "ž": 0x9e, "Ÿ": 0x9f };
+
+function codesWinAnsi(texte) {
+  const codes = [];
+  for (const c of String(texte)) {
+    const n = c.codePointAt(0);
+    if (n < 0x80 || (n >= 0xa0 && n <= 0xff)) codes.push(n);
+    else codes.push(WINANSI_SPECIAUX[c] ?? 0x3f);
+  }
+  return codes;
+}
+
+function largeurTextePdf(texte, taille, gras) {
+  const l = gras ? LARGEURS_HELVETICA_GRAS : LARGEURS_HELVETICA;
+  return (codesWinAnsi(texte).reduce((t, c) => t + (c >= 32 ? l[c - 32] : 0), 0) * taille) / 1000;
+}
+
+const nombrePdf = (v) => {
+  const s = v.toFixed(2);
+  return s.endsWith(".00") ? s.slice(0, -3) : s;
+};
+const couleurPdf = (rgb) => `${nombrePdf(((rgb >> 16) & 0xff) / 255)} ${nombrePdf(((rgb >> 8) & 0xff) / 255)} ${nombrePdf((rgb & 0xff) / 255)}`;
+
+// Coupe un texte en lignes qui tiennent dans largeurMax (mot à mot, mot trop long coupé).
+function couperTextePdf(texte, largeurMax, taille, gras) {
+  const lignes = [];
+  let courante = "";
+  for (let mot of String(texte).split(" ")) {
+    if (!mot) continue;
+    const essai = courante ? `${courante} ${mot}` : mot;
+    if (largeurTextePdf(essai, taille, gras) <= largeurMax) {
+      courante = essai;
+      continue;
+    }
+    if (courante) lignes.push(courante);
+    courante = "";
+    while (largeurTextePdf(mot, taille, gras) > largeurMax && mot.length > 1) {
+      let k = mot.length - 1;
+      while (k > 1 && largeurTextePdf(mot.slice(0, k), taille, gras) > largeurMax) k--;
+      lignes.push(mot.slice(0, k));
+      mot = mot.slice(k);
+    }
+    courante = mot;
+  }
+  if (courante || !lignes.length) lignes.push(courante);
+  return lignes;
+}
+
+class PdfSimple {
+  constructor(titre) {
+    this.titre = titre;
+    this.pages = [];
+    this.nouvellePage();
+  }
+
+  nouvellePage() {
+    this.page = [];
+    this.pages.push(this.page);
+  }
+
+  // Texte dont la ligne de base est à y points du haut de la page.
+  texte(x, y, texte, taille, gras, rgb) {
+    const chaine = codesWinAnsi(texte)
+      .map((c) => (c === 40 || c === 41 || c === 92 ? `\\${String.fromCharCode(c)}` : c < 32 || c > 126 ? `\\${c.toString(8).padStart(3, "0")}` : String.fromCharCode(c)))
+      .join("");
+    this.page.push(`BT /${gras ? "F2" : "F1"} ${nombrePdf(taille)} Tf ${couleurPdf(rgb)} rg ${nombrePdf(x)} ${nombrePdf(PDF_HAUTEUR - y)} Td (${chaine}) Tj ET\n`);
+  }
+
+  // Rectangle dont le coin haut gauche est en (x, y) ; fond et trait facultatifs (null).
+  rectangle(x, y, l, h, fond, trait, epaisseur) {
+    const r = `${nombrePdf(x)} ${nombrePdf(PDF_HAUTEUR - y - h)} ${nombrePdf(l)} ${nombrePdf(h)} re `;
+    if (fond !== null) this.page.push(`${couleurPdf(fond)} rg ${r}f\n`);
+    if (trait !== null) this.page.push(`${couleurPdf(trait)} RG ${nombrePdf(epaisseur)} w ${r}S\n`);
+  }
+
+  octets() {
+    let sortie = "%PDF-1.4\n%\u00e2\u00e3\u00cf\u00d3\n";
+    const positions = [];
+    const nb = this.pages.length;
+    const objets = [
+      "<< /Type /Catalog /Pages 2 0 R >>",
+      `<< /Type /Pages /Kids [${this.pages.map((_, i) => `${6 + 2 * i} 0 R`).join(" ")}] /Count ${nb} >>`,
+      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+      "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>",
+      // Titre en UTF-16 (les informations du PDF ne sont pas en WinAnsi).
+      `<< /Producer (Sentinelle) /Title <FEFF${[...this.titre].map((c) => c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")).join("")}> >>`,
+    ];
+    this.pages.forEach((page, i) => {
+      const contenu = page.join("");
+      objets.push(
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${nombrePdf(PDF_LARGEUR)} ${nombrePdf(PDF_HAUTEUR)}] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents ${7 + 2 * i} 0 R >>`
+      );
+      objets.push(`<< /Length ${contenu.length} >>\nstream\n${contenu}endstream`);
+    });
+    objets.forEach((o, i) => {
+      positions.push(sortie.length);
+      sortie += `${i + 1} 0 obj\n${o}\nendobj\n`;
+    });
+    const xref = sortie.length;
+    sortie += `xref\n0 ${objets.length + 1}\n0000000000 65535 f \n${positions.map((p) => `${String(p).padStart(10, "0")} 00000 n \n`).join("")}`;
+    sortie += `trailer\n<< /Size ${objets.length + 1} /Root 1 0 R /Info 5 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+    return Uint8Array.from(sortie, (c) => c.charCodeAt(0));
+  }
+}
+
+// ---- Les trois rapports ----
+
+const RAPPORT_MARGE = 14 * PDF_MM;
+const RAPPORT_TAILLE = 9;
+const RAPPORT_INTERLIGNE = 11.5;
+const RAPPORT_REMPLISSAGE = 3.5;
+const couleurDuNom = (c) => ({ ROSE: 0xd81b60, BLEU: 0x1565c0, JAUNE: 0xf9a825 })[c] ?? 0x607d8b;
+
+function hauteurRangeePdf(cellules, l, gras) {
+  let n = 1;
+  cellules.forEach((c, j) => (n = Math.max(n, couperTextePdf(c, l[j] - 2 * RAPPORT_REMPLISSAGE, RAPPORT_TAILLE, gras || j === 0).length)));
+  return n * RAPPORT_INTERLIGNE + 2 * RAPPORT_REMPLISSAGE;
+}
+
+// Dessine une rangée (cellules à gauche, nombres à droite) et renvoie le bas de la rangée.
+function rangeePdf(pdf, y, cellules, l, nbColonnesTexte, fond, gras, rgb) {
+  const h = hauteurRangeePdf(cellules, l, gras);
+  let x = RAPPORT_MARGE;
+  cellules.forEach((c, j) => {
+    pdf.rectangle(x, y, l[j], h, fond, 0xc9d2de, 0.4);
+    const g = gras || j === 0;
+    const morceaux = couperTextePdf(c, l[j] - 2 * RAPPORT_REMPLISSAGE, RAPPORT_TAILLE, g);
+    const haut = y + (h - morceaux.length * RAPPORT_INTERLIGNE) / 2 + RAPPORT_INTERLIGNE - 2.5;
+    morceaux.forEach((t, k) => {
+      const xt = j >= nbColonnesTexte ? x + l[j] - RAPPORT_REMPLISSAGE - largeurTextePdf(t, RAPPORT_TAILLE, g) : x + RAPPORT_REMPLISSAGE;
+      pdf.texte(xt, haut + k * RAPPORT_INTERLIGNE, t, RAPPORT_TAILLE, g, rgb);
+    });
+    x += l[j];
+  });
+  return y + h;
+}
+
+function morceauPdf(pdf, x, y, texte, gras, rgb) {
+  pdf.texte(x, y, texte, 12, gras, rgb);
+  return x + largeurTextePdf(texte, 12, gras);
+}
+
+function rapportSommairePdf(s, titre, nbPieces, couleur, entete, largeursMm, nbColonnesTexte, rangees, notes) {
+  const pdf = new PdfSimple(titre);
+  let y = RAPPORT_MARGE + 16;
+  pdf.texte(RAPPORT_MARGE, y, titre, 16, true, 0x0d2b5c);
+  y += 13;
+  pdf.texte(RAPPORT_MARGE, y, `${s.lancement} · sommaire Cut Rite du ${s.date} · Laisné Industrie`, 9, false, 0x555555);
+  y += 19;
+  let x = RAPPORT_MARGE;
+  if (nbPieces !== null) {
+    x = morceauPdf(pdf, x, y, "Nombre de pièces : ", false, 0x263238);
+    x = morceauPdf(pdf, x, y, nbPieces, true, 0x263238);
+  }
+  if (couleur !== null) {
+    if (nbPieces !== null) x = morceauPdf(pdf, x, y, "     ·     ", false, 0x263238);
+    x = morceauPdf(pdf, x, y, "Couleurs semaine : ", false, 0x263238);
+    morceauPdf(pdf, x, y, couleur, true, couleurDuNom(couleur));
+  }
+  if (nbPieces !== null || couleur !== null) y += 12;
+  const l = largeursMm.map((v) => v * PDF_MM);
+  const total = entete.map(() => "");
+  total[0] = "Total";
+  total[total.length - 2] = String(rangees.reduce((t, r) => t + parseInt(r[r.length - 2], 10), 0));
+  total[total.length - 1] = String(rangees.reduce((t, r) => t + parseInt(r[r.length - 1], 10), 0));
+  const lignes = [...rangees, total];
+  y = rangeePdf(pdf, y, entete, l, nbColonnesTexte, 0x1565c0, true, 0xffffff);
+  lignes.forEach((r, i) => {
+    const estTotal = i === lignes.length - 1;
+    if (y + hauteurRangeePdf(r, l, estTotal) > PDF_HAUTEUR - RAPPORT_MARGE) {
+      pdf.nouvellePage();
+      y = rangeePdf(pdf, RAPPORT_MARGE, entete, l, nbColonnesTexte, 0x1565c0, true, 0xffffff);
+    }
+    y = rangeePdf(pdf, y, r, l, nbColonnesTexte, estTotal ? 0xe3f2fd : i % 2 === 1 ? 0xf3f5f8 : null, estTotal, 0x1f2933);
+  });
+  if (notes) {
+    y += 18;
+    for (const [libelle, valeur] of notes) {
+      morceauPdf(pdf, morceauPdf(pdf, RAPPORT_MARGE, y, libelle, true, 0x263238), y, valeur, false, 0x263238);
+      y += 14;
+    }
+  }
+  return pdf.octets();
+}
+
+// Nom de fichier → contenu, dans l'ordre : agglo, strats, couleurs.
+function rapportsSommaire(s, nbPieces, couleur) {
+  const base = baseSommaire(s);
+  const pdf = new Map();
+  pdf.set(
+    `${base}_Agglo.pdf`,
+    rapportSommairePdf(s, `${base} — Agglo : panneaux et restes`, nbPieces, couleur, ["Code", "Désignation", "Ép. (mm)", "Panneaux", "Restes"], [38, 86, 16, 22, 20], 3,
+      aggloSommaire(s).map((m) => {
+        const e = epaisseurMateriau(m);
+        return [m.code, designationMateriau(m), e === null ? "" : String(e), String(m.panneaux), String(m.restes)];
+      }), null)
+  );
+  pdf.set(
+    `${base}_Strats.pdf`,
+    rapportSommairePdf(s, `${base} — Strats : panneaux et restes`, nbPieces, couleur, ["Code", "Désignation", "Panneaux", "Restes"], [26, 114, 22, 20], 2,
+      stratsSommaire(s).map((m) => [m.code, designationMateriau(m), String(m.panneaux), String(m.restes)]), null)
+  );
+  const notes = [];
+  const absentes = couleursAbsentesSommaire(s);
+  if (absentes.length) notes.push(["Pas dans ce lancement : ", absentes.join(", ")]);
+  const horsGamme = horsGammeSommaire(s).map((m) => `${m.code} (${m.panneaux} panneau(x), ${m.restes} reste(s))`);
+  notes.push(["Hors gamme : ", horsGamme.length ? horsGamme.join(", ") : "aucune dans ce lancement"]);
+  pdf.set(
+    `${base}_Couleurs.pdf`,
+    rapportSommairePdf(s, `${base} — Couleurs de la feuille`, nbPieces, couleur, ["Couleur", "Désignation", "Format", "Panneaux", "Restes"], [22, 90, 30, 22, 18], 3,
+      couleursFeuilleSommaire(s).map((m) => [m.code, designationMateriau(m), formatMateriau(m), String(m.panneaux), String(m.restes)]), notes)
+  );
+  return pdf;
+}
+
 // Dans la WebView Android (APK), showDirectoryPicker n'existe pas : on
 // passe alors par le pont natif AndroidDossierPartage (voir MainActivity.java),
 // qui ouvre le sélecteur de dossier système d'Android (Storage Access
@@ -3715,6 +4027,7 @@ function construireSemaine(parite) {
     <button type="button" class="export-semaine" id="btnExporterSemaine">Exporter le rapport de la semaine (.xlsx)</button>
     <div class="carte"><div class="carte-titre">📋 Lancements</div><div id="zoneRecap"></div></div>
     <div class="carte"><div class="carte-titre">🧾 Diakonos</div><div id="zoneDiakonos"></div></div>
+    <div class="carte" id="carteSommaire"></div>
     <div class="carte" id="carteDossier"></div>
     <div class="actions">
       <button type="button" id="btnLancerTout">Lancer le(s) contrôle(s)</button>
@@ -3728,6 +4041,7 @@ function construireSemaine(parite) {
   majCompteur();
   majRecap();
   majDiakonos();
+  remplirCarteSommaire(parite);
   remplirCarteDossier(parite);
   $("btnLancerTout").addEventListener("click", lancerTousLesControles);
   $("btnExporterSemaine").addEventListener("click", async (e) => {
@@ -3798,6 +4112,7 @@ function remplirCarte(carte, p) {
     ${p.etat ? `<div class="etat ${p.etatErreur ? "erreur" : ""}">${echapper(p.etat)}</div>` : ""}
     <div class="zone-rapport"></div>
     <div class="zone-scies"></div>
+    <div class="zone-casse"></div>
   `;
   carte.querySelectorAll('[data-action="choisir"]').forEach((b) => b.addEventListener("click", () => demanderFichier(p, b.dataset.role)));
   carte.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(p, null));
@@ -3812,6 +4127,91 @@ function remplirCarte(carte, p) {
   if (retirer) retirer.addEventListener("click", () => retirerChantier(p));
   if (p.rapport) afficherRapport(carte.querySelector(".zone-rapport"), p);
   if (p.ecartsScies || p.erreurScies) afficherScies(carte.querySelector(".zone-scies"), p);
+  if (p.poste === "Casse" && p.strat && onglet !== "recherche") remplirCasse(carte.querySelector(".zone-casse"), p);
+}
+
+// ---- Casse : les pièces déjà lancées la semaine d'avant, retrouvées dans les
+// fichiers de lancement Excel de cette semaine-là (l'autre onglet) ----
+
+const resultatsCasse = new Map(); // id de la case → dernier résultat
+const casseEnCours = new Set();
+
+// Semaine d'avant celle où la casse est fabriquée (la casse 44 se fabrique en 45 : semaine d'avant 44).
+function semaineAvantCasse(p) {
+  const n = parseInt(p.semaine, 10);
+  if (Number.isNaN(n)) return null;
+  return String(n <= 1 ? 52 : n - 1).padStart(2, "0");
+}
+
+const cleCasse = (p, autreSemaine, numeroAutre) =>
+  [idFichier(p.strat), p.semaine, numeroAutre, ...autreSemaine.filter((o) => o.strat).map((o) => idFichier(o.strat))].join("|");
+
+async function calculerCasse(p, autreSemaine, numeroAutre) {
+  const r = { cle: cleCasse(p, autreSemaine, numeroAutre), semaineAvant: semaineAvantCasse(p), autreSemaineChargee: null, nbPieces: 0, dejaLancees: [], nbAutres: 0, erreur: null };
+  const autre = String(numeroAutre).padStart(2, "0");
+  if (!r.semaineAvant || r.semaineAvant !== autre) {
+    r.autreSemaineChargee = autre;
+    return r;
+  }
+  let lignes;
+  try {
+    lignes = (await stratEnCache(p.strat)).lignes;
+  } catch (erreur) {
+    r.erreur = erreur && erreur.message ? erreur.message : String(erreur);
+    return r;
+  }
+  r.nbPieces = lignes.length;
+  for (const l of lignes) {
+    let origine = null;
+    for (const o of autreSemaine) {
+      if (o.strat && (await resume(o.strat, o.bkp)).cles.has(l.cle)) {
+        origine = o.strat.name;
+        break;
+      }
+    }
+    if (origine) r.dejaLancees.push({ ligne: l, lancement: origine });
+    else r.nbAutres++;
+  }
+  return r;
+}
+
+// « CVC26100337006 · CRED14 · 955 × 270 · coloris 975 »
+function descriptionCasse(l, separateur) {
+  const coloris = l.toutesDonnees && l.toutesDonnees.coloris;
+  return [l.cle, l.article, l.longueurFinie != null && l.largeurFinie != null ? `${fmtDim(l.longueurFinie)} × ${fmtDim(l.largeurFinie)}` : "", coloris ? `coloris ${coloris}` : ""]
+    .filter(Boolean)
+    .join(separateur);
+}
+
+function remplirCasse(zone, p) {
+  const autre = p.parite === "paire" ? "impaire" : "paire";
+  const autreSemaine = pairesDeLaSemaine(autre);
+  const numeroAutre = numeroSemaine(autre);
+  const cle = cleCasse(p, autreSemaine, numeroAutre);
+  const r = resultatsCasse.get(p.id);
+  if (!r || r.cle !== cle) {
+    zone.innerHTML = '<div class="note">…</div>';
+    if (!casseEnCours.has(cle)) {
+      casseEnCours.add(cle);
+      calculerCasse(p, autreSemaine, numeroAutre).then((calcule) => {
+        casseEnCours.delete(cle);
+        resultatsCasse.set(p.id, calcule);
+        const carte = document.querySelector(`.carte-paire[data-id="${p.id}"] .zone-casse`);
+        if (carte) remplirCasse(carte, p);
+      });
+    }
+    return;
+  }
+  let html = '<div class="separateur"></div>';
+  if (r.erreur) html += `<div class="etat erreur">Casse illisible : ${echapper(r.erreur)}</div>`;
+  else if (r.autreSemaineChargee) html += `<div class="note">Pour retrouver les pièces déjà lancées, chargez la semaine ${echapper(r.semaineAvant || "d'avant")} dans l'autre onglet.</div>`;
+  else if (!r.dejaLancees.length) html += bandeau(`Casse : aucune pièce n'était lancée en semaine ${echapper(r.semaineAvant)}`, "ok");
+  else {
+    html += bandeau(`🔁 ${r.dejaLancees.length} pièce(s) de la casse déjà lancée(s) en semaine ${echapper(r.semaineAvant)}`, "attention");
+    for (const t of r.dejaLancees) html += `<div class="ligne-diakonos">${echapper(descriptionCasse(t.ligne, " · "))} — ${echapper(t.lancement)}</div>`;
+    if (r.nbAutres) html += `<div class="note">${r.nbAutres} autre(s) pièce(s) pas lancée(s) en semaine ${echapper(r.semaineAvant)}</div>`;
+  }
+  zone.innerHTML = html;
 }
 
 const bandeau = (texte, genre) => `<div class="bandeau ${genre}">${texte}</div>`;
@@ -4055,6 +4455,87 @@ function htmlDiakonos(r) {
   return html;
 }
 
+// ---- Rapports du sommaire Cut Rite ----
+
+const etatsSommaire = { paire: null, impaire: null }; // { lignes, erreur }
+let pariteSommaire = null;
+
+function remplirCarteSommaire(parite) {
+  const carte = $("carteSommaire");
+  if (!carte) return;
+  const etat = etatsSommaire[parite];
+  carte.innerHTML = `
+    <div class="carte-titre">📄 Rapports du sommaire Cut Rite</div>
+    <div class="note">Agglo, strats et couleurs de la feuille, en PDF</div>
+    <button type="button" class="export-semaine" id="btnSommaire" style="margin-top:8px">Choisir le sommaire (.pdf)</button>
+    ${etat ? `<div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes.map(echapper).join("<br>")}</div>` : ""}
+  `;
+  $("btnSommaire").addEventListener("click", () => {
+    pariteSommaire = parite;
+    const input = $("choixSommaire");
+    input.value = "";
+    input.click();
+  });
+}
+
+function etatSommaire(parite, lignes, erreur) {
+  etatsSommaire[parite] = { lignes, erreur };
+  if (parite === onglet) remplirCarteSommaire(parite);
+}
+
+// Le lancement du sommaire, dans cet onglet ou l'autre : même nom de fichier, sinon même code.
+function lancementDuSommaire(s, parite) {
+  const autre = parite === "paire" ? "impaire" : "paire";
+  const cases = [...pairesDeLaSemaine(parite), ...pairesDeLaSemaine(autre)].filter((p) => p.strat);
+  const exact = cases.find((p) => p.strat.name.replace(/\.[^.]*$/, "").toUpperCase() === s.lancement.toUpperCase());
+  if (exact) return exact;
+  const code = trouverCodeLancement(s.lancement);
+  return code ? cases.find((p) => !estChantier(p) && trouverCodeLancement(p.strat.name) === code) || null : null;
+}
+
+function telecharger(nom, octets, type) {
+  const url = URL.createObjectURL(new Blob([octets], { type }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = nom;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+async function sommaireChoisi() {
+  const fichier = $("choixSommaire").files[0];
+  const parite = pariteSommaire;
+  pariteSommaire = null;
+  if (!fichier || !parite) return;
+  etatSommaire(parite, [`⏳ lecture de « ${fichier.name} »…`], false);
+  try {
+    const s = lireSommaireCutRite(await extraireLignesTextePDF(await chargerDocumentPDF(fichier)));
+    const p = lancementDuSommaire(s, parite);
+    let nbPieces = null;
+    if (p) {
+      const r = await resume(p.strat, p.bkp);
+      if (!Number.isNaN(r.prevues)) nbPieces = String(Math.trunc(r.prevues));
+    }
+    const casse = /CASSE/i.test(s.lancement) || (p !== null && p.poste === "Casse");
+    const semaine = p && p.semaine ? p.semaine : extraireSemaine(s.lancement);
+    const couleur = couleurSemaine(semaine ? parseInt(semaine, 10) : numeroSemaine(parite), casse);
+    const rapports = rapportsSommaire(s, nbPieces, couleur);
+    for (const [nom, octets] of rapports) telecharger(nom, octets, "application/pdf");
+    const agglo = aggloSommaire(s), strats = stratsSommaire(s), couleurs = couleursFeuilleSommaire(s);
+    etatSommaire(parite, [
+      `${s.lancement} — pièces : ${nbPieces ?? "?"} · couleurs semaine : ${couleur}`,
+      `Agglo : ${totalMateriaux(agglo, "panneaux")} panneaux, ${totalMateriaux(agglo, "restes")} restes`,
+      `Strats : ${totalMateriaux(strats, "panneaux")} panneaux, ${totalMateriaux(strats, "restes")} restes`,
+      `Couleurs de la feuille : ${totalMateriaux(couleurs, "panneaux")} panneaux, ${totalMateriaux(couleurs, "restes")} restes`,
+      `✔ ${[...rapports.keys()].join(", ")} téléchargés`,
+    ], false);
+  } catch (erreur) {
+    etatSommaire(parite, [`❌ « ${fichier.name} » : ${erreur && erreur.message ? erreur.message : erreur}`], true);
+  }
+}
+
 // ---- Rapport de toute la semaine (.xlsx) ----
 // Feuille 1 : le tableau des lancements et les alertes de la semaine.
 // Feuille 2 : toutes les anomalies, lancement par lancement (contrôle,
@@ -4066,6 +4547,8 @@ async function exporterSemaine(parite) {
   const lignes = lignesRecap(pairesDeLaSemaine(parite));
   const autres = lignesRecap(pairesDeLaSemaine(autre));
   const diakonos = await resultatsDiakonos(parite);
+  const casse = paireFixe("Casse", parite);
+  const analyseCasse = casse && casse.strat ? await calculerCasse(casse, pairesDeLaSemaine(autre), numeroSemaine(autre)) : null;
   const titre = libelleOnglet(parite);
   const gras = { bold: true };
   const fond = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
@@ -4115,6 +4598,12 @@ async function exporterSemaine(parite) {
     const r = f1.addRow([bloc.titre]);
     r.font = { bold: true, color: { argb: "FFC62828" } };
     for (const ligne of bloc.lignes) f1.addRow([ligne]);
+  }
+  if (analyseCasse && !analyseCasse.erreur && !analyseCasse.autreSemaineChargee && analyseCasse.dejaLancees.length) {
+    f1.addRow([]);
+    f1.addRow([`Casse : pièces déjà lancées en semaine ${analyseCasse.semaineAvant}`]).font = { bold: true, color: { argb: "FFC62828" } };
+    for (const t of analyseCasse.dejaLancees) f1.addRow([`${descriptionCasse(t.ligne, " — ")} — ${t.lancement}`]);
+    if (analyseCasse.nbAutres) f1.addRow([`${analyseCasse.nbAutres} autre(s) pièce(s) pas lancée(s) en semaine ${analyseCasse.semaineAvant}`]);
   }
   for (const d of diakonos) {
     const tour = libelleTourDiakonos(d.tour);
@@ -4210,6 +4699,8 @@ function alertesSemaine(lignes, autres, libelleAutre) {
   const deja = [];
   for (const l of lignes) {
     for (const o of autres) {
+      // La casse a sa propre analyse (pièces déjà lancées la semaine d'avant).
+      if (l.paire.poste === "Casse" || o.paire.poste === "Casse") continue;
       if (!l.cles || !o.cles) continue;
       const communes = [...l.cles].filter((cle) => o.cles.has(cle) && cle.length > 3).sort();
       if (communes.length) deja.push(`${communes.join(", ")} — ${nomLancementRecap(l)} et ${nomLancementRecap(o)}`);
@@ -4390,7 +4881,10 @@ function htmlDoublonsRecap(lignes) {
 }
 
 // Pièces déjà présentes dans un lancement de l'autre onglet semaine (relancées, ou lancées en double).
+// La casse reprend par nature des pièces déjà lancées : elle a sa propre analyse, dans sa case.
 function htmlDejaLancees(lignes, autres, libelleAutre) {
+  lignes = lignes.filter((l) => l.paire.poste !== "Casse");
+  autres = autres.filter((l) => l.paire.poste !== "Casse");
   if (lignes.some((l) => l.cles === null) || autres.some((l) => l.cles === null)) return "";
   let html = "";
   for (const l of lignes) {
@@ -5109,6 +5603,7 @@ $("champRecherche").addEventListener("keydown", (e) => {
   if (e.key === "Enter") rechercher();
 });
 $("choixFichier").addEventListener("change", fichierChoisi);
+$("choixSommaire").addEventListener("change", sommaireChoisi);
 
 (async () => {
   await initialiserPaires();

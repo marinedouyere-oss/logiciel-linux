@@ -82,7 +82,7 @@ final class RapportSemaine {
 
     /** Les lignes ont toutes leur résumé (pièces, clés) : calculé avant, hors du fil d'affichage. */
     static byte[] xlsx(String libelleSemaine, List<RecapLancements.Ligne> lignes, List<RecapLancements.Ligne> autres,
-            String libelleAutre, List<ControleDiakonos.Resultat> diakonos) throws IOException {
+            String libelleAutre, List<ControleDiakonos.Resultat> diakonos, ControleCasse.Resultat casse) throws IOException {
         ExportRapport.Feuille f1 = new ExportRapport.Feuille(libelleSemaine, 26, 30, 15, 13, 18, 14, 16);
         f1.ligne(ExportRapport.TITRE, "Sentinelle — " + libelleSemaine + " — "
                 + new SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE).format(new Date()));
@@ -129,6 +129,8 @@ final class RapportSemaine {
         List<String> deja = new ArrayList<>();
         for (RecapLancements.Ligne l : lignes) {
             for (RecapLancements.Ligne o : autres) {
+                // La casse a sa propre analyse (pièces déjà lancées la semaine d'avant), plus bas.
+                if ("Casse".equals(l.paire.poste) || "Casse".equals(o.paire.poste)) continue;
                 if (l.cles == null || o.cles == null) continue;
                 List<String> communes = new ArrayList<>();
                 for (String cle : l.cles) if (o.cles.contains(cle) && cle.length() > 3) communes.add(cle);
@@ -155,6 +157,14 @@ final class RapportSemaine {
             f1.vide();
             f1.ligne(ExportRapport.TITRE_ALERTE, "Pièces d'une autre semaine de livraison");
             for (String s : livraison) f1.ligne(ExportRapport.NORMAL, s);
+        }
+        if (casse != null && casse.erreur == null && casse.autreSemaineChargee == null && !casse.dejaLancees.isEmpty()) {
+            f1.vide();
+            f1.ligne(ExportRapport.TITRE_ALERTE, "Casse : pièces déjà lancées en semaine " + casse.semaineAvant);
+            for (ControleCasse.Trouvee t : casse.dejaLancees) {
+                f1.ligne(ExportRapport.NORMAL, ControleCasse.description(t.ligne, " — ") + " — " + t.lancement);
+            }
+            if (casse.nbAutres > 0) f1.ligne(ExportRapport.NORMAL, casse.nbAutres + " autre(s) pièce(s) pas lancée(s) en semaine " + casse.semaineAvant);
         }
         for (ControleDiakonos.Resultat d : diakonos) {
             String tour = ControleDiakonos.libelleTour(d.tour);

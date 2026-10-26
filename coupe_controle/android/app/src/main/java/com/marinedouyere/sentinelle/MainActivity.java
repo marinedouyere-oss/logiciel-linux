@@ -31,6 +31,8 @@ import com.marinedouyere.sentinelle.moteur.ExportRapport;
 import com.marinedouyere.sentinelle.moteur.Js;
 import com.marinedouyere.sentinelle.moteur.LecteurBkp;
 import com.marinedouyere.sentinelle.moteur.LecteurDiakonos;
+import com.marinedouyere.sentinelle.moteur.RapportsSommaire;
+import com.marinedouyere.sentinelle.moteur.SommaireCutRite;
 import com.marinedouyere.sentinelle.moteur.LecteurStrat;
 import com.marinedouyere.sentinelle.moteur.ScanDossier;
 import com.marinedouyere.sentinelle.moteur.Semaines;
@@ -89,6 +91,20 @@ public class MainActivity extends AppCompatActivity {
     private ActivityResultLauncher<String> creationRapport;
     private String cleExport;
 
+    private ActivityResultLauncher<String[]> choixSommaire;
+    private ActivityResultLauncher<Uri> choixDossierRapports;
+    private String pariteSommaire;
+    /** Rapports du sommaire en attente d'un dossier où les enregistrer (nom → PDF). */
+    private Map<String, byte[]> rapportsEnAttente;
+    /** Compte rendu des rapports du sommaire, par semaine. */
+    private final Map<String, List<String>> etatsSommaire = new HashMap<>();
+    private final Set<String> sommairesEnErreur = new HashSet<>();
+
+    /** Analyse de la casse (pièces déjà lancées la semaine d'avant), par case. */
+    private final Map<String, ControleCasse.Resultat> resultatsCasse = new HashMap<>();
+    private final Set<String> casseEnCours = new HashSet<>();
+    private final Map<Paire, LinearLayout> zonesCasse = new HashMap<>();
+
     @Override
     protected void onCreate(Bundle etat) {
         super.onCreate(etat);
@@ -107,6 +123,9 @@ public class MainActivity extends AppCompatActivity {
         choixDossier = registerForActivityResult(new ActivityResultContracts.OpenDocumentTree(), this::dossierChoisi);
         creationRapport = registerForActivityResult(new ActivityResultContracts.CreateDocument(ExportRapport.TYPE_MIME),
                 this::emplacementRapportChoisi);
+        choixSommaire = registerForActivityResult(new ActivityResultContracts.OpenDocument(), this::sommaireChoisi);
+        choixDossierRapports = registerForActivityResult(new ActivityResultContracts.OpenDocumentTree(), this::dossierRapportsChoisi);
+        if (etat != null) pariteSommaire = etat.getString("pariteSommaire");
 
         LinearLayout racine = ui.colonne();
         racine.setBackgroundColor(ui.couleur(R.color.fond));
@@ -166,6 +185,7 @@ public class MainActivity extends AppCompatActivity {
         etat.putString("roleEnAttente", roleEnAttente);
         etat.putString("pariteDossierEnAttente", pariteDossierEnAttente);
         etat.putString("cleExport", cleExport);
+        etat.putString("pariteSommaire", pariteSommaire);
     }
 
     /** Onglet Recherche (créé à la première visite). */
@@ -228,6 +248,7 @@ public class MainActivity extends AppCompatActivity {
     void afficher() {
         contenu.removeAllViews();
         cartes.clear();
+        zonesCasse.clear();
         texteCompteur = null;
         zoneRecap = null;
         zoneDiakonos = null;
@@ -267,6 +288,8 @@ public class MainActivity extends AppCompatActivity {
 
         contenu.addView(carteDiakonos());
         majDiakonos();
+
+        contenu.addView(carteSommaire(parite));
 
         contenu.addView(carteDossierPartage(parite));
 
@@ -492,6 +515,240 @@ public class MainActivity extends AppCompatActivity {
 
         if (p.rapport != null) afficherRapport(corps, p);
         if (p.ecartsScies != null || p.erreurScies != null) afficherScies(corps, p);
+        if ("Casse".equals(p.poste) && p.strat != null && ongletSemaine()) {
+            LinearLayout zone = ui.colonne();
+            corps.addView(zone, ui.pleineLargeur());
+            zonesCasse.put(p, zone);
+            remplirCasse(p, zone);
+        }
+    }
+
+    // ---- casse : pièces déjà lancées la semaine d'avant ----
+
+    private void remplirCasse(Paire p, LinearLayout zone) {
+        zone.removeAllViews();
+        final String parite = p.parite;
+        final String autre = Depot.PAIRE.equals(parite) ? Depot.IMPAIRE : Depot.PAIRE;
+        final List<Paire> autreSemaine = depot.pairesDeLaSemaine(autre);
+        final int numeroAutre = numeroSemaine(autre);
+        final String cle = ControleCasse.cle(p, autreSemaine, numeroAutre);
+        ControleCasse.Resultat r = resultatsCasse.get(p.cle());
+        if (r == null || !r.cle.equals(cle)) {
+            zone.addView(ui.texte("…", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 0));
+            if (casseEnCours.add(cle)) {
+                app.annexe.execute(() -> {
+                    ControleCasse.Resultat calcule = ControleCasse.calculer(p, autreSemaine, numeroAutre, controles);
+                    principal.post(() -> {
+                        casseEnCours.remove(cle);
+                        resultatsCasse.put(p.cle(), calcule);
+                        LinearLayout z = zonesCasse.get(p);
+                        if (z != null) remplirCasse(p, z);
+                    });
+                });
+            }
+            return;
+        }
+        zone.addView(ui.separateur());
+        if (r.erreur != null) {
+            zone.addView(ui.texte("Casse illisible : " + r.erreur, 13, false, ui.couleur(R.color.alerte_texte)), ui.marges(6, 0));
+            return;
+        }
+        if (r.autreSemaineChargee != null) {
+            zone.addView(ui.texte("Pour retrouver les pièces déjà lancées, chargez la semaine " + (r.semaineAvant == null ? "d'avant" : r.semaineAvant)
+                    + " dans l'autre onglet.", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 0));
+            return;
+        }
+        if (r.dejaLancees.isEmpty()) {
+            zone.addView(ui.bandeau("Casse : aucune pièce n'était lancée en semaine " + r.semaineAvant,
+                    ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte)), ui.marges(6, 0));
+            return;
+        }
+        zone.addView(ui.bandeau("🔁 " + r.dejaLancees.size() + " pièce(s) de la casse déjà lancée(s) en semaine " + r.semaineAvant,
+                ui.couleur(R.color.attention_fond), ui.couleur(R.color.attention_texte)), ui.marges(6, 0));
+        for (ControleCasse.Trouvee t : r.dejaLancees) {
+            TextView l = ui.texte(ControleCasse.description(t.ligne, " · ") + " — " + t.lancement, 13, false, 0xFF3E4C59);
+            l.setPadding(0, ui.dp(4), 0, 0);
+            zone.addView(l);
+        }
+        if (r.nbAutres > 0) {
+            zone.addView(ui.texte(r.nbAutres + " autre(s) pièce(s) pas lancée(s) en semaine " + r.semaineAvant, 12, false,
+                    ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
+        }
+    }
+
+    // ---- rapports du sommaire Cut Rite ----
+
+    private View carteSommaire(String parite) {
+        MaterialCardView carte = ui.carte();
+        LinearLayout corps = ui.colonne();
+        corps.setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(12));
+        carte.addView(corps);
+        corps.addView(ui.texte("📄 Rapports du sommaire Cut Rite", 16, true, 0xFF263238));
+        corps.addView(ui.texte("Agglo, strats et couleurs de la feuille, en PDF", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 6));
+        MaterialButton choisir = ui.bouton("Choisir le sommaire (.pdf)");
+        choisir.setOnClickListener(v -> demanderSommaire(parite));
+        corps.addView(choisir, ui.pleineLargeur());
+        List<String> lignes = etatsSommaire.get(parite);
+        if (lignes != null) {
+            TextView t = ui.texte(TextUtils.join("\n", lignes), 13, false,
+                    sommairesEnErreur.contains(parite) ? ui.couleur(R.color.alerte_texte) : 0xFF263238);
+            t.setLineSpacing(ui.dp(2), 1f);
+            corps.addView(t, ui.marges(8, 0));
+        }
+        return carte;
+    }
+
+    void demanderSommaire(String parite) {
+        pariteSommaire = parite;
+        try {
+            choixSommaire.launch(new String[] {"application/pdf"});
+        } catch (Exception e) {
+            alerte("Impossible d'ouvrir le sélecteur de fichiers : " + e.getMessage());
+        }
+    }
+
+    private void etatSommaire(String parite, List<String> lignes, boolean erreur) {
+        etatsSommaire.put(parite, lignes);
+        if (erreur) sommairesEnErreur.add(parite);
+        else sommairesEnErreur.remove(parite);
+        if (parite.equals(onglet)) afficher();
+    }
+
+    /** Le lancement du sommaire, dans cet onglet ou l'autre : même nom de fichier, sinon même code. */
+    private Paire lancementDuSommaire(SommaireCutRite s, String parite) {
+        String autre = Depot.PAIRE.equals(parite) ? Depot.IMPAIRE : Depot.PAIRE;
+        List<Paire> cases = new ArrayList<>(depot.pairesDeLaSemaine(parite));
+        cases.addAll(depot.pairesDeLaSemaine(autre));
+        for (Paire p : cases) {
+            if (p.strat == null) continue;
+            String nom = p.strat.nom.contains(".") ? p.strat.nom.substring(0, p.strat.nom.lastIndexOf('.')) : p.strat.nom;
+            if (nom.equalsIgnoreCase(s.lancement)) return p;
+        }
+        String code = ScanDossier.trouverCodeLancement(s.lancement);
+        if (code == null) return null;
+        for (Paire p : cases) if (p.strat != null && !p.estChantier() && code.equals(ScanDossier.trouverCodeLancement(p.strat.nom))) return p;
+        return null;
+    }
+
+    void sommaireChoisi(Uri uri) {
+        final String parite = pariteSommaire;
+        pariteSommaire = null;
+        if (uri == null || parite == null) return;
+        final String nom = nomAffiche(this, uri);
+        etatSommaire(parite, java.util.Collections.singletonList("⏳ lecture de « " + nom + " »…"), false);
+        app.annexe.execute(() -> {
+            byte[] octets;
+            try (InputStream entree = getContentResolver().openInputStream(uri)) {
+                if (entree == null) throw new IOException("fichier inaccessible");
+                java.io.ByteArrayOutputStream tampon = new java.io.ByteArrayOutputStream();
+                byte[] bloc = new byte[64 * 1024];
+                int lu;
+                while ((lu = entree.read(bloc)) != -1) tampon.write(bloc, 0, lu);
+                octets = tampon.toByteArray();
+            } catch (Exception e) {
+                principal.post(() -> etatSommaire(parite, java.util.Collections.singletonList("❌ « " + nom + " » illisible : " + e.getMessage()), true));
+                return;
+            }
+            preparerRapportsSommaire(parite, nom, octets, true);
+        });
+    }
+
+    /** Hors du fil d'affichage : lit le sommaire, fabrique les 3 PDF, puis demande le dossier où les enregistrer. */
+    void preparerRapportsSommaire(String parite, String nom, byte[] octets, boolean demanderDossier) {
+        try {
+            SommaireCutRite s = SommaireCutRite.lire(controles.lignesPdf(octets));
+            Paire p = lancementDuSommaire(s, parite);
+            String nbPieces = null;
+            if (p != null) {
+                double prevues = controles.resume(p.strat, p.bkp).prevues;
+                if (!Double.isNaN(prevues)) nbPieces = Js.entierTronque(prevues);
+            }
+            boolean casse = s.lancement.toUpperCase(Locale.ROOT).contains("CASSE") || (p != null && "Casse".equals(p.poste));
+            String semaine = p != null && p.semaine != null ? p.semaine : LecteurStrat.extraireSemaine(s.lancement);
+            int numero = semaine != null ? Integer.parseInt(semaine) : numeroSemaine(parite);
+            String couleur = SommaireCutRite.couleurSemaine(numero, casse);
+            Map<String, byte[]> rapports = RapportsSommaire.creer(s, nbPieces, couleur);
+            List<String> lignes = new ArrayList<>();
+            lignes.add(s.lancement + " — pièces : " + (nbPieces != null ? nbPieces : "?") + " · couleurs semaine : " + couleur);
+            lignes.add("Agglo : " + total(s.agglo(), true) + " panneaux, " + total(s.agglo(), false) + " restes");
+            lignes.add("Strats : " + total(s.strats(), true) + " panneaux, " + total(s.strats(), false) + " restes");
+            lignes.add("Couleurs de la feuille : " + total(s.couleursFeuille(), true) + " panneaux, " + total(s.couleursFeuille(), false) + " restes");
+            principal.post(() -> {
+                rapportsEnAttente = rapports;
+                pariteSommaire = parite;
+                List<String> etat = new ArrayList<>(lignes);
+                etat.add("Choisissez le dossier où enregistrer les 3 PDF…");
+                etatSommaire(parite, etat, false);
+                etatsSommaire.put(parite, lignes);
+                if (demanderDossier) {
+                    try {
+                        choixDossierRapports.launch(null);
+                    } catch (Exception e) {
+                        alerte("Impossible d'ouvrir le sélecteur de dossier : " + e.getMessage());
+                    }
+                }
+            });
+        } catch (Exception e) {
+            String message = e.getMessage() != null ? e.getMessage() : e.toString();
+            principal.post(() -> etatSommaire(parite, java.util.Collections.singletonList("❌ « " + nom + " » : " + message), true));
+        }
+    }
+
+    private static int total(List<SommaireCutRite.Materiau> l, boolean panneaux) {
+        int t = 0;
+        for (SommaireCutRite.Materiau m : l) t += panneaux ? m.panneaux : m.restes;
+        return t;
+    }
+
+    void dossierRapportsChoisi(Uri uri) {
+        final String parite = pariteSommaire;
+        final Map<String, byte[]> rapports = rapportsEnAttente;
+        pariteSommaire = null;
+        rapportsEnAttente = null;
+        if (parite == null || rapports == null) return;
+        final List<String> lignes = new ArrayList<>(etatsSommaire.containsKey(parite) ? etatsSommaire.get(parite) : new ArrayList<>());
+        if (uri == null) {
+            lignes.add("Rapports non enregistrés (aucun dossier choisi).");
+            etatSommaire(parite, lignes, true);
+            return;
+        }
+        app.annexe.execute(() -> {
+            String erreur = null;
+            String dossier = "";
+            try {
+                if ("file".equals(uri.getScheme())) {
+                    File d = new File(uri.getPath());
+                    dossier = d.getName();
+                    for (Map.Entry<String, byte[]> e : rapports.entrySet()) {
+                        try (OutputStream sortie = new FileOutputStream(new File(d, e.getKey()))) {
+                            sortie.write(e.getValue());
+                        }
+                    }
+                } else {
+                    androidx.documentfile.provider.DocumentFile d = androidx.documentfile.provider.DocumentFile.fromTreeUri(this, uri);
+                    if (d == null) throw new IOException("dossier inaccessible");
+                    dossier = d.getName() != null ? d.getName() : "";
+                    for (Map.Entry<String, byte[]> e : rapports.entrySet()) {
+                        String sansExtension = e.getKey().substring(0, e.getKey().length() - 4);
+                        androidx.documentfile.provider.DocumentFile f = d.createFile("application/pdf", sansExtension);
+                        if (f == null) throw new IOException("impossible de créer " + e.getKey());
+                        try (OutputStream sortie = getContentResolver().openOutputStream(f.getUri(), "wt")) {
+                            if (sortie == null) throw new IOException("impossible d'écrire " + e.getKey());
+                            sortie.write(e.getValue());
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                erreur = e.getMessage() != null ? e.getMessage() : e.toString();
+            }
+            final String err = erreur;
+            final String nomDossier = dossier;
+            principal.post(() -> {
+                if (err != null) lignes.add("❌ Enregistrement impossible : " + err);
+                else lignes.add("✔ " + TextUtils.join(", ", rapports.keySet()) + " enregistrés dans « " + nomDossier + " »");
+                etatSommaire(parite, lignes, err != null);
+            });
+        });
     }
 
     private View ligneFichier(Paire p, String role, String libelle) {
@@ -1241,6 +1498,8 @@ public class MainActivity extends AppCompatActivity {
         final List<Paire> fichiersDiakonos = new ArrayList<>();
         for (Paire p : depot.diakonos(parite)) if (p.strat != null) fichiersDiakonos.add(p);
         final String numero = String.format(Locale.ROOT, "%02d", numeroSemaine(parite));
+        final Paire casse = depot.paireFixe("Casse", parite);
+        final int numeroAutre = numeroSemaine(autre);
         app.annexe.execute(() -> {
             String erreur = null;
             try {
@@ -1248,8 +1507,10 @@ public class MainActivity extends AppCompatActivity {
                 for (Paire p : autreSemaine) if (p.strat != null) controles.resume(p.strat, p.bkp);
                 List<ControleDiakonos.Resultat> diakonos = new ArrayList<>();
                 for (Paire p : fichiersDiakonos) diakonos.add(ControleDiakonos.calculer(p, numero, semaine, toutes, controles));
+                ControleCasse.Resultat analyseCasse = casse != null && casse.strat != null
+                        ? ControleCasse.calculer(casse, autreSemaine, numeroAutre, controles) : null;
                 byte[] octets = RapportSemaine.xlsx(libelle, RecapLancements.lignes(semaine, controles),
-                        RecapLancements.lignes(autreSemaine, controles), libelleAutre, diakonos);
+                        RecapLancements.lignes(autreSemaine, controles), libelleAutre, diakonos, analyseCasse);
                 try (OutputStream sortie = "file".equals(uri.getScheme())
                         ? new FileOutputStream(new File(uri.getPath()))
                         : getContentResolver().openOutputStream(uri, "wt")) {

@@ -262,12 +262,17 @@ final class RecapLancements {
         return t;
     }
 
-    /** Pièces déjà présentes dans un lancement de l'autre onglet semaine (relancées, ou lancées en double). */
+    /**
+     * Pièces déjà présentes dans un lancement de l'autre onglet semaine (lancées en double). La casse reprend
+     * par nature des pièces déjà lancées : elle a sa propre analyse, dans sa case.
+     */
     private static View dejaLancees(Context c, Ui ui, List<Ligne> lignes, List<Ligne> autres, String libelleAutre, SurClic surClic) {
         LinearLayout bloc = null;
         for (Ligne l : lignes) {
+            if ("Casse".equals(l.paire.poste)) continue;
             if (l.cles == null) return null;
             for (Ligne o : autres) {
+                if ("Casse".equals(o.paire.poste)) continue;
                 if (o.cles == null) return null;
                 List<String> communes = new ArrayList<>();
                 for (String cle : l.cles) if (o.cles.contains(cle) && cle.length() > 3) communes.add(cle);

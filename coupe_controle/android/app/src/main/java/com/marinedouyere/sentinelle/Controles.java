@@ -76,6 +76,11 @@ final class Controles {
         return null;
     }
 
+    /** Texte d'un PDF, ligne par ligne (sommaire Cut Rite…). */
+    List<String> lignesPdf(byte[] pdf) throws Exception {
+        return LecteurCoupePdf.lignesTexte(extracteurPdf().elementsParPage(pdf));
+    }
+
     private synchronized LecteurCoupePdf.ExtracteurTexte extracteurPdf() {
         if (extracteurPdf == null) extracteurPdf = new ExtracteurPdfAndroid(context);
         return extracteurPdf;

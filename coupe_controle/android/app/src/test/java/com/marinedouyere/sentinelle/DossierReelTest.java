@@ -196,11 +196,20 @@ public class DossierReelTest {
         assertEquals("1063", feno45.couleurs.absentes.get(0).couleur);
         assertEquals(116.0, feno45.rapport.piecesAttendues, 0);
         assertEquals(0, agglo2_45.rapport.nbAnomalies);
+        long finCasse = System.currentTimeMillis() + 60_000;
+        while (!ecran(a).contains("de la casse déjà lancée(s)") && System.currentTimeMillis() < finCasse) {
+            ShadowLooper.idleMainLooper();
+            Thread.sleep(50);
+        }
         e = ecran(a);
         assertTrue(e, e.contains("CVC26100043001"));
         assertTrue(e, e.contains("CVC26100043002"));
-        // Pièces de la 44 : relancées en casse, et pièces à livrer semaine 44 dans un lancement de la 45.
-        assertTrue(e, e.contains("⚠ Pièces déjà lancées en Semaine 44"));
+        // Casse 44 : les pièces déjà lancées en semaine 44, avec leur lancement ; plus dans l'alerte générale.
+        assertTrue(e, e.contains("🔁 13 pièce(s) de la casse déjà lancée(s) en semaine 44"));
+        assertTrue(e, e.contains("CVC26100337006 · CRED14 · 955 × 270 · coloris 975 — LAN264401STRAT.xlsx")
+                || e.contains("— LAN264401STRAT.xlsx"));
+        assertTrue(e, e.contains("47 autre(s) pièce(s) pas lancée(s) en semaine 44"));
+        assertTrue(e, !e.contains("⚠ Pièces déjà lancées en Semaine 44"));
         assertTrue(e, e.contains("⚠ Pièces d'une autre semaine de livraison"));
         assertTrue(e, e.contains("à livrer semaine 44"));
         if (!captures.isEmpty()) capturer(a, new File(captures, "s45.png"), 12000);
@@ -261,5 +270,38 @@ public class DossierReelTest {
         assertEquals("Semaine 46", relu.feuilles.get(0).nom);
         if (!captures.isEmpty()) java.nio.file.Files.copy(xlsx.toPath(), new File(captures, "rapport_semaine_46.xlsx").toPath(),
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+
+        // Rapports du sommaire Cut Rite : nombre de pièces du lancement (340) et couleur de la semaine 46 (ROSE).
+        String sommaire = System.getProperty("sentinelle.sommaire", "");
+        if (sommaire.isEmpty()) return;
+        File sortie = new File(a.getCacheDir(), "rapports_sommaire");
+        sortie.mkdirs();
+        a.demanderSommaire(Depot.PAIRE);
+        SentinelleApp app = (SentinelleApp) a.getApplication();
+        final byte[] octetsSommaire = java.nio.file.Files.readAllBytes(new File(sommaire).toPath());
+        app.annexe.execute(() -> a.preparerRapportsSommaire(Depot.PAIRE, "LAN264601START.pdf", octetsSommaire, false));
+        long finSommaire = System.currentTimeMillis() + 120_000;
+        while (!ecran(a).contains("Choisissez le dossier") && !ecran(a).contains("❌") && System.currentTimeMillis() < finSommaire) {
+            ShadowLooper.idleMainLooper();
+            Thread.sleep(50);
+        }
+        e = ecran(a);
+        assertTrue(e, e.contains("LAN264601START — pièces : 340 · couleurs semaine : ROSE"));
+        assertTrue(e, e.contains("Agglo : 44 panneaux, 10 restes"));
+        assertTrue(e, e.contains("Strats : 98 panneaux, 51 restes"));
+        assertTrue(e, e.contains("Couleurs de la feuille : 15 panneaux, 10 restes"));
+        a.dossierRapportsChoisi(Uri.fromFile(sortie));
+        while (!ecran(a).contains("enregistrés dans") && System.currentTimeMillis() < finSommaire) {
+            ShadowLooper.idleMainLooper();
+            Thread.sleep(50);
+        }
+        assertTrue(ecran(a), ecran(a).contains("✔ LAN264601_Agglo.pdf, LAN264601_Strats.pdf, LAN264601_Couleurs.pdf enregistrés"));
+        for (String n : new String[] {"LAN264601_Agglo.pdf", "LAN264601_Strats.pdf", "LAN264601_Couleurs.pdf"}) {
+            File f = new File(sortie, n);
+            assertTrue(n, f.length() > 1000);
+            if (!captures.isEmpty()) java.nio.file.Files.copy(f.toPath(), new File(captures, "appli_" + n).toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        }
+        if (!captures.isEmpty()) capturer(a, new File(captures, "sommaire_46.png"), 6000);
     }
 }
