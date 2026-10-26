@@ -52,6 +52,7 @@ final class RechercheVue {
     private final EditText champ;
     private final MaterialButton bouton;
     private final LinearLayout zone;
+    private final List<android.widget.CheckBox> casesBases = new ArrayList<>();
     private int generation;
     boolean enCours;
 
@@ -71,7 +72,7 @@ final class RechercheVue {
         corps.addView(ui.texte("🔍 Recherche", 16, true, 0xFF263238), ui.marges(0, 4));
         LinearLayout ligne = ui.rangee();
         champ = new EditText(activite);
-        champ.setHint("CVC26090331003, CVC26090331 ou T9");
+        champ.setHint("26090331003, 26090331 ou T9 (CVC facultatif)");
         champ.setSingleLine(true);
         champ.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         champ.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
@@ -88,6 +89,25 @@ final class RechercheVue {
         bouton.setOnClickListener(v -> rechercher());
         ligne.addView(bouton);
         corps.addView(ligne);
+
+        // Bases où chercher : fichier de lancement, liste de coupe, .bkp, Diakonos.
+        LinearLayout choix = ui.rangee();
+        choix.addView(ui.texte("Chercher dans :", 13, false, ui.couleur(R.color.gris_texte)));
+        for (String base : Recherche.BASES) {
+            android.widget.CheckBox c = new android.widget.CheckBox(activite);
+            c.setText(base.equals(Recherche.BASE_LISTE) ? "Liste" : base);
+            c.setTextSize(13);
+            c.setChecked(true);
+            c.setButtonTintList(android.content.res.ColorStateList.valueOf(ui.couleur(R.color.marque)));
+            c.setContentDescription("Chercher dans " + base);
+            c.setTag(base);
+            casesBases.add(c);
+            choix.addView(c);
+        }
+        android.widget.HorizontalScrollView defilementBases = new android.widget.HorizontalScrollView(activite);
+        defilementBases.setHorizontalScrollBarEnabled(false);
+        defilementBases.addView(choix);
+        corps.addView(defilementBases, ui.marges(4, 0));
         racine.addView(carte);
 
         zone = ui.colonne();
@@ -111,12 +131,15 @@ final class RechercheVue {
         final Paire.Fichier strat;
         final Paire.Fichier coupe;
         final Paire.Fichier bkp;
+        /** Case Diakonos : son fichier (rangé à la place du lancement) est la liste des pièces commandées. */
+        final boolean diakonos;
 
         SourceCase(Paire p) {
             this.p = p;
             strat = p.strat;
             coupe = p.coupe;
             bkp = p.bkp;
+            diakonos = p.estDiakonos();
         }
 
         @Override
@@ -136,7 +159,17 @@ final class RechercheVue {
 
         @Override
         public boolean aStrat() {
-            return strat != null;
+            return strat != null && !diakonos;
+        }
+
+        @Override
+        public boolean aDiakonos() {
+            return strat != null && diakonos;
+        }
+
+        @Override
+        public List<com.marinedouyere.sentinelle.moteur.LecteurDiakonos.Piece> piecesDiakonos() throws Exception {
+            return app.controles().diakonos(strat);
         }
 
         private String cle(String quoi, Paire.Fichier f) {
@@ -186,8 +219,15 @@ final class RechercheVue {
         if (clavier != null) clavier.hideSoftInputFromWindow(champ.getWindowToken(), 0);
         zone.removeAllViews();
         if (Js.trim(requete).isEmpty()) return;
+        final java.util.Set<String> bases = new java.util.HashSet<>();
+        for (android.widget.CheckBox c : casesBases) if (c.isChecked()) bases.add((String) c.getTag());
+        if (bases.isEmpty()) {
+            zone.addView(ui.texte("Cochez au moins une base (LAN, Liste, .bkp ou Diakonos).", 14, false, ui.couleur(R.color.alerte_texte)),
+                    ui.marges(6, 0));
+            return;
+        }
         final List<SourceCase> sources = new ArrayList<>();
-        for (Paire p : app.depot().paires) if (!p.estDiakonos()) sources.add(new SourceCase(p));
+        for (Paire p : app.depot().paires) sources.add(new SourceCase(p));
         final int numero = ++generation;
         enCours = true;
         bouton.setEnabled(false);
@@ -196,7 +236,7 @@ final class RechercheVue {
             Affichage a;
             synchronized (cache) {
                 garderSeulement(sources);
-                a = preparer(requete, sources);
+                a = preparer(requete, sources, bases);
             }
             principal.post(() -> {
                 if (numero != generation) return;
@@ -248,9 +288,9 @@ final class RechercheVue {
     }
 
     /** Recherche et mise en forme, hors du fil d'affichage. */
-    private static Affichage preparer(String requete, List<SourceCase> sources) {
+    private static Affichage preparer(String requete, List<SourceCase> sources, java.util.Set<String> bases) {
         Affichage a = new Affichage();
-        a.r = Recherche.rechercher(requete, sources);
+        a.r = Recherche.rechercher(requete, sources, bases);
         if (a.r == null || a.r.nbSources == 0 || a.r.trouvailles.isEmpty()) {
             if (a.r != null) a.erreurs.addAll(a.r.erreurs);
             return a;
@@ -260,14 +300,14 @@ final class RechercheVue {
         Recherche.Resultat r = a.r;
         // Une seule commande concernée : on montre toute la commande, la pièce cherchée en surbrillance.
         if (commande != null && !commande.equals(a.r.requete)) {
-            Recherche.Resultat toute = Recherche.rechercher(commande, sources);
+            Recherche.Resultat toute = Recherche.rechercher(commande, sources, bases);
             if (toute != null && !toute.trouvailles.isEmpty()) {
                 r = toute;
                 for (String e : toute.erreurs) if (!a.erreurs.contains(e)) a.erreurs.add(e);
             }
         }
         List<Recherche.PieceTrouvee> pieces = Recherche.regrouper(r.trouvailles);
-        for (Recherche.PieceTrouvee p : pieces) if (p.cle.equals(a.r.requete)) a.cleCherchee = p.cle;
+        for (Recherche.PieceTrouvee p : pieces) if (Recherche.correspond(p.cle, a.r.requete, true)) a.cleCherchee = p.cle;
 
         if (commande != null) {
             Fiche f = new Fiche();
@@ -504,7 +544,10 @@ final class RechercheVue {
         List<String> morceaux = new ArrayList<>();
         for (Recherche.Trouvaille t : l.trouvee.sources) {
             String qte = t.quantite != null ? Js.nombre(t.quantite) : "?";
-            morceaux.add(nomSource(t) + " ×" + qte + (t.sourceBkp ? " (.bkp)" : t.sansCoupe ? " (prévu)" : ""));
+            if (Recherche.BASE_DIAKONOS.equals(t.base)) morceaux.add(nomSource(t) + " (commandée)");
+            else if (Recherche.BASE_LAN.equals(t.base)) morceaux.add(nomSource(t) + " LAN ×" + qte);
+            else if (Recherche.BASE_BKP.equals(t.base)) morceaux.add(nomSource(t) + " .bkp ×" + qte);
+            else morceaux.add(nomSource(t) + " liste ×" + qte);
         }
         String texte = String.join(" · ", morceaux);
         if (!l.trouvee.grains.isEmpty()) texte += " · " + String.join(" ", l.trouvee.grains);

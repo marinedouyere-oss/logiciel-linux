@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V3.8 — Contrôle de coupe</title>
+<title>Sentinelle V3.9 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -120,6 +120,9 @@
   .ligne-alerte:hover { text-decoration: underline; }
   /* Recherche */
   .ligne-recherche { display: flex; gap: 8px; }
+  .bases-recherche { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-top: 8px; font-size: 0.92rem; }
+  .bases-recherche .note { margin: 0; }
+  .bases-recherche input { accent-color: var(--marque); }
   .ligne-recherche input {
     flex: 1; min-width: 0; padding: 9px 12px; font-size: 1rem; border: 1px solid #b0bec5; border-radius: 8px; text-transform: uppercase;
   }
@@ -209,7 +212,7 @@
 
   <header class="barre">
     <h1>Sentinelle</h1>
-    <div class="sous-titre">Contrôle de coupe · V3.8</div>
+    <div class="sous-titre">Contrôle de coupe · V3.9</div>
   </header>
   <nav class="onglets">
     <button type="button" class="onglet-btn actif" data-onglet="paire">Semaine</button>
@@ -222,8 +225,15 @@
       <div class="carte">
         <div class="carte-titre">🔍 Recherche</div>
         <div class="ligne-recherche">
-          <input type="text" id="champRecherche" placeholder="CVC26090331003, CVC26090331 ou T9" autocomplete="off">
+          <input type="text" id="champRecherche" placeholder="26090331003, 26090331 ou T9 (CVC facultatif)" autocomplete="off">
           <button type="button" id="btnRechercher">Rechercher</button>
+        </div>
+        <div class="bases-recherche" id="basesRecherche">
+          <span class="note">Chercher dans :</span>
+          <label><input type="checkbox" value="Diakonos" checked> Diakonos</label>
+          <label><input type="checkbox" value="LAN" checked> LAN</label>
+          <label><input type="checkbox" value="Liste" checked> Liste</label>
+          <label><input type="checkbox" value=".bkp" checked> .bkp</label>
         </div>
       </div>
       <div id="resultatsRecherche"></div>
@@ -3440,20 +3450,46 @@ function champsDepuisStrat(l, base) {
   return c;
 }
 
-function clesCiblesRecherche(requete, numeroBande, parCle, grainParCle) {
-  if (numeroBande) return clesDeLaBande(grainParCle, numeroBande);
-  if (parCle.has(requete)) return new Set([requete]);
-  return new Set([...parCle.keys()].filter((c) => c.startsWith(requete)));
+// Bases où chercher, au choix, dans l'ordre de l'atelier : Diakonos, lancement, liste de coupe, .bkp.
+const BASE_DIAKONOS = "Diakonos", BASE_LAN = "LAN", BASE_LISTE = "Liste", BASE_BKP = ".bkp";
+const BASES_RECHERCHE = [BASE_DIAKONOS, BASE_LAN, BASE_LISTE, BASE_BKP];
+
+// Le « CVC » est facultatif : « 26100810 » trouve CVC26100810001, CVC26100810002…
+function correspondRecherche(cle, requete, exacte) {
+  if (exacte ? cle === requete : cle.startsWith(requete)) return true;
+  if (!/^\d/.test(requete)) return false;
+  const chiffres = cle.toUpperCase().replace(/^[A-Z]+/, "");
+  return exacte ? chiffres === requete : chiffres.startsWith(requete);
 }
 
-// Recherche une clé, une commande ou une bande/modulo dans les fichiers de
-// chaque source (une par case) : liste de coupe, à défaut .bkp, à défaut
-// fichier de lancement.
-async function rechercherDansSources(requeteBrute, toutes) {
+function clesCiblesRecherche(requete, numeroBande, cles, grainParCle) {
+  if (numeroBande) return clesDeLaBande(grainParCle, numeroBande);
+  const toutes = [...cles];
+  const exactes = toutes.filter((c) => correspondRecherche(c, requete, true));
+  return new Set(exactes.length ? exactes : toutes.filter((c) => correspondRecherche(c, requete, false)));
+}
+
+// Ce que dit le fichier Diakonos d'une pièce commandée.
+function champsDepuisDiakonos(p) {
+  const donnees = { Commande: p.commande, Ligne: p.ligne };
+  if (p.catalogue) donnees.Catalogue = p.catalogue;
+  if (p.article) donnees.Article = p.article;
+  if (p.designation) donnees["Désignation"] = p.designation;
+  if (dimensionsDiakonos(p)) donnees.Dimensions = dimensionsDiakonos(p);
+  if (p.coloris) donnees.Coloris = p.coloris;
+  return { longueurFinie: p.longueur, largeurFinie: p.largeur, epaisseurFinie: p.epaisseur, toutesDonneesLan: donnees };
+}
+
+const aUneBase = (s, bases) =>
+  (bases.has(BASE_LISTE) && s.coupe) || (bases.has(BASE_BKP) && s.bkp) || (bases.has(BASE_LAN) && s.strat) || (bases.has(BASE_DIAKONOS) && s.diakonos);
+
+// Recherche une clé, une commande ou une bande/modulo dans les bases choisies
+// de chaque source (une par case) : Diakonos, lancement, liste de coupe, .bkp.
+async function rechercherDansSources(requeteBrute, toutes, bases = new Set(BASES_RECHERCHE)) {
   const requete = requeteBrute.trim().toUpperCase();
   if (!requete) return null;
   const res = { requete, numeroBande: null, nbSources: 0, trouvailles: [], erreurs: [], commandeUnique: null };
-  const sources = toutes.filter((s) => s.coupe || s.bkp || s.strat);
+  const sources = toutes.filter((s) => aUneBase(s, bases));
   res.nbSources = sources.length;
   if (sources.length === 0) return res;
   const numeroBande = extraireNumeroBandeRecherche(requete);
@@ -3466,85 +3502,98 @@ async function rechercherDansSources(requeteBrute, toutes) {
       return null; // le fichier de lancement reste optionnel pour la recherche
     }
   };
+  const erreur = (s, e) => res.erreurs.push(`${s.nom} : ${e && e.message ? e.message : e}`);
 
   for (const s of sources) {
-    if (!s.coupe) {
-      if (s.bkp) {
-        try {
-          const bkp = await lireDonneesRechercheBkp(s.bkp);
-          for (const cle of clesCiblesRecherche(requete, numeroBande, bkp.qteParCle, bkp.grainParCle)) {
-            const l = s.strat ? await ligneDeCle(s, cle) : null;
-            res.trouvailles.push({
-              source: s,
-              cle,
-              valeurs: bkp.grainParCle.get(cle) || [],
-              quantite: bkp.qteParCle.has(cle) ? bkp.qteParCle.get(cle) : null,
-              champs: l ? champsDepuisStrat(l, null) : null,
-              sansCoupe: true,
-              sourceBkp: true,
-            });
-          }
-        } catch (e) {
-          res.erreurs.push(`${s.nom} : ${e && e.message ? e.message : e}`);
-        }
-        continue;
-      }
-      if (numeroBande || !s.strat) continue;
+    if (bases.has(BASE_LISTE) && s.coupe) {
       try {
-        for (const l of await lignesStratDe(s)) {
-          if (l.cle !== requete && !l.cle.startsWith(requete)) continue;
-          res.trouvailles.push({ source: s, cle: l.cle, valeurs: null, quantite: l.qte_attendue, champs: champsDepuisStrat(l, null), sansCoupe: true });
+        const source = await sourceCoupeEnCache(s.coupe);
+        let clesStrat = new Set();
+        let qteAttendue = new Map();
+        if (s.strat) {
+          try {
+            const lignes = await lignesStratDe(s);
+            clesStrat = new Set(lignes.map((l) => l.cle));
+            qteAttendue = new Map(lignes.map((l) => [l.cle, l.qte_attendue]));
+          } catch (_e) {
+            // sans fichier de lancement lisible : colonnes par défaut
+          }
+        }
+        const grainParCle = lireGrainMatchingDepuisSource(source, clesStrat);
+        const cles = clesCiblesRecherche(requete, numeroBande, grainParCle.keys(), grainParCle);
+        let compteur = null;
+        if (cles.size > 0) {
+          try {
+            compteur = lireCoupeDepuisSource(source, clesStrat, qteAttendue).compteur;
+          } catch (_e) {
+            compteur = null; // le grain matching reste affiché même si le comptage échoue
+          }
+        }
+        for (const cle of cles) {
+          let champs = null;
+          if (source.pdf) {
+            const record = source.records.find((r) => r.cle === cle && estRecordPieceReellePDF(r));
+            if (record) champs = extraireChampsDetailPDF(record.detailTexte);
+          }
+          if (s.strat) {
+            const l = await ligneDeCle(s, cle);
+            if (l) champs = champsDepuisStrat(l, champs);
+          }
+          res.trouvailles.push({
+            source: s,
+            base: BASE_LISTE,
+            cle,
+            valeurs: grainParCle.get(cle) || [],
+            quantite: compteur && compteur.has(cle) ? compteur.get(cle) : null,
+            champs,
+            sansCoupe: false,
+          });
         }
       } catch (e) {
-        res.erreurs.push(`${s.nom} : ${e && e.message ? e.message : e}`);
+        erreur(s, e);
       }
-      continue;
     }
-
-    try {
-      const source = await sourceCoupeEnCache(s.coupe);
-      let clesStrat = new Set();
-      let qteAttendue = new Map();
-      if (s.strat) {
-        try {
-          const lignes = await lignesStratDe(s);
-          clesStrat = new Set(lignes.map((l) => l.cle));
-          qteAttendue = new Map(lignes.map((l) => [l.cle, l.qte_attendue]));
-        } catch (_e) {
-          // sans fichier de lancement lisible : colonnes par défaut
+    if (bases.has(BASE_BKP) && s.bkp) {
+      try {
+        const bkp = await lireDonneesRechercheBkp(s.bkp);
+        for (const cle of clesCiblesRecherche(requete, numeroBande, bkp.qteParCle.keys(), bkp.grainParCle)) {
+          const l = s.strat ? await ligneDeCle(s, cle) : null;
+          res.trouvailles.push({
+            source: s,
+            base: BASE_BKP,
+            cle,
+            valeurs: bkp.grainParCle.get(cle) || [],
+            quantite: bkp.qteParCle.has(cle) ? bkp.qteParCle.get(cle) : null,
+            champs: l ? champsDepuisStrat(l, null) : null,
+            sansCoupe: true,
+            sourceBkp: true,
+          });
         }
+      } catch (e) {
+        erreur(s, e);
       }
-      const grainParCle = lireGrainMatchingDepuisSource(source, clesStrat);
-      const cles = clesCiblesRecherche(requete, numeroBande, grainParCle, grainParCle);
-      let compteur = null;
-      if (cles.size > 0) {
-        try {
-          compteur = lireCoupeDepuisSource(source, clesStrat, qteAttendue).compteur;
-        } catch (_e) {
-          compteur = null; // le grain matching reste affiché même si le comptage échoue
+    }
+    if (numeroBande) continue;
+    if (bases.has(BASE_LAN) && s.strat) {
+      try {
+        const parCle = new Map((await lignesStratDe(s)).map((l) => [l.cle, l]));
+        for (const cle of clesCiblesRecherche(requete, null, parCle.keys(), null)) {
+          const l = parCle.get(cle);
+          res.trouvailles.push({ source: s, base: BASE_LAN, cle, valeurs: null, quantite: l.qte_attendue, champs: champsDepuisStrat(l, null), sansCoupe: true });
         }
+      } catch (e) {
+        erreur(s, e);
       }
-      for (const cle of cles) {
-        let champs = null;
-        if (source.pdf) {
-          const record = source.records.find((r) => r.cle === cle && estRecordPieceReellePDF(r));
-          if (record) champs = extraireChampsDetailPDF(record.detailTexte);
+    }
+    if (bases.has(BASE_DIAKONOS) && s.diakonos) {
+      try {
+        const parCle = new Map((await diakonosEnCache(s.diakonos)).map((p) => [p.cle, p]));
+        for (const cle of clesCiblesRecherche(requete, null, parCle.keys(), null)) {
+          res.trouvailles.push({ source: s, base: BASE_DIAKONOS, cle, valeurs: null, quantite: null, champs: champsDepuisDiakonos(parCle.get(cle)), sansCoupe: true });
         }
-        if (s.strat) {
-          const l = await ligneDeCle(s, cle);
-          if (l) champs = champsDepuisStrat(l, champs);
-        }
-        res.trouvailles.push({
-          source: s,
-          cle,
-          valeurs: grainParCle.get(cle) || [],
-          quantite: compteur && compteur.has(cle) ? compteur.get(cle) : null,
-          champs,
-          sansCoupe: false,
-        });
+      } catch (e) {
+        erreur(s, e);
       }
-    } catch (e) {
-      res.erreurs.push(`${s.nom} : ${e && e.message ? e.message : e}`);
     }
   }
 
@@ -4128,8 +4177,8 @@ function remplirCarte(carte, p) {
       ${estChantier(p) ? '<button type="button" class="texte alerte" data-action="retirer">✕ Retirer</button>' : ""}
       <button type="button" class="texte" data-action="reinitialiser">↺ Réinitialiser</button>
     </div>
-    ${lignesFichiers}
     ${diakonosDeLaCase(p) ? `<div class="zone-diakonos" data-diakonos="${diakonosDeLaCase(p).id}"></div>` : ""}
+    ${lignesFichiers}
     <div class="boutons-carte">
       <button type="button" data-action="go" ${p.enCours ? "disabled" : ""}>GO</button>
       <button type="button" class="contour" data-action="scies" ${p.enCours ? "disabled" : ""}>Vérifier Scies</button>
@@ -5370,13 +5419,21 @@ function demanderConfirmation(titre, message, libelleOk = "OK") {
 
 let generationRecherche = 0;
 
+// Une source par case ; le fichier d'une case Diakonos est la liste des pièces commandées.
 function sourcesRecherche() {
-  return paires.filter((p) => !estDiakonos(p)).map((p) => ({ nom: nomComplet(p), paire: p, strat: p.strat, coupe: p.coupe, bkp: p.bkp }));
+  return paires.map((p) =>
+    estDiakonos(p)
+      ? { nom: nomComplet(p), paire: p, strat: null, coupe: null, bkp: null, diakonos: p.strat }
+      : { nom: nomComplet(p), paire: p, strat: p.strat, coupe: p.coupe, bkp: p.bkp, diakonos: null }
+  );
 }
 
-async function preparerRecherche(requete, sources) {
+// Bases cochées (Diakonos, LAN, Liste, .bkp).
+const basesRecherche = () => new Set([...document.querySelectorAll("#basesRecherche input:checked")].map((c) => c.value));
+
+async function preparerRecherche(requete, sources, bases) {
   const a = { r: null, cleCherchee: null, fiches: [], erreurs: [], nbPieces: 0 };
-  a.r = await rechercherDansSources(requete, sources);
+  a.r = await rechercherDansSources(requete, sources, bases);
   if (!a.r || a.r.nbSources === 0 || a.r.trouvailles.length === 0) {
     if (a.r) a.erreurs.push(...a.r.erreurs);
     return a;
@@ -5386,14 +5443,14 @@ async function preparerRecherche(requete, sources) {
   let r = a.r;
   // Une seule commande concernée : on montre toute la commande, la pièce cherchée en surbrillance.
   if (commande && commande !== a.r.requete) {
-    const toute = await rechercherDansSources(commande, sources);
+    const toute = await rechercherDansSources(commande, sources, bases);
     if (toute && toute.trouvailles.length) {
       r = toute;
       for (const e of toute.erreurs) if (!a.erreurs.includes(e)) a.erreurs.push(e);
     }
   }
   const pieces = regrouperTrouvailles(r.trouvailles);
-  for (const p of pieces) if (p.cle === a.r.requete) a.cleCherchee = p.cle;
+  for (const p of pieces) if (correspondRecherche(p.cle, a.r.requete, true)) a.cleCherchee = p.cle;
 
   if (commande) {
     const f = { commande, schema: null, blocs: null, lignes: [] };
@@ -5440,13 +5497,18 @@ async function rechercher(requete) {
   const zone = $("resultatsRecherche");
   zone.innerHTML = "";
   if (!texte.trim()) return;
+  const bases = basesRecherche();
+  if (!bases.size) {
+    zone.innerHTML = '<div class="message-alerte">Cochez au moins une base (Diakonos, LAN, Liste ou .bkp).</div>';
+    return;
+  }
   const numero = ++generationRecherche;
   $("btnRechercher").disabled = true;
   zone.innerHTML = '<div class="note">Recherche en cours…</div>';
   await tick();
   let a;
   try {
-    a = await preparerRecherche(texte, sourcesRecherche());
+    a = await preparerRecherche(texte, sourcesRecherche(), bases);
   } finally {
     if (numero === generationRecherche) $("btnRechercher").disabled = false;
   }
@@ -5550,7 +5612,8 @@ function etatPiece(l) {
   if (!l.trouvee) return "Non trouvée dans les fichiers chargés";
   const morceaux = l.trouvee.sources.map((t) => {
     const qte = t.quantite !== null && t.quantite !== undefined ? fmtNombre(t.quantite) : "?";
-    return `${nomSourceRecherche(t)} ×${qte}${t.sourceBkp ? " (.bkp)" : t.sansCoupe ? " (prévu)" : ""}`;
+    if (t.base === BASE_DIAKONOS) return `${nomSourceRecherche(t)} (commandée)`;
+    return `${nomSourceRecherche(t)} ${t.base === BASE_LAN ? "LAN" : t.base === BASE_BKP ? ".bkp" : "liste"} ×${qte}`;
   });
   let texte = morceaux.join(" · ");
   if (l.trouvee.grains.length) texte += ` · ${l.trouvee.grains.join(" ")}`;

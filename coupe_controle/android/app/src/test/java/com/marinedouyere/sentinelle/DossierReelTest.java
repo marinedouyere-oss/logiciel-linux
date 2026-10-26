@@ -121,6 +121,26 @@ public class DossierReelTest {
         ShadowLooper.idleMainLooper();
     }
 
+    private static List<android.widget.CheckBox> casesBases(View v) {
+        List<android.widget.CheckBox> l = new ArrayList<>();
+        if (v instanceof android.widget.CheckBox) l.add((android.widget.CheckBox) v);
+        if (v instanceof ViewGroup) for (int i = 0; i < ((ViewGroup) v).getChildCount(); i++) l.addAll(casesBases(((ViewGroup) v).getChildAt(i)));
+        return l;
+    }
+
+    /** Lance une recherche dans l'onglet Recherche et renvoie le texte affiché une fois finie. */
+    private static String chercher(MainActivity a, String requete) throws Exception {
+        a.recherche().rechercher(requete);
+        long fin = System.currentTimeMillis() + 120_000;
+        Thread.sleep(100);
+        while (a.recherche().enCours && System.currentTimeMillis() < fin) {
+            ShadowLooper.idleMainLooper();
+            Thread.sleep(50);
+        }
+        ShadowLooper.idleMainLooper();
+        return ecran(a);
+    }
+
     private static com.google.android.material.tabs.TabLayout onglets(View v) {
         if (v instanceof com.google.android.material.tabs.TabLayout) return (com.google.android.material.tabs.TabLayout) v;
         if (v instanceof ViewGroup) {
@@ -258,6 +278,24 @@ public class DossierReelTest {
             capturer(a, new File(captures, "diakonos_46.png"), 6000);
         }
 
+        // Recherche sans « CVC », dans les bases choisies (lancement, liste, .bkp, Diakonos).
+        onglets(a.getWindow().getDecorView()).getTabAt(2).select();
+        ShadowLooper.idleMainLooper();
+        String rech = chercher(a, "26100810001");
+        assertTrue(rech, rech.contains("Diakonos 1er tour (commandée)"));
+        assertTrue(rech, !rech.contains("introuvable"));
+        rech = chercher(a, "26100557001");
+        assertTrue(rech, rech.contains("Chantier 2 LAN ×1") && rech.contains("Diakonos 1er tour (commandée)"));
+        for (android.widget.CheckBox c : casesBases(a.getWindow().getDecorView())) c.setChecked("Diakonos".equals(c.getTag()));
+        rech = chercher(a, "26100557001");
+        assertTrue(rech, rech.contains("Diakonos 1er tour (commandée)") && !rech.contains("Chantier 2 LAN"));
+        for (android.widget.CheckBox c : casesBases(a.getWindow().getDecorView())) c.setChecked("LAN".equals(c.getTag()));
+        rech = chercher(a, "26100810001");
+        assertTrue(rech, rech.contains("introuvable"));
+        for (android.widget.CheckBox c : casesBases(a.getWindow().getDecorView())) c.setChecked(true);
+        onglets(a.getWindow().getDecorView()).getTabAt(0).select();
+        ShadowLooper.idleMainLooper();
+
         File xlsx = new File(a.getCacheDir(), "rapport_semaine_46.xlsx");
         a.exporterSemaineVers(Depot.PAIRE, android.net.Uri.fromFile(xlsx));
         long finExport = System.currentTimeMillis() + 60_000;
@@ -295,6 +333,10 @@ public class DossierReelTest {
         e = ecran(a);
         assertTrue(e, e.contains("Sommaire Cut Rite (.pdf)\n✓ LAN264601START.pdf"));
         assertTrue(e, e.contains("Diakonos 1er tour (.xlsx)\n✓ diakonos46t1.xlsx"));
+        // Ordre de la case : Diakonos, lancement, liste de coupe, .bkp, sommaire.
+        int[] positions = {e.indexOf("Diakonos 1er tour (.xlsx)"), e.indexOf("Lancement\n✓ LAN264601START.xlsx"), e.indexOf("Liste de coupe\n"),
+            e.indexOf("Fichier .bkp\n"), e.indexOf("Sommaire Cut Rite (.pdf)\n")};
+        for (int i = 1; i < positions.length; i++) assertTrue(e, positions[i - 1] >= 0 && positions[i - 1] < positions[i]);
         assertTrue(e, e.contains("📄 Rapport du lancement (.pdf)"));
         File pdf = new File(a.getCacheDir(), "LAN264601_rapport_lancement.pdf");
         a.exporterLancementVers(agglo1, Uri.fromFile(pdf));

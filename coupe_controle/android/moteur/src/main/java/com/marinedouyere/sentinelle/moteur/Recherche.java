@@ -2,6 +2,10 @@ package com.marinedouyere.sentinelle.moteur;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -20,7 +24,16 @@ public final class Recherche {
 
     private Recherche() {}
 
+    /** Bases où chercher, au choix : fichier de lancement, liste de coupe, .bkp, fichier Diakonos. */
+    public static final String BASE_LAN = "LAN";
+    public static final String BASE_LISTE = "Liste";
+    public static final String BASE_BKP = ".bkp";
+    public static final String BASE_DIAKONOS = "Diakonos";
+    /** Dans l'ordre de l'atelier : Diakonos, lancement, liste de coupe, .bkp. */
+    public static final List<String> BASES = Arrays.asList(BASE_DIAKONOS, BASE_LAN, BASE_LISTE, BASE_BKP);
+
     private static final Pattern MOTIF_BANDE = Pattern.compile("^L?T\\s*(\\d+)(?:/\\d+)?$", Pattern.CASE_INSENSITIVE);
+    private static final Pattern MOTIF_PREFIXE = Pattern.compile("^[A-Z]+");
     private static final Pattern MOTIF_GRAIN_BKP = Pattern.compile("\\bT\\d+:[\\d\\s\\u00A0]*:\\d+\\b");
 
     // Champs du détail d'une pièce dans la liste de coupe PDF.
@@ -181,10 +194,21 @@ public final class Recherche {
         Coupe coupe() throws Exception;
 
         DonneesBkp bkp() throws Exception;
+
+        /** Case du fichier Diakonos (pièces commandées). */
+        default boolean aDiakonos() {
+            return false;
+        }
+
+        default List<LecteurDiakonos.Piece> piecesDiakonos() throws Exception {
+            return Collections.emptyList();
+        }
     }
 
     public static final class Trouvaille {
         public Source source;
+        /** Base où la pièce a été trouvée (BASE_LAN, BASE_LISTE, BASE_BKP, BASE_DIAKONOS). */
+        public String base;
         public String cle;
         /** null : grain matching sans objet (fichier de lancement seul). */
         public List<String> valeurs;
@@ -217,26 +241,48 @@ public final class Recherche {
         return null;
     }
 
-    private static Set<String> clesCibles(String requete, String numeroBande, Map<String, ?> parCle,
+    /** Clé sans le préfixe de la commande : « CVC26100810001 » → « 26100810001 ». */
+    static String sansPrefixe(String cle) {
+        return MOTIF_PREFIXE.matcher(cle.toUpperCase(Locale.ROOT)).replaceFirst("");
+    }
+
+    /** Le « CVC » est facultatif : « 26100810 » trouve CVC26100810001, CVC26100810002… */
+    public static boolean correspond(String cle, String requete, boolean exacte) {
+        if (exacte ? cle.equals(requete) : cle.startsWith(requete)) return true;
+        if (requete.isEmpty() || !Character.isDigit(requete.charAt(0))) return false;
+        String chiffres = sansPrefixe(cle);
+        return exacte ? chiffres.equals(requete) : chiffres.startsWith(requete);
+    }
+
+    private static Set<String> clesCibles(String requete, String numeroBande, Collection<String> toutesLesCles,
             Map<String, List<String>> grainParCle) {
         if (numeroBande != null) return clesDeLaBande(grainParCle, numeroBande);
+        Set<String> exactes = new LinkedHashSet<>();
+        for (String c : toutesLesCles) if (correspond(c, requete, true)) exactes.add(c);
+        if (!exactes.isEmpty()) return exactes;
         Set<String> cles = new LinkedHashSet<>();
-        if (parCle.containsKey(requete)) {
-            cles.add(requete);
-            return cles;
-        }
-        for (String c : parCle.keySet()) if (c.startsWith(requete)) cles.add(c);
+        for (String c : toutesLesCles) if (correspond(c, requete, false)) cles.add(c);
         return cles;
     }
 
-    /** Recherche dans toutes les sources ; renvoie null si la requête est vide. */
+    private static boolean aUneBase(Source s, Set<String> bases) {
+        return (bases.contains(BASE_LISTE) && s.aCoupe()) || (bases.contains(BASE_BKP) && s.aBkp())
+                || (bases.contains(BASE_LAN) && s.aStrat()) || (bases.contains(BASE_DIAKONOS) && s.aDiakonos());
+    }
+
+    /** Recherche dans toutes les bases ; renvoie null si la requête est vide. */
     public static Resultat rechercher(String requeteBrute, List<? extends Source> toutes) {
+        return rechercher(requeteBrute, toutes, new HashSet<>(BASES));
+    }
+
+    /** Recherche dans les bases choisies de toutes les sources ; renvoie null si la requête est vide. */
+    public static Resultat rechercher(String requeteBrute, List<? extends Source> toutes, Set<String> bases) {
         String requete = Js.trim(requeteBrute).toUpperCase(Locale.ROOT);
         if (requete.isEmpty()) return null;
         Resultat res = new Resultat();
         res.requete = requete;
         List<Source> sources = new ArrayList<>();
-        for (Source s : toutes) if (s.aCoupe() || s.aBkp() || s.aStrat()) sources.add(s);
+        for (Source s : toutes) if (aUneBase(s, bases)) sources.add(s);
         res.nbSources = sources.size();
         if (sources.isEmpty()) return res;
 
@@ -244,36 +290,41 @@ public final class Recherche {
         res.numeroBande = numeroBande;
 
         for (Source s : sources) {
-            if (!s.aCoupe()) {
-                if (s.aBkp()) {
-                    try {
-                        DonneesBkp bkp = s.bkp();
-                        for (String cle : clesCibles(requete, numeroBande, bkp.qteParCle, bkp.grainParCle)) {
-                            Trouvaille t = new Trouvaille();
-                            t.source = s;
-                            t.cle = cle;
-                            List<String> v = bkp.grainParCle.get(cle);
-                            t.valeurs = v != null ? v : new ArrayList<>();
-                            t.quantite = bkp.qteParCle.get(cle);
-                            if (s.aStrat()) {
-                                LecteurStrat.LigneStrat l = ligneDeCle(s, cle);
-                                if (l != null) t.champs = depuisStrat(l, null);
-                            }
-                            t.sansCoupe = true;
-                            t.sourceBkp = true;
-                            res.trouvailles.add(t);
-                        }
-                    } catch (Exception e) {
-                        res.erreurs.add(s.nom() + " : " + message(e));
-                    }
-                    continue;
-                }
-                if (numeroBande != null || !s.aStrat()) continue;
+            if (bases.contains(BASE_LISTE) && s.aCoupe()) chercherDansLaListe(s, requete, numeroBande, res);
+            if (bases.contains(BASE_BKP) && s.aBkp()) {
                 try {
-                    for (LecteurStrat.LigneStrat l : s.lignesStrat()) {
-                        if (!l.cle.equals(requete) && !l.cle.startsWith(requete)) continue;
+                    DonneesBkp bkp = s.bkp();
+                    for (String cle : clesCibles(requete, numeroBande, bkp.qteParCle.keySet(), bkp.grainParCle)) {
                         Trouvaille t = new Trouvaille();
                         t.source = s;
+                        t.base = BASE_BKP;
+                        t.cle = cle;
+                        List<String> v = bkp.grainParCle.get(cle);
+                        t.valeurs = v != null ? v : new ArrayList<>();
+                        t.quantite = bkp.qteParCle.get(cle);
+                        if (s.aStrat()) {
+                            LecteurStrat.LigneStrat l = ligneDeCle(s, cle);
+                            if (l != null) t.champs = depuisStrat(l, null);
+                        }
+                        t.sansCoupe = true;
+                        t.sourceBkp = true;
+                        res.trouvailles.add(t);
+                    }
+                } catch (Exception e) {
+                    res.erreurs.add(s.nom() + " : " + message(e));
+                }
+            }
+            if (numeroBande != null) continue;
+            if (bases.contains(BASE_LAN) && s.aStrat()) {
+                try {
+                    List<LecteurStrat.LigneStrat> lignes = s.lignesStrat();
+                    Map<String, LecteurStrat.LigneStrat> parCle = new LinkedHashMap<>();
+                    for (LecteurStrat.LigneStrat l : lignes) parCle.put(l.cle, l);
+                    for (String cle : clesCibles(requete, null, parCle.keySet(), null)) {
+                        LecteurStrat.LigneStrat l = parCle.get(cle);
+                        Trouvaille t = new Trouvaille();
+                        t.source = s;
+                        t.base = BASE_LAN;
                         t.cle = l.cle;
                         t.valeurs = null;
                         t.quantite = l.qteAttendue;
@@ -284,62 +335,24 @@ public final class Recherche {
                 } catch (Exception e) {
                     res.erreurs.add(s.nom() + " : " + message(e));
                 }
-                continue;
             }
-
-            try {
-                Coupe coupe = s.coupe();
-                Set<String> clesStrat = new LinkedHashSet<>();
-                Map<String, Double> qteAttendue = new LinkedHashMap<>();
-                if (s.aStrat()) {
-                    try {
-                        for (LecteurStrat.LigneStrat l : s.lignesStrat()) {
-                            clesStrat.add(l.cle);
-                            qteAttendue.put(l.cle, l.qteAttendue);
-                        }
-                    } catch (Exception ignoree) {
-                        // sans fichier de lancement lisible : colonnes par défaut
+            if (bases.contains(BASE_DIAKONOS) && s.aDiakonos()) {
+                try {
+                    Map<String, LecteurDiakonos.Piece> parCle = new LinkedHashMap<>();
+                    for (LecteurDiakonos.Piece p : s.piecesDiakonos()) parCle.put(p.cle, p);
+                    for (String cle : clesCibles(requete, null, parCle.keySet(), null)) {
+                        Trouvaille t = new Trouvaille();
+                        t.source = s;
+                        t.base = BASE_DIAKONOS;
+                        t.cle = cle;
+                        t.valeurs = null;
+                        t.champs = depuisDiakonos(parCle.get(cle));
+                        t.sansCoupe = true;
+                        res.trouvailles.add(t);
                     }
+                } catch (Exception e) {
+                    res.erreurs.add(s.nom() + " : " + message(e));
                 }
-                Map<String, List<String>> grainParCle = coupe.estPdf()
-                        ? LecteurCoupePdf.grainMatching(coupe.records)
-                        : LecteurCoupe.grainMatching(coupe.classeur, clesStrat);
-                Set<String> cles = clesCibles(requete, numeroBande, grainParCle, grainParCle);
-                Map<String, Double> compteur = null;
-                if (!cles.isEmpty()) {
-                    try {
-                        compteur = coupe.estPdf()
-                                ? LecteurCoupePdf.compter(coupe.records).compteur
-                                : LecteurCoupe.lire(coupe.classeur, clesStrat, qteAttendue).compteur;
-                    } catch (Exception e) {
-                        compteur = null; // le grain matching reste affiché même si le comptage échoue
-                    }
-                }
-                for (String cle : cles) {
-                    Trouvaille t = new Trouvaille();
-                    t.source = s;
-                    t.cle = cle;
-                    List<String> v = grainParCle.get(cle);
-                    t.valeurs = v != null ? v : new ArrayList<>();
-                    t.quantite = compteur != null ? compteur.get(cle) : null;
-                    ChampsDetail champs = null;
-                    if (coupe.estPdf()) {
-                        for (LecteurCoupePdf.Enregistrement r : coupe.records) {
-                            if (cle.equals(r.cle) && LecteurCoupePdf.estPieceReelle(r)) {
-                                champs = champsDetailPdf(r.detailTexte);
-                                break;
-                            }
-                        }
-                    }
-                    if (s.aStrat()) {
-                        LecteurStrat.LigneStrat l = ligneDeCle(s, cle);
-                        if (l != null) champs = depuisStrat(l, champs);
-                    }
-                    t.champs = champs;
-                    res.trouvailles.add(t);
-                }
-            } catch (Exception e) {
-                res.erreurs.add(s.nom() + " : " + message(e));
             }
         }
 
@@ -349,6 +362,82 @@ public final class Recherche {
             if (commandes.size() == 1) res.commandeUnique = commandes.iterator().next();
         }
         return res;
+    }
+
+    /** Ce que dit le fichier Diakonos d'une pièce commandée. */
+    static ChampsDetail depuisDiakonos(LecteurDiakonos.Piece p) {
+        ChampsDetail c = new ChampsDetail();
+        c.longueurFinie = p.longueur;
+        c.largeurFinie = p.largeur;
+        c.epaisseurFinie = p.epaisseur;
+        Map<String, String> donnees = new LinkedHashMap<>();
+        donnees.put("Commande", p.commande);
+        donnees.put("Ligne", p.ligne);
+        if (!p.catalogue.isEmpty()) donnees.put("Catalogue", p.catalogue);
+        if (!p.article.isEmpty()) donnees.put("Article", p.article);
+        if (!p.designation.isEmpty()) donnees.put("Désignation", p.designation);
+        if (!p.dimensions().isEmpty()) donnees.put("Dimensions", p.dimensions());
+        if (!p.coloris.isEmpty()) donnees.put("Coloris", p.coloris);
+        c.toutesDonnees = donnees;
+        return c;
+    }
+
+    private static void chercherDansLaListe(Source s, String requete, String numeroBande, Resultat res) {
+        try {
+            Coupe coupe = s.coupe();
+            Set<String> clesStrat = new LinkedHashSet<>();
+            Map<String, Double> qteAttendue = new LinkedHashMap<>();
+            if (s.aStrat()) {
+                try {
+                    for (LecteurStrat.LigneStrat l : s.lignesStrat()) {
+                        clesStrat.add(l.cle);
+                        qteAttendue.put(l.cle, l.qteAttendue);
+                    }
+                } catch (Exception ignoree) {
+                    // sans fichier de lancement lisible : colonnes par défaut
+                }
+            }
+            Map<String, List<String>> grainParCle = coupe.estPdf()
+                    ? LecteurCoupePdf.grainMatching(coupe.records)
+                    : LecteurCoupe.grainMatching(coupe.classeur, clesStrat);
+            Set<String> cles = clesCibles(requete, numeroBande, grainParCle.keySet(), grainParCle);
+            Map<String, Double> compteur = null;
+            if (!cles.isEmpty()) {
+                try {
+                    compteur = coupe.estPdf()
+                            ? LecteurCoupePdf.compter(coupe.records).compteur
+                            : LecteurCoupe.lire(coupe.classeur, clesStrat, qteAttendue).compteur;
+                } catch (Exception e) {
+                    compteur = null; // le grain matching reste affiché même si le comptage échoue
+                }
+            }
+            for (String cle : cles) {
+                Trouvaille t = new Trouvaille();
+                t.source = s;
+                t.base = BASE_LISTE;
+                t.cle = cle;
+                List<String> v = grainParCle.get(cle);
+                t.valeurs = v != null ? v : new ArrayList<>();
+                t.quantite = compteur != null ? compteur.get(cle) : null;
+                ChampsDetail champs = null;
+                if (coupe.estPdf()) {
+                    for (LecteurCoupePdf.Enregistrement r : coupe.records) {
+                        if (cle.equals(r.cle) && LecteurCoupePdf.estPieceReelle(r)) {
+                            champs = champsDetailPdf(r.detailTexte);
+                            break;
+                        }
+                    }
+                }
+                if (s.aStrat()) {
+                    LecteurStrat.LigneStrat l = ligneDeCle(s, cle);
+                    if (l != null) champs = depuisStrat(l, champs);
+                }
+                t.champs = champs;
+                res.trouvailles.add(t);
+            }
+        } catch (Exception e) {
+            res.erreurs.add(s.nom() + " : " + message(e));
+        }
     }
 
     /** Une pièce (une clé) et tout ce qu'en disent les différents fichiers où elle a été trouvée. */

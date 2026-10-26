@@ -479,10 +479,7 @@ public class MainActivity extends AppCompatActivity {
         entete.addView(reinit);
         corps.addView(entete);
 
-        corps.addView(ligneFichier(p, Paire.STRAT, "Lancement"));
-        corps.addView(ligneFichier(p, Paire.COUPE, "Liste de coupe"));
-        corps.addView(ligneFichier(p, Paire.BKP, "Fichier .bkp"));
-        corps.addView(ligneFichier(p, Paire.SOMMAIRE, "Sommaire Cut Rite (.pdf)"));
+        // Dans l'ordre de l'atelier : Diakonos, lancement, liste de coupe, .bkp, sommaire.
         String tourDiakonos = ControleDiakonos.tourDeLaCase(p);
         if (tourDiakonos != null && ongletSemaine()) {
             Paire d = depot.paireDiakonos(tourDiakonos, p.parite);
@@ -491,6 +488,10 @@ public class MainActivity extends AppCompatActivity {
             zonesDiakonos.put(d, zone);
             remplirZoneDiakonos(d, zone);
         }
+        corps.addView(ligneFichier(p, Paire.STRAT, "Lancement"));
+        corps.addView(ligneFichier(p, Paire.COUPE, "Liste de coupe"));
+        corps.addView(ligneFichier(p, Paire.BKP, "Fichier .bkp"));
+        corps.addView(ligneFichier(p, Paire.SOMMAIRE, "Sommaire Cut Rite (.pdf)"));
 
         LinearLayout boutons = ui.rangee();
         MaterialButton go = ui.bouton("GO");
