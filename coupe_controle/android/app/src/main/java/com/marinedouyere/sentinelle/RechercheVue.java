@@ -377,7 +377,7 @@ final class RechercheVue {
         carte.addView(corps);
 
         LinearLayout entete = ui.rangee();
-        entete.addView(ui.texte("Commande " + f.commande, 16, true, 0xFF1565C0), ui.poids(1));
+        entete.addView(ui.texte("Commande " + f.commande, 16, true, ui.couleur(R.color.marque)), ui.poids(1));
         if (f.schema == null) {
             MaterialButton voir = ui.boutonTexte("Voir la commande");
             voir.setOnClickListener(v -> rechercher(f.commande));
@@ -430,12 +430,12 @@ final class RechercheVue {
 
         String numero = l.piece != null ? l.piece.ligneTexte() : String.valueOf(Js.parseIntOuZero(l.cle.substring(Math.max(0, l.cle.length() - 3))));
         boolean credence = l.piece != null && l.piece.type.equals("credence");
-        TextView num = ui.texte(numero, 12, true, credence ? 0xFF00695C : 0xFF0D47A1);
+        TextView num = ui.texte(numero, 12, true, credence ? 0xFF00695C : ui.couleur(R.color.marque_fonce));
         num.setGravity(Gravity.CENTER);
         num.setMinWidth(ui.dp(28));
         num.setPadding(ui.dp(4), ui.dp(1), ui.dp(4), ui.dp(1));
         GradientDrawable bulle = new GradientDrawable();
-        bulle.setColor(credence ? 0xFFE0F2F1 : 0xFFE3F2FD);
+        bulle.setColor(credence ? 0xFFE0F2F1 : ui.couleur(R.color.marque_clair));
         bulle.setCornerRadius(ui.dp(11));
         num.setBackground(bulle);
         LinearLayout.LayoutParams lpNum = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,

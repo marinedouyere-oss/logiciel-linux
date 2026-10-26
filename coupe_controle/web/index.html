@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V3.7 — Contrôle de coupe</title>
+<title>Sentinelle V3.8 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -11,12 +11,15 @@
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
-<meta name="theme-color" content="#1565c0">
+<meta name="theme-color" content="#e3061c">
 <style>
   :root {
     color-scheme: light;
-    --bleu: #1565c0;
-    --bleu-fonce: #0d47a1;
+    /* Couleurs de Laisné plans de travail : rouge du logo, blanc, gris clair. */
+    --marque: #e3061c;
+    --marque-fonce: #b00415;
+    --marque-clair: #fdecee;
+    --marque-survol: #fdf2f3;
     --ok-fond: #e8f5e9; --ok-texte: #2e7d32;
     --alerte-fond: #ffebee; --alerte-texte: #c62828;
     --attention-fond: #fff8e1; --attention-texte: #b26a00;
@@ -27,10 +30,10 @@
   body {
     font-family: "Segoe UI", Roboto, Arial, sans-serif;
     margin: 0;
-    background: #f3f5f8;
+    background: #f5f5f5;
     color: #1f2933;
   }
-  .barre { background: var(--bleu); color: #fff; padding: 14px 20px 12px; }
+  .barre { background: var(--marque); color: #fff; padding: 14px 20px 12px; }
   .barre h1 { font-size: 1.35rem; margin: 0; font-weight: 600; }
   .barre .sous-titre { opacity: 0.87; font-size: 0.95rem; }
   .onglets { display: flex; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,0.08); position: sticky; top: 0; z-index: 10; }
@@ -38,31 +41,32 @@
     flex: 1; background: none; border: none; border-bottom: 3px solid transparent; border-radius: 0;
     padding: 13px 10px; font-size: 1rem; font-weight: 600; color: #455a64; cursor: pointer;
   }
-  .onglet-btn:hover:not(:disabled) { background: #f5f8fc; }
-  .onglet-btn.actif { color: var(--bleu); border-bottom-color: var(--bleu); }
+  .onglet-btn:hover:not(:disabled) { background: var(--marque-survol); }
+  .onglet-btn.actif { color: var(--marque); border-bottom-color: var(--marque); }
   main { max-width: 980px; margin: 0 auto; padding: 14px 14px 40px; }
   .inactif { display: none; }
   .carte {
     background: #fff; border: 1px solid var(--bord); border-radius: 12px;
     padding: 12px 16px; margin-bottom: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.04);
   }
-  .carte.compteur { background: #e3f2fd; border-color: #90caf9; text-align: center; padding: 14px; font-size: 1.1rem; color: var(--bleu-fonce); }
+  .carte.compteur { background: var(--marque-clair); border-color: #f4a9b0; text-align: center; padding: 14px; font-size: 1.1rem; color: var(--marque-fonce); }
   .carte-titre { font-weight: 700; font-size: 1.05rem; color: #263238; margin-bottom: 6px; }
   .titre-poste { font-size: 1.12rem; margin: 18px 2px 8px; color: #263238; }
   button {
-    background: var(--bleu); color: #fff; border: 1px solid var(--bleu); border-radius: 20px;
+    background: var(--marque); color: #fff; border: 1px solid var(--marque); border-radius: 20px;
     padding: 8px 18px; font-size: 0.92rem; font-weight: 600; cursor: pointer;
   }
-  button:hover:not(:disabled) { background: var(--bleu-fonce); }
+  button:hover:not(:disabled) { background: var(--marque-fonce); }
   button:disabled { background: #b0bec5; border-color: #b0bec5; cursor: not-allowed; }
-  button.contour { background: #fff; color: var(--bleu); border: 1px solid #90a4ae; }
-  button.contour:hover:not(:disabled) { background: #f0f6ff; }
+  button.contour { background: #fff; color: var(--marque); border: 1px solid #90a4ae; }
+  button.contour:hover:not(:disabled) { background: var(--marque-survol); }
   button.contour:disabled { color: #9aa5b1; background: #fff; }
-  button.texte { background: none; border: none; color: var(--bleu); padding: 6px 8px; }
-  button.texte:hover:not(:disabled) { background: #f0f6ff; }
+  button.texte { background: none; border: none; color: var(--marque); padding: 6px 8px; }
+  button.texte:hover:not(:disabled) { background: var(--marque-survol); }
   button.texte.alerte { color: var(--alerte-texte); }
   .actions, .boutons-carte { display: flex; gap: 8px; margin: 8px 0; }
   .actions > button, .boutons-carte > button { flex: 1; }
+  button.pleine { width: 100%; margin: 0 0 4px; }
   #btnAjouterChantier { margin-top: 4px; }
   .entete-carte { display: flex; align-items: center; gap: 4px; }
   .titre-carte { flex: 1; font-weight: 700; font-size: 1.05rem; }
@@ -93,15 +97,15 @@
   .compte-rendu { margin-top: 8px; font-size: 0.86rem; color: #263238; line-height: 1.5; }
   .compte-rendu.erreur { color: var(--alerte-texte); }
   table.recap { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
-  table.recap th { background: #e3f2fd; color: var(--bleu-fonce); text-align: left; padding: 6px 5px; font-weight: 700; }
+  table.recap th { background: var(--marque-clair); color: var(--marque-fonce); text-align: left; padding: 6px 5px; font-weight: 700; }
   table.recap td { padding: 6px 5px; vertical-align: middle; }
   table.recap .droite { text-align: right; }
   table.recap .centre { text-align: center; }
   table.recap tr.impaire td { background: #f5f7fa; }
   table.recap tr.cliquable { cursor: pointer; }
-  table.recap tr.cliquable:hover td { background: #eef5fd; }
+  table.recap tr.cliquable:hover td { background: var(--marque-survol); }
   table.recap .lancement { color: #78909c; font-size: 0.85em; }
-  table.recap tr.titre-semaine td { color: var(--bleu-fonce); font-weight: 700; padding-top: 10px; }
+  table.recap tr.titre-semaine td { color: var(--marque-fonce); font-weight: 700; padding-top: 10px; }
   table.recap tr.total td { background: #eceff1; font-weight: 700; color: #263238; }
   table.recap tr.total td.alerte { color: var(--alerte-texte); }
   table.recap td.ok { color: var(--ok-texte); font-weight: 700; }
@@ -121,7 +125,7 @@
   }
   .message-alerte { color: var(--alerte-texte); margin: 6px 0; }
   .bilan-recherche { font-weight: 700; margin: 6px 0 4px; color: #263238; }
-  .titre-fiche { flex: 1; font-weight: 700; font-size: 1.05rem; color: var(--bleu); }
+  .titre-fiche { flex: 1; font-weight: 700; font-size: 1.05rem; color: var(--marque); }
   .legende-schema { font-weight: 700; font-size: 0.86rem; color: #455a64; margin: 8px 0 4px; }
   .ligne-piece { border-bottom: 1px solid #eceff1; }
   .ligne-piece.cherchee { background: #fff59d; }
@@ -136,10 +140,10 @@
   .info { color: #455a64; font-size: 0.86rem; padding-top: 2px; }
   .info.alerte { color: #c62828; font-weight: 700; }
   .info.commentaire { font-style: italic; }
-  details.donnees summary { color: var(--bleu); cursor: pointer; font-size: 0.86rem; margin-top: 4px; }
+  details.donnees summary { color: var(--marque); cursor: pointer; font-size: 0.86rem; margin-top: 4px; }
   .sc-num {
     flex: 0 0 auto; min-width: 28px; height: 22px; padding: 0 4px; border-radius: 11px;
-    background: #e3f2fd; color: #0d47a1; font-weight: 700; font-size: 0.8rem; line-height: 22px; text-align: center;
+    background: var(--marque-clair); color: var(--marque-fonce); font-weight: 700; font-size: 0.8rem; line-height: 22px; text-align: center;
   }
   .sc-num.credence { background: #e0f2f1; color: #00695c; }
   .table-donnees-lan { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin-top: 4px; }
@@ -205,7 +209,7 @@
 
   <header class="barre">
     <h1>Sentinelle</h1>
-    <div class="sous-titre">Contrôle de coupe · V3.7</div>
+    <div class="sous-titre">Contrôle de coupe · V3.8</div>
   </header>
   <nav class="onglets">
     <button type="button" class="onglet-btn actif" data-onglet="paire">Semaine</button>
@@ -226,7 +230,6 @@
     </div>
   </main>
   <input type="file" id="choixFichier" hidden>
-  <input type="file" id="choixSommaire" accept=".pdf" hidden>
 
   <div class="modale-fond masquee" id="modaleConfirmation">
     <div class="modale-boite">
@@ -3118,13 +3121,52 @@ class PdfSimple {
   }
 }
 
-// ---- Les trois rapports ----
+// ---- Rapports : une partie = un tableau (avec, sauf exception, sa ligne de total
+// panneaux / restes), une ligne d'état facultative au-dessus, des notes en dessous ----
 
+// Couleurs de Laisné plans de travail : rouge du logo, blanc, gris clair.
+const RAPPORT_ROUGE = 0xe3061c;
+const RAPPORT_TITRE = 0xb00415;
+const RAPPORT_TEXTE = 0x2b2b2b;
 const RAPPORT_MARGE = 14 * PDF_MM;
 const RAPPORT_TAILLE = 9;
 const RAPPORT_INTERLIGNE = 11.5;
 const RAPPORT_REMPLISSAGE = 3.5;
 const couleurDuNom = (c) => ({ ROSE: 0xd81b60, BLEU: 0x1565c0, JAUNE: 0xf9a825 })[c] ?? 0x607d8b;
+
+const partieRapport = (nom, titre, entete, largeursMm, nbColonnesTexte) => ({
+  nom, titre, entete, largeursMm, nbColonnesTexte, total: true, statut: null, couleurStatut: RAPPORT_TEXTE, rangees: [], notes: [],
+});
+// « LAN264601START.xlsx » → « LAN264601 ».
+const baseLancement = (nom) => nom.replace(/\.[A-Za-z]+$/, "").replace(/(STRAT|START)$/, "") || "Sommaire";
+const sousTitreSommaire = (s) => `${s.lancement} · sommaire Cut Rite du ${s.date} · Laisné Industrie`;
+
+// Les trois listes du sommaire : agglo, strats, couleurs de la feuille.
+function partiesSommaire(s) {
+  const base = baseSommaire(s);
+  const agglo = partieRapport("Agglo", `${base} — Agglo : panneaux et restes`, ["Code", "Désignation", "Ép. (mm)", "Panneaux", "Restes"], [38, 86, 16, 22, 20], 3);
+  for (const m of aggloSommaire(s)) {
+    const e = epaisseurMateriau(m);
+    agglo.rangees.push([m.code, designationMateriau(m), e === null ? "" : String(e), String(m.panneaux), String(m.restes)]);
+  }
+  const strats = partieRapport("Strats", `${base} — Strats : panneaux et restes`, ["Code", "Désignation", "Panneaux", "Restes"], [26, 114, 22, 20], 2);
+  for (const m of stratsSommaire(s)) strats.rangees.push([m.code, designationMateriau(m), String(m.panneaux), String(m.restes)]);
+  const couleurs = partieRapport("Couleurs", `${base} — Couleurs de la feuille`, ["Couleur", "Désignation", "Format", "Panneaux", "Restes"], [22, 90, 30, 22, 18], 3);
+  for (const m of couleursFeuilleSommaire(s)) couleurs.rangees.push([m.code, designationMateriau(m), formatMateriau(m), String(m.panneaux), String(m.restes)]);
+  const absentes = couleursAbsentesSommaire(s);
+  if (absentes.length) couleurs.notes.push(["Pas dans ce lancement : ", absentes.join(", ")]);
+  const horsGamme = horsGammeSommaire(s).map((m) => `${m.code} (${m.panneaux} panneau(x), ${m.restes} reste(s))`);
+  couleurs.notes.push(["Hors gamme : ", horsGamme.length ? horsGamme.join(", ") : "aucune dans ce lancement"]);
+  return [agglo, strats, couleurs];
+}
+
+function avecTotal(p) {
+  const total = p.entete.map(() => "");
+  total[0] = "Total";
+  total[total.length - 2] = String(p.rangees.reduce((t, r) => t + parseInt(r[r.length - 2], 10), 0));
+  total[total.length - 1] = String(p.rangees.reduce((t, r) => t + parseInt(r[r.length - 1], 10), 0));
+  return [...p.rangees, total];
+}
 
 function hauteurRangeePdf(cellules, l, gras) {
   let n = 1;
@@ -3137,7 +3179,7 @@ function rangeePdf(pdf, y, cellules, l, nbColonnesTexte, fond, gras, rgb) {
   const h = hauteurRangeePdf(cellules, l, gras);
   let x = RAPPORT_MARGE;
   cellules.forEach((c, j) => {
-    pdf.rectangle(x, y, l[j], h, fond, 0xc9d2de, 0.4);
+    pdf.rectangle(x, y, l[j], h, fond, 0xd9d9d9, 0.4);
     const g = gras || j === 0;
     const morceaux = couperTextePdf(c, l[j] - 2 * RAPPORT_REMPLISSAGE, RAPPORT_TAILLE, g);
     const haut = y + (h - morceaux.length * RAPPORT_INTERLIGNE) / 2 + RAPPORT_INTERLIGNE - 2.5;
@@ -3155,77 +3197,57 @@ function morceauPdf(pdf, x, y, texte, gras, rgb) {
   return x + largeurTextePdf(texte, 12, gras);
 }
 
-function rapportSommairePdf(s, titre, nbPieces, couleur, entete, largeursMm, nbColonnesTexte, rangees, notes) {
-  const pdf = new PdfSimple(titre);
+// Dessine une partie à partir du haut de la page courante.
+function dessinerPartie(pdf, sousTitre, p, nbPieces, couleur) {
   let y = RAPPORT_MARGE + 16;
-  pdf.texte(RAPPORT_MARGE, y, titre, 16, true, 0x0d2b5c);
+  pdf.texte(RAPPORT_MARGE, y, p.titre, 16, true, RAPPORT_TITRE);
   y += 13;
-  pdf.texte(RAPPORT_MARGE, y, `${s.lancement} · sommaire Cut Rite du ${s.date} · Laisné Industrie`, 9, false, 0x555555);
+  pdf.texte(RAPPORT_MARGE, y, sousTitre, 9, false, 0x555555);
   y += 19;
   let x = RAPPORT_MARGE;
   if (nbPieces !== null) {
-    x = morceauPdf(pdf, x, y, "Nombre de pièces : ", false, 0x263238);
-    x = morceauPdf(pdf, x, y, nbPieces, true, 0x263238);
+    x = morceauPdf(pdf, x, y, "Nombre de pièces : ", false, RAPPORT_TEXTE);
+    x = morceauPdf(pdf, x, y, nbPieces, true, RAPPORT_TEXTE);
   }
   if (couleur !== null) {
-    if (nbPieces !== null) x = morceauPdf(pdf, x, y, "     ·     ", false, 0x263238);
-    x = morceauPdf(pdf, x, y, "Couleurs semaine : ", false, 0x263238);
+    if (nbPieces !== null) x = morceauPdf(pdf, x, y, "     ·     ", false, RAPPORT_TEXTE);
+    x = morceauPdf(pdf, x, y, "Couleurs semaine : ", false, RAPPORT_TEXTE);
     morceauPdf(pdf, x, y, couleur, true, couleurDuNom(couleur));
   }
   if (nbPieces !== null || couleur !== null) y += 12;
-  const l = largeursMm.map((v) => v * PDF_MM);
-  const total = entete.map(() => "");
-  total[0] = "Total";
-  total[total.length - 2] = String(rangees.reduce((t, r) => t + parseInt(r[r.length - 2], 10), 0));
-  total[total.length - 1] = String(rangees.reduce((t, r) => t + parseInt(r[r.length - 1], 10), 0));
-  const lignes = [...rangees, total];
-  y = rangeePdf(pdf, y, entete, l, nbColonnesTexte, 0x1565c0, true, 0xffffff);
+  if (p.statut) {
+    y += 8;
+    morceauPdf(pdf, RAPPORT_MARGE, y, p.statut, true, p.couleurStatut);
+    y += 10;
+  }
+  const l = p.largeursMm.map((v) => v * PDF_MM);
+  const lignes = p.total ? avecTotal(p) : p.rangees;
+  if (lignes.length) y = rangeePdf(pdf, y, p.entete, l, p.nbColonnesTexte, RAPPORT_ROUGE, true, 0xffffff);
   lignes.forEach((r, i) => {
-    const estTotal = i === lignes.length - 1;
+    const estTotal = p.total && i === lignes.length - 1;
     if (y + hauteurRangeePdf(r, l, estTotal) > PDF_HAUTEUR - RAPPORT_MARGE) {
       pdf.nouvellePage();
-      y = rangeePdf(pdf, RAPPORT_MARGE, entete, l, nbColonnesTexte, 0x1565c0, true, 0xffffff);
+      y = rangeePdf(pdf, RAPPORT_MARGE, p.entete, l, p.nbColonnesTexte, RAPPORT_ROUGE, true, 0xffffff);
     }
-    y = rangeePdf(pdf, y, r, l, nbColonnesTexte, estTotal ? 0xe3f2fd : i % 2 === 1 ? 0xf3f5f8 : null, estTotal, 0x1f2933);
+    y = rangeePdf(pdf, y, r, l, p.nbColonnesTexte, estTotal ? 0xfdecee : i % 2 === 1 ? 0xf5f5f5 : null, estTotal, 0x1f2933);
   });
-  if (notes) {
+  if (p.notes.length) {
     y += 18;
-    for (const [libelle, valeur] of notes) {
-      morceauPdf(pdf, morceauPdf(pdf, RAPPORT_MARGE, y, libelle, true, 0x263238), y, valeur, false, 0x263238);
+    for (const [libelle, valeur] of p.notes) {
+      morceauPdf(pdf, morceauPdf(pdf, RAPPORT_MARGE, y, libelle, true, RAPPORT_TEXTE), y, valeur, false, RAPPORT_TEXTE);
       y += 14;
     }
   }
-  return pdf.octets();
 }
 
-// Nom de fichier → contenu, dans l'ordre : agglo, strats, couleurs.
-function rapportsSommaire(s, nbPieces, couleur) {
-  const base = baseSommaire(s);
-  const pdf = new Map();
-  pdf.set(
-    `${base}_Agglo.pdf`,
-    rapportSommairePdf(s, `${base} — Agglo : panneaux et restes`, nbPieces, couleur, ["Code", "Désignation", "Ép. (mm)", "Panneaux", "Restes"], [38, 86, 16, 22, 20], 3,
-      aggloSommaire(s).map((m) => {
-        const e = epaisseurMateriau(m);
-        return [m.code, designationMateriau(m), e === null ? "" : String(e), String(m.panneaux), String(m.restes)];
-      }), null)
-  );
-  pdf.set(
-    `${base}_Strats.pdf`,
-    rapportSommairePdf(s, `${base} — Strats : panneaux et restes`, nbPieces, couleur, ["Code", "Désignation", "Panneaux", "Restes"], [26, 114, 22, 20], 2,
-      stratsSommaire(s).map((m) => [m.code, designationMateriau(m), String(m.panneaux), String(m.restes)]), null)
-  );
-  const notes = [];
-  const absentes = couleursAbsentesSommaire(s);
-  if (absentes.length) notes.push(["Pas dans ce lancement : ", absentes.join(", ")]);
-  const horsGamme = horsGammeSommaire(s).map((m) => `${m.code} (${m.panneaux} panneau(x), ${m.restes} reste(s))`);
-  notes.push(["Hors gamme : ", horsGamme.length ? horsGamme.join(", ") : "aucune dans ce lancement"]);
-  pdf.set(
-    `${base}_Couleurs.pdf`,
-    rapportSommairePdf(s, `${base} — Couleurs de la feuille`, nbPieces, couleur, ["Couleur", "Désignation", "Format", "Panneaux", "Restes"], [22, 90, 30, 22, 18], 3,
-      couleursFeuilleSommaire(s).map((m) => [m.code, designationMateriau(m), formatMateriau(m), String(m.panneaux), String(m.restes)]), notes)
-  );
-  return pdf;
+// Rapport d'un lancement : un seul PDF, chaque partie sur sa page (agglo, strats, couleurs, Diakonos…).
+function rapportLancementPdf(titre, sousTitre, nbPieces, couleur, parties) {
+  const pdf = new PdfSimple(titre);
+  parties.forEach((p, i) => {
+    if (i > 0) pdf.nouvellePage();
+    dessinerPartie(pdf, sousTitre, p, nbPieces, couleur);
+  });
+  return pdf.octets();
 }
 
 // Dans la WebView Android (APK), showDirectoryPicker n'existe pas : on
@@ -3574,7 +3596,7 @@ async function lignesDeLaCommande(commande, sources) {
 const $ = (id) => document.getElementById(id);
 const LIMITE_LIGNES = 60;
 const PAR_PAGE = 60;
-const ROLES = { strat: "Lancement", coupe: "Liste de coupe", bkp: "Fichier .bkp" };
+const ROLES = { strat: "Lancement", coupe: "Liste de coupe", bkp: "Fichier .bkp", sommaire: "Sommaire Cut Rite (.pdf)" };
 
 function echapper(texte) {
   return String(texte ?? "")
@@ -3625,6 +3647,7 @@ function nouvellePaire(poste, label, parite) {
     strat: null,
     coupe: null,
     bkp: null,
+    sommaire: null,
     rapport: null,
     doublons: [],
     semainesLivraison: [],
@@ -3783,7 +3806,7 @@ async function effacerMemoire(p) {
   }
 }
 
-const CHAMP_FICHIER = { strat: "fichierStrat", coupe: "fichierCoupe", bkp: "fichierBkp" };
+const CHAMP_FICHIER = { strat: "fichierStrat", coupe: "fichierCoupe", bkp: "fichierBkp", sommaire: "fichierSommaire" };
 
 async function memoriserFichier(p, role, fichier) {
   const bytes = await fichier.arrayBuffer();
@@ -3821,6 +3844,7 @@ function restaurer(p, rec) {
   p.strat = fichierDepuisMemoire(rec.fichierStrat);
   p.coupe = fichierDepuisMemoire(rec.fichierCoupe);
   p.bkp = fichierDepuisMemoire(rec.fichierBkp);
+  p.sommaire = fichierDepuisMemoire(rec.fichierSommaire);
   p.semaine = rec.semaine || null;
   p.rapport = rec.rapport || null;
   if (p.rapport) {
@@ -3874,6 +3898,7 @@ function viderPaire(p) {
   p.strat = null;
   p.coupe = null;
   p.bkp = null;
+  p.sommaire = null;
   p.semaine = null;
   p.rapport = null;
   p.doublons = [];
@@ -4026,8 +4051,6 @@ function construireSemaine(parite) {
     <div class="carte compteur"><strong id="texteCompteur">…</strong></div>
     <button type="button" class="export-semaine" id="btnExporterSemaine">Exporter le rapport de la semaine (.xlsx)</button>
     <div class="carte"><div class="carte-titre">📋 Lancements</div><div id="zoneRecap"></div></div>
-    <div class="carte"><div class="carte-titre">🧾 Diakonos</div><div id="zoneDiakonos"></div></div>
-    <div class="carte" id="carteSommaire"></div>
     <div class="carte" id="carteDossier"></div>
     <div class="actions">
       <button type="button" id="btnLancerTout">Lancer le(s) contrôle(s)</button>
@@ -4040,8 +4063,6 @@ function construireSemaine(parite) {
   `;
   majCompteur();
   majRecap();
-  majDiakonos();
-  remplirCarteSommaire(parite);
   remplirCarteDossier(parite);
   $("btnLancerTout").addEventListener("click", lancerTousLesControles);
   $("btnExporterSemaine").addEventListener("click", async (e) => {
@@ -4063,6 +4084,7 @@ function construireSemaine(parite) {
   });
   for (const poste of POSTES_SEMAINE) $("cartesPostes").appendChild(carteDe(paireFixe(poste, parite)));
   for (const c of chantiers(parite)) $("cartesChantiers").appendChild(carteDe(c));
+  majDiakonos();
 }
 
 function carteDe(p) {
@@ -4075,6 +4097,8 @@ function carteDe(p) {
 
 // Redessine une case (et le tableau, et les onglets si la semaine a changé).
 function rafraichir(p) {
+  // Le fichier Diakonos est affiché dans la case Agglo de son tour.
+  if (estDiakonos(p)) p = paireFixe(tourDiakonos(p) === "2" ? "Agglo 2ème tour" : "Agglo 1er tour", p.parite);
   const carte = document.querySelector(`.carte-paire[data-id="${p.id}"]`);
   if (carte) remplirCarte(carte, p);
   if (majOnglets()) afficher();
@@ -4105,10 +4129,12 @@ function remplirCarte(carte, p) {
       <button type="button" class="texte" data-action="reinitialiser">↺ Réinitialiser</button>
     </div>
     ${lignesFichiers}
+    ${diakonosDeLaCase(p) ? `<div class="zone-diakonos" data-diakonos="${diakonosDeLaCase(p).id}"></div>` : ""}
     <div class="boutons-carte">
       <button type="button" data-action="go" ${p.enCours ? "disabled" : ""}>GO</button>
       <button type="button" class="contour" data-action="scies" ${p.enCours ? "disabled" : ""}>Vérifier Scies</button>
     </div>
+    <button type="button" class="contour pleine" data-action="rapport-lancement" ${p.enCours ? "disabled" : ""}>📄 Rapport du lancement (.pdf)</button>
     ${p.etat ? `<div class="etat ${p.etatErreur ? "erreur" : ""}">${echapper(p.etat)}</div>` : ""}
     <div class="zone-rapport"></div>
     <div class="zone-scies"></div>
@@ -4117,9 +4143,23 @@ function remplirCarte(carte, p) {
   carte.querySelectorAll('[data-action="choisir"]').forEach((b) => b.addEventListener("click", () => demanderFichier(p, b.dataset.role)));
   carte.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(p, null));
   carte.querySelector('[data-action="scies"]').addEventListener("click", () => lancerControleScies(p, null));
+  carte.querySelector('[data-action="rapport-lancement"]').addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    try {
+      await exporterLancement(p);
+    } catch (erreur) {
+      alert("Impossible de faire le rapport du lancement :\n" + (erreur && erreur.message ? erreur.message : erreur));
+    } finally {
+      e.target.disabled = false;
+    }
+  });
+  const zoneDiakonos = carte.querySelector(".zone-diakonos");
+  if (zoneDiakonos) remplirZoneDiakonos(zoneDiakonos, diakonosDeLaCase(p));
   carte.querySelector('[data-action="reinitialiser"]').addEventListener("click", async () => {
     if (!(await demanderConfirmation(`Réinitialiser « ${titreCase(p)} » ?`, "Les fichiers et résultats de cette case seront effacés.", "Oui"))) return;
     await reinitialiser(p);
+    const diakonos = diakonosDeLaCase(p);
+    if (diakonos) await reinitialiser(diakonos);
     rafraichir(p);
     majCompteur();
   });
@@ -4397,11 +4437,11 @@ async function resultatsDiakonos(parite) {
 const derniersDiakonos = new Map(); // dernier résultat de chaque case, affiché pendant le nouveau calcul
 const zonesDiakonos = { generation: 0 };
 
+// Recalcule les pièces Diakonos manquantes, affichées dans les cases Agglo.
 function majDiakonos() {
-  const zone = $("zoneDiakonos");
-  if (!zone || onglet === "recherche") return;
+  if (onglet === "recherche") return;
   const parite = onglet;
-  remplirDiakonos(zone, parite);
+  remplirDiakonos();
   if (!diakonosDeLaSemaine(parite).some((p) => p.strat)) return;
   const numero = ++zonesDiakonos.generation;
   (async () => {
@@ -4410,30 +4450,27 @@ function majDiakonos() {
       const r = resultats.find((x) => p.strat && x.fichier === p.strat.name && x.tour === tourDiakonos(p));
       if (r) derniersDiakonos.set(p.id, r);
     }
-    const z = $("zoneDiakonos");
-    if (z && numero === zonesDiakonos.generation && parite === onglet) remplirDiakonos(z, parite);
+    if (numero === zonesDiakonos.generation && parite === onglet) remplirDiakonos();
   })();
 }
 
-function remplirDiakonos(zone, parite) {
-  zone.innerHTML = diakonosDeLaSemaine(parite)
-    .map((p) => {
-      const r = p.strat ? derniersDiakonos.get(p.id) : null;
-      return `
-        <div class="ligne-fichier">
-          <div class="ligne-fichier-textes">
-            <div class="ligne-fichier-libelle">${echapper(p.poste)}</div>
-            <div class="ligne-fichier-nom ${p.strat ? "ok" : "vide"}" title="${p.strat ? echapper(p.strat.name) : ""}">${p.strat ? `✓ ${echapper(p.strat.name)}` : "Aucun fichier"}</div>
-          </div>
-          <button type="button" class="contour" data-diakonos="${p.id}">${p.strat ? "Changer" : "Choisir"}</button>
-        </div>
-        ${p.etat ? `<div class="etat ${p.etatErreur ? "erreur" : ""}">${echapper(p.etat)}</div>` : ""}
-        ${!p.strat ? "" : r && r.fichier === p.strat.name ? htmlDiakonos(r) : '<div class="note">…</div>'}`;
-    })
-    .join("");
-  zone.querySelectorAll("[data-diakonos]").forEach((b) =>
-    b.addEventListener("click", () => demanderFichier(paires.find((p) => String(p.id) === b.dataset.diakonos), "strat"))
-  );
+function remplirDiakonos() {
+  document.querySelectorAll(".zone-diakonos").forEach((zone) => remplirZoneDiakonos(zone, paires.find((p) => String(p.id) === zone.dataset.diakonos)));
+}
+
+function remplirZoneDiakonos(zone, p) {
+  const r = p.strat ? derniersDiakonos.get(p.id) : null;
+  zone.innerHTML = `
+    <div class="ligne-fichier">
+      <div class="ligne-fichier-textes">
+        <div class="ligne-fichier-libelle">Diakonos ${libelleTourDiakonos(tourDiakonos(p))} (.xlsx)</div>
+        <div class="ligne-fichier-nom ${p.strat ? "ok" : "vide"}" title="${p.strat ? echapper(p.strat.name) : ""}">${p.strat ? `✓ ${echapper(p.strat.name)}` : "Aucun fichier"}</div>
+      </div>
+      <button type="button" class="contour" data-choisir-diakonos>${p.strat ? "Changer" : "Choisir"}</button>
+    </div>
+    ${p.etat ? `<div class="etat ${p.etatErreur ? "erreur" : ""}">${echapper(p.etat)}</div>` : ""}
+    ${!p.strat ? "" : r && r.fichier === p.strat.name ? htmlDiakonos(r) : '<div class="note">…</div>'}`;
+  zone.querySelector("[data-choisir-diakonos]").addEventListener("click", () => demanderFichier(p, "strat"));
 }
 
 const descriptionDiakonos = (m, separateur) =>
@@ -4455,43 +4492,7 @@ function htmlDiakonos(r) {
   return html;
 }
 
-// ---- Rapports du sommaire Cut Rite ----
-
-const etatsSommaire = { paire: null, impaire: null }; // { lignes, erreur }
-let pariteSommaire = null;
-
-function remplirCarteSommaire(parite) {
-  const carte = $("carteSommaire");
-  if (!carte) return;
-  const etat = etatsSommaire[parite];
-  carte.innerHTML = `
-    <div class="carte-titre">📄 Rapports du sommaire Cut Rite</div>
-    <div class="note">Agglo, strats et couleurs de la feuille, en PDF</div>
-    <button type="button" class="export-semaine" id="btnSommaire" style="margin-top:8px">Choisir le sommaire (.pdf)</button>
-    ${etat ? `<div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes.map(echapper).join("<br>")}</div>` : ""}
-  `;
-  $("btnSommaire").addEventListener("click", () => {
-    pariteSommaire = parite;
-    const input = $("choixSommaire");
-    input.value = "";
-    input.click();
-  });
-}
-
-function etatSommaire(parite, lignes, erreur) {
-  etatsSommaire[parite] = { lignes, erreur };
-  if (parite === onglet) remplirCarteSommaire(parite);
-}
-
-// Le lancement du sommaire, dans cet onglet ou l'autre : même nom de fichier, sinon même code.
-function lancementDuSommaire(s, parite) {
-  const autre = parite === "paire" ? "impaire" : "paire";
-  const cases = [...pairesDeLaSemaine(parite), ...pairesDeLaSemaine(autre)].filter((p) => p.strat);
-  const exact = cases.find((p) => p.strat.name.replace(/\.[^.]*$/, "").toUpperCase() === s.lancement.toUpperCase());
-  if (exact) return exact;
-  const code = trouverCodeLancement(s.lancement);
-  return code ? cases.find((p) => !estChantier(p) && trouverCodeLancement(p.strat.name) === code) || null : null;
-}
+// ---- Rapport du lancement : sommaire Cut Rite (agglo, strats, couleurs) et Diakonos de son tour ----
 
 function telecharger(nom, octets, type) {
   const url = URL.createObjectURL(new Blob([octets], { type }));
@@ -4504,36 +4505,62 @@ function telecharger(nom, octets, type) {
   setTimeout(() => URL.revokeObjectURL(url), 10000);
 }
 
-async function sommaireChoisi() {
-  const fichier = $("choixSommaire").files[0];
-  const parite = pariteSommaire;
-  pariteSommaire = null;
-  if (!fichier || !parite) return;
-  etatSommaire(parite, [`⏳ lecture de « ${fichier.name} »…`], false);
-  try {
-    const s = lireSommaireCutRite(await extraireLignesTextePDF(await chargerDocumentPDF(fichier)));
-    const p = lancementDuSommaire(s, parite);
-    let nbPieces = null;
-    if (p) {
-      const r = await resume(p.strat, p.bkp);
-      if (!Number.isNaN(r.prevues)) nbPieces = String(Math.trunc(r.prevues));
-    }
-    const casse = /CASSE/i.test(s.lancement) || (p !== null && p.poste === "Casse");
-    const semaine = p && p.semaine ? p.semaine : extraireSemaine(s.lancement);
-    const couleur = couleurSemaine(semaine ? parseInt(semaine, 10) : numeroSemaine(parite), casse);
-    const rapports = rapportsSommaire(s, nbPieces, couleur);
-    for (const [nom, octets] of rapports) telecharger(nom, octets, "application/pdf");
-    const agglo = aggloSommaire(s), strats = stratsSommaire(s), couleurs = couleursFeuilleSommaire(s);
-    etatSommaire(parite, [
-      `${s.lancement} — pièces : ${nbPieces ?? "?"} · couleurs semaine : ${couleur}`,
-      `Agglo : ${totalMateriaux(agglo, "panneaux")} panneaux, ${totalMateriaux(agglo, "restes")} restes`,
-      `Strats : ${totalMateriaux(strats, "panneaux")} panneaux, ${totalMateriaux(strats, "restes")} restes`,
-      `Couleurs de la feuille : ${totalMateriaux(couleurs, "panneaux")} panneaux, ${totalMateriaux(couleurs, "restes")} restes`,
-      `✔ ${[...rapports.keys()].join(", ")} téléchargés`,
-    ], false);
-  } catch (erreur) {
-    etatSommaire(parite, [`❌ « ${fichier.name} » : ${erreur && erreur.message ? erreur.message : erreur}`], true);
+// Case Diakonos du tour d'une case Agglo (null pour les autres cases).
+function diakonosDeLaCase(p) {
+  const tour = p.poste === "Agglo 1er tour" ? "1" : p.poste === "Agglo 2ème tour" ? "2" : null;
+  return tour ? paireFixe(POSTES_DIAKONOS[tour === "2" ? 1 : 0], p.parite) : null;
+}
+
+// Une page par liste du sommaire (agglo, strats, couleurs), puis le Diakonos du tour.
+async function rapportLancement(p) {
+  const autre = p.parite === "paire" ? "impaire" : "paire";
+  const semaine = pairesDeLaSemaine(p.parite);
+  const numero = String(numeroSemaine(p.parite)).padStart(2, "0");
+  const parties = [];
+  let s = null;
+  if (p.sommaire) {
+    s = lireSommaireCutRite(await extraireLignesTextePDF(await chargerDocumentPDF(p.sommaire)));
+    parties.push(...partiesSommaire(s));
   }
+  const nomLancement = p.strat ? p.strat.name : s ? s.lancement : titreCase(p);
+  const base = s ? baseSommaire(s) : baseLancement(nomLancement);
+  const diakonos = diakonosDeLaCase(p);
+  if (diakonos && diakonos.strat) parties.push(partieDiakonos(await calculerDiakonos(diakonos, numero, semaine, [...semaine, ...pairesDeLaSemaine(autre)]), base));
+  let nbPieces = null;
+  if (p.strat) {
+    const r = await resume(p.strat, p.bkp);
+    if (!Number.isNaN(r.prevues)) nbPieces = String(Math.trunc(r.prevues));
+  }
+  const casse = p.poste === "Casse" || /CASSE/i.test(nomLancement);
+  const sem = p.semaine || (s ? extraireSemaine(s.lancement) : null);
+  const couleur = couleurSemaine(parseInt(sem || numero, 10), casse);
+  const sousTitre = s ? sousTitreSommaire(s) : `${nomLancement} · Laisné Industrie`;
+  return { nom: `${base}_rapport_lancement.pdf`, octets: rapportLancementPdf(`${base} — Rapport du lancement`, sousTitre, nbPieces, couleur, parties) };
+}
+
+// Page Diakonos du rapport du lancement.
+function partieDiakonos(r, base) {
+  const tour = libelleTourDiakonos(r.tour);
+  const p = partieRapport("Diakonos", `${base} — Diakonos ${tour}`, ["Commande + ligne", "Article", "Dimensions", "Coloris", "Lancée ailleurs"], [36, 34, 28, 20, 64], 5);
+  p.total = false;
+  if (r.erreur) [p.statut, p.couleurStatut] = [`Diakonos illisible : ${r.erreur}`, 0xc62828];
+  else if (!r.lancements.length) [p.statut, p.couleurStatut] = [`Aucun lancement du ${tour} (semaine ${r.semaine}) chargé`, 0xe65100];
+  else if (!r.manquantes.length) [p.statut, p.couleurStatut] = [`Les ${r.nbPieces} pièces Diakonos sont dans les lancements du ${tour}`, 0x2e7d32];
+  else [p.statut, p.couleurStatut] = [`${r.manquantes.length} pièce(s) Diakonos absente(s) des lancements du ${tour}`, 0xc62828];
+  for (const m of r.manquantes) p.rangees.push([m.cle, m.article, dimensionsDiakonos(m), m.coloris, r.ailleurs.get(m.cle) || ""]);
+  p.notes.push(["Fichier Diakonos : ", r.fichier]);
+  if (r.lancements.length) p.notes.push(["Comparé à : ", r.lancements.join(", ")]);
+  return p;
+}
+
+async function exporterLancement(p) {
+  const diakonos = diakonosDeLaCase(p);
+  if (!p.sommaire && !(diakonos && diakonos.strat)) {
+    alert(`${titreCase(p)} : ajoutez le sommaire Cut Rite${diakonos ? " (ou le fichier Diakonos)" : ""} pour faire le rapport du lancement.`);
+    return;
+  }
+  const { nom, octets } = await rapportLancement(p);
+  telecharger(nom, octets, "application/pdf");
 }
 
 // ---- Rapport de toute la semaine (.xlsx) ----
@@ -4546,7 +4573,6 @@ async function exporterSemaine(parite) {
   for (const p of [...pairesDeLaSemaine(parite), ...pairesDeLaSemaine(autre)]) if (p.strat) await resume(p.strat, p.bkp);
   const lignes = lignesRecap(pairesDeLaSemaine(parite));
   const autres = lignesRecap(pairesDeLaSemaine(autre));
-  const diakonos = await resultatsDiakonos(parite);
   const casse = paireFixe("Casse", parite);
   const analyseCasse = casse && casse.strat ? await calculerCasse(casse, pairesDeLaSemaine(autre), numeroSemaine(autre)) : null;
   const titre = libelleOnglet(parite);
@@ -4605,21 +4631,6 @@ async function exporterSemaine(parite) {
     for (const t of analyseCasse.dejaLancees) f1.addRow([`${descriptionCasse(t.ligne, " — ")} — ${t.lancement}`]);
     if (analyseCasse.nbAutres) f1.addRow([`${analyseCasse.nbAutres} autre(s) pièce(s) pas lancée(s) en semaine ${analyseCasse.semaineAvant}`]);
   }
-  for (const d of diakonos) {
-    const tour = libelleTourDiakonos(d.tour);
-    f1.addRow([]);
-    const alerte = (texte) => (f1.addRow([texte]).font = { bold: true, color: { argb: "FFC62828" } });
-    if (d.erreur) alerte(`Diakonos ${tour} illisible : ${d.erreur}`);
-    else if (!d.lancements.length) alerte(`Diakonos ${tour} : aucun lancement du ${tour} chargé`);
-    else if (!d.manquantes.length) f1.addRow([`Diakonos ${tour} : les ${d.nbPieces} pièces sont dans les lancements`]).getCell(1).fill = fond(VERT);
-    else {
-      alerte(`Pièces Diakonos absentes des lancements du ${tour}`);
-      for (const m of d.manquantes) {
-        const ailleurs = d.ailleurs.get(m.cle);
-        f1.addRow([descriptionDiakonos(m, " — ") + (ailleurs ? ` — lancée dans ${ailleurs}` : "")]);
-      }
-    }
-  }
   [26, 30, 15, 13, 18, 14, 16].forEach((w, i) => (f1.getColumn(i + 1).width = w));
 
   const f2 = wb.addWorksheet("Anomalies");
@@ -4661,15 +4672,6 @@ async function exporterSemaine(parite) {
         if (s === principale) continue;
         ajouter([l.nom, l.lancement, "Livraison", (s.cles || []).join(", "), "", "", s.nbPieces, "", `à livrer semaine ${s.semaine} (lancement : semaine ${principale.semaine})`], JAUNE);
       }
-    }
-  }
-  for (const d of diakonos) {
-    const tour = libelleTourDiakonos(d.tour);
-    for (const m of d.manquantes) {
-      const ailleurs = d.ailleurs.get(m.cle);
-      const dims = dimensionsDiakonos(m);
-      const detail = ailleurs ? `lancée dans ${ailleurs}, pas dans le ${tour}` : `absente des lancements du ${tour}${dims ? ` (${dims})` : ""}`;
-      ajouter([`Diakonos ${tour}`, d.fichier, "Diakonos", m.cle, m.ligne, m.article, 1, 0, detail], ailleurs ? JAUNE : ROUGE);
     }
   }
   if (nb === 0) f2.addRow(["Aucune anomalie"]);
@@ -4922,7 +4924,7 @@ function demanderFichier(p, role) {
   fichierEnAttente = { p, role };
   const input = $("choixFichier");
   input.value = "";
-  input.accept = role === "strat" ? ".xlsx,.xlsm,.xls" : role === "coupe" ? ".xlsx,.xlsm,.xls,.pdf" : ".bkp";
+  input.accept = role === "strat" ? ".xlsx,.xlsm,.xls" : role === "coupe" ? ".xlsx,.xlsm,.xls,.pdf" : role === "sommaire" ? ".pdf" : ".bkp";
   input.click();
 }
 
@@ -4933,11 +4935,21 @@ async function fichierChoisi() {
   fichierEnAttente = null;
   if (!fichier || !attente) return;
   const { p, role } = attente;
-  const motCle = estDiakonos(p) ? "Diakonos" : role === "strat" ? "LAN" : role === "coupe" ? "coupe" : ".bkp";
-  const type = estDiakonos(p) ? "Diakonos" : role === "strat" ? "lancement" : role === "coupe" ? "liste de coupe" : "sauvegarde d'optimisation";
+  const motCle = estDiakonos(p) ? "Diakonos" : role === "strat" ? "LAN" : role === "coupe" ? "coupe" : role === "sommaire" ? ".pdf" : ".bkp";
+  const type = estDiakonos(p)
+    ? "Diakonos"
+    : role === "strat" ? "lancement" : role === "coupe" ? "liste de coupe" : role === "sommaire" ? "sommaire Cut Rite" : "sauvegarde d'optimisation";
   if (!fichier.name.toLowerCase().includes(motCle.toLowerCase())) {
     alert(`« ${fichier.name} » ne ressemble pas à un fichier ${type} (le nom devrait contenir « ${motCle} »).\nSélection annulée.`);
     return;
+  }
+  if (role === "sommaire") {
+    try {
+      lireSommaireCutRite(await extraireLignesTextePDF(await chargerDocumentPDF(fichier)));
+    } catch (erreur) {
+      alert(`Impossible de lire « ${fichier.name} » : ${erreur && erreur.message ? erreur.message : erreur}`);
+      return;
+    }
   }
   p[role] = fichier;
   let deplace = false;
@@ -5603,7 +5615,6 @@ $("champRecherche").addEventListener("keydown", (e) => {
   if (e.key === "Enter") rechercher();
 });
 $("choixFichier").addEventListener("change", fichierChoisi);
-$("choixSommaire").addEventListener("change", sommaireChoisi);
 
 (async () => {
   await initialiserPaires();

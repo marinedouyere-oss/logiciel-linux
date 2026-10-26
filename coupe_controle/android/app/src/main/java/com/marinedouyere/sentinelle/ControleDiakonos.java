@@ -1,6 +1,7 @@
 package com.marinedouyere.sentinelle;
 
 import com.marinedouyere.sentinelle.moteur.LecteurDiakonos;
+import com.marinedouyere.sentinelle.moteur.RapportsSommaire;
 import com.marinedouyere.sentinelle.moteur.ScanDossier;
 
 import java.util.ArrayList;
@@ -35,6 +36,18 @@ final class ControleDiakonos {
 
     static String tour(Paire diakonos) {
         return Depot.POSTES_DIAKONOS.get(1).equals(diakonos.poste) ? "2" : "1";
+    }
+
+    /** Case Agglo du même tour, où le contrôle Diakonos est affiché. */
+    static String posteAgglo(Paire diakonos) {
+        return "2".equals(tour(diakonos)) ? "Agglo 2ème tour" : "Agglo 1er tour";
+    }
+
+    /** Tour du Diakonos rattaché à une case (« 1 », « 2 »), null si la case n'en a pas. */
+    static String tourDeLaCase(Paire p) {
+        if ("Agglo 1er tour".equals(p.poste)) return "1";
+        if ("Agglo 2ème tour".equals(p.poste)) return "2";
+        return null;
     }
 
     static String libelleTour(String tour) {
@@ -73,6 +86,34 @@ final class ControleDiakonos {
             }
         }
         return r;
+    }
+
+    /** Page Diakonos du rapport du lancement. */
+    static RapportsSommaire.Partie partie(Resultat r, String base) {
+        String tour = libelleTour(r.tour);
+        RapportsSommaire.Partie p = RapportsSommaire.partie("Diakonos", base + " — Diakonos " + tour,
+                new String[] {"Commande + ligne", "Article", "Dimensions", "Coloris", "Lancée ailleurs"}, new double[] {36, 34, 28, 20, 64}, 5);
+        p.total = false;
+        if (r.erreur != null) {
+            p.statut = "Diakonos illisible : " + r.erreur;
+            p.couleurStatut = 0xC62828;
+        } else if (r.lancements.isEmpty()) {
+            p.statut = "Aucun lancement du " + tour + " (semaine " + r.semaine + ") chargé";
+            p.couleurStatut = 0xE65100;
+        } else if (r.manquantes.isEmpty()) {
+            p.statut = "Les " + r.nbPieces + " pièces Diakonos sont dans les lancements du " + tour;
+            p.couleurStatut = 0x2E7D32;
+        } else {
+            p.statut = r.manquantes.size() + " pièce(s) Diakonos absente(s) des lancements du " + tour;
+            p.couleurStatut = 0xC62828;
+        }
+        for (LecteurDiakonos.Piece m : r.manquantes) {
+            String ailleurs = r.ailleurs.get(m.cle);
+            p.rangees.add(new String[] {m.cle, m.article, m.dimensions(), m.coloris, ailleurs == null ? "" : ailleurs});
+        }
+        p.notes.add(new String[] {"Fichier Diakonos : ", r.fichier});
+        if (!r.lancements.isEmpty()) p.notes.add(new String[] {"Comparé à : ", String.join(", ", r.lancements)});
+        return p;
     }
 
     /** Lancement de la semaine et du tour (un code sans tour, ex. LAN2646TRIGANO, vaut pour les deux tours). */

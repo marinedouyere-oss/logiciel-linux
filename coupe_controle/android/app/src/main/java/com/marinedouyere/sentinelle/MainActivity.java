@@ -69,7 +69,8 @@ public class MainActivity extends AppCompatActivity {
     private TabLayout onglets;
     private LinearLayout zoneRecap;
     private int generationRecap;
-    private LinearLayout zoneDiakonos;
+    /** Résultat Diakonos affiché dans la case Agglo de son tour (case Diakonos → zone). */
+    private final Map<Paire, LinearLayout> zonesDiakonos = new HashMap<>();
     private int generationDiakonos;
     /** Dernier résultat Diakonos de chaque case (affiché pendant le nouveau calcul). */
     private final Map<String, ControleDiakonos.Resultat> resultatsDiakonos = new HashMap<>();
@@ -91,14 +92,9 @@ public class MainActivity extends AppCompatActivity {
     private ActivityResultLauncher<String> creationRapport;
     private String cleExport;
 
-    private ActivityResultLauncher<String[]> choixSommaire;
-    private ActivityResultLauncher<Uri> choixDossierRapports;
-    private String pariteSommaire;
-    /** Rapports du sommaire en attente d'un dossier où les enregistrer (nom → PDF). */
-    private Map<String, byte[]> rapportsEnAttente;
-    /** Compte rendu des rapports du sommaire, par semaine. */
-    private final Map<String, List<String>> etatsSommaire = new HashMap<>();
-    private final Set<String> sommairesEnErreur = new HashSet<>();
+    /** Rapport du lancement (PDF : sommaire Cut Rite et Diakonos) : case en attente de l'emplacement. */
+    private ActivityResultLauncher<String> creationRapportLancement;
+    private String cleRapportLancement;
 
     /** Analyse de la casse (pièces déjà lancées la semaine d'avant), par case. */
     private final Map<String, ControleCasse.Resultat> resultatsCasse = new HashMap<>();
@@ -123,9 +119,9 @@ public class MainActivity extends AppCompatActivity {
         choixDossier = registerForActivityResult(new ActivityResultContracts.OpenDocumentTree(), this::dossierChoisi);
         creationRapport = registerForActivityResult(new ActivityResultContracts.CreateDocument(ExportRapport.TYPE_MIME),
                 this::emplacementRapportChoisi);
-        choixSommaire = registerForActivityResult(new ActivityResultContracts.OpenDocument(), this::sommaireChoisi);
-        choixDossierRapports = registerForActivityResult(new ActivityResultContracts.OpenDocumentTree(), this::dossierRapportsChoisi);
-        if (etat != null) pariteSommaire = etat.getString("pariteSommaire");
+        creationRapportLancement = registerForActivityResult(new ActivityResultContracts.CreateDocument("application/pdf"),
+                this::emplacementRapportLancementChoisi);
+        if (etat != null) cleRapportLancement = etat.getString("cleRapportLancement");
 
         LinearLayout racine = ui.colonne();
         racine.setBackgroundColor(ui.couleur(R.color.fond));
@@ -133,7 +129,7 @@ public class MainActivity extends AppCompatActivity {
         MaterialToolbar barre = new MaterialToolbar(this);
         barre.setTitle("Sentinelle");
         barre.setSubtitle("Contrôle de coupe");
-        barre.setBackgroundColor(ui.couleur(R.color.bleu));
+        barre.setBackgroundColor(ui.couleur(R.color.marque));
         barre.setTitleTextColor(0xFFFFFFFF);
         barre.setSubtitleTextColor(0xDDFFFFFF);
         racine.addView(barre, ui.pleineLargeur());
@@ -185,7 +181,7 @@ public class MainActivity extends AppCompatActivity {
         etat.putString("roleEnAttente", roleEnAttente);
         etat.putString("pariteDossierEnAttente", pariteDossierEnAttente);
         etat.putString("cleExport", cleExport);
-        etat.putString("pariteSommaire", pariteSommaire);
+        etat.putString("cleRapportLancement", cleRapportLancement);
     }
 
     /** Onglet Recherche (créé à la première visite). */
@@ -251,7 +247,7 @@ public class MainActivity extends AppCompatActivity {
         zonesCasse.clear();
         texteCompteur = null;
         zoneRecap = null;
-        zoneDiakonos = null;
+        zonesDiakonos.clear();
         majOnglets();
         if (ongletSemaine()) {
             construireSemaine(onglet);
@@ -262,10 +258,10 @@ public class MainActivity extends AppCompatActivity {
 
     private void construireSemaine(String parite) {
         MaterialCardView carteCompteur = ui.carte();
-        carteCompteur.setCardBackgroundColor(0xFFE3F2FD);
-        carteCompteur.setStrokeColor(0xFF90CAF9);
+        carteCompteur.setCardBackgroundColor(ui.couleur(R.color.marque_clair));
+        carteCompteur.setStrokeColor(ui.couleur(R.color.marque_bord));
         texteCompteur = ui.texte("…", 16, true,
-                ui.couleur(R.color.bleu_fonce));
+                ui.couleur(R.color.marque_fonce));
         texteCompteur.setGravity(Gravity.CENTER);
         texteCompteur.setPadding(ui.dp(12), ui.dp(14), ui.dp(12), ui.dp(14));
         carteCompteur.addView(texteCompteur);
@@ -285,11 +281,6 @@ public class MainActivity extends AppCompatActivity {
         corpsRecap.addView(zoneRecap, ui.pleineLargeur());
         contenu.addView(carteRecap);
         majRecap();
-
-        contenu.addView(carteDiakonos());
-        majDiakonos();
-
-        contenu.addView(carteSommaire(parite));
 
         contenu.addView(carteDossierPartage(parite));
 
@@ -315,6 +306,7 @@ public class MainActivity extends AppCompatActivity {
             defilement.post(() -> defilement.fullScroll(View.FOCUS_DOWN));
         });
         contenu.addView(ajouter, ui.marges(2, 0));
+        majDiakonos();
     }
 
     private TextView titrePoste(String poste) {
@@ -334,6 +326,8 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void rafraichir(Paire p) {
+        // Le fichier Diakonos est affiché dans la case Agglo de son tour.
+        if (p.estDiakonos()) p = depot.paireFixe(ControleDiakonos.posteAgglo(p), p.parite);
         LinearLayout corps = cartes.get(p);
         if (corps != null) {
             corps.removeAllViews();
@@ -371,22 +365,11 @@ public class MainActivity extends AppCompatActivity {
 
     // ---- Diakonos ----
 
-    private View carteDiakonos() {
-        MaterialCardView carte = ui.carte();
-        LinearLayout corps = ui.colonne();
-        corps.setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(12));
-        carte.addView(corps);
-        corps.addView(ui.texte("🧾 Diakonos", 16, true, 0xFF263238));
-        zoneDiakonos = ui.colonne();
-        corps.addView(zoneDiakonos, ui.pleineLargeur());
-        return carte;
-    }
-
-    /** Affiche les cases Diakonos de l'onglet, puis recalcule les pièces manquantes. */
+    /** Recalcule les pièces Diakonos manquantes, affichées dans les cases Agglo. */
     private void majDiakonos() {
-        if (!ongletSemaine() || zoneDiakonos == null) return;
+        if (!ongletSemaine()) return;
         final String parite = onglet;
-        remplirDiakonos(parite);
+        remplirDiakonos();
         final List<Paire> fichiers = new ArrayList<>();
         for (Paire p : depot.diakonos(parite)) if (p.strat != null) fichiers.add(p);
         if (fichiers.isEmpty()) return;
@@ -400,30 +383,33 @@ public class MainActivity extends AppCompatActivity {
             for (Paire p : fichiers) calcules.put(p.cle(), ControleDiakonos.calculer(p, semaine, semaineListe, toutes, controles));
             principal.post(() -> {
                 resultatsDiakonos.putAll(calcules);
-                if (numero == generationDiakonos && parite.equals(onglet) && zoneDiakonos != null) remplirDiakonos(parite);
+                if (numero == generationDiakonos && parite.equals(onglet)) remplirDiakonos();
             });
         });
     }
 
-    private void remplirDiakonos(String parite) {
-        zoneDiakonos.removeAllViews();
-        for (Paire p : depot.diakonos(parite)) {
-            zoneDiakonos.addView(ligneFichier(p, Paire.STRAT, p.poste));
-            if (p.etat != null) {
-                zoneDiakonos.addView(ui.texte(p.etat, 13, false,
-                        p.etatErreur ? ui.couleur(R.color.alerte_texte) : ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
-            }
-            if (p.strat == null) continue;
-            ControleDiakonos.Resultat r = resultatsDiakonos.get(p.cle());
-            if (r == null || !r.fichier.equals(p.strat.nom)) {
-                zoneDiakonos.addView(ui.texte("…", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
-                continue;
-            }
-            afficherDiakonos(r);
-        }
+    /** Remplit, dans chaque case Agglo affichée, la zone de son contrôle Diakonos. */
+    private void remplirDiakonos() {
+        for (Map.Entry<Paire, LinearLayout> e : zonesDiakonos.entrySet()) remplirZoneDiakonos(e.getKey(), e.getValue());
     }
 
-    private void afficherDiakonos(ControleDiakonos.Resultat r) {
+    private void remplirZoneDiakonos(Paire p, LinearLayout zone) {
+        zone.removeAllViews();
+        zone.addView(ligneFichier(p, Paire.STRAT, "Diakonos " + ControleDiakonos.libelleTour(ControleDiakonos.tour(p)) + " (.xlsx)"));
+        if (p.etat != null) {
+            zone.addView(ui.texte(p.etat, 13, false,
+                    p.etatErreur ? ui.couleur(R.color.alerte_texte) : ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
+        }
+        if (p.strat == null) return;
+        ControleDiakonos.Resultat r = resultatsDiakonos.get(p.cle());
+        if (r == null || !r.fichier.equals(p.strat.nom)) {
+            zone.addView(ui.texte("…", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
+            return;
+        }
+        afficherDiakonos(zone, r);
+    }
+
+    private void afficherDiakonos(LinearLayout zoneDiakonos, ControleDiakonos.Resultat r) {
         String tour = ControleDiakonos.libelleTour(r.tour);
         if (r.erreur != null) {
             zoneDiakonos.addView(ui.bandeau("❌ Diakonos illisible : " + r.erreur, ui.couleur(R.color.alerte_fond),
@@ -484,6 +470,8 @@ public class MainActivity extends AppCompatActivity {
         reinit.setOnClickListener(v -> confirmer("Réinitialiser « " + titreCase(p) + " » ?",
                 "Les fichiers et résultats de cette case seront effacés.", () -> {
                     depot.reinitialiser(p);
+                    String tour = ControleDiakonos.tourDeLaCase(p);
+                    if (tour != null) depot.reinitialiser(depot.paireDiakonos(tour, p.parite));
                     listesDepliees.remove(p);
                     rafraichir(p);
                     majCompteur();
@@ -494,6 +482,15 @@ public class MainActivity extends AppCompatActivity {
         corps.addView(ligneFichier(p, Paire.STRAT, "Lancement"));
         corps.addView(ligneFichier(p, Paire.COUPE, "Liste de coupe"));
         corps.addView(ligneFichier(p, Paire.BKP, "Fichier .bkp"));
+        corps.addView(ligneFichier(p, Paire.SOMMAIRE, "Sommaire Cut Rite (.pdf)"));
+        String tourDiakonos = ControleDiakonos.tourDeLaCase(p);
+        if (tourDiakonos != null && ongletSemaine()) {
+            Paire d = depot.paireDiakonos(tourDiakonos, p.parite);
+            LinearLayout zone = ui.colonne();
+            corps.addView(zone, ui.pleineLargeur());
+            zonesDiakonos.put(d, zone);
+            remplirZoneDiakonos(d, zone);
+        }
 
         LinearLayout boutons = ui.rangee();
         MaterialButton go = ui.bouton("GO");
@@ -506,6 +503,10 @@ public class MainActivity extends AppCompatActivity {
         scies.setOnClickListener(v -> lancerControleScies(p));
         boutons.addView(scies, ui.poids(1));
         corps.addView(boutons, ui.marges(8, 0));
+        MaterialButton rapportLancement = ui.boutonContour("📄 Rapport du lancement (.pdf)");
+        rapportLancement.setEnabled(!p.enCours);
+        rapportLancement.setOnClickListener(v -> exporterLancement(p));
+        corps.addView(rapportLancement, ui.marges(4, 0));
 
         if (p.etat != null) {
             TextView etat = ui.texte(p.etat, 14, false,
@@ -576,179 +577,88 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // ---- rapports du sommaire Cut Rite ----
+    // ---- rapport du lancement : sommaire Cut Rite (agglo, strats, couleurs) et Diakonos de son tour ----
 
-    private View carteSommaire(String parite) {
-        MaterialCardView carte = ui.carte();
-        LinearLayout corps = ui.colonne();
-        corps.setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(12));
-        carte.addView(corps);
-        corps.addView(ui.texte("📄 Rapports du sommaire Cut Rite", 16, true, 0xFF263238));
-        corps.addView(ui.texte("Agglo, strats et couleurs de la feuille, en PDF", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 6));
-        MaterialButton choisir = ui.bouton("Choisir le sommaire (.pdf)");
-        choisir.setOnClickListener(v -> demanderSommaire(parite));
-        corps.addView(choisir, ui.pleineLargeur());
-        List<String> lignes = etatsSommaire.get(parite);
-        if (lignes != null) {
-            TextView t = ui.texte(TextUtils.join("\n", lignes), 13, false,
-                    sommairesEnErreur.contains(parite) ? ui.couleur(R.color.alerte_texte) : 0xFF263238);
-            t.setLineSpacing(ui.dp(2), 1f);
-            corps.addView(t, ui.marges(8, 0));
-        }
-        return carte;
+    private boolean aDiakonos(Paire p) {
+        String tour = ControleDiakonos.tourDeLaCase(p);
+        return tour != null && depot.paireDiakonos(tour, p.parite).strat != null;
     }
 
-    void demanderSommaire(String parite) {
-        pariteSommaire = parite;
-        try {
-            choixSommaire.launch(new String[] {"application/pdf"});
-        } catch (Exception e) {
-            alerte("Impossible d'ouvrir le sélecteur de fichiers : " + e.getMessage());
-        }
-    }
-
-    private void etatSommaire(String parite, List<String> lignes, boolean erreur) {
-        etatsSommaire.put(parite, lignes);
-        if (erreur) sommairesEnErreur.add(parite);
-        else sommairesEnErreur.remove(parite);
-        if (parite.equals(onglet)) afficher();
-    }
-
-    /** Le lancement du sommaire, dans cet onglet ou l'autre : même nom de fichier, sinon même code. */
-    private Paire lancementDuSommaire(SommaireCutRite s, String parite) {
-        String autre = Depot.PAIRE.equals(parite) ? Depot.IMPAIRE : Depot.PAIRE;
-        List<Paire> cases = new ArrayList<>(depot.pairesDeLaSemaine(parite));
-        cases.addAll(depot.pairesDeLaSemaine(autre));
-        for (Paire p : cases) {
-            if (p.strat == null) continue;
-            String nom = p.strat.nom.contains(".") ? p.strat.nom.substring(0, p.strat.nom.lastIndexOf('.')) : p.strat.nom;
-            if (nom.equalsIgnoreCase(s.lancement)) return p;
-        }
-        String code = ScanDossier.trouverCodeLancement(s.lancement);
-        if (code == null) return null;
-        for (Paire p : cases) if (p.strat != null && !p.estChantier() && code.equals(ScanDossier.trouverCodeLancement(p.strat.nom))) return p;
-        return null;
-    }
-
-    void sommaireChoisi(Uri uri) {
-        final String parite = pariteSommaire;
-        pariteSommaire = null;
-        if (uri == null || parite == null) return;
-        final String nom = nomAffiche(this, uri);
-        etatSommaire(parite, java.util.Collections.singletonList("⏳ lecture de « " + nom + " »…"), false);
-        app.annexe.execute(() -> {
-            byte[] octets;
-            try (InputStream entree = getContentResolver().openInputStream(uri)) {
-                if (entree == null) throw new IOException("fichier inaccessible");
-                java.io.ByteArrayOutputStream tampon = new java.io.ByteArrayOutputStream();
-                byte[] bloc = new byte[64 * 1024];
-                int lu;
-                while ((lu = entree.read(bloc)) != -1) tampon.write(bloc, 0, lu);
-                octets = tampon.toByteArray();
-            } catch (Exception e) {
-                principal.post(() -> etatSommaire(parite, java.util.Collections.singletonList("❌ « " + nom + " » illisible : " + e.getMessage()), true));
-                return;
-            }
-            preparerRapportsSommaire(parite, nom, octets, true);
-        });
-    }
-
-    /** Hors du fil d'affichage : lit le sommaire, fabrique les 3 PDF, puis demande le dossier où les enregistrer. */
-    void preparerRapportsSommaire(String parite, String nom, byte[] octets, boolean demanderDossier) {
-        try {
-            SommaireCutRite s = SommaireCutRite.lire(controles.lignesPdf(octets));
-            Paire p = lancementDuSommaire(s, parite);
-            String nbPieces = null;
-            if (p != null) {
-                double prevues = controles.resume(p.strat, p.bkp).prevues;
-                if (!Double.isNaN(prevues)) nbPieces = Js.entierTronque(prevues);
-            }
-            boolean casse = s.lancement.toUpperCase(Locale.ROOT).contains("CASSE") || (p != null && "Casse".equals(p.poste));
-            String semaine = p != null && p.semaine != null ? p.semaine : LecteurStrat.extraireSemaine(s.lancement);
-            int numero = semaine != null ? Integer.parseInt(semaine) : numeroSemaine(parite);
-            String couleur = SommaireCutRite.couleurSemaine(numero, casse);
-            Map<String, byte[]> rapports = RapportsSommaire.creer(s, nbPieces, couleur);
-            List<String> lignes = new ArrayList<>();
-            lignes.add(s.lancement + " — pièces : " + (nbPieces != null ? nbPieces : "?") + " · couleurs semaine : " + couleur);
-            lignes.add("Agglo : " + total(s.agglo(), true) + " panneaux, " + total(s.agglo(), false) + " restes");
-            lignes.add("Strats : " + total(s.strats(), true) + " panneaux, " + total(s.strats(), false) + " restes");
-            lignes.add("Couleurs de la feuille : " + total(s.couleursFeuille(), true) + " panneaux, " + total(s.couleursFeuille(), false) + " restes");
-            principal.post(() -> {
-                rapportsEnAttente = rapports;
-                pariteSommaire = parite;
-                List<String> etat = new ArrayList<>(lignes);
-                etat.add("Choisissez le dossier où enregistrer les 3 PDF…");
-                etatSommaire(parite, etat, false);
-                etatsSommaire.put(parite, lignes);
-                if (demanderDossier) {
-                    try {
-                        choixDossierRapports.launch(null);
-                    } catch (Exception e) {
-                        alerte("Impossible d'ouvrir le sélecteur de dossier : " + e.getMessage());
-                    }
-                }
-            });
-        } catch (Exception e) {
-            String message = e.getMessage() != null ? e.getMessage() : e.toString();
-            principal.post(() -> etatSommaire(parite, java.util.Collections.singletonList("❌ « " + nom + " » : " + message), true));
-        }
-    }
-
-    private static int total(List<SommaireCutRite.Materiau> l, boolean panneaux) {
-        int t = 0;
-        for (SommaireCutRite.Materiau m : l) t += panneaux ? m.panneaux : m.restes;
-        return t;
-    }
-
-    void dossierRapportsChoisi(Uri uri) {
-        final String parite = pariteSommaire;
-        final Map<String, byte[]> rapports = rapportsEnAttente;
-        pariteSommaire = null;
-        rapportsEnAttente = null;
-        if (parite == null || rapports == null) return;
-        final List<String> lignes = new ArrayList<>(etatsSommaire.containsKey(parite) ? etatsSommaire.get(parite) : new ArrayList<>());
-        if (uri == null) {
-            lignes.add("Rapports non enregistrés (aucun dossier choisi).");
-            etatSommaire(parite, lignes, true);
+    void exporterLancement(Paire p) {
+        if (p.sommaire == null && !aDiakonos(p)) {
+            alerte(titreCase(p) + " : ajoutez le sommaire Cut Rite" + (ControleDiakonos.tourDeLaCase(p) != null ? " (ou le fichier Diakonos)" : "")
+                    + " pour faire le rapport du lancement.");
             return;
         }
+        cleRapportLancement = p.cle();
+        String base = RapportsSommaire.base(p.strat != null ? p.strat.nom : p.sommaire != null ? p.sommaire.nom : titreCase(p));
+        try {
+            creationRapportLancement.launch(base + "_rapport_lancement.pdf");
+        } catch (Exception e) {
+            cleRapportLancement = null;
+            alerte("Impossible d'enregistrer le rapport :\n" + e.getMessage());
+        }
+    }
+
+    void emplacementRapportLancementChoisi(Uri uri) {
+        Paire p = cleRapportLancement == null ? null : paireParCle(cleRapportLancement);
+        cleRapportLancement = null;
+        if (uri == null || p == null) return;
+        exporterLancementVers(p, uri);
+    }
+
+    void exporterLancementVers(Paire p, Uri uri) {
+        final String autre = Depot.PAIRE.equals(p.parite) ? Depot.IMPAIRE : Depot.PAIRE;
+        final List<Paire> semaine = depot.pairesDeLaSemaine(p.parite);
+        final List<Paire> toutes = new ArrayList<>(semaine);
+        toutes.addAll(depot.pairesDeLaSemaine(autre));
+        final String numero = String.format(Locale.ROOT, "%02d", numeroSemaine(p.parite));
+        final String tour = ControleDiakonos.tourDeLaCase(p);
+        final Paire diakonos = tour != null ? depot.paireDiakonos(tour, p.parite) : null;
         app.annexe.execute(() -> {
             String erreur = null;
-            String dossier = "";
             try {
-                if ("file".equals(uri.getScheme())) {
-                    File d = new File(uri.getPath());
-                    dossier = d.getName();
-                    for (Map.Entry<String, byte[]> e : rapports.entrySet()) {
-                        try (OutputStream sortie = new FileOutputStream(new File(d, e.getKey()))) {
-                            sortie.write(e.getValue());
-                        }
-                    }
-                } else {
-                    androidx.documentfile.provider.DocumentFile d = androidx.documentfile.provider.DocumentFile.fromTreeUri(this, uri);
-                    if (d == null) throw new IOException("dossier inaccessible");
-                    dossier = d.getName() != null ? d.getName() : "";
-                    for (Map.Entry<String, byte[]> e : rapports.entrySet()) {
-                        String sansExtension = e.getKey().substring(0, e.getKey().length() - 4);
-                        androidx.documentfile.provider.DocumentFile f = d.createFile("application/pdf", sansExtension);
-                        if (f == null) throw new IOException("impossible de créer " + e.getKey());
-                        try (OutputStream sortie = getContentResolver().openOutputStream(f.getUri(), "wt")) {
-                            if (sortie == null) throw new IOException("impossible d'écrire " + e.getKey());
-                            sortie.write(e.getValue());
-                        }
-                    }
+                byte[] octets = rapportLancement(p, diakonos, numero, semaine, toutes);
+                try (OutputStream sortie = "file".equals(uri.getScheme())
+                        ? new FileOutputStream(new File(uri.getPath()))
+                        : getContentResolver().openOutputStream(uri, "wt")) {
+                    if (sortie == null) throw new IOException("emplacement inaccessible");
+                    sortie.write(octets);
                 }
             } catch (Exception e) {
                 erreur = e.getMessage() != null ? e.getMessage() : e.toString();
             }
             final String err = erreur;
-            final String nomDossier = dossier;
             principal.post(() -> {
-                if (err != null) lignes.add("❌ Enregistrement impossible : " + err);
-                else lignes.add("✔ " + TextUtils.join(", ", rapports.keySet()) + " enregistrés dans « " + nomDossier + " »");
-                etatSommaire(parite, lignes, err != null);
+                if (err != null) alerte("Impossible d'enregistrer le rapport du lancement :\n" + err);
+                else android.widget.Toast.makeText(this, "Rapport enregistré : " + nomAffiche(this, uri), android.widget.Toast.LENGTH_LONG).show();
             });
         });
+    }
+
+    /** Hors du fil d'affichage : une page par liste du sommaire (agglo, strats, couleurs), puis le Diakonos du tour. */
+    byte[] rapportLancement(Paire p, Paire diakonos, String numero, List<Paire> semaine, List<Paire> toutes) throws Exception {
+        List<RapportsSommaire.Partie> parties = new ArrayList<>();
+        SommaireCutRite s = null;
+        if (p.sommaire != null) {
+            s = SommaireCutRite.lire(controles.lignesPdf(Controles.lireOctets(p.sommaire.fichier())));
+            parties.addAll(RapportsSommaire.parties(s));
+        }
+        String nomLancement = p.strat != null ? p.strat.nom : s != null ? s.lancement : titreCase(p);
+        String base = s != null ? RapportsSommaire.base(s) : RapportsSommaire.base(nomLancement);
+        if (diakonos != null && diakonos.strat != null) {
+            parties.add(ControleDiakonos.partie(ControleDiakonos.calculer(diakonos, numero, semaine, toutes, controles), base));
+        }
+        String nbPieces = null;
+        if (p.strat != null) {
+            double prevues = controles.resume(p.strat, p.bkp).prevues;
+            if (!Double.isNaN(prevues)) nbPieces = Js.entierTronque(prevues);
+        }
+        boolean casse = "Casse".equals(p.poste) || nomLancement.toUpperCase(Locale.ROOT).contains("CASSE");
+        String sem = p.semaine != null ? p.semaine : s != null ? LecteurStrat.extraireSemaine(s.lancement) : null;
+        String couleur = SommaireCutRite.couleurSemaine(sem != null ? Integer.parseInt(sem) : Integer.parseInt(numero), casse);
+        String sousTitre = s != null ? RapportsSommaire.sousTitre(s) : nomLancement + " · Laisné Industrie";
+        return RapportsSommaire.rapportLancement(base + " — Rapport du lancement", sousTitre, nbPieces, couleur, parties);
     }
 
     private View ligneFichier(Paire p, String role, String libelle) {
@@ -968,6 +878,9 @@ public class MainActivity extends AppCompatActivity {
                 types = new String[] {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     "application/vnd.ms-excel.sheet.macroEnabled.12", "application/vnd.ms-excel", "application/octet-stream"};
                 break;
+            case Paire.SOMMAIRE:
+                types = new String[] {"application/pdf"};
+                break;
             case Paire.COUPE:
                 types = new String[] {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     "application/vnd.ms-excel.sheet.macroEnabled.12", "application/vnd.ms-excel", "application/pdf",
@@ -1009,9 +922,10 @@ public class MainActivity extends AppCompatActivity {
         roleEnAttente = null;
         if (uri == null || p == null || role == null) return;
         final String nom = nomAffiche(this, uri);
-        String motCle = p.estDiakonos() ? "Diakonos" : Paire.STRAT.equals(role) ? "LAN" : Paire.COUPE.equals(role) ? "coupe" : ".bkp";
+        String motCle = p.estDiakonos() ? "Diakonos" : Paire.STRAT.equals(role) ? "LAN" : Paire.COUPE.equals(role) ? "coupe"
+                : Paire.SOMMAIRE.equals(role) ? ".pdf" : ".bkp";
         String type = p.estDiakonos() ? "Diakonos" : Paire.STRAT.equals(role) ? "lancement"
-                : Paire.COUPE.equals(role) ? "liste de coupe" : "sauvegarde d'optimisation";
+                : Paire.COUPE.equals(role) ? "liste de coupe" : Paire.SOMMAIRE.equals(role) ? "sommaire Cut Rite" : "sauvegarde d'optimisation";
         if (!nom.toLowerCase(Locale.ROOT).contains(motCle.toLowerCase(Locale.ROOT))) {
             alerte("« " + nom + " » ne ressemble pas à un fichier " + type + " (le nom devrait contenir « " + motCle
                     + " »).\nSélection annulée.");
@@ -1032,10 +946,19 @@ public class MainActivity extends AppCompatActivity {
                 } else if (Paire.STRAT.equals(role)) {
                     p.semaine = controles.detecterSemaine(p);
                     deplace = ranger(p);
+                } else if (Paire.SOMMAIRE.equals(role)) {
+                    try {
+                        SommaireCutRite.lire(controles.lignesPdf(Controles.lireOctets(p.sommaire.fichier())));
+                    } catch (Exception e) {
+                        // Pas un sommaire des matériaux : on ne le garde pas.
+                        p.sommaire = null;
+                        throw e;
+                    }
                 }
                 depot.enregistrer(p);
             } catch (Exception e) {
                 erreur = e.getMessage();
+                depot.enregistrer(p);
             }
             final String err = erreur;
             final boolean dansAutreOnglet = deplace;
@@ -1493,11 +1416,6 @@ public class MainActivity extends AppCompatActivity {
         final String libelleAutre = libelleOnglet(autre);
         final List<Paire> semaine = depot.pairesDeLaSemaine(parite);
         final List<Paire> autreSemaine = depot.pairesDeLaSemaine(autre);
-        final List<Paire> toutes = new ArrayList<>(semaine);
-        toutes.addAll(autreSemaine);
-        final List<Paire> fichiersDiakonos = new ArrayList<>();
-        for (Paire p : depot.diakonos(parite)) if (p.strat != null) fichiersDiakonos.add(p);
-        final String numero = String.format(Locale.ROOT, "%02d", numeroSemaine(parite));
         final Paire casse = depot.paireFixe("Casse", parite);
         final int numeroAutre = numeroSemaine(autre);
         app.annexe.execute(() -> {
@@ -1505,12 +1423,10 @@ public class MainActivity extends AppCompatActivity {
             try {
                 for (Paire p : semaine) if (p.strat != null) controles.resume(p.strat, p.bkp);
                 for (Paire p : autreSemaine) if (p.strat != null) controles.resume(p.strat, p.bkp);
-                List<ControleDiakonos.Resultat> diakonos = new ArrayList<>();
-                for (Paire p : fichiersDiakonos) diakonos.add(ControleDiakonos.calculer(p, numero, semaine, toutes, controles));
                 ControleCasse.Resultat analyseCasse = casse != null && casse.strat != null
                         ? ControleCasse.calculer(casse, autreSemaine, numeroAutre, controles) : null;
                 byte[] octets = RapportSemaine.xlsx(libelle, RecapLancements.lignes(semaine, controles),
-                        RecapLancements.lignes(autreSemaine, controles), libelleAutre, diakonos, analyseCasse);
+                        RecapLancements.lignes(autreSemaine, controles), libelleAutre, analyseCasse);
                 try (OutputStream sortie = "file".equals(uri.getScheme())
                         ? new FileOutputStream(new File(uri.getPath()))
                         : getContentResolver().openOutputStream(uri, "wt")) {

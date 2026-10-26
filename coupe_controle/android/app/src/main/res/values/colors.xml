@@ -1,8 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="bleu">#1565C0</color>
-    <color name="bleu_fonce">#0D47A1</color>
-    <color name="fond">#F3F5F8</color>
+    <!-- Couleurs de Laisné plans de travail : rouge du logo, blanc et gris clair. -->
+    <color name="marque">#E3061C</color>
+    <color name="marque_fonce">#B00415</color>
+    <color name="marque_clair">#FDECEE</color>
+    <color name="marque_bord">#F4A9B0</color>
+    <color name="fond">#F5F5F5</color>
     <color name="ok_texte">#2E7D32</color>
     <color name="ok_fond">#E3F4E6</color>
     <color name="alerte_texte">#C62828</color>

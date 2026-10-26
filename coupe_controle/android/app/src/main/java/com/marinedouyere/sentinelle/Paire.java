@@ -19,6 +19,8 @@ public final class Paire {
     public static final String STRAT = "strat";
     public static final String COUPE = "coupe";
     public static final String BKP = "bkp";
+    /** Sommaire des matériaux Cut Rite du lancement (PDF), pour le rapport du lancement. */
+    public static final String SOMMAIRE = "sommaire";
 
     /** Fichier choisi par l'utilisateur, copié dans le stockage interne de l'appli. */
     public static final class Fichier {
@@ -44,6 +46,7 @@ public final class Paire {
     public Fichier strat;
     public Fichier coupe;
     public Fichier bkp;
+    public Fichier sommaire;
 
     public Comparateur.Rapport rapport;
     public List<LecteurStrat.Doublon> doublons = new ArrayList<>();
@@ -98,6 +101,8 @@ public final class Paire {
                 return strat;
             case COUPE:
                 return coupe;
+            case SOMMAIRE:
+                return sommaire;
             default:
                 return bkp;
         }
@@ -111,6 +116,9 @@ public final class Paire {
             case COUPE:
                 coupe = f;
                 break;
+            case SOMMAIRE:
+                sommaire = f;
+                break;
             default:
                 bkp = f;
                 break;
@@ -122,6 +130,7 @@ public final class Paire {
         strat = null;
         coupe = null;
         bkp = null;
+        sommaire = null;
         semaine = null;
         rapport = null;
         doublons = new ArrayList<>();
@@ -161,6 +170,7 @@ public final class Paire {
         o.put("strat", ouNull(fichierEnJson(strat)));
         o.put("coupe", ouNull(fichierEnJson(coupe)));
         o.put("bkp", ouNull(fichierEnJson(bkp)));
+        o.put("sommaire", ouNull(fichierEnJson(sommaire)));
         o.put("nbUnitaires", ouNull(nbUnitaires)).put("nbPiecesTrouvees", ouNull(nbPiecesTrouvees));
         o.put("source", ouNull(source));
         if (rapport != null) {
@@ -228,6 +238,7 @@ public final class Paire {
         p.strat = fichierDepuisJson(o.optJSONObject("strat"));
         p.coupe = fichierDepuisJson(o.optJSONObject("coupe"));
         p.bkp = fichierDepuisJson(o.optJSONObject("bkp"));
+        p.sommaire = fichierDepuisJson(o.optJSONObject("sommaire"));
         p.nbUnitaires = entier(o, "nbUnitaires");
         p.nbPiecesTrouvees = entier(o, "nbPiecesTrouvees");
         p.source = texte(o, "source");

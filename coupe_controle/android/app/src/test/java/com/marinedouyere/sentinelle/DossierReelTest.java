@@ -271,37 +271,49 @@ public class DossierReelTest {
         if (!captures.isEmpty()) java.nio.file.Files.copy(xlsx.toPath(), new File(captures, "rapport_semaine_46.xlsx").toPath(),
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
-        // Rapports du sommaire Cut Rite : nombre de pièces du lancement (340) et couleur de la semaine 46 (ROSE).
+        // Le Diakonos n'est plus dans le rapport de la semaine : il est dans celui de son lancement.
+        StringBuilder feuille1 = new StringBuilder();
+        com.marinedouyere.sentinelle.moteur.Feuille f1 = relu.feuilles.get(0);
+        for (int r = 1; r <= f1.nbLignes(); r++) for (Object v : f1.cellulesDeLaLigne(r).values()) feuille1.append(v).append(' ');
+        assertTrue(feuille1.toString(), !feuille1.toString().contains("Diakonos"));
+
+        // Rapport du lancement : sommaire Cut Rite (agglo, strats, couleurs) et Diakonos du 1er tour, dans un PDF.
         String sommaire = System.getProperty("sentinelle.sommaire", "");
         if (sommaire.isEmpty()) return;
-        File sortie = new File(a.getCacheDir(), "rapports_sommaire");
-        sortie.mkdirs();
-        a.demanderSommaire(Depot.PAIRE);
         SentinelleApp app = (SentinelleApp) a.getApplication();
-        final byte[] octetsSommaire = java.nio.file.Files.readAllBytes(new File(sommaire).toPath());
-        app.annexe.execute(() -> a.preparerRapportsSommaire(Depot.PAIRE, "LAN264601START.pdf", octetsSommaire, false));
+        Paire agglo1 = app.depot().paireFixe("Agglo 1er tour", Depot.PAIRE);
+        File copieSommaire = new File(a.getCacheDir(), "LAN264601START.pdf");
+        java.nio.file.Files.copy(new File(sommaire).toPath(), copieSommaire.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        a.demanderFichier(agglo1, Paire.SOMMAIRE);
+        a.fichierChoisi(Uri.fromFile(copieSommaire));
         long finSommaire = System.currentTimeMillis() + 120_000;
-        while (!ecran(a).contains("Choisissez le dossier") && !ecran(a).contains("❌") && System.currentTimeMillis() < finSommaire) {
+        while ((agglo1.sommaire == null || agglo1.etat != null) && System.currentTimeMillis() < finSommaire) {
             ShadowLooper.idleMainLooper();
             Thread.sleep(50);
         }
+        assertNotNull(agglo1.etat, agglo1.sommaire);
         e = ecran(a);
-        assertTrue(e, e.contains("LAN264601START — pièces : 340 · couleurs semaine : ROSE"));
-        assertTrue(e, e.contains("Agglo : 44 panneaux, 10 restes"));
-        assertTrue(e, e.contains("Strats : 98 panneaux, 51 restes"));
-        assertTrue(e, e.contains("Couleurs de la feuille : 15 panneaux, 10 restes"));
-        a.dossierRapportsChoisi(Uri.fromFile(sortie));
-        while (!ecran(a).contains("enregistrés dans") && System.currentTimeMillis() < finSommaire) {
+        assertTrue(e, e.contains("Sommaire Cut Rite (.pdf)\n✓ LAN264601START.pdf"));
+        assertTrue(e, e.contains("Diakonos 1er tour (.xlsx)\n✓ diakonos46t1.xlsx"));
+        assertTrue(e, e.contains("📄 Rapport du lancement (.pdf)"));
+        File pdf = new File(a.getCacheDir(), "LAN264601_rapport_lancement.pdf");
+        a.exporterLancementVers(agglo1, Uri.fromFile(pdf));
+        while (!(pdf.exists() && pdf.length() > 0) && System.currentTimeMillis() < finSommaire) {
             ShadowLooper.idleMainLooper();
             Thread.sleep(50);
         }
-        assertTrue(ecran(a), ecran(a).contains("✔ LAN264601_Agglo.pdf, LAN264601_Strats.pdf, LAN264601_Couleurs.pdf enregistrés"));
-        for (String n : new String[] {"LAN264601_Agglo.pdf", "LAN264601_Strats.pdf", "LAN264601_Couleurs.pdf"}) {
-            File f = new File(sortie, n);
-            assertTrue(n, f.length() > 1000);
-            if (!captures.isEmpty()) java.nio.file.Files.copy(f.toPath(), new File(captures, "appli_" + n).toPath(),
-                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        Thread.sleep(300);
+        String contenuPdf = new String(java.nio.file.Files.readAllBytes(pdf.toPath()), java.nio.charset.StandardCharsets.ISO_8859_1);
+        assertTrue(contenuPdf.contains("/Count 5"));
+        for (String attendu : new String[] {"Agglo : panneaux et restes", "Strats : panneaux et restes", "Couleurs de la feuille",
+                "Diakonos 1er tour", "3 pi\\350ce\\(s\\) Diakonos absente\\(s\\) des lancements du 1er tour", "CVC26100810001", "SAG38HYBLLINEX",
+                "Couleurs semaine : ", "ROSE", "(340)"}) {
+            assertTrue(attendu, contenuPdf.contains(attendu));
         }
-        if (!captures.isEmpty()) capturer(a, new File(captures, "sommaire_46.png"), 6000);
+        if (!captures.isEmpty()) {
+            java.nio.file.Files.copy(pdf.toPath(), new File(captures, "appli_LAN264601_rapport_lancement.pdf").toPath(),
+                    java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            capturer(a, new File(captures, "lancement_46.png"), 7000);
+        }
     }
 }

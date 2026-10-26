@@ -5,7 +5,6 @@ import com.marinedouyere.sentinelle.moteur.ControleCouleurs;
 import com.marinedouyere.sentinelle.moteur.DoublonsEntreLancements;
 import com.marinedouyere.sentinelle.moteur.ExportRapport;
 import com.marinedouyere.sentinelle.moteur.LecteurBkp;
-import com.marinedouyere.sentinelle.moteur.LecteurDiakonos;
 import com.marinedouyere.sentinelle.moteur.LecteurStrat;
 
 import java.io.IOException;
@@ -22,7 +21,7 @@ import java.util.Map;
 /**
  * Rapport Excel de toute une semaine : le tableau des lancements et ses
  * alertes, puis toutes les anomalies, lancement par lancement (contrôle,
- * Scies, couleurs, livraison, doublons), et les pièces Diakonos absentes.
+ * Scies, couleurs, livraison, doublons). Le Diakonos est dans le rapport de son lancement.
  */
 final class RapportSemaine {
 
@@ -70,19 +69,9 @@ final class RapportSemaine {
         return principale;
     }
 
-    private static String descriptionDiakonos(LecteurDiakonos.Piece m, ControleDiakonos.Resultat d) {
-        StringBuilder sb = new StringBuilder(m.cle);
-        if (!m.article.isEmpty()) sb.append(" — ").append(m.article);
-        if (!m.dimensions().isEmpty()) sb.append(" — ").append(m.dimensions());
-        if (!m.coloris.isEmpty()) sb.append(" — coloris ").append(m.coloris);
-        String ailleurs = d.ailleurs.get(m.cle);
-        if (ailleurs != null) sb.append(" — lancée dans ").append(ailleurs);
-        return sb.toString();
-    }
-
     /** Les lignes ont toutes leur résumé (pièces, clés) : calculé avant, hors du fil d'affichage. */
     static byte[] xlsx(String libelleSemaine, List<RecapLancements.Ligne> lignes, List<RecapLancements.Ligne> autres,
-            String libelleAutre, List<ControleDiakonos.Resultat> diakonos, ControleCasse.Resultat casse) throws IOException {
+            String libelleAutre, ControleCasse.Resultat casse) throws IOException {
         ExportRapport.Feuille f1 = new ExportRapport.Feuille(libelleSemaine, 26, 30, 15, 13, 18, 14, 16);
         f1.ligne(ExportRapport.TITRE, "Sentinelle — " + libelleSemaine + " — "
                 + new SimpleDateFormat("dd/MM/yyyy", Locale.FRANCE).format(new Date()));
@@ -166,21 +155,6 @@ final class RapportSemaine {
             }
             if (casse.nbAutres > 0) f1.ligne(ExportRapport.NORMAL, casse.nbAutres + " autre(s) pièce(s) pas lancée(s) en semaine " + casse.semaineAvant);
         }
-        for (ControleDiakonos.Resultat d : diakonos) {
-            String tour = ControleDiakonos.libelleTour(d.tour);
-            f1.vide();
-            if (d.erreur != null) {
-                f1.ligne(ExportRapport.TITRE_ALERTE, "Diakonos " + tour + " illisible : " + d.erreur);
-            } else if (d.lancements.isEmpty()) {
-                f1.ligne(ExportRapport.TITRE_ALERTE, "Diakonos " + tour + " : aucun lancement du " + tour + " chargé");
-            } else if (d.manquantes.isEmpty()) {
-                f1.ligne(ExportRapport.VERT, "Diakonos " + tour + " : les " + d.nbPieces + " pièces sont dans les lancements");
-            } else {
-                f1.ligne(ExportRapport.TITRE_ALERTE, "Pièces Diakonos absentes des lancements du " + tour);
-                for (LecteurDiakonos.Piece m : d.manquantes) f1.ligne(ExportRapport.NORMAL, descriptionDiakonos(m, d));
-            }
-        }
-
         ExportRapport.Feuille f2 = new ExportRapport.Feuille("Anomalies", 20, 26, 12, 34, 7, 18, 9, 9, 48);
         f2.ligne(ExportRapport.ENTETE, "Poste", "Lancement", "Contrôle", "Clé / commande", "Ligne", "Article", "Attendu", "Trouvé", "Détail");
         int nb = 0;
@@ -224,17 +198,6 @@ final class RapportSemaine {
                             "à livrer semaine " + s.semaine + " (lancement : semaine " + principale.semaine + ")");
                     nb++;
                 }
-            }
-        }
-        for (ControleDiakonos.Resultat d : diakonos) {
-            String poste = "Diakonos " + ControleDiakonos.libelleTour(d.tour);
-            for (LecteurDiakonos.Piece m : d.manquantes) {
-                String ailleurs = d.ailleurs.get(m.cle);
-                f2.ligne(ailleurs != null ? ExportRapport.JAUNE : ExportRapport.ROUGE, poste, d.fichier, "Diakonos", m.cle, m.ligne,
-                        m.article, 1, 0, ailleurs != null ? "lancée dans " + ailleurs + ", pas dans le " + ControleDiakonos.libelleTour(d.tour)
-                                : "absente des lancements du " + ControleDiakonos.libelleTour(d.tour)
-                                + (m.dimensions().isEmpty() ? "" : " (" + m.dimensions() + ")"));
-                nb++;
             }
         }
         if (nb == 0) f2.ligne(ExportRapport.NORMAL, "Aucune anomalie");

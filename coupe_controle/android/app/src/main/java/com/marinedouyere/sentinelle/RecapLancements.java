@@ -101,7 +101,7 @@ final class RecapLancements {
 
     private static TableRow ligneTitreSemaine(Context c, Ui ui, String semaine) {
         TableRow r = new TableRow(c);
-        TextView t = cellule(c, ui, "Semaine " + (semaine != null ? semaine : "?"), true, 0xFF0D47A1, Gravity.START);
+        TextView t = cellule(c, ui, "Semaine " + (semaine != null ? semaine : "?"), true, ui.couleur(R.color.marque_fonce), Gravity.START);
         t.setTextSize(14);
         t.setPadding(ui.dp(5), ui.dp(10), ui.dp(5), ui.dp(4));
         TableRow.LayoutParams lp = new TableRow.LayoutParams();
@@ -158,9 +158,9 @@ final class RecapLancements {
         table.setColumnStretchable(0, true);
 
         TableRow entete = new TableRow(c);
-        entete.setBackgroundColor(0xFFE3F2FD);
+        entete.setBackgroundColor(ui.couleur(R.color.marque_clair));
         for (int i = 0; i < TITRES.length; i++) {
-            entete.addView(cellule(c, ui, TITRES[i], true, 0xFF0D47A1,
+            entete.addView(cellule(c, ui, TITRES[i], true, ui.couleur(R.color.marque_fonce),
                     i == 1 || i == 2 ? Gravity.END : i >= 3 ? Gravity.CENTER_HORIZONTAL : Gravity.START));
         }
         table.addView(entete);
