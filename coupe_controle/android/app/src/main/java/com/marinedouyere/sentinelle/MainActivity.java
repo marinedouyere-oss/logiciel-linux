@@ -96,6 +96,10 @@ public class MainActivity extends AppCompatActivity {
     private ActivityResultLauncher<String> creationRapportLancement;
     private String cleRapportLancement;
 
+    /** Lancement corrigé (nouveau fichier, sans les doublons) : case en attente de l'emplacement. */
+    private ActivityResultLauncher<String> creationCorrection;
+    private String cleCorrection;
+
     /** Analyse de la casse (pièces déjà lancées la semaine d'avant), par case. */
     private final Map<String, ControleCasse.Resultat> resultatsCasse = new HashMap<>();
     private final Set<String> casseEnCours = new HashSet<>();
@@ -122,6 +126,9 @@ public class MainActivity extends AppCompatActivity {
         creationRapportLancement = registerForActivityResult(new ActivityResultContracts.CreateDocument("application/pdf"),
                 this::emplacementRapportLancementChoisi);
         if (etat != null) cleRapportLancement = etat.getString("cleRapportLancement");
+        creationCorrection = registerForActivityResult(new ActivityResultContracts.CreateDocument(ExportRapport.TYPE_MIME),
+                this::emplacementCorrectionChoisi);
+        if (etat != null) cleCorrection = etat.getString("cleCorrection");
 
         LinearLayout racine = ui.colonne();
         racine.setBackgroundColor(ui.couleur(R.color.fond));
@@ -182,6 +189,7 @@ public class MainActivity extends AppCompatActivity {
         etat.putString("pariteDossierEnAttente", pariteDossierEnAttente);
         etat.putString("cleExport", cleExport);
         etat.putString("cleRapportLancement", cleRapportLancement);
+        etat.putString("cleCorrection", cleCorrection);
     }
 
     /** Onglet Recherche (créé à la première visite). */
@@ -578,6 +586,62 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // ---- lancement corrigé : un nouveau fichier, l'original n'est jamais modifié ----
+
+    void creerSansDoublons(Paire p) {
+        if (p.strat == null) return;
+        cleCorrection = p.cle();
+        try {
+            creationCorrection.launch(com.marinedouyere.sentinelle.moteur.CorrectionLancement.nomCorrige(p.strat.nom));
+        } catch (Exception e) {
+            cleCorrection = null;
+            alerte("Impossible d'enregistrer le lancement corrigé :\n" + e.getMessage());
+        }
+    }
+
+    void emplacementCorrectionChoisi(Uri uri) {
+        Paire p = cleCorrection == null ? null : paireParCle(cleCorrection);
+        cleCorrection = null;
+        if (uri == null || p == null) return;
+        corrigerVers(p, uri);
+    }
+
+    void corrigerVers(Paire p, Uri uri) {
+        final Paire.Fichier strat = p.strat;
+        app.annexe.execute(() -> {
+            String message;
+            boolean erreur = false;
+            try {
+                com.marinedouyere.sentinelle.moteur.CorrectionLancement.Doublons d =
+                        com.marinedouyere.sentinelle.moteur.CorrectionLancement.doublons(controles.classeur(strat));
+                if (d.lignes.isEmpty()) {
+                    message = "Aucune ligne en double dans " + strat.nom + " : rien à corriger.";
+                } else {
+                    byte[] octets = com.marinedouyere.sentinelle.moteur.CorrectionLancement.sansDoublons(Controles.lireOctets(strat.fichier()), d);
+                    try (OutputStream sortie = "file".equals(uri.getScheme())
+                            ? new FileOutputStream(new File(uri.getPath()))
+                            : getContentResolver().openOutputStream(uri, "wt")) {
+                        if (sortie == null) throw new IOException("emplacement inaccessible");
+                        sortie.write(octets);
+                    }
+                    message = d.lignes.size() + " ligne(s) en double supprimée(s) (" + TextUtils.join(", ", d.cles) + ").\n"
+                            + "Nouveau fichier : " + nomAffiche(this, uri) + "\nL'original " + strat.nom + " n'a pas changé.";
+                }
+            } catch (Exception e) {
+                erreur = true;
+                message = "Impossible de créer le lancement corrigé :\n" + (e.getMessage() != null ? e.getMessage() : e);
+            }
+            final String m = message;
+            final boolean err = erreur;
+            principal.post(() -> {
+                p.etat = err ? "❌ " + m.replace('\n', ' ') : "✔ " + m.substring(0, m.indexOf('\n') > 0 ? m.indexOf('\n') : m.length());
+                p.etatErreur = err;
+                rafraichir(p);
+                alerte(m);
+            });
+        });
+    }
+
     // ---- rapport du lancement : sommaire Cut Rite (agglo, strats, couleurs) et Diakonos de son tour ----
 
     private boolean aDiakonos(Paire p) {
@@ -722,6 +786,9 @@ public class MainActivity extends AppCompatActivity {
             TextView doublons = ui.bandeau(sb, ui.couleur(R.color.attention_fond), ui.couleur(R.color.attention_texte));
             doublons.setTypeface(null, android.graphics.Typeface.NORMAL);
             corps.addView(doublons, ui.marges(6, 0));
+            MaterialButton corriger = ui.boutonContour("✂ Créer le lancement sans doublons (.xlsx)");
+            corriger.setOnClickListener(v -> creerSansDoublons(p));
+            corps.addView(corriger, ui.marges(4, 0));
         }
 
         List<Comparateur.LigneRapport> anomalies = r.anomalies();

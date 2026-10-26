@@ -16,8 +16,10 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AlertDialog;
 
+import com.marinedouyere.sentinelle.moteur.Classeur;
 import com.marinedouyere.sentinelle.moteur.ControleCouleurs;
 import com.marinedouyere.sentinelle.moteur.LecteurBkp;
+import com.marinedouyere.sentinelle.moteur.LecteurStrat;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -119,6 +121,40 @@ public class DossierReelTest {
         ShadowLooper.idleMainLooper();
         Thread.sleep(300);
         ShadowLooper.idleMainLooper();
+    }
+
+    private static SentinelleApp app0(MainActivity a) {
+        return (SentinelleApp) a.getApplication();
+    }
+
+    /** Copie du classeur où la ligne {@code n} de la première feuille est ajoutée une seconde fois, à la fin. */
+    private static byte[] dupliquerLigne(byte[] xlsx, int n) throws Exception {
+        java.io.ByteArrayOutputStream sortie = new java.io.ByteArrayOutputStream();
+        try (java.util.zip.ZipInputStream zip = new java.util.zip.ZipInputStream(new java.io.ByteArrayInputStream(xlsx));
+                java.util.zip.ZipOutputStream out = new java.util.zip.ZipOutputStream(sortie)) {
+            for (java.util.zip.ZipEntry e = zip.getNextEntry(); e != null; e = zip.getNextEntry()) {
+                java.io.ByteArrayOutputStream b = new java.io.ByteArrayOutputStream();
+                byte[] bloc = new byte[8192];
+                for (int k = zip.read(bloc); k != -1; k = zip.read(bloc)) b.write(bloc, 0, k);
+                byte[] contenu = b.toByteArray();
+                if (e.getName().equals("xl/worksheets/sheet1.xml")) {
+                    String xml = new String(contenu, java.nio.charset.StandardCharsets.UTF_8);
+                    java.util.regex.Matcher m = java.util.regex.Pattern.compile("<row r=\"" + n + "\"[^>]*>.*?</row>", java.util.regex.Pattern.DOTALL).matcher(xml);
+                    m.find();
+                    java.util.regex.Matcher derniere = java.util.regex.Pattern.compile("<row r=\"(\\d+)\"").matcher(xml);
+                    int max = 0;
+                    while (derniere.find()) max = Math.max(max, Integer.parseInt(derniere.group(1)));
+                    String copie = m.group().replace("<row r=\"" + n + "\"", "<row r=\"" + (max + 1) + "\"")
+                            .replaceAll("(<c r=\"[A-Z]+)" + n + "\"", "$1" + (max + 1) + "\"");
+                    xml = xml.replace("</sheetData>", copie + "</sheetData>");
+                    contenu = xml.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                }
+                out.putNextEntry(new java.util.zip.ZipEntry(e.getName()));
+                out.write(contenu);
+                out.closeEntry();
+            }
+        }
+        return sortie.toByteArray();
     }
 
     private static List<android.widget.CheckBox> casesBases(View v) {
@@ -314,6 +350,38 @@ public class DossierReelTest {
         com.marinedouyere.sentinelle.moteur.Feuille f1 = relu.feuilles.get(0);
         for (int r = 1; r <= f1.nbLignes(); r++) for (Object v : f1.cellulesDeLaLigne(r).values()) feuille1.append(v).append(' ');
         assertTrue(feuille1.toString(), !feuille1.toString().contains("Diakonos"));
+
+        // Lancement corrigé : une ligne mise en double dans une copie du STRAT, puis un nouveau fichier sans elle.
+        Paire chantier = app0(a).depot().ajouterChantier(Depot.PAIRE);
+        byte[] strat = java.nio.file.Files.readAllBytes(new File(s46, "LAN264601START.xlsx").toPath());
+        File enDouble = new File(a.getCacheDir(), "LAN264699START.xlsx");
+        java.nio.file.Files.write(enDouble.toPath(), dupliquerLigne(strat, 2));
+        a.demanderFichier(chantier, Paire.STRAT);
+        a.fichierChoisi(Uri.fromFile(enDouble));
+        long finCopie = System.currentTimeMillis() + 60_000;
+        while ((chantier.strat == null || chantier.etat != null) && System.currentTimeMillis() < finCopie) {
+            ShadowLooper.idleMainLooper();
+            Thread.sleep(50);
+        }
+        assertEquals(1, LecteurStrat.lire(Classeur.lire(Controles.lireOctets(chantier.strat.fichier()))).doublons.size());
+        File corrige = new File(a.getCacheDir(), "LAN264699START_corrige.xlsx");
+        a.corrigerVers(chantier, Uri.fromFile(corrige));
+        while (!(corrige.exists() && corrige.length() > 0 && chantier.etat != null) && System.currentTimeMillis() < finCopie) {
+            ShadowLooper.idleMainLooper();
+            Thread.sleep(50);
+        }
+        Thread.sleep(200);
+        ShadowLooper.idleMainLooper();
+        assertTrue(chantier.etat, chantier.etat.startsWith("✔ 1 ligne(s) en double supprimée(s)"));
+        Classeur relu3 = Classeur.lire(java.nio.file.Files.readAllBytes(corrige.toPath()));
+        assertEquals(0, LecteurStrat.lire(relu3).doublons.size());
+        assertEquals(Classeur.lire(strat).feuilles.get(0).nbLignes(), relu3.feuilles.get(0).nbLignes());
+        assertEquals(LecteurStrat.lire(Classeur.lire(strat)).lignes.size(), LecteurStrat.lire(relu3).lignes.size());
+        assertTrue(enDouble.length() > 0); // l'original n'a pas bougé
+        assertEquals(1, LecteurStrat.lire(Classeur.lire(java.nio.file.Files.readAllBytes(enDouble.toPath()))).doublons.size());
+        app0(a).depot().retirerChantier(chantier);
+        a.afficher();
+        ShadowLooper.idleMainLooper();
 
         // Rapport du lancement : sommaire Cut Rite (agglo, strats, couleurs) et Diakonos du 1er tour, dans un PDF.
         String sommaire = System.getProperty("sentinelle.sommaire", "");

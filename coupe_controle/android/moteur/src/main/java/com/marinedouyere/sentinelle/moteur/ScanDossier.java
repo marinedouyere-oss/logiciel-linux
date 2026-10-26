@@ -307,7 +307,8 @@ public final class ScanDossier {
                 g.parite = poste.equals("Casse") ? pariteCasse(info.code) : info.parite;
                 groupes.put(cleGroupe, g);
             }
-            g.strat = d.f;
+            // Deux fichiers du même lancement (ex. LAN264601START.xlsx et sa version _corrige) : le plus récent.
+            if (g.strat == null || d.f.dateModification >= g.strat.dateModification) g.strat = d.f;
         }
 
         // 2. Chaque liste de coupe et chaque .bkp rejoint le lancement qui porte le même code.

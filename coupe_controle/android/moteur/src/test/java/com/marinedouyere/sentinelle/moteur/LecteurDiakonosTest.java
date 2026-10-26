@@ -41,6 +41,18 @@ public class LecteurDiakonosTest {
     }
 
     @Test
+    public void leScanPrendLeLancementCorrige() {
+        List<ScanDossier.Fichier> fichiers = new ArrayList<>();
+        fichiers.add(new ScanDossier.Fichier("LAN264601START.xlsx", 1000, null));
+        fichiers.add(new ScanDossier.Fichier("LAN264601START_corrige.xlsx", 2000, null));
+        Collator c = Collator.getInstance(Locale.ROOT);
+        ScanDossier.Resultat r = ScanDossier.scanner(fichiers, ScanDossier.PAIRE, c::compare);
+        assertEquals(1, r.fixes.size());
+        assertEquals("LAN264601START_corrige.xlsx", r.fixes.get(0).strat.nom);
+        assertTrue(r.chantiers.isEmpty());
+    }
+
+    @Test
     public void leScanRangeLeDiakonosDansSonTour() {
         List<ScanDossier.Fichier> fichiers = new ArrayList<>();
         for (String nom : Arrays.asList("LAN264601STRAT.xlsx", "diakonos46t1.xlsx", "diakonos46t2.xlsx", "diakonos47t1.xlsx",
