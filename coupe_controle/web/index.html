@@ -88,7 +88,7 @@
   .anomalie-haut { display: flex; justify-content: space-between; gap: 8px; color: #1f2933; }
   .anomalie.manquant .anomalie-haut span { color: var(--alerte-texte); font-weight: 700; }
   .anomalie.ecart .anomalie-haut span { color: var(--attention-texte); font-weight: 700; }
-  button.export { width: 100%; margin-top: 8px; }
+  button.export-semaine { width: 100%; margin: 0 0 12px; padding: 11px 18px; font-size: 1rem; }
   .compte-rendu { margin-top: 8px; font-size: 0.86rem; color: #263238; line-height: 1.5; }
   .compte-rendu.erreur { color: var(--alerte-texte); }
   table.recap { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
@@ -3580,6 +3580,7 @@ function construireSemaine(parite) {
   const page = $("pageSemaine");
   page.innerHTML = `
     <div class="carte compteur"><strong id="texteCompteur">…</strong></div>
+    <button type="button" class="export-semaine" id="btnExporterSemaine">Exporter le rapport de la semaine (.xlsx)</button>
     <div class="carte"><div class="carte-titre">📋 Lancements</div><div id="zoneRecap"></div></div>
     <div class="carte" id="carteDossier"></div>
     <div class="actions">
@@ -3595,6 +3596,16 @@ function construireSemaine(parite) {
   majRecap();
   remplirCarteDossier(parite);
   $("btnLancerTout").addEventListener("click", lancerTousLesControles);
+  $("btnExporterSemaine").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    try {
+      await exporterSemaine(parite);
+    } catch (erreur) {
+      alert("Impossible d'enregistrer le rapport :\n" + (erreur && erreur.message ? erreur.message : erreur));
+    } finally {
+      e.target.disabled = false;
+    }
+  });
   $("btnReinitialiserSemaine").addEventListener("click", reinitialiserSemaine);
   $("btnAjouterChantier").addEventListener("click", () => {
     const p = ajouterChantier(parite);
@@ -3702,7 +3713,6 @@ function afficherRapport(zone, p) {
   const tout = p.listeDepliee || anomalies.length <= LIMITE_LIGNES;
   for (const l of tout ? anomalies : anomalies.slice(0, LIMITE_LIGNES)) html += htmlAnomalie(l);
   if (!tout) html += `<button type="button" class="texte" data-action="deplier">Afficher les ${anomalies.length} anomalies</button>`;
-  html += '<button type="button" class="contour export" data-action="exporter">Exporter le rapport (.xlsx)</button>';
   zone.innerHTML = html;
   const deplier = zone.querySelector('[data-action="deplier"]');
   if (deplier)
@@ -3710,16 +3720,6 @@ function afficherRapport(zone, p) {
       p.listeDepliee = true;
       rafraichir(p);
     });
-  zone.querySelector('[data-action="exporter"]').addEventListener("click", async (e) => {
-    e.target.disabled = true;
-    try {
-      await exporterRapport(p.rapport, `rapport_controle_coupe_${slug(nomComplet(p))}.xlsx`);
-    } catch (erreur) {
-      alert("Impossible d'enregistrer le rapport :\n" + (erreur && erreur.message ? erreur.message : erreur));
-    } finally {
-      e.target.disabled = false;
-    }
-  });
 }
 
 function htmlAnomalie(l) {
@@ -3789,6 +3789,155 @@ function htmlCouleurs(c) {
     html += `<div class="ligne-detail">${echapper(a.couleur)} (${a.face}) — ${fmtNombre(a.nbPieces)} pièce(s) : ${echapper(pieces)}</div>`;
   }
   return html;
+}
+
+// ---- Rapport de toute la semaine (.xlsx) ----
+// Feuille 1 : le tableau des lancements et les alertes de la semaine.
+// Feuille 2 : toutes les anomalies, lancement par lancement (contrôle,
+// Scies, couleurs, semaines de livraison, doublons).
+
+async function exporterSemaine(parite) {
+  const autre = parite === "paire" ? "impaire" : "paire";
+  for (const p of [...pairesDeLaSemaine(parite), ...pairesDeLaSemaine(autre)]) if (p.strat) await resume(p.strat, p.bkp);
+  const lignes = lignesRecap(pairesDeLaSemaine(parite));
+  const autres = lignesRecap(pairesDeLaSemaine(autre));
+  const titre = libelleOnglet(parite);
+  const gras = { bold: true };
+  const fond = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
+  const BLEU = "FFE3F2FD", VERT = "FFC6EFCE", ROUGE = "FFFFC7CE", JAUNE = "FFFFEB9C", GRIS = "FFECEFF1";
+
+  const wb = new ExcelJS.Workbook();
+  const f1 = wb.addWorksheet(titre);
+  f1.addRow([`Sentinelle — ${titre} — ${new Date().toLocaleDateString("fr-FR")}`]).font = { bold: true, size: 14 };
+  f1.addRow([]);
+  const entete = f1.addRow(["Poste", "Lancement", "Pièces prévues", "Pièces .bkp", "Contrôle", "Scies", "Couleurs"]);
+  entete.eachCell((c) => {
+    c.font = gras;
+    c.fill = fond(BLEU);
+  });
+  const etatControle = (p) => (!p.rapport ? "—" : p.rapport.nbAnomalies === 0 ? "OK" : `${p.rapport.nbAnomalies} anomalie(s)`);
+  const etatScies = (p) => (p.erreurScies ? "illisible" : !p.ecartsScies ? "—" : p.ecartsScies.length === 0 ? "OK" : `${p.ecartsScies.length} écart(s)`);
+  const etatCouleurs = (p) =>
+    !p.couleurs ? "—" : p.couleurs.sansStratifie ? "pas de stratifié" : p.couleurs.absentes.length === 0 ? "OK" : `${p.couleurs.absentes.length} absente(s)`;
+  const couleurEtat = (texte) => (texte === "OK" ? VERT : texte === "—" || texte === "pas de stratifié" ? null : ROUGE);
+  for (const l of lignes) {
+    const p = l.paire;
+    const valeurs = [
+      l.nom + (l.semaine && plusieursSemaines(lignes) ? ` (sem ${l.semaine})` : ""),
+      l.lancement,
+      Number.isNaN(l.prevues) ? "?" : l.prevues,
+      p.bkp ? (l.bkp === null || Number.isNaN(l.bkp) ? "?" : l.bkp) : "—",
+      etatControle(p),
+      etatScies(p),
+      etatCouleurs(p),
+    ];
+    const r = f1.addRow(valeurs);
+    [5, 6, 7].forEach((i) => {
+      const c = couleurEtat(valeurs[i - 1]);
+      if (c) r.getCell(i).fill = fond(c);
+    });
+  }
+  const t = totauxRecap(lignes);
+  const total = f1.addRow(["Total", "", t.prevues, t.auMoinsUnBkp ? t.bkp : "—", t.anomalies || "", t.ecarts || "", t.couleurs || ""]);
+  total.eachCell((c) => {
+    c.font = gras;
+    c.fill = fond(GRIS);
+  });
+
+  const alertes = alertesSemaine(lignes, autres, libelleOnglet(autre));
+  for (const bloc of alertes) {
+    f1.addRow([]);
+    const r = f1.addRow([bloc.titre]);
+    r.font = { bold: true, color: { argb: "FFC62828" } };
+    for (const ligne of bloc.lignes) f1.addRow([ligne]);
+  }
+  [26, 30, 15, 13, 18, 14, 16].forEach((w, i) => (f1.getColumn(i + 1).width = w));
+
+  const f2 = wb.addWorksheet("Anomalies");
+  const e2 = f2.addRow(["Poste", "Lancement", "Contrôle", "Clé / commande", "Ligne", "Article", "Attendu", "Trouvé", "Détail"]);
+  e2.eachCell((c) => {
+    c.font = gras;
+    c.fill = fond(BLEU);
+  });
+  let nb = 0;
+  const ajouter = (valeurs, couleur) => {
+    const r = f2.addRow(valeurs);
+    if (couleur) r.eachCell((c) => (c.fill = fond(couleur)));
+    nb++;
+  };
+  for (const l of lignes) {
+    const p = l.paire;
+    if (p.rapport) {
+      for (const a of p.rapport.lignes.filter((x) => x.statut !== "OK")) {
+        const detail = (a.couches || 1) > 1 ? `${a.statut} — pièce de ${a.couches} couches (quantités en couches)` : a.statut;
+        ajouter([l.nom, l.lancement, "Contrôle", a.cle, a.ligne, a.article, a.qte_attendue, a.qte_trouvee, detail], a.statut === "Manquant" ? ROUGE : JAUNE);
+      }
+      for (const d of p.doublons || []) {
+        ajouter([l.nom, l.lancement, "Doublon", d.cle, d.ligne, d.articles.join(" / "), "", "", `${d.nbLignes} lignes identiques dans le lancement`], JAUNE);
+      }
+    }
+    if (p.erreurScies) ajouter([l.nom, l.lancement, "Scies", "", "", "", "", "", p.erreurScies], ROUGE);
+    for (const e of p.ecartsScies || []) {
+      const type = e.attendu === 0 ? "en trop (absente du lancement)" : e.trouve === 0 ? "absente du .bkp" : "quantité différente";
+      ajouter([l.nom, l.lancement, "Scies", e.cle, "", "", e.attendu, e.trouve, type], ROUGE);
+    }
+    if (p.couleurs && !p.couleurs.sansStratifie) {
+      for (const a of p.couleurs.absentes) {
+        ajouter([l.nom, l.lancement, "Couleur", a.cles.join(", "), "", "", a.nbPieces, 0, `couleur ${a.couleur} (${a.face}) absente du .bkp`], ROUGE);
+      }
+    }
+    if (p.semainesLivraison.length > 1 && p.poste !== "Casse") {
+      const principale = semainePrincipale(p);
+      for (const s of p.semainesLivraison) {
+        if (s === principale) continue;
+        ajouter([l.nom, l.lancement, "Livraison", (s.cles || []).join(", "), "", "", s.nbPieces, "", `à livrer semaine ${s.semaine} (lancement : semaine ${principale.semaine})`], JAUNE);
+      }
+    }
+  }
+  if (nb === 0) f2.addRow(["Aucune anomalie"]);
+  [20, 26, 12, 34, 7, 18, 9, 9, 48].forEach((w, i) => (f2.getColumn(i + 1).width = w));
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const url = URL.createObjectURL(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `rapport_sentinelle_${slug(titre)}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+const plusieursSemaines = (lignes) => new Set(lignes.map((l) => l.semaine)).size > 1;
+
+// Les alertes du tableau des lancements, en texte (pour le rapport).
+function alertesSemaine(lignes, autres, libelleAutre) {
+  const blocs = [];
+  const clesParLancement = new Map(lignes.filter((l) => l.cles).map((l) => [nomLancementRecap(l), l.cles]));
+  const doublons = doublonsEntreLancements(clesParLancement);
+  if (doublons.length) {
+    blocs.push({ titre: "Pièces lancées deux fois", lignes: doublons.map((g) => `${g.cles.join(", ")} — ${g.lancements.join(" + ")}`) });
+  }
+  const deja = [];
+  for (const l of lignes) {
+    for (const o of autres) {
+      if (!l.cles || !o.cles) continue;
+      const communes = [...l.cles].filter((cle) => o.cles.has(cle) && cle.length > 3).sort();
+      if (communes.length) deja.push(`${communes.join(", ")} — ${nomLancementRecap(l)} et ${nomLancementRecap(o)}`);
+    }
+  }
+  if (deja.length) blocs.push({ titre: `Pièces déjà lancées en ${libelleAutre}`, lignes: deja });
+  const livraison = [];
+  for (const l of lignes) {
+    const p = l.paire;
+    if (p.semainesLivraison.length <= 1 || p.poste === "Casse") continue;
+    const principale = semainePrincipale(p);
+    for (const s of p.semainesLivraison) {
+      if (s !== principale) livraison.push(`${(s.cles || []).join(", ")} à livrer semaine ${s.semaine} — ${nomLancementRecap(l)}`);
+    }
+  }
+  if (livraison.length) blocs.push({ titre: "Pièces d'une autre semaine de livraison", lignes: livraison });
+  return blocs;
 }
 
 // ---- Compteur ----
