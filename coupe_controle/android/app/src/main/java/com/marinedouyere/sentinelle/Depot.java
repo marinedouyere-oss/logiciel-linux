@@ -24,6 +24,8 @@ import java.util.List;
 public final class Depot {
 
     public static final List<String> POSTES_SEMAINE = Arrays.asList("Agglo 1er tour", "Feno", "Casse", "Agglo 2ème tour");
+    /** Fichiers de contrôle Diakonos, un par tour (ils ne sont pas des lancements). */
+    public static final List<String> POSTES_DIAKONOS = Arrays.asList("Diakonos 1er tour", "Diakonos 2ème tour");
     public static final String POSTE_CHANTIERS = "Chantiers";
     public static final String PAIRE = "paire";
     public static final String IMPAIRE = "impaire";
@@ -65,7 +67,9 @@ public final class Depot {
                 }
             }
         }
-        for (String poste : POSTES_SEMAINE) {
+        List<String> postesFixes = new ArrayList<>(POSTES_SEMAINE);
+        postesFixes.addAll(POSTES_DIAKONOS);
+        for (String poste : postesFixes) {
             for (String parite : new String[] {PAIRE, IMPAIRE}) {
                 Paire p = trouver(lues, poste, libelleSemaine(parite));
                 if (p == null) p = new Paire(poste, libelleSemaine(parite), parite);
@@ -153,6 +157,18 @@ public final class Depot {
         for (String poste : POSTES_SEMAINE) liste.add(paireFixe(poste, parite));
         liste.addAll(chantiers(parite));
         return liste;
+    }
+
+    /** Les deux cases Diakonos de l'onglet (1er tour, 2ème tour). */
+    public List<Paire> diakonos(String parite) {
+        List<Paire> liste = new ArrayList<>();
+        for (String poste : POSTES_DIAKONOS) liste.add(paireFixe(poste, parite));
+        return liste;
+    }
+
+    /** Case Diakonos d'un tour (« 1 » ou « 2 »). */
+    public Paire paireDiakonos(String tour, String parite) {
+        return paireFixe(POSTES_DIAKONOS.get("2".equals(tour) ? 1 : 0), parite);
     }
 
     public Paire ajouterChantier(String parite) {

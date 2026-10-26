@@ -187,7 +187,7 @@ final class RechercheVue {
         zone.removeAllViews();
         if (Js.trim(requete).isEmpty()) return;
         final List<SourceCase> sources = new ArrayList<>();
-        for (Paire p : app.depot().paires) sources.add(new SourceCase(p));
+        for (Paire p : app.depot().paires) if (!p.estDiakonos()) sources.add(new SourceCase(p));
         final int numero = ++generation;
         enCours = true;
         bouton.setEnabled(false);

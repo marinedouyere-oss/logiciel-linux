@@ -9,6 +9,7 @@ import com.marinedouyere.sentinelle.moteur.ErreurLecture;
 import com.marinedouyere.sentinelle.moteur.LecteurBkp;
 import com.marinedouyere.sentinelle.moteur.LecteurCoupe;
 import com.marinedouyere.sentinelle.moteur.LecteurCoupePdf;
+import com.marinedouyere.sentinelle.moteur.LecteurDiakonos;
 import com.marinedouyere.sentinelle.moteur.LecteurStrat;
 
 import java.io.ByteArrayOutputStream;
@@ -149,6 +150,8 @@ final class Controles {
         Double bkp;
         /** Clés des pièces du lancement. */
         final Set<String> cles = new HashSet<>();
+        /** Codes de lancement écrits dans le fichier (« LAN264601 »). */
+        final Set<String> lancements = new HashSet<>();
     }
 
     private final Map<String, Resume> resumes = new HashMap<>();
@@ -173,6 +176,7 @@ final class Controles {
                 for (LecteurStrat.LigneStrat l : lignes) {
                     r.prevues += l.pieces;
                     r.cles.add(l.cle);
+                    if (l.lancement != null && !l.lancement.trim().isEmpty()) r.lancements.add(l.lancement.trim());
                 }
             } catch (Exception e) {
                 lignes = null; // lancement illisible : l'erreur apparaîtra au contrôle
@@ -190,6 +194,22 @@ final class Controles {
             resumes.put(cleCache(strat) + "#" + cleCache(bkp), r);
         }
         return r;
+    }
+
+    private final Map<String, List<LecteurDiakonos.Piece>> piecesDiakonos = new HashMap<>();
+
+    /** Pièces d'un fichier Diakonos (mises en cache). */
+    List<LecteurDiakonos.Piece> diakonos(Paire.Fichier f) throws IOException, ErreurLecture {
+        String cle = cleCache(f);
+        synchronized (piecesDiakonos) {
+            List<LecteurDiakonos.Piece> pieces = piecesDiakonos.get(cle);
+            if (pieces != null) return pieces;
+        }
+        List<LecteurDiakonos.Piece> pieces = LecteurDiakonos.lire(classeur(f));
+        synchronized (piecesDiakonos) {
+            piecesDiakonos.put(cle, pieces);
+        }
+        return pieces;
     }
 
     /** Étape en cours, pour le message d'erreur ("échec à l'étape « ... »"). */

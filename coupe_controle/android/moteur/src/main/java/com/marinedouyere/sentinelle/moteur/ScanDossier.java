@@ -98,6 +98,15 @@ public final class ScanDossier {
         public final List<Cible> fixes = new ArrayList<>();
         /** Un lancement par chantier ("code|suffixe"). */
         public final List<Cible> chantiers = new ArrayList<>();
+        /** Fichiers Diakonos de la semaine (le plus récent de chaque tour). */
+        public final List<Diakonos> diakonos = new ArrayList<>();
+    }
+
+    /** Fichier de contrôle Diakonos (« diakonos46t1.xlsx ») et le tour qu'il contrôle. */
+    public static final class Diakonos {
+        public Fichier fichier;
+        public String semaine;
+        public String tour;
     }
 
     private static String sansDateSauvegarde(String nom) {
@@ -242,7 +251,12 @@ public final class ScanDossier {
 
         List<Decode> decodes = new ArrayList<>();
         List<Fichier> sansCode = new ArrayList<>();
+        List<Fichier> fichiersDiakonos = new ArrayList<>();
         for (Fichier f : fichiers) {
+            if (LecteurDiakonos.estDiakonos(f.nom) && estFichierDeLancement(f.nom)) {
+                fichiersDiakonos.add(f);
+                continue;
+            }
             InfoNom info = decoderNom(f.nom);
             if (info == null) sansCode.add(f);
             else decodes.add(new Decode(f, info));
@@ -340,6 +354,27 @@ public final class ScanDossier {
                 ancrage.groupe.coupe = f;
             }
         }
+
+        Map<String, Diakonos> diakonosParTour = new LinkedHashMap<>();
+        for (Fichier f : fichiersDiakonos) {
+            LecteurDiakonos.Nom n = LecteurDiakonos.decoderNom(f.nom);
+            if (n.semaine == null || n.tour == null) {
+                res.nonReconnus.add(f.nom);
+                continue;
+            }
+            if (!pariteDeSemaine("00" + n.semaine).equals(pariteScan)) {
+                res.ignoresAutreSemaine++;
+                continue;
+            }
+            Diakonos actuel = diakonosParTour.get(n.tour);
+            if (actuel != null && actuel.fichier.dateModification >= f.dateModification) continue;
+            Diakonos d = new Diakonos();
+            d.fichier = f;
+            d.semaine = n.semaine;
+            d.tour = n.tour;
+            diakonosParTour.put(n.tour, d);
+        }
+        res.diakonos.addAll(diakonosParTour.values());
 
         Collections.sort(res.nonReconnus, ordreDesNoms);
         if (groupes.isEmpty()) {

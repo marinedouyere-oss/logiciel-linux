@@ -30,6 +30,7 @@ import com.marinedouyere.sentinelle.moteur.ErreurLecture;
 import com.marinedouyere.sentinelle.moteur.ExportRapport;
 import com.marinedouyere.sentinelle.moteur.Js;
 import com.marinedouyere.sentinelle.moteur.LecteurBkp;
+import com.marinedouyere.sentinelle.moteur.LecteurDiakonos;
 import com.marinedouyere.sentinelle.moteur.LecteurStrat;
 import com.marinedouyere.sentinelle.moteur.ScanDossier;
 import com.marinedouyere.sentinelle.moteur.Semaines;
@@ -66,6 +67,10 @@ public class MainActivity extends AppCompatActivity {
     private TabLayout onglets;
     private LinearLayout zoneRecap;
     private int generationRecap;
+    private LinearLayout zoneDiakonos;
+    private int generationDiakonos;
+    /** Dernier résultat Diakonos de chaque case (affiché pendant le nouveau calcul). */
+    private final Map<String, ControleDiakonos.Resultat> resultatsDiakonos = new HashMap<>();
     private final Map<Paire, LinearLayout> cartes = new HashMap<>();
     private final Set<Paire> listesDepliees = new HashSet<>();
     private RechercheVue recherche;
@@ -225,6 +230,7 @@ public class MainActivity extends AppCompatActivity {
         cartes.clear();
         texteCompteur = null;
         zoneRecap = null;
+        zoneDiakonos = null;
         majOnglets();
         if (ongletSemaine()) {
             construireSemaine(onglet);
@@ -258,6 +264,9 @@ public class MainActivity extends AppCompatActivity {
         corpsRecap.addView(zoneRecap, ui.pleineLargeur());
         contenu.addView(carteRecap);
         majRecap();
+
+        contenu.addView(carteDiakonos());
+        majDiakonos();
 
         contenu.addView(carteDossierPartage(parite));
 
@@ -309,7 +318,10 @@ public class MainActivity extends AppCompatActivity {
         }
         // Nouvelle semaine pour l'onglet (premier fichier chargé...) : compteur, dossier et cases en dépendent.
         if (majOnglets()) afficher();
-        else majRecap();
+        else {
+            majRecap();
+            majDiakonos();
+        }
     }
 
     // ---- récapitulatif des lancements ----
@@ -332,6 +344,100 @@ public class MainActivity extends AppCompatActivity {
                 if (numero == generationRecap && parite.equals(onglet)) majRecap();
             });
         });
+    }
+
+    // ---- Diakonos ----
+
+    private View carteDiakonos() {
+        MaterialCardView carte = ui.carte();
+        LinearLayout corps = ui.colonne();
+        corps.setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(12));
+        carte.addView(corps);
+        corps.addView(ui.texte("🧾 Diakonos", 16, true, 0xFF263238));
+        zoneDiakonos = ui.colonne();
+        corps.addView(zoneDiakonos, ui.pleineLargeur());
+        return carte;
+    }
+
+    /** Affiche les cases Diakonos de l'onglet, puis recalcule les pièces manquantes. */
+    private void majDiakonos() {
+        if (!ongletSemaine() || zoneDiakonos == null) return;
+        final String parite = onglet;
+        remplirDiakonos(parite);
+        final List<Paire> fichiers = new ArrayList<>();
+        for (Paire p : depot.diakonos(parite)) if (p.strat != null) fichiers.add(p);
+        if (fichiers.isEmpty()) return;
+        final int numero = ++generationDiakonos;
+        final String semaine = String.format(Locale.ROOT, "%02d", numeroSemaine(parite));
+        final List<Paire> semaineListe = depot.pairesDeLaSemaine(parite);
+        final List<Paire> toutes = new ArrayList<>(semaineListe);
+        toutes.addAll(depot.pairesDeLaSemaine(Depot.PAIRE.equals(parite) ? Depot.IMPAIRE : Depot.PAIRE));
+        app.annexe.execute(() -> {
+            Map<String, ControleDiakonos.Resultat> calcules = new HashMap<>();
+            for (Paire p : fichiers) calcules.put(p.cle(), ControleDiakonos.calculer(p, semaine, semaineListe, toutes, controles));
+            principal.post(() -> {
+                resultatsDiakonos.putAll(calcules);
+                if (numero == generationDiakonos && parite.equals(onglet) && zoneDiakonos != null) remplirDiakonos(parite);
+            });
+        });
+    }
+
+    private void remplirDiakonos(String parite) {
+        zoneDiakonos.removeAllViews();
+        for (Paire p : depot.diakonos(parite)) {
+            zoneDiakonos.addView(ligneFichier(p, Paire.STRAT, p.poste));
+            if (p.etat != null) {
+                zoneDiakonos.addView(ui.texte(p.etat, 13, false,
+                        p.etatErreur ? ui.couleur(R.color.alerte_texte) : ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
+            }
+            if (p.strat == null) continue;
+            ControleDiakonos.Resultat r = resultatsDiakonos.get(p.cle());
+            if (r == null || !r.fichier.equals(p.strat.nom)) {
+                zoneDiakonos.addView(ui.texte("…", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
+                continue;
+            }
+            afficherDiakonos(r);
+        }
+    }
+
+    private void afficherDiakonos(ControleDiakonos.Resultat r) {
+        String tour = ControleDiakonos.libelleTour(r.tour);
+        if (r.erreur != null) {
+            zoneDiakonos.addView(ui.bandeau("❌ Diakonos illisible : " + r.erreur, ui.couleur(R.color.alerte_fond),
+                    ui.couleur(R.color.alerte_texte)), ui.marges(6, 0));
+            return;
+        }
+        if (r.lancements.isEmpty()) {
+            zoneDiakonos.addView(ui.bandeau("⚠ Aucun lancement du " + tour + " (semaine " + r.semaine + ") chargé",
+                    ui.couleur(R.color.attention_fond), ui.couleur(R.color.attention_texte)), ui.marges(6, 0));
+            return;
+        }
+        if (r.manquantes.isEmpty()) {
+            zoneDiakonos.addView(ui.bandeau("✔ Les " + r.nbPieces + " pièces Diakonos sont dans les lancements du " + tour,
+                    ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte)), ui.marges(6, 0));
+        } else {
+            zoneDiakonos.addView(ui.bandeau("⚠ " + r.manquantes.size() + " pièce(s) Diakonos absente(s) des lancements du " + tour,
+                    ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)), ui.marges(6, 0));
+            int n = Math.min(r.manquantes.size(), LIMITE_LIGNES);
+            for (int i = 0; i < n; i++) {
+                LecteurDiakonos.Piece m = r.manquantes.get(i);
+                StringBuilder sb = new StringBuilder(m.cle);
+                if (!m.article.isEmpty()) sb.append(" · ").append(m.article);
+                if (!m.dimensions().isEmpty()) sb.append(" · ").append(m.dimensions());
+                if (!m.coloris.isEmpty()) sb.append(" · coloris ").append(m.coloris);
+                String ailleurs = r.ailleurs.get(m.cle);
+                if (ailleurs != null) sb.append(" — lancée dans ").append(ailleurs);
+                TextView t = ui.texte(sb, 13, false, 0xFF3E4C59);
+                t.setPadding(0, ui.dp(4), 0, 0);
+                zoneDiakonos.addView(t);
+            }
+            if (r.manquantes.size() > n) {
+                zoneDiakonos.addView(ui.texte("… et " + (r.manquantes.size() - n) + " autre(s) (voir le rapport exporté)", 13, false,
+                        ui.couleur(R.color.gris_texte)));
+            }
+        }
+        zoneDiakonos.addView(ui.texte("Comparé à : " + TextUtils.join(", ", r.lancements), 12, false,
+                ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
     }
 
     private void allerALaCase(Paire p) {
@@ -646,8 +752,9 @@ public class MainActivity extends AppCompatActivity {
         roleEnAttente = null;
         if (uri == null || p == null || role == null) return;
         final String nom = nomAffiche(this, uri);
-        String motCle = Paire.STRAT.equals(role) ? "LAN" : Paire.COUPE.equals(role) ? "coupe" : ".bkp";
-        String type = Paire.STRAT.equals(role) ? "lancement" : Paire.COUPE.equals(role) ? "liste de coupe" : "sauvegarde d'optimisation";
+        String motCle = p.estDiakonos() ? "Diakonos" : Paire.STRAT.equals(role) ? "LAN" : Paire.COUPE.equals(role) ? "coupe" : ".bkp";
+        String type = p.estDiakonos() ? "Diakonos" : Paire.STRAT.equals(role) ? "lancement"
+                : Paire.COUPE.equals(role) ? "liste de coupe" : "sauvegarde d'optimisation";
         if (!nom.toLowerCase(Locale.ROOT).contains(motCle.toLowerCase(Locale.ROOT))) {
             alerte("« " + nom + " » ne ressemble pas à un fichier " + type + " (le nom devrait contenir « " + motCle
                     + " »).\nSélection annulée.");
@@ -662,7 +769,10 @@ public class MainActivity extends AppCompatActivity {
             try (InputStream entree = getContentResolver().openInputStream(uri)) {
                 if (entree == null) throw new java.io.IOException("fichier inaccessible");
                 depot.copierFichier(p, role, nom, entree);
-                if (Paire.STRAT.equals(role)) {
+                if (p.estDiakonos()) {
+                    p.semaine = LecteurDiakonos.decoderNom(nom).semaine;
+                    controles.diakonos(p.strat);
+                } else if (Paire.STRAT.equals(role)) {
                     p.semaine = controles.detecterSemaine(p);
                     deplace = ranger(p);
                 }
@@ -863,6 +973,7 @@ public class MainActivity extends AppCompatActivity {
         confirmer("Réinitialiser « " + libelleOnglet(parite) + " » ?",
                 "Toutes les cases de cette semaine (y compris Chantiers) seront vidées. Cette action est irréversible.", () -> {
                     for (Paire p : depot.pairesDeLaSemaine(parite)) depot.reinitialiser(p);
+                    for (Paire p : depot.diakonos(parite)) depot.reinitialiser(p);
                     listesDepliees.clear();
                     afficher();
                 });
@@ -977,7 +1088,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void placerFichiersScannes(String parite, ScanDossier.Resultat r) {
-        if (r.aucunLancement) {
+        if (r.aucunLancement && r.diakonos.isEmpty()) {
             scansEnCours.remove(parite);
             List<String> lignes = new ArrayList<>();
             lignes.add("Aucun lancement dans ce dossier.");
@@ -1034,6 +1145,17 @@ public class MainActivity extends AppCompatActivity {
                     depot.enregistrer(p);
                     lignes.add("❌ " + a.libelle + " : " + (e.getMessage() != null ? e.getMessage() : e));
                 }
+            }
+            for (ScanDossier.Diakonos d : r.diakonos) {
+                Paire p = depot.paireDiakonos(d.tour, parite);
+                try {
+                    copierDepuisDossier(p, Paire.STRAT, d.fichier);
+                    p.semaine = d.semaine;
+                    lignes.add("✔ " + p.poste + " : " + d.fichier.nom);
+                } catch (Exception e) {
+                    lignes.add("❌ " + p.poste + " : " + (e.getMessage() != null ? e.getMessage() : e));
+                }
+                depot.enregistrer(p);
             }
             principal.post(() -> {
                 for (Affectation a : affectations) {
@@ -1114,12 +1236,20 @@ public class MainActivity extends AppCompatActivity {
         final String libelleAutre = libelleOnglet(autre);
         final List<Paire> semaine = depot.pairesDeLaSemaine(parite);
         final List<Paire> autreSemaine = depot.pairesDeLaSemaine(autre);
+        final List<Paire> toutes = new ArrayList<>(semaine);
+        toutes.addAll(autreSemaine);
+        final List<Paire> fichiersDiakonos = new ArrayList<>();
+        for (Paire p : depot.diakonos(parite)) if (p.strat != null) fichiersDiakonos.add(p);
+        final String numero = String.format(Locale.ROOT, "%02d", numeroSemaine(parite));
         app.annexe.execute(() -> {
             String erreur = null;
             try {
                 for (Paire p : semaine) if (p.strat != null) controles.resume(p.strat, p.bkp);
                 for (Paire p : autreSemaine) if (p.strat != null) controles.resume(p.strat, p.bkp);
-                byte[] octets = RapportSemaine.xlsx(libelle, RecapLancements.lignes(semaine, controles), RecapLancements.lignes(autreSemaine, controles), libelleAutre);
+                List<ControleDiakonos.Resultat> diakonos = new ArrayList<>();
+                for (Paire p : fichiersDiakonos) diakonos.add(ControleDiakonos.calculer(p, numero, semaine, toutes, controles));
+                byte[] octets = RapportSemaine.xlsx(libelle, RecapLancements.lignes(semaine, controles),
+                        RecapLancements.lignes(autreSemaine, controles), libelleAutre, diakonos);
                 try (OutputStream sortie = "file".equals(uri.getScheme())
                         ? new FileOutputStream(new File(uri.getPath()))
                         : getContentResolver().openOutputStream(uri, "wt")) {

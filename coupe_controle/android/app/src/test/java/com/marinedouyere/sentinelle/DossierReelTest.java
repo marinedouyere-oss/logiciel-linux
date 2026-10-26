@@ -221,4 +221,45 @@ public class DossierReelTest {
                 java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         assertNotNull(a);
     }
+
+    /** Diakonos de la semaine 46, 1er tour : les pièces commandées absentes du STRAT et du recyclage. */
+    @Test
+    public void diakonosSemaine46() throws Exception {
+        String s46 = System.getProperty("sentinelle.semaine46", "");
+        assumeTrue("dossier de la semaine 46 non fourni", !s46.isEmpty() && new File(s46).isDirectory());
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
+        scanner(a, Depot.PAIRE, new File(s46));
+        long fin = System.currentTimeMillis() + 120_000;
+        while (!ecran(a).contains("Comparé à") && System.currentTimeMillis() < fin) {
+            ShadowLooper.idleMainLooper();
+            Thread.sleep(50);
+        }
+        String e = ecran(a);
+        System.out.println(e);
+        assertTrue(e, e.contains("✔ Diakonos 1er tour : diakonos46t1.xlsx"));
+        assertTrue(e, e.contains("⚠ 3 pièce(s) Diakonos absente(s) des lancements du 1er tour"));
+        assertTrue(e, e.contains("CVC26100810001 · TPPVC39551 · 2200 × 600 · coloris 896"));
+        assertTrue(e, e.contains("CVC26100810002"));
+        assertTrue(e, e.contains("CVC26100810003 · ILOT39801PVC · 2070 × 1000 · coloris 896"));
+        assertTrue(e, !e.contains("CVC26100557001"));
+        assertTrue(e, e.contains("LAN264601START.xlsx") && e.contains("LAN264601RECYCLAGE.xlsx"));
+        String captures = System.getProperty("sentinelle.captures", "");
+        if (!captures.isEmpty()) {
+            new File(captures).mkdirs();
+            capturer(a, new File(captures, "diakonos_46.png"), 6000);
+        }
+
+        File xlsx = new File(a.getCacheDir(), "rapport_semaine_46.xlsx");
+        a.exporterSemaineVers(Depot.PAIRE, android.net.Uri.fromFile(xlsx));
+        long finExport = System.currentTimeMillis() + 60_000;
+        while (!(xlsx.exists() && xlsx.length() > 0) && System.currentTimeMillis() < finExport) {
+            ShadowLooper.idleMainLooper();
+            Thread.sleep(50);
+        }
+        Thread.sleep(200);
+        com.marinedouyere.sentinelle.moteur.Classeur relu = com.marinedouyere.sentinelle.moteur.Classeur.lire(Controles.lireOctets(xlsx));
+        assertEquals("Semaine 46", relu.feuilles.get(0).nom);
+        if (!captures.isEmpty()) java.nio.file.Files.copy(xlsx.toPath(), new File(captures, "rapport_semaine_46.xlsx").toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    }
 }

@@ -78,6 +78,11 @@ public final class Paire {
         return Depot.POSTE_CHANTIERS.equals(poste);
     }
 
+    /** Case du fichier de contrôle Diakonos (son fichier est rangé à la place du lancement). */
+    public boolean estDiakonos() {
+        return Depot.POSTES_DIAKONOS.contains(poste);
+    }
+
     public String titre() {
         if (!estChantier()) return semaine != null ? "Semaine " + semaine : label;
         return semaine != null ? label + " (sem " + semaine + ")" : label;

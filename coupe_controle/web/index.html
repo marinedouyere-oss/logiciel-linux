@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V3.5 — Contrôle de coupe</title>
+<title>Sentinelle V3.6 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -74,6 +74,7 @@
   .ligne-fichier-nom.vide { color: #9aa5b1; }
   .etat { color: var(--gris-texte); margin-top: 6px; font-size: 0.92rem; }
   .etat.erreur { color: var(--alerte-texte); }
+  .ligne-diakonos { font-size: 0.86rem; color: #3e4c59; padding-top: 4px; }
   .separateur { height: 1px; background: #eceff1; margin: 10px 0; }
   .bandeau { border-radius: 8px; padding: 9px 12px; font-weight: 700; font-size: 0.92rem; margin-top: 6px; line-height: 1.45; }
   .bandeau.normal { font-weight: 400; }
@@ -204,7 +205,7 @@
 
   <header class="barre">
     <h1>Sentinelle</h1>
-    <div class="sous-titre">Contrôle de coupe · V3.5</div>
+    <div class="sous-titre">Contrôle de coupe · V3.6</div>
   </header>
   <nav class="onglets">
     <button type="button" class="onglet-btn actif" data-onglet="paire">Semaine</button>
@@ -2698,11 +2699,16 @@ function associerFichierSansCode(nom, ancrages) {
 // Répartit les fichiers du dossier ({nom, date, entree}) pour l'onglet pariteScan.
 function repartirFichiersDossier(fichiersDossier, pariteScan) {
   const fichiers = [...fichiersDossier].sort((a, b) => a.nom.localeCompare(b.nom));
-  const res = { nbFichiers: fichiers.length, nonReconnus: [], aucunLancement: false, ignoresAutreSemaine: 0, fixes: [], chantiers: [] };
+  const res = { nbFichiers: fichiers.length, nonReconnus: [], aucunLancement: false, ignoresAutreSemaine: 0, fixes: [], chantiers: [], diakonos: [] };
 
   const decodes = [];
   const sansCode = [];
+  const fichiersDiakonos = [];
   for (const f of fichiers) {
+    if (estFichierDiakonos(f.nom) && estFichierDeLancement(f.nom)) {
+      fichiersDiakonos.push(f);
+      continue;
+    }
     const info = decoderNomFichierPartage(f.nom);
     if (info) decodes.push({ f, info });
     else sansCode.push(f);
@@ -2786,6 +2792,24 @@ function repartirFichiersDossier(fichiersDossier, pariteScan) {
     }
   }
 
+  // Fichiers Diakonos de la semaine : le plus récent de chaque tour.
+  const diakonosParTour = new Map();
+  for (const f of fichiersDiakonos) {
+    const n = decoderNomDiakonos(f.nom);
+    if (!n.semaine || !n.tour) {
+      res.nonReconnus.push(f.nom);
+      continue;
+    }
+    if (pariteDeSemaine(`00${n.semaine}`) !== pariteScan) {
+      res.ignoresAutreSemaine++;
+      continue;
+    }
+    const actuel = diakonosParTour.get(n.tour);
+    if (actuel && actuel.fichier.date >= f.date) continue;
+    diakonosParTour.set(n.tour, { fichier: f, semaine: n.semaine, tour: n.tour });
+  }
+  res.diakonos.push(...diakonosParTour.values());
+
   res.nonReconnus.sort((a, b) => a.localeCompare(b));
   if (groupes.size === 0) {
     res.aucunLancement = true;
@@ -2811,6 +2835,86 @@ function repartirFichiersDossier(fichiersDossier, pariteScan) {
   res.chantiers.push(...ciblesChantiers.values());
   return res;
 }
+
+// ---- Fichier de contrôle Diakonos ----
+// « diakonos46t1.xlsx » : semaine 46, 1er tour. Les pièces commandées, une
+// ligne par commande + ligne ; chacune doit se trouver dans un lancement de
+// la même semaine et du même tour (STRAT, Feno, recyclage, chantiers…).
+const POSTES_DIAKONOS = ["Diakonos 1er tour", "Diakonos 2ème tour"];
+const MOTIF_NOM_DIAKONOS = /DIAKONOS\D*?(\d{1,4})(?:\D*?T(?:OUR)?\D{0,3}?0?([12])(?!\d))?/i;
+
+const estFichierDiakonos = (nom) => /DIAKONOS/i.test(nom || "");
+
+// « diakonos46t1.xlsx » → { semaine: "46", tour: "1" } ; null si le nom ne parle pas de Diakonos.
+function decoderNomDiakonos(nom) {
+  if (!estFichierDiakonos(nom)) return null;
+  const m = MOTIF_NOM_DIAKONOS.exec(nom);
+  if (!m) return { semaine: null, tour: null };
+  // « diakonos2646t1 » : année + semaine.
+  return { semaine: m[1].slice(-2).padStart(2, "0"), tour: m[2] || null };
+}
+
+// « LAN264601 » → ["46", "1"], « LAN2646TRIGANO » → ["46", null] ; null sans semaine.
+function semaineEtTourDuLancement(code) {
+  for (const c of String(code || "").match(/\d+/g) || []) {
+    if (c.length >= 6) return [c.slice(2, 4), String(parseInt(c.slice(4, 6), 10))];
+    if (c.length === 4) return [c.slice(2, 4), null];
+  }
+  return null;
+}
+
+const libelleTourDiakonos = (tour) => (tour === "2" ? "2ème tour" : "1er tour");
+const tourDiakonos = (p) => (p.poste === POSTES_DIAKONOS[1] ? "2" : "1");
+
+function lireDiakonos(workbook) {
+  const normaliser = (v) =>
+    String(v ?? "")
+      .trim()
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .toLowerCase();
+  const dimension = (v) => (v === null || v === undefined ? null : toFloatOrNull(typeof v === "number" ? v : String(v).replace(/\s/g, "")));
+  for (const feuille of workbook.worksheets) {
+    const col = {};
+    feuille.getRow(1).eachCell({ includeEmpty: false }, (cell, n) => {
+      const nom = normaliser(cellValue(cell));
+      if (!(nom in col)) col[nom] = n;
+    });
+    if (!col.commande || !col.ligne) continue;
+    const colLongueur = col.longueur || col.longeur;
+    const colColoris = col["code coloris"] || col.coloris;
+    const pieces = new Map();
+    for (let r = 2; r <= (feuille.rowCount || 0); r++) {
+      const ligne = feuille.getRow(r);
+      const valeur = (c) => (c ? cellValue(ligne.getCell(c)) : null);
+      const texte = (c) => {
+        const v = valeur(c);
+        return v === null || v === undefined ? "" : String(v).trim();
+      };
+      const commande = texte(col.commande);
+      const numero = valeur(col.ligne);
+      if (!commande || numero === null || numero === undefined || numero === "") continue;
+      const cle = cleLigne(commande, numero);
+      if (pieces.has(cle)) continue;
+      pieces.set(cle, {
+        cle,
+        commande,
+        ligne: fmtLigne(numero),
+        catalogue: texte(col.catalogue),
+        article: texte(col.article),
+        designation: texte(col.designation),
+        longueur: dimension(valeur(colLongueur)),
+        largeur: dimension(valeur(col.largeur)),
+        epaisseur: dimension(valeur(col.epaisseur)),
+        coloris: texte(colColoris),
+      });
+    }
+    return [...pieces.values()];
+  }
+  throw new Error("Aucune feuille du fichier Diakonos ne contient les colonnes « Commande » et « Ligne ».");
+}
+
+const dimensionsDiakonos = (m) => (m.longueur === null || m.largeur === null ? "" : `${fmtDim(m.longueur)} × ${fmtDim(m.largeur)}`);
 
 // Dans la WebView Android (APK), showDirectoryPicker n'existe pas : on
 // passe alors par le pont natif AndroidDossierPartage (voir MainActivity.java),
@@ -3229,6 +3333,8 @@ function nouvellePaire(poste, label, parite) {
 }
 
 const estChantier = (p) => p.poste === POSTE_CHANTIERS;
+// Case du fichier de contrôle Diakonos (son fichier est rangé à la place du lancement).
+const estDiakonos = (p) => POSTES_DIAKONOS.includes(p.poste);
 
 function titrePaire(p) {
   if (!estChantier(p)) return p.semaine ? `Semaine ${p.semaine}` : p.label;
@@ -3279,13 +3385,18 @@ function pairesDeLaSemaine(parite) {
   return [...POSTES_SEMAINE.map((poste) => paireFixe(poste, parite)), ...chantiers(parite)];
 }
 
+// Les deux cases Diakonos de l'onglet (1er tour, 2ème tour).
+const diakonosDeLaSemaine = (parite) => POSTES_DIAKONOS.map((poste) => paireFixe(poste, parite));
+
 // Vrai numéro de la semaine d'un onglet (celle des lancements chargés, sinon le calendrier).
-function libelleOnglet(parite) {
+function numeroSemaine(parite) {
   const semaines = pairesDeLaSemaine(parite)
     .filter((p) => p.strat)
     .map((p) => p.semaine);
-  return `Semaine ${semaineAffichee(semaines, parite)}`;
+  return semaineAffichee(semaines, parite);
 }
+
+const libelleOnglet = (parite) => `Semaine ${numeroSemaine(parite)}`;
 
 // ---- Mémorisation locale (IndexedDB) : fichiers et derniers résultats de
 // chaque case, retrouvés à la réouverture de la page. Purement un confort :
@@ -3419,7 +3530,7 @@ function restaurer(p, rec) {
 async function initialiserPaires() {
   const memoires = await lireToutesLesMemoires();
   const parCle = new Map(memoires.map((r) => [r.cleMemoire, r]));
-  for (const poste of POSTES_SEMAINE) {
+  for (const poste of [...POSTES_SEMAINE, ...POSTES_DIAKONOS]) {
     for (const parite of ["paire", "impaire"]) {
       const p = nouvellePaire(poste, parite === "paire" ? "Semaine paire" : "Semaine impaire", parite);
       const rec = parCle.get(cleMemoire(p));
@@ -3545,13 +3656,17 @@ const resumeEnCache = (strat, bkp) => resumes.get(cleResume(strat, bkp)) || null
 async function resume(strat, bkp) {
   const cle = cleResume(strat, bkp);
   if (resumes.has(cle)) return resumes.get(cle);
-  const r = { prevues: NaN, bkp: null, cles: new Set() };
+  // lancements : codes écrits dans le fichier (« LAN264601 »).
+  const r = { prevues: NaN, bkp: null, cles: new Set(), lancements: new Set() };
   let lignes = null;
   if (strat) {
     try {
       lignes = (await stratEnCache(strat)).lignes;
       r.prevues = lignes.reduce((t, l) => t + l.pieces, 0);
-      for (const l of lignes) r.cles.add(l.cle);
+      for (const l of lignes) {
+        r.cles.add(l.cle);
+        if (l.lancement && String(l.lancement).trim()) r.lancements.add(String(l.lancement).trim());
+      }
     } catch (_erreur) {
       lignes = null; // lancement illisible : l'erreur apparaîtra au contrôle
     }
@@ -3599,6 +3714,7 @@ function construireSemaine(parite) {
     <div class="carte compteur"><strong id="texteCompteur">…</strong></div>
     <button type="button" class="export-semaine" id="btnExporterSemaine">Exporter le rapport de la semaine (.xlsx)</button>
     <div class="carte"><div class="carte-titre">📋 Lancements</div><div id="zoneRecap"></div></div>
+    <div class="carte"><div class="carte-titre">🧾 Diakonos</div><div id="zoneDiakonos"></div></div>
     <div class="carte" id="carteDossier"></div>
     <div class="actions">
       <button type="button" id="btnLancerTout">Lancer le(s) contrôle(s)</button>
@@ -3611,6 +3727,7 @@ function construireSemaine(parite) {
   `;
   majCompteur();
   majRecap();
+  majDiakonos();
   remplirCarteDossier(parite);
   $("btnLancerTout").addEventListener("click", lancerTousLesControles);
   $("btnExporterSemaine").addEventListener("click", async (e) => {
@@ -3647,7 +3764,10 @@ function rafraichir(p) {
   const carte = document.querySelector(`.carte-paire[data-id="${p.id}"]`);
   if (carte) remplirCarte(carte, p);
   if (majOnglets()) afficher();
-  else majRecap();
+  else {
+    majRecap();
+    majDiakonos();
+  }
 }
 
 function remplirCarte(carte, p) {
@@ -3808,6 +3928,133 @@ function htmlCouleurs(c) {
   return html;
 }
 
+// ---- Diakonos : chaque pièce commandée doit être dans un lancement du même tour ----
+
+const cacheDiakonos = new WeakMap();
+function diakonosEnCache(fichier) {
+  if (!cacheDiakonos.has(fichier)) {
+    const lecture = classeurEnCache(fichier).then((wb) => lireDiakonos(wb));
+    lecture.catch(() => cacheDiakonos.delete(fichier));
+    cacheDiakonos.set(fichier, lecture);
+  }
+  return cacheDiakonos.get(fichier);
+}
+
+// Lancement de la semaine et du tour (un code sans tour, ex. LAN2646TRIGANO, vaut pour les deux tours).
+function duTourDiakonos(p, res, semaine, tour) {
+  const codes = [...res.lancements];
+  if (!codes.length) {
+    const code = trouverCodeLancement(p.strat.name);
+    if (code) codes.push(code);
+  }
+  return codes.some((code) => {
+    const st = semaineEtTourDuLancement(code);
+    return st !== null && st[0] === semaine && (st[1] === null || st[1] === tour);
+  });
+}
+
+async function calculerDiakonos(p, semaineOnglet, semaine, toutes) {
+  const r = { fichier: p.strat.name, semaine: p.semaine || semaineOnglet, tour: tourDiakonos(p), nbPieces: 0, lancements: [], manquantes: [], ailleurs: new Map(), erreur: null };
+  let pieces;
+  try {
+    pieces = await diakonosEnCache(p.strat);
+  } catch (erreur) {
+    r.erreur = erreur && erreur.message ? erreur.message : String(erreur);
+    return r;
+  }
+  r.nbPieces = pieces.length;
+  const lancees = new Set();
+  for (const l of semaine) {
+    if (!l.strat) continue;
+    const res = await resume(l.strat, l.bkp);
+    if (!duTourDiakonos(l, res, r.semaine, r.tour)) continue;
+    for (const cle of res.cles) lancees.add(cle);
+    r.lancements.push(l.strat.name);
+  }
+  r.manquantes = pieces.filter((m) => !lancees.has(m.cle));
+  // Pièce manquante retrouvée dans un autre lancement (autre tour, autre semaine).
+  for (const m of r.manquantes) {
+    for (const l of toutes) {
+      if (l.strat && (await resume(l.strat, l.bkp)).cles.has(m.cle)) {
+        r.ailleurs.set(m.cle, l.strat.name);
+        break;
+      }
+    }
+  }
+  return r;
+}
+
+async function resultatsDiakonos(parite) {
+  const autre = parite === "paire" ? "impaire" : "paire";
+  const semaine = pairesDeLaSemaine(parite);
+  const toutes = [...semaine, ...pairesDeLaSemaine(autre)];
+  const numero = String(numeroSemaine(parite)).padStart(2, "0");
+  const resultats = [];
+  for (const p of diakonosDeLaSemaine(parite)) if (p.strat) resultats.push(await calculerDiakonos(p, numero, semaine, toutes));
+  return resultats;
+}
+
+const derniersDiakonos = new Map(); // dernier résultat de chaque case, affiché pendant le nouveau calcul
+const zonesDiakonos = { generation: 0 };
+
+function majDiakonos() {
+  const zone = $("zoneDiakonos");
+  if (!zone || onglet === "recherche") return;
+  const parite = onglet;
+  remplirDiakonos(zone, parite);
+  if (!diakonosDeLaSemaine(parite).some((p) => p.strat)) return;
+  const numero = ++zonesDiakonos.generation;
+  (async () => {
+    const resultats = await resultatsDiakonos(parite);
+    for (const p of diakonosDeLaSemaine(parite)) {
+      const r = resultats.find((x) => p.strat && x.fichier === p.strat.name && x.tour === tourDiakonos(p));
+      if (r) derniersDiakonos.set(p.id, r);
+    }
+    const z = $("zoneDiakonos");
+    if (z && numero === zonesDiakonos.generation && parite === onglet) remplirDiakonos(z, parite);
+  })();
+}
+
+function remplirDiakonos(zone, parite) {
+  zone.innerHTML = diakonosDeLaSemaine(parite)
+    .map((p) => {
+      const r = p.strat ? derniersDiakonos.get(p.id) : null;
+      return `
+        <div class="ligne-fichier">
+          <div class="ligne-fichier-textes">
+            <div class="ligne-fichier-libelle">${echapper(p.poste)}</div>
+            <div class="ligne-fichier-nom ${p.strat ? "ok" : "vide"}" title="${p.strat ? echapper(p.strat.name) : ""}">${p.strat ? `✓ ${echapper(p.strat.name)}` : "Aucun fichier"}</div>
+          </div>
+          <button type="button" class="contour" data-diakonos="${p.id}">${p.strat ? "Changer" : "Choisir"}</button>
+        </div>
+        ${p.etat ? `<div class="etat ${p.etatErreur ? "erreur" : ""}">${echapper(p.etat)}</div>` : ""}
+        ${!p.strat ? "" : r && r.fichier === p.strat.name ? htmlDiakonos(r) : '<div class="note">…</div>'}`;
+    })
+    .join("");
+  zone.querySelectorAll("[data-diakonos]").forEach((b) =>
+    b.addEventListener("click", () => demanderFichier(paires.find((p) => String(p.id) === b.dataset.diakonos), "strat"))
+  );
+}
+
+const descriptionDiakonos = (m, separateur) =>
+  [m.cle, m.article, dimensionsDiakonos(m), m.coloris ? `coloris ${m.coloris}` : ""].filter(Boolean).join(separateur);
+
+function htmlDiakonos(r) {
+  const tour = libelleTourDiakonos(r.tour);
+  if (r.erreur) return bandeau(`❌ Diakonos illisible : ${echapper(r.erreur)}`, "alerte");
+  if (!r.lancements.length) return bandeau(`⚠ Aucun lancement du ${tour} (semaine ${echapper(r.semaine)}) chargé`, "attention");
+  let html = r.manquantes.length
+    ? bandeau(`⚠ ${r.manquantes.length} pièce(s) Diakonos absente(s) des lancements du ${tour}`, "alerte")
+    : bandeau(`✔ Les ${r.nbPieces} pièces Diakonos sont dans les lancements du ${tour}`, "ok");
+  for (const m of r.manquantes.slice(0, LIMITE_LIGNES)) {
+    const ailleurs = r.ailleurs.get(m.cle);
+    html += `<div class="ligne-diakonos">${echapper(descriptionDiakonos(m, " · "))}${ailleurs ? ` — lancée dans ${echapper(ailleurs)}` : ""}</div>`;
+  }
+  if (r.manquantes.length > LIMITE_LIGNES) html += `<div class="note">… et ${r.manquantes.length - LIMITE_LIGNES} autre(s) (voir le rapport exporté)</div>`;
+  html += `<div class="note">Comparé à : ${r.lancements.map(echapper).join(", ")}</div>`;
+  return html;
+}
+
 // ---- Rapport de toute la semaine (.xlsx) ----
 // Feuille 1 : le tableau des lancements et les alertes de la semaine.
 // Feuille 2 : toutes les anomalies, lancement par lancement (contrôle,
@@ -3818,6 +4065,7 @@ async function exporterSemaine(parite) {
   for (const p of [...pairesDeLaSemaine(parite), ...pairesDeLaSemaine(autre)]) if (p.strat) await resume(p.strat, p.bkp);
   const lignes = lignesRecap(pairesDeLaSemaine(parite));
   const autres = lignesRecap(pairesDeLaSemaine(autre));
+  const diakonos = await resultatsDiakonos(parite);
   const titre = libelleOnglet(parite);
   const gras = { bold: true };
   const fond = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
@@ -3868,6 +4116,21 @@ async function exporterSemaine(parite) {
     r.font = { bold: true, color: { argb: "FFC62828" } };
     for (const ligne of bloc.lignes) f1.addRow([ligne]);
   }
+  for (const d of diakonos) {
+    const tour = libelleTourDiakonos(d.tour);
+    f1.addRow([]);
+    const alerte = (texte) => (f1.addRow([texte]).font = { bold: true, color: { argb: "FFC62828" } });
+    if (d.erreur) alerte(`Diakonos ${tour} illisible : ${d.erreur}`);
+    else if (!d.lancements.length) alerte(`Diakonos ${tour} : aucun lancement du ${tour} chargé`);
+    else if (!d.manquantes.length) f1.addRow([`Diakonos ${tour} : les ${d.nbPieces} pièces sont dans les lancements`]).getCell(1).fill = fond(VERT);
+    else {
+      alerte(`Pièces Diakonos absentes des lancements du ${tour}`);
+      for (const m of d.manquantes) {
+        const ailleurs = d.ailleurs.get(m.cle);
+        f1.addRow([descriptionDiakonos(m, " — ") + (ailleurs ? ` — lancée dans ${ailleurs}` : "")]);
+      }
+    }
+  }
   [26, 30, 15, 13, 18, 14, 16].forEach((w, i) => (f1.getColumn(i + 1).width = w));
 
   const f2 = wb.addWorksheet("Anomalies");
@@ -3909,6 +4172,15 @@ async function exporterSemaine(parite) {
         if (s === principale) continue;
         ajouter([l.nom, l.lancement, "Livraison", (s.cles || []).join(", "), "", "", s.nbPieces, "", `à livrer semaine ${s.semaine} (lancement : semaine ${principale.semaine})`], JAUNE);
       }
+    }
+  }
+  for (const d of diakonos) {
+    const tour = libelleTourDiakonos(d.tour);
+    for (const m of d.manquantes) {
+      const ailleurs = d.ailleurs.get(m.cle);
+      const dims = dimensionsDiakonos(m);
+      const detail = ailleurs ? `lancée dans ${ailleurs}, pas dans le ${tour}` : `absente des lancements du ${tour}${dims ? ` (${dims})` : ""}`;
+      ajouter([`Diakonos ${tour}`, d.fichier, "Diakonos", m.cle, m.ligne, m.article, 1, 0, detail], ailleurs ? JAUNE : ROUGE);
     }
   }
   if (nb === 0) f2.addRow(["Aucune anomalie"]);
@@ -4167,15 +4439,17 @@ async function fichierChoisi() {
   fichierEnAttente = null;
   if (!fichier || !attente) return;
   const { p, role } = attente;
-  const motCle = role === "strat" ? "LAN" : role === "coupe" ? "coupe" : ".bkp";
-  const type = role === "strat" ? "lancement" : role === "coupe" ? "liste de coupe" : "sauvegarde d'optimisation";
+  const motCle = estDiakonos(p) ? "Diakonos" : role === "strat" ? "LAN" : role === "coupe" ? "coupe" : ".bkp";
+  const type = estDiakonos(p) ? "Diakonos" : role === "strat" ? "lancement" : role === "coupe" ? "liste de coupe" : "sauvegarde d'optimisation";
   if (!fichier.name.toLowerCase().includes(motCle.toLowerCase())) {
     alert(`« ${fichier.name} » ne ressemble pas à un fichier ${type} (le nom devrait contenir « ${motCle} »).\nSélection annulée.`);
     return;
   }
   p[role] = fichier;
   let deplace = false;
-  if (role === "strat") {
+  if (estDiakonos(p)) {
+    p.semaine = decoderNomDiakonos(fichier.name).semaine;
+  } else if (role === "strat") {
     p.semaine = await detecterSemaine(p);
     deplace = ranger(p);
   }
@@ -4352,7 +4626,7 @@ async function reinitialiserSemaine() {
     "Oui"
   );
   if (!ok) return;
-  for (const p of pairesDeLaSemaine(parite)) await reinitialiser(p);
+  for (const p of [...pairesDeLaSemaine(parite), ...diakonosDeLaSemaine(parite)]) await reinitialiser(p);
   afficher();
 }
 
@@ -4468,7 +4742,7 @@ async function scannerDossier(parite) {
 }
 
 async function placerFichiersScannes(parite, r) {
-  if (r.aucunLancement) {
+  if (r.aucunLancement && !r.diakonos.length) {
     scansEnCours.delete(parite);
     compteRendu(parite, ["Aucun lancement dans ce dossier."], true);
     return;
@@ -4525,6 +4799,18 @@ async function placerFichiersScannes(parite, r) {
       lignes.push(`❌ ${a.libelle} : ${erreur && erreur.message ? erreur.message : erreur}`);
     }
   }
+  for (const d of r.diakonos) {
+    const p = paireFixe(POSTES_DIAKONOS[d.tour === "2" ? 1 : 0], parite);
+    try {
+      p.strat = await d.fichier.entree.getFile();
+      p.semaine = d.semaine;
+      await memoriserFichier(p, "strat", p.strat);
+      lignes.push(`✔ ${p.poste} : ${d.fichier.nom}`);
+    } catch (erreur) {
+      lignes.push(`❌ ${p.poste} : ${erreur && erreur.message ? erreur.message : erreur}`);
+    }
+    enregistrer(p);
+  }
   for (const a of affectations) {
     a.paire.etat = null;
     a.paire.etatErreur = false;
@@ -4579,7 +4865,7 @@ function demanderConfirmation(titre, message, libelleOk = "OK") {
 let generationRecherche = 0;
 
 function sourcesRecherche() {
-  return paires.map((p) => ({ nom: nomComplet(p), paire: p, strat: p.strat, coupe: p.coupe, bkp: p.bkp }));
+  return paires.filter((p) => !estDiakonos(p)).map((p) => ({ nom: nomComplet(p), paire: p, strat: p.strat, coupe: p.coupe, bkp: p.bkp }));
 }
 
 async function preparerRecherche(requete, sources) {
