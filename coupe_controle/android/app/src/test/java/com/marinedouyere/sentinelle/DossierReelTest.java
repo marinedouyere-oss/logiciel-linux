@@ -169,6 +169,15 @@ public class DossierReelTest {
         assertTrue(e, e.contains("CVC26100163003"));
         assertTrue(e, e.contains("B125-FA (dessus)"));
         assertTrue(e, e.contains("✔ Tout est correct — 101 pièces"));
+        // Un seul export, pour toute la semaine, en haut de l'onglet.
+        assertTrue(e, e.contains("Exporter le rapport de la semaine (.xlsx)"));
+        assertTrue(e, !e.contains("Exporter le rapport (.xlsx)"));
+        // LAN2644TRIGANO est un lancement de la semaine 45 (LAN264503) : rangé dans l'onglet impair.
+        Paire trigano = null;
+        for (Paire c : app.depot().paires) if (c.estChantier() && c.strat != null && c.strat.nom.equals("LAN2644TRIGANO.xlsx")) trigano = c;
+        assertNotNull(trigano);
+        assertEquals(Depot.IMPAIRE, trigano.parite);
+        assertTrue(e, e.contains("LAN2644TRIGANO.xlsx → semaine 45"));
         String captures = System.getProperty("sentinelle.captures", "");
         if (!captures.isEmpty()) {
             new File(captures).mkdirs();
@@ -195,6 +204,21 @@ public class DossierReelTest {
         assertTrue(e, e.contains("⚠ Pièces d'une autre semaine de livraison"));
         assertTrue(e, e.contains("à livrer semaine 44"));
         if (!captures.isEmpty()) capturer(a, new File(captures, "s45.png"), 12000);
+
+        // Rapport Excel de toute la semaine 45.
+        File xlsx = new File(a.getCacheDir(), "rapport_semaine.xlsx");
+        a.exporterSemaineVers(Depot.IMPAIRE, android.net.Uri.fromFile(xlsx));
+        long finExport = System.currentTimeMillis() + 60_000;
+        while (!(xlsx.exists() && xlsx.length() > 0) && System.currentTimeMillis() < finExport) {
+            ShadowLooper.idleMainLooper();
+            Thread.sleep(50);
+        }
+        Thread.sleep(200);
+        com.marinedouyere.sentinelle.moteur.Classeur relu = com.marinedouyere.sentinelle.moteur.Classeur.lire(Controles.lireOctets(xlsx));
+        assertEquals("Semaine 45", relu.feuilles.get(0).nom);
+        assertEquals("Anomalies", relu.feuilles.get(1).nom);
+        if (!captures.isEmpty()) java.nio.file.Files.copy(xlsx.toPath(), new File(captures, "rapport_semaine_45.xlsx").toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
         assertNotNull(a);
     }
 }

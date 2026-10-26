@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V3.4 — Contrôle de coupe</title>
+<title>Sentinelle V3.5 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -204,7 +204,7 @@
 
   <header class="barre">
     <h1>Sentinelle</h1>
-    <div class="sous-titre">Contrôle de coupe · V3.4</div>
+    <div class="sous-titre">Contrôle de coupe · V3.5</div>
   </header>
   <nav class="onglets">
     <button type="button" class="onglet-btn actif" data-onglet="paire">Semaine</button>
@@ -3235,6 +3235,22 @@ function titrePaire(p) {
   return p.semaine ? `${p.label} (sem ${p.semaine})` : p.label;
 }
 
+// Parité d'un numéro de semaine (« 45 » → impaire), null s'il n'y en a pas.
+function pariteDuNumero(semaine) {
+  const n = parseInt(semaine, 10);
+  return Number.isNaN(n) ? null : n % 2 === 0 ? "paire" : "impaire";
+}
+
+// Un chantier va dans l'onglet de sa vraie semaine (celle du lancement écrite
+// dans le fichier), même si le nom du fichier en dit une autre ; vrai s'il a
+// changé d'onglet.
+function ranger(p) {
+  const parite = pariteDuNumero(p.semaine);
+  if (!estChantier(p) || !parite || parite === p.parite) return false;
+  p.parite = parite;
+  return true;
+}
+
 const nomComplet = (p) => `${p.poste} — ${titrePaire(p)}`;
 // Titre d'une case : le poste (la semaine est déjà sur l'onglet), ou le chantier.
 const titreCase = (p) => (estChantier(p) ? titrePaire(p) : p.poste);
@@ -3419,6 +3435,7 @@ async function initialiserPaires() {
     const label = rec.cleMemoire.slice(prefixe.length);
     const p = nouvellePaire(POSTE_CHANTIERS, label, rec.semaineParite || "paire");
     restaurer(p, rec);
+    if (ranger(p)) sauvegarderDansMemoire(p, { semaineParite: p.parite });
     prochainNumeroChantier = Math.max(prochainNumeroChantier, numero(label) + 1);
   }
   if (!paires.some(estChantier)) ajouterChantier("paire");
@@ -4157,12 +4174,17 @@ async function fichierChoisi() {
     return;
   }
   p[role] = fichier;
-  if (role === "strat") p.semaine = await detecterSemaine(p);
+  let deplace = false;
+  if (role === "strat") {
+    p.semaine = await detecterSemaine(p);
+    deplace = ranger(p);
+  }
   await memoriserFichier(p, role, fichier);
   enregistrer(p);
   if (role === "strat" && estChantier(p)) afficher();
   else rafraichir(p);
   if (role === "bkp") majCompteur();
+  if (deplace) alert(`${p.label} : lancement de la semaine ${p.semaine}, rangé dans l'onglet ${libelleOnglet(p.parite)}.`);
 }
 
 // ---- Contrôles ----
@@ -4482,6 +4504,7 @@ async function placerFichiersScannes(parite, r) {
     try {
       p.strat = await g.strat.entree.getFile();
       p.semaine = await detecterSemaine(p);
+      const deplace = ranger(p);
       await memoriserFichier(p, "strat", p.strat);
       let suffixe = "";
       if (g.coupe) {
@@ -4496,7 +4519,7 @@ async function placerFichiersScannes(parite, r) {
       }
       enregistrer(p);
       a.copie = true;
-      lignes.push(`✔ ${a.libelle} : ${g.strat.nom}${suffixe}`);
+      lignes.push(`✔ ${a.libelle} : ${g.strat.nom}${suffixe}${deplace ? ` → semaine ${p.semaine}` : ""}`);
     } catch (erreur) {
       enregistrer(p);
       lignes.push(`❌ ${a.libelle} : ${erreur && erreur.message ? erreur.message : erreur}`);

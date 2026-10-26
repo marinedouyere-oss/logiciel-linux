@@ -334,16 +334,14 @@ public class AppliNativeTest {
         attendre("contrôles du second scan", () -> !agglo.enCours && !texteEcran(a).contains("⏳"));
         assertEquals(nbChantiers, app.depot().chantiers(Depot.IMPAIRE).size());
 
-        // Export du rapport en Excel.
+        // Rapport Excel de toute la semaine.
         File xlsx = new File(ApplicationProvider.getApplicationContext().getCacheDir(), "rapport.xlsx");
-        a.exporterVers(agglo, Uri.fromFile(xlsx));
+        a.exporterSemaineVers(Depot.IMPAIRE, Uri.fromFile(xlsx));
         attendre("export", () -> xlsx.exists() && xlsx.length() > 0);
         Thread.sleep(200);
         Classeur relu = Classeur.lire(Controles.lireOctets(xlsx));
-        Feuille f = relu.feuilles.get(0);
-        assertEquals("Contrôle coupe", f.nom);
-        assertEquals("Total attendu", f.valeur(1, 1));
-        assertEquals(agglo.rapport.lignes.size() + 3, f.nbLignes());
+        assertEquals(a.libelleOnglet(Depot.IMPAIRE), relu.feuilles.get(0).nom);
+        assertEquals("Anomalies", relu.feuilles.get(1).nom);
     }
 
     @Test

@@ -39,6 +39,16 @@ public final class Depot {
         charger();
     }
 
+    /** Parité d'un numéro de semaine (« 45 » → impaire), null s'il n'y en a pas. */
+    public static String pariteDuNumero(String semaine) {
+        if (semaine == null) return null;
+        try {
+            return Integer.parseInt(semaine.trim()) % 2 == 0 ? PAIRE : IMPAIRE;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     public static String libelleSemaine(String parite) {
         return PAIRE.equals(parite) ? "Semaine paire" : "Semaine impaire";
     }
@@ -69,6 +79,12 @@ public final class Depot {
             // Étanchéité stricte entre les deux semaines, chantiers compris.
             if (p.parite == null) {
                 p.parite = PAIRE;
+                enregistrer(p);
+            }
+            // Un chantier est dans l'onglet de la semaine de son lancement.
+            String vraie = pariteDuNumero(p.semaine);
+            if (vraie != null && !vraie.equals(p.parite)) {
+                p.parite = vraie;
                 enregistrer(p);
             }
             chantiers.add(p);

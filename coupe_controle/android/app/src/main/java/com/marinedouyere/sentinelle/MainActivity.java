@@ -197,6 +197,18 @@ public class MainActivity extends AppCompatActivity {
         return ongletAfficheChange;
     }
 
+    /**
+     * Un chantier va dans l'onglet de sa vraie semaine (celle du lancement
+     * écrite dans le fichier), même si le nom du fichier en dit une autre ;
+     * vrai s'il a changé d'onglet.
+     */
+    private static boolean ranger(Paire p) {
+        String parite = Depot.pariteDuNumero(p.semaine);
+        if (!p.estChantier() || parite == null || parite.equals(p.parite)) return false;
+        p.parite = parite;
+        return true;
+    }
+
     /** Titre d'une case : le poste (la semaine est déjà sur l'onglet), ou le chantier. */
     private static String titreCase(Paire p) {
         return p.estChantier() ? p.titre() : p.poste;
@@ -232,6 +244,10 @@ public class MainActivity extends AppCompatActivity {
         carteCompteur.addView(texteCompteur);
         contenu.addView(carteCompteur);
         majCompteur();
+
+        MaterialButton exporter = ui.bouton("Exporter le rapport de la semaine (.xlsx)");
+        exporter.setOnClickListener(v -> exporterSemaine(parite));
+        contenu.addView(exporter, ui.marges(0, 6));
 
         MaterialCardView carteRecap = ui.carte();
         LinearLayout corpsRecap = ui.colonne();
@@ -446,9 +462,6 @@ public class MainActivity extends AppCompatActivity {
             });
             corps.addView(plus);
         }
-        MaterialButton exporter = ui.boutonContour("Exporter le rapport (.xlsx)");
-        exporter.setOnClickListener(v -> exporterRapport(p));
-        corps.addView(exporter, ui.marges(6, 0));
     }
 
     private static String pourcent(double v) {
@@ -645,21 +658,27 @@ public class MainActivity extends AppCompatActivity {
         rafraichir(p);
         app.annexe.execute(() -> {
             String erreur = null;
+            boolean deplace = false;
             try (InputStream entree = getContentResolver().openInputStream(uri)) {
                 if (entree == null) throw new java.io.IOException("fichier inaccessible");
                 depot.copierFichier(p, role, nom, entree);
-                if (Paire.STRAT.equals(role)) p.semaine = controles.detecterSemaine(p);
+                if (Paire.STRAT.equals(role)) {
+                    p.semaine = controles.detecterSemaine(p);
+                    deplace = ranger(p);
+                }
                 depot.enregistrer(p);
             } catch (Exception e) {
                 erreur = e.getMessage();
             }
             final String err = erreur;
+            final boolean dansAutreOnglet = deplace;
             principal.post(() -> {
                 p.etat = err != null ? "Impossible de lire « " + nom + " » : " + err : null;
                 p.etatErreur = err != null;
                 if (Paire.STRAT.equals(role) && p.estChantier()) afficher();
                 else rafraichir(p);
                 if (Paire.BKP.equals(role)) majCompteur();
+                if (dansAutreOnglet) alerte(p.label + " : lancement de la semaine " + p.semaine + ", rangé dans l'onglet " + libelleOnglet(p.parite) + ".");
             });
         });
     }
@@ -998,6 +1017,7 @@ public class MainActivity extends AppCompatActivity {
                 try {
                     copierDepuisDossier(p, Paire.STRAT, g.strat);
                     p.semaine = controles.detecterSemaine(p);
+                    boolean deplace = ranger(p);
                     String suffixe = "";
                     if (g.coupe != null) {
                         copierDepuisDossier(p, Paire.COUPE, g.coupe);
@@ -1009,7 +1029,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                     depot.enregistrer(p);
                     a.copie = true;
-                    lignes.add("✔ " + a.libelle + " : " + g.strat.nom + suffixe);
+                    lignes.add("✔ " + a.libelle + " : " + g.strat.nom + suffixe + (deplace ? " → semaine " + p.semaine : ""));
                 } catch (Exception e) {
                     depot.enregistrer(p);
                     lignes.add("❌ " + a.libelle + " : " + (e.getMessage() != null ? e.getMessage() : e));
@@ -1070,11 +1090,11 @@ public class MainActivity extends AppCompatActivity {
 
     // ---- export du rapport ----
 
-    void exporterRapport(Paire p) {
-        if (p.rapport == null) return;
-        cleExport = p.cle();
+    /** Rapport Excel de toute la semaine (tableau des lancements, alertes, anomalies de chaque lancement). */
+    void exporterSemaine(String parite) {
+        cleExport = parite;
         try {
-            creationRapport.launch(ExportRapport.nomFichier(p.nomComplet()));
+            creationRapport.launch(RapportSemaine.nomFichier(libelleOnglet(parite)));
         } catch (Exception e) {
             cleExport = null;
             alerte("Impossible d'enregistrer le rapport :\n" + e.getMessage());
@@ -1082,21 +1102,30 @@ public class MainActivity extends AppCompatActivity {
     }
 
     void emplacementRapportChoisi(Uri uri) {
-        Paire p = cleExport == null ? null : paireParCle(cleExport);
+        String parite = cleExport;
         cleExport = null;
-        if (uri == null || p == null || p.rapport == null) return;
-        exporterVers(p, uri);
+        if (uri == null || parite == null) return;
+        exporterSemaineVers(parite, uri);
     }
 
-    void exporterVers(Paire p, Uri uri) {
-        final Comparateur.Rapport rapport = p.rapport;
+    void exporterSemaineVers(String parite, Uri uri) {
+        final String autre = Depot.PAIRE.equals(parite) ? Depot.IMPAIRE : Depot.PAIRE;
+        final String libelle = libelleOnglet(parite);
+        final String libelleAutre = libelleOnglet(autre);
+        final List<Paire> semaine = depot.pairesDeLaSemaine(parite);
+        final List<Paire> autreSemaine = depot.pairesDeLaSemaine(autre);
         app.annexe.execute(() -> {
             String erreur = null;
-            try (OutputStream sortie = "file".equals(uri.getScheme())
-                    ? new FileOutputStream(new File(uri.getPath()))
-                    : getContentResolver().openOutputStream(uri, "wt")) {
-                if (sortie == null) throw new IOException("emplacement inaccessible");
-                sortie.write(ExportRapport.xlsx(rapport));
+            try {
+                for (Paire p : semaine) if (p.strat != null) controles.resume(p.strat, p.bkp);
+                for (Paire p : autreSemaine) if (p.strat != null) controles.resume(p.strat, p.bkp);
+                byte[] octets = RapportSemaine.xlsx(libelle, RecapLancements.lignes(semaine, controles), RecapLancements.lignes(autreSemaine, controles), libelleAutre);
+                try (OutputStream sortie = "file".equals(uri.getScheme())
+                        ? new FileOutputStream(new File(uri.getPath()))
+                        : getContentResolver().openOutputStream(uri, "wt")) {
+                    if (sortie == null) throw new IOException("emplacement inaccessible");
+                    sortie.write(octets);
+                }
             } catch (Exception e) {
                 erreur = e.getMessage() != null ? e.getMessage() : e.toString();
             }
