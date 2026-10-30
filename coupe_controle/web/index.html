@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V4.7 — Contrôle de coupe</title>
+<title>Sentinelle V4.8 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -114,7 +114,6 @@
   .zone-diakonos .ligne-fichier { border-bottom-color: var(--gris-filet); }
   .etat { color: var(--gris-texte); margin-top: 6px; font-size: 0.92rem; }
   .etat.erreur { color: var(--alerte-texte); font-weight: 700; }
-  .ligne-diakonos { font-size: 0.86rem; color: var(--noir); padding-top: 4px; }
   .separateur { height: 1px; background: var(--gris-filet); margin: 12px 0; }
   /* Encadrés d'état : fond clair et barre à gauche. */
   .bandeau { border-radius: 0; border-left: 3px solid currentColor; padding: 9px 12px; font-weight: 700; font-size: 0.92rem; margin-top: 8px; line-height: 1.45; }
@@ -123,13 +122,6 @@
   .bandeau.alerte { background: var(--alerte-fond); color: var(--alerte-texte); }
   .bandeau.attention { background: var(--attention-fond); color: var(--attention-texte); }
   .note { color: var(--gris-texte); font-size: 0.85rem; margin-top: 4px; }
-  .ligne-detail { color: var(--noir); font-size: 0.86rem; padding-top: 4px; }
-  .anomalie { border-left: 3px solid; padding: 6px 10px; margin-top: 5px; font-size: 0.86rem; color: var(--noir); }
-  .anomalie.manquant { background: var(--alerte-fond); border-color: var(--alerte-texte); }
-  .anomalie.ecart { background: var(--attention-fond); border-color: var(--attention-texte); }
-  .anomalie-haut { display: flex; justify-content: space-between; gap: 8px; color: var(--noir); }
-  .anomalie.manquant .anomalie-haut span { color: var(--alerte-texte); font-weight: 700; }
-  .anomalie.ecart .anomalie-haut span { color: var(--attention-texte); font-weight: 700; }
   button.export-semaine { width: 100%; margin: 0 0 14px; padding: 12px 18px; font-size: 0.95rem; }
   .compte-rendu { margin-top: 8px; font-size: 0.86rem; color: var(--noir); line-height: 1.5; }
   .compte-rendu.erreur { color: var(--alerte-texte); }
@@ -157,8 +149,6 @@
   .titre-alerte { font-weight: 700; font-size: 0.92rem; }
   .titre-alerte.alerte { color: var(--alerte-texte); }
   .titre-alerte.attention { color: var(--attention-texte); }
-  .ligne-alerte { color: var(--noir); font-size: 0.86rem; padding-top: 3px; cursor: pointer; }
-  .ligne-alerte:hover { text-decoration: underline; color: var(--bordeaux); }
   .pied {
     max-width: 980px; margin: 0 auto; padding: 14px 14px 26px; display: flex; justify-content: space-between; gap: 10px;
     color: var(--gris); font-size: 0.75rem; border-top: 1px solid var(--gris-filet);
@@ -265,7 +255,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V4.7</div>
+        <div class="sous-titre">Contrôle de coupe · V4.8</div>
       </div>
     </div>
   </header>
@@ -298,7 +288,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V4.7 · Contrôle de coupe</span>
+    <span>Sentinelle V4.8 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -4279,7 +4269,6 @@ async function lignesDeLaCommande(commande, sources) {
 // ============================================================
 
 const $ = (id) => document.getElementById(id);
-const LIMITE_LIGNES = 60;
 const PAR_PAGE = 60;
 const ROLES = { strat: "Lancement", coupe: "Liste de coupe", bkp: "Fichier .bkp", sommaire: "Sommaire Cut Rite (.pdf)" };
 
@@ -4349,7 +4338,6 @@ function nouvellePaire(poste, label, parite) {
     etat: null,
     etatErreur: false,
     enCours: false,
-    listeDepliee: false,
   };
   paires.push(p);
   return p;
@@ -4605,7 +4593,6 @@ function viderPaire(p) {
   p.couleurs = null;
   p.etat = null;
   p.etatErreur = false;
-  p.listeDepliee = false;
 }
 
 async function reinitialiser(p) {
@@ -4844,8 +4831,8 @@ function remplirCarte(carte, p) {
     <div class="zone-casse"></div>
   `;
   carte.querySelectorAll('[data-action="choisir"]').forEach((b) => b.addEventListener("click", () => demanderFichier(p, b.dataset.role)));
-  carte.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(p, null));
-  carte.querySelector('[data-action="scies"]').addEventListener("click", () => lancerControleScies(p, null));
+  carte.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(p, null).then(() => problemesAutomatiques(p)));
+  carte.querySelector('[data-action="scies"]').addEventListener("click", () => lancerControleScies(p, () => problemesAutomatiques(p)));
   const problemes = carte.querySelector('[data-action="problemes-lancement"]');
   if (problemes)
     problemes.addEventListener("click", async () => {
@@ -4993,7 +4980,6 @@ function remplirCasse(zone, p) {
   else if (!r.dejaLancees.length) html += bandeau(`Casse : aucune pièce n'était lancée en semaine ${echapper(r.semaineAvant)}`, "ok");
   else {
     html += bandeau(`🔁 ${r.dejaLancees.length} pièce(s) de la casse déjà lancée(s) en semaine ${echapper(r.semaineAvant)}`, "attention");
-    for (const t of r.dejaLancees) html += `<div class="ligne-diakonos">${echapper(descriptionCasse(t.ligne, " · "))} — ${echapper(t.lancement)}</div>`;
     if (r.nbAutres) html += `<div class="note">${r.nbAutres} autre(s) pièce(s) pas lancée(s) en semaine ${echapper(r.semaineAvant)}</div>`;
   }
   zone.innerHTML = html;
@@ -5006,12 +4992,8 @@ function afficherRapport(zone, p) {
   // En pièces finies : une pièce assemblée (Feno : compact + support) compte une fois.
   const enPieces = r.piecesAttendues > 0 || r.piecesTrouvees > 0;
   const attendu = Math.trunc(enPieces ? r.piecesAttendues : r.totalAttendu);
-  const trouve = fmtNombre(enPieces ? r.piecesTrouvees : r.totalTrouve);
   let html = '<div class="separateur"></div>';
-  html +=
-    r.nbAnomalies === 0
-      ? bandeau(`✔ Tout est correct — ${attendu} pièces`, "ok")
-      : bandeau(`⚠ ${r.nbAnomalies} pièce(s) à vérifier — ${attendu} pièces dans le lancement, ${trouve} dans ${sourceControle(p)}`, "alerte");
+  html += r.nbAnomalies === 0 ? bandeau(`✔ Tout est correct — ${attendu} pièces`, "ok") : bandeau(`⚠ ${r.nbAnomalies} pièce(s) à vérifier dans ${sourceControle(p)}`, "alerte");
   const details = [];
   if (p.source === "bkp") details.push("Pas de liste de coupe : lancement comparé au .bkp");
   if (p.nbUnitaires !== null && p.nbPiecesTrouvees) {
@@ -5021,28 +5003,10 @@ function afficherRapport(zone, p) {
   if (details.length) html += `<div class="note">${details.join(" · ")}</div>`;
   html += htmlSemainesLivraison(p);
   if (p.doublons.length) {
-    const items = p.doublons
-      .map(
-        (d) =>
-          `<br>• Commande ${echapper(d.commande)}, ligne ${echapper(d.ligne)} (clé ${echapper(d.cle)}) : ${d.nbLignes} lignes — articles ${d.articles
-            .map(echapper)
-            .join(" / ")}, quantités ${d.quantites.map(fmtNombre).join(" + ")}.`
-      )
-      .join("");
-    html += `<div class="bandeau attention normal">⚠ ${p.doublons.length} doublon(s) dans le lancement${items}</div>`;
+    html += bandeau(`⚠ ${p.doublons.length} doublon(s) dans le lancement`, "attention");
     if (p.strat) html += '<button type="button" class="contour pleine" data-action="sans-doublons">✂ Créer le lancement sans doublons (.xlsx)</button>';
   }
-  const anomalies = r.lignes.filter((l) => l.statut !== "OK");
-  const tout = p.listeDepliee || anomalies.length <= LIMITE_LIGNES;
-  for (const l of tout ? anomalies : anomalies.slice(0, LIMITE_LIGNES)) html += htmlAnomalie(l, p);
-  if (!tout) html += `<button type="button" class="texte" data-action="deplier">Afficher les ${anomalies.length} anomalies</button>`;
   zone.innerHTML = html;
-  const deplier = zone.querySelector('[data-action="deplier"]');
-  if (deplier)
-    deplier.addEventListener("click", () => {
-      p.listeDepliee = true;
-      rafraichir(p);
-    });
   const sansDoublons = zone.querySelector('[data-action="sans-doublons"]');
   if (sansDoublons)
     sansDoublons.addEventListener("click", async () => {
@@ -5081,31 +5045,6 @@ async function creerSansDoublons(p) {
 // Ce à quoi le lancement a été comparé : la liste de coupe, sinon le .bkp.
 const sourceControle = (p) => (p.source === "bkp" ? "le .bkp" : "la liste de coupe");
 
-// Une pièce à vérifier, en une phrase : où elle est prévue, où elle est trouvée, ce qui manque.
-function htmlAnomalie(l, p) {
-  const manquant = l.statut === "Manquant";
-  const source = sourceControle(p);
-  // Pièce assemblée (compact + support…) : les quantités comptent les couches.
-  const couches = (l.couches || 1) > 1;
-  const unite = (n) => (couches ? `${fmtNombre(n)} couche(s)` : `${fmtNombre(n)} pièce(s)`);
-  const titre =
-    l.statut === "Manquant" ? `Absente de ${source}` : l.statut === "En trop" ? "Pas dans le lancement" : l.statut === "Écart de quantité" ? "Quantité différente" : l.statut;
-  let detail;
-  if (l.statut === "Manquant") detail = `${unite(l.qte_attendue)} prévue(s) dans le lancement, aucune dans ${source}.`;
-  else if (l.statut === "En trop") detail = `${unite(l.qte_trouvee)} dans ${source}, mais rien dans le lancement.`;
-  else {
-    const ecart = Math.abs(l.qte_trouvee - l.qte_attendue);
-    detail = `${unite(l.qte_attendue)} prévue(s) dans le lancement, ${fmtNombre(l.qte_trouvee)} dans ${source} : ${fmtNombre(ecart)} ${l.qte_trouvee < l.qte_attendue ? "en moins" : "en trop"}.`;
-  }
-  if (couches) detail = `Pièce en ${l.couches} couches : ${detail}`;
-  const article = l.article ? `Article ${echapper(l.article)} — ` : "";
-  return `
-    <div class="anomalie ${manquant ? "manquant" : "ecart"}">
-      <div class="anomalie-haut"><strong>${echapper(l.commande)}${l.ligne ? ` · ligne ${echapper(l.ligne)}` : ""}</strong><span>${echapper(titre)}</span></div>
-      <div>${article}${echapper(detail)}</div>
-    </div>`;
-}
-
 // Pièces d'un lancement à livrer une autre semaine que les autres (en retard, le plus souvent).
 function semainePrincipale(p) {
   return p.semainesLivraison.reduce((a, s) => (s.nbPieces > a.nbPieces ? s : a), p.semainesLivraison[0]);
@@ -5114,13 +5053,8 @@ function semainePrincipale(p) {
 function htmlSemainesLivraison(p) {
   if (p.semainesLivraison.length <= 1 || p.poste === "Casse") return "";
   const principale = semainePrincipale(p);
-  let texte = `⚠ Pièces à livrer une autre semaine — ce lancement est pour la semaine ${echapper(principale.semaine)}`;
-  for (const s of p.semainesLivraison) {
-    if (s === principale) continue;
-    const cles = s.cles || [];
-    texte += `<br>• ${s.nbPieces} pièce(s) à livrer en semaine ${echapper(s.semaine)} : ${echapper(cles.length <= 6 ? cles.join(", ") : `${cles.slice(0, 6).join(", ")}…`)}`;
-  }
-  return `<div class="bandeau attention normal">${texte}</div>`;
+  const n = p.semainesLivraison.filter((s) => s !== principale).reduce((t, s) => t + s.nbPieces, 0);
+  return bandeau(`⚠ ${n} pièce(s) à livrer une autre semaine que la semaine ${echapper(principale.semaine)}`, "attention");
 }
 
 function afficherScies(zone, p) {
@@ -5134,15 +5068,6 @@ function afficherScies(zone, p) {
     html += bandeau(`✔ Scies : tout correspond — ${panneaux}`, "ok");
   } else {
     html += bandeau(`⚠ Scies : ${p.ecartsScies.length} pièce(s) différente(s) entre le lancement et le .bkp (${panneaux} vérifiés)`, "alerte");
-    for (const e of p.ecartsScies) {
-      const texte =
-        e.attendu === 0
-          ? `${fmtNombre(e.trouve)} dans le .bkp, mais rien dans le lancement (en trop)`
-          : e.trouve === 0
-            ? `${fmtNombre(e.attendu)} prévue(s) dans le lancement, absente du .bkp (pas optimisée)`
-            : `${fmtNombre(e.attendu)} prévue(s) dans le lancement, ${fmtNombre(e.trouve)} dans le .bkp`;
-      html += `<div class="ligne-detail"><strong>${echapper(e.cle)}</strong> : ${texte}</div>`;
-    }
   }
   html += htmlCouleurs(p.couleurs);
   zone.innerHTML = html;
@@ -5153,13 +5078,7 @@ function htmlCouleurs(c) {
   if (!c) return "";
   if (c.sansStratifie) return '<div class="note">Couleurs : pas de stratifié dans ce .bkp</div>';
   if (c.absentes.length === 0) return bandeau(`✔ Couleurs : les ${c.nbCouleurs} couleurs sont dans le .bkp`, "ok");
-  let html = bandeau(`⚠ Couleurs : ${c.absentes.length} couleur(s) du lancement absente(s) du .bkp — ces panneaux ne sont pas optimisés`, "alerte");
-  for (const a of c.absentes) {
-    const n = a.cles.length;
-    const pieces = n <= 4 ? a.cles.join(", ") : `${a.cles.slice(0, 4).join(", ")}… (${n})`;
-    html += `<div class="ligne-detail">Couleur <strong>${echapper(a.couleur)}</strong> (face ${echapper(a.face)}) : ${fmtNombre(a.nbPieces)} pièce(s) — ${echapper(pieces)}</div>`;
-  }
-  return html;
+  return bandeau(`⚠ Couleurs : ${c.absentes.length} couleur(s) du lancement absente(s) du .bkp — ces panneaux ne sont pas optimisés`, "alerte");
 }
 
 // ---- Diakonos : chaque pièce commandée doit être dans un lancement du même tour ----
@@ -5388,9 +5307,6 @@ function remplirZoneDiakonos(zone, p) {
   zone.querySelector("[data-choisir-diakonos]").addEventListener("click", () => demanderFichier(p, "strat"));
 }
 
-const descriptionDiakonos = (m, separateur) =>
-  [m.cle, m.article, dimensionsDiakonos(m), m.coloris ? `coloris ${m.coloris}` : ""].filter(Boolean).join(separateur);
-
 function htmlDiakonos(r) {
   const portee = porteeDiakonos(r);
   if (r.erreur) return bandeau(`❌ Diakonos illisible : ${echapper(r.erreur)}`, "alerte");
@@ -5398,11 +5314,6 @@ function htmlDiakonos(r) {
   let html = r.manquantes.length
     ? bandeau(`⚠ ${r.manquantes.length} pièce(s) Diakonos absente(s) ${echapper(portee.de)}`, "alerte")
     : bandeau(`✔ Les ${r.nbPieces} pièces Diakonos sont ${echapper(portee.dans)}`, "ok");
-  for (const m of r.manquantes.slice(0, LIMITE_LIGNES)) {
-    const ailleurs = r.ailleurs.get(m.cle);
-    html += `<div class="ligne-diakonos">${echapper(descriptionDiakonos(m, " · "))}${ailleurs ? ` — lancée dans ${echapper(ailleurs)}` : ""}</div>`;
-  }
-  if (r.manquantes.length > LIMITE_LIGNES) html += `<div class="note">… et ${r.manquantes.length - LIMITE_LIGNES} autre(s) (voir le rapport exporté)</div>`;
   html += `<div class="note">Comparé à : ${r.lancements.map(echapper).join(", ")}</div>`;
   return html;
 }
@@ -5772,7 +5683,6 @@ function ligneTotalRecap(libelle, t) {
 }
 
 const nomLancementRecap = (l) => `${l.nom} (${l.lancement})`;
-const listeClesRecap = (cles) => (cles.length <= 3 ? cles.join(", ") : `${cles.length} pièces (${cles.slice(0, 3).join(", ")}…)`);
 
 function htmlRecap(lignes, autres, libelleAutre) {
   if (lignes.length === 0) return '<div class="note">Aucun lancement.</div>';
@@ -5802,23 +5712,14 @@ function htmlRecap(lignes, autres, libelleAutre) {
   return html;
 }
 
+const alerteRecap = (texte, genre) => `<div class="alertes-recap"><div class="titre-alerte ${genre}">${texte}</div></div>`;
+
 // Pièces présentes dans plusieurs lancements de l'onglet : risque de les fabriquer deux fois.
 function htmlDoublonsRecap(lignes) {
   if (lignes.some((l) => l.cles === null)) return "";
-  const clesParLancement = new Map();
-  const paireParNom = new Map();
-  for (const l of lignes) {
-    clesParLancement.set(nomLancementRecap(l), l.cles);
-    paireParNom.set(nomLancementRecap(l), l.paire);
-  }
-  const groupes = doublonsEntreLancements(clesParLancement);
-  if (groupes.length === 0) return "";
-  let html = '<div class="alertes-recap"><div class="titre-alerte alerte">⚠ Pièces lancées deux fois : elles sont dans deux lancements</div>';
-  for (const g of groupes) {
-    const p = paireParNom.get(g.lancements[0]);
-    html += `<div class="ligne-alerte" ${p ? `data-case="${p.id}"` : ""}>${echapper(listeClesRecap(g.cles))} : dans ${echapper(g.lancements.join(" et dans "))}</div>`;
-  }
-  return html + "</div>";
+  const groupes = doublonsEntreLancements(new Map(lignes.map((l) => [nomLancementRecap(l), l.cles])));
+  const n = groupes.reduce((t, g) => t + g.cles.length, 0);
+  return n ? alerteRecap(`⚠ ${n} pièce(s) lancée(s) deux fois : elles sont dans deux lancements`, "alerte") : "";
 }
 
 // Pièces déjà présentes dans un lancement de l'autre onglet semaine (relancées, ou lancées en double).
@@ -5827,32 +5728,21 @@ function htmlDejaLancees(lignes, autres, libelleAutre) {
   lignes = lignes.filter((l) => l.paire.poste !== "Casse");
   autres = autres.filter((l) => l.paire.poste !== "Casse");
   if (lignes.some((l) => l.cles === null) || autres.some((l) => l.cles === null)) return "";
-  let html = "";
-  for (const l of lignes) {
-    for (const o of autres) {
-      const communes = [...l.cles].filter((cle) => o.cles.has(cle) && cle.length > 3).sort();
-      if (communes.length === 0) continue;
-      if (!html) html = `<div class="alertes-recap"><div class="titre-alerte alerte">⚠ Pièces déjà lancées en ${echapper(libelleAutre)}</div>`;
-      html += `<div class="ligne-alerte" data-case="${l.paire.id}">${echapper(listeClesRecap(communes))} : dans ${echapper(nomLancementRecap(l))}, et déjà dans ${echapper(nomLancementRecap(o))}</div>`;
-    }
-  }
-  return html ? html + "</div>" : "";
+  const communes = new Set();
+  for (const l of lignes) for (const o of autres) for (const cle of l.cles) if (o.cles.has(cle) && cle.length > 3) communes.add(cle);
+  return communes.size ? alerteRecap(`⚠ ${communes.size} pièce(s) déjà lancée(s) en ${echapper(libelleAutre)}`, "alerte") : "";
 }
 
 // Pièces à livrer une autre semaine que le reste de leur lancement (hors casse, qui en reprend toujours).
 function htmlAutresSemainesLivraison(lignes) {
-  let html = "";
+  let n = 0;
   for (const l of lignes) {
     const p = l.paire;
     if (p.semainesLivraison.length <= 1 || p.poste === "Casse") continue;
     const principale = semainePrincipale(p);
-    for (const s of p.semainesLivraison) {
-      if (s === principale) continue;
-      if (!html) html = '<div class="alertes-recap"><div class="titre-alerte attention">⚠ Pièces à livrer une autre semaine que leur lancement</div>';
-      html += `<div class="ligne-alerte" data-case="${p.id}">${echapper(listeClesRecap(s.cles || []))} : à livrer en semaine ${echapper(s.semaine)}, lancées dans ${echapper(nomLancementRecap(l))} (semaine ${echapper(semainePrincipale(p).semaine)})</div>`;
-    }
+    for (const s of p.semainesLivraison) if (s !== principale) n += s.nbPieces;
   }
-  return html ? html + "</div>" : "";
+  return n ? alerteRecap(`⚠ ${n} pièce(s) à livrer une autre semaine que leur lancement`, "attention") : "";
 }
 
 // ---- Fichiers ----
@@ -5990,7 +5880,6 @@ async function lancerUnePaire(p, fin) {
     p.enCours = false;
     p.etat = null;
     p.etatErreur = false;
-    p.listeDepliee = false;
     enregistrer(p);
     rafraichir(p);
     return terminer(null, true);
@@ -6015,6 +5904,7 @@ async function lancerTousLesControles() {
       if (erreur) erreurs.push(erreur);
       if (resultat) auMoinsUnResultat = true;
     });
+    await problemesAutomatiques(p);
   }
   if (erreurs.length) alert("Certaines cases n'ont pas pu être traitées :\n\n" + erreurs.join("\n"));
   else if (!auMoinsUnResultat) alert("Sélectionnez au moins un fichier de lancement (avec, si possible, une liste de coupe ou un .bkp).");
@@ -6322,6 +6212,7 @@ async function placerFichiersScannes(parite, r) {
       });
     }
     if (a.cible.bkp) await new Promise((resolve) => lancerControleScies(a.paire, resolve));
+    await problemesAutomatiques(a.paire);
   }
   scansEnCours.delete(parite);
   if (parite === onglet) afficher();
@@ -6839,7 +6730,23 @@ async function problemesLancementXlsx(p) {
   f3.getColumn(2).width = 40;
 
   const base = p.strat.name.replace(/\.[^.]*$/, "");
-  return { nom: `${base}_problemes.xlsx`, octets: new Uint8Array(await wb.xlsx.writeBuffer()) };
+  const nbProblemes = compte[GRAVITE.CORRIGER] + compte[GRAVITE.VERIFIER] + hors.length;
+  return { nom: `${base}_problemes.xlsx`, octets: new Uint8Array(await wb.xlsx.writeBuffer()), nbProblemes };
+}
+
+// Après un contrôle : s'il y a un problème, le fichier des problèmes du lancement est créé tout seul.
+async function problemesAutomatiques(p) {
+  if (!p.strat) return;
+  try {
+    const { nom, octets, nbProblemes } = await problemesLancementXlsx(p);
+    if (!nbProblemes) return;
+    telecharger(nom, octets, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    p.etat = `📊 ${nbProblemes} problème(s) : fichier ${nom} créé`;
+    p.etatErreur = false;
+    rafraichir(p);
+  } catch (_erreur) {
+    // Le bouton « Problèmes du lancement » reste là pour réessayer.
+  }
 }
 
 async function exporterProblemesLancement(p) {

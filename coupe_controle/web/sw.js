@@ -2,7 +2,7 @@
 // (les navigateurs bloquent les service workers sur file://). Met en cache
 // l'app shell pour un fonctionnement hors-ligne une fois installée, et sert
 // le cache en secours si le réseau est indisponible.
-const CACHE_NAME = "sentinelle-cache-v4.7";
+const CACHE_NAME = "sentinelle-cache-v4.8";
 const APP_SHELL = [
   "./",
   "./index.html",
