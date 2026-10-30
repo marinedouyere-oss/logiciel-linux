@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V4.6 — Contrôle de coupe</title>
+<title>Sentinelle V4.7 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -265,7 +265,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V4.6</div>
+        <div class="sous-titre">Contrôle de coupe · V4.7</div>
       </div>
     </div>
   </header>
@@ -298,7 +298,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V4.6 · Contrôle de coupe</span>
+    <span>Sentinelle V4.7 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -4837,6 +4837,7 @@ function remplirCarte(carte, p) {
       <button type="button" class="contour" data-action="scies" ${p.enCours ? "disabled" : ""}>Vérifier Scies</button>
     </div>
     <button type="button" class="contour pleine" data-action="rapport-lancement" ${p.enCours ? "disabled" : ""}>📄 Rapport du lancement (.pdf)</button>
+    ${p.strat ? `<button type="button" class="contour pleine" data-action="problemes-lancement" ${p.enCours ? "disabled" : ""}>📊 Problèmes du lancement (.xlsx)</button>` : ""}
     ${p.etat ? `<div class="etat ${p.etatErreur ? "erreur" : ""}">${echapper(p.etat)}</div>` : ""}
     <div class="zone-rapport"></div>
     <div class="zone-scies"></div>
@@ -4845,6 +4846,18 @@ function remplirCarte(carte, p) {
   carte.querySelectorAll('[data-action="choisir"]').forEach((b) => b.addEventListener("click", () => demanderFichier(p, b.dataset.role)));
   carte.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(p, null));
   carte.querySelector('[data-action="scies"]').addEventListener("click", () => lancerControleScies(p, null));
+  const problemes = carte.querySelector('[data-action="problemes-lancement"]');
+  if (problemes)
+    problemes.addEventListener("click", async () => {
+      problemes.disabled = true;
+      try {
+        await exporterProblemesLancement(p);
+      } catch (erreur) {
+        alert("Impossible de faire le fichier des problèmes :\n" + (erreur && erreur.message ? erreur.message : erreur));
+      } finally {
+        problemes.disabled = false;
+      }
+    });
   carte.querySelector('[data-action="rapport-lancement"]').addEventListener("click", async (e) => {
     e.target.disabled = true;
     try {
@@ -6614,6 +6627,228 @@ document.querySelectorAll("img[data-logo]").forEach((img) => (img.src = img.data
 // N'a d'effet que servi en http(s)/localhost (ex. server/lancer_sentinelle.bat).
 if ("serviceWorker" in navigator && (location.protocol === "http:" || location.protocol === "https:")) {
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+}
+
+// ---- Problèmes du lancement (.xlsx) : le fichier de lancement, ligne par ligne, avec en tête de chaque
+// ligne les problèmes trouvés (contrôle de la liste de coupe ou du .bkp, scies, couleurs, livraison,
+// doublons, pièces lancées ailleurs, casse) ; puis les pièces à problème qui ne sont pas dans le
+// lancement (en trop, Diakonos) et un résumé. ----
+
+const GRAVITE = { CORRIGER: 2, VERIFIER: 1, INFO: 0 };
+
+// Problèmes de chaque ligne du lancement, par clé (commande + ligne) ; et ceux hors du lancement.
+async function problemesDuLancement(p) {
+  const parCle = new Map(); // clé → [{ gravite, type, texte }]
+  const hors = []; // { cle, article, dimensions, coloris, texte }
+  const ajouter = (cle, gravite, type, texte) => {
+    if (!parCle.has(cle)) parCle.set(cle, []);
+    parCle.get(cle).push({ gravite, type, texte });
+  };
+  const source = sourceControle(p);
+  const notes = [];
+
+  // Contrôle (liste de coupe, sinon .bkp).
+  if (p.rapport) {
+    for (const l of p.rapport.lignes) {
+      if (l.statut === "OK") continue;
+      const couches = (l.couches || 1) > 1;
+      const unite = (n) => (couches ? `${fmtNombre(n)} couche(s)` : `${fmtNombre(n)} pièce(s)`);
+      const debut = couches ? `pièce en ${l.couches} couches, ` : "";
+      if (l.statut === "Manquant") ajouter(l.cle, GRAVITE.CORRIGER, `Absente de ${source}`, `Absente de ${source} : ${debut}${unite(l.qte_attendue)} prévue(s), aucune trouvée`);
+      else if (l.statut === "En trop") hors.push({ cle: l.cle, article: l.article || "", texte: `Dans ${source} (${fmtNombre(l.qte_trouvee)}), mais pas dans le lancement` });
+      else {
+        const ecart = Math.abs(l.qte_trouvee - l.qte_attendue);
+        ajouter(l.cle, GRAVITE.CORRIGER, `Quantité différente dans ${source}`,
+          `Quantité différente dans ${source} : ${debut}${unite(l.qte_attendue)} prévue(s), ${fmtNombre(l.qte_trouvee)} trouvée(s) (${fmtNombre(ecart)} ${l.qte_trouvee < l.qte_attendue ? "en moins" : "en trop"})`);
+      }
+    }
+  } else notes.push("Contrôle de la liste de coupe pas encore fait (bouton GO).");
+
+  // Scies (.bkp).
+  if (p.erreurScies) notes.push(`Scies : ${p.erreurScies}`);
+  for (const e of p.ecartsScies || []) {
+    if (e.attendu === 0) hors.push({ cle: e.cle, article: "", texte: `Dans le .bkp (${fmtNombre(e.trouve)}), mais pas dans le lancement` });
+    else if (e.trouve === 0) ajouter(e.cle, GRAVITE.CORRIGER, "Absente du .bkp (scies)", `Absente du .bkp : pas optimisée (${fmtNombre(e.attendu)} prévue(s))`);
+    else ajouter(e.cle, GRAVITE.VERIFIER, "Quantité différente dans le .bkp", `Scies : ${fmtNombre(e.trouve)} dans le .bkp au lieu de ${fmtNombre(e.attendu)}`);
+  }
+
+  // Couleurs absentes du .bkp.
+  if (p.couleurs && !p.couleurs.sansStratifie) {
+    for (const a of p.couleurs.absentes) for (const cle of a.cles) ajouter(cle, GRAVITE.CORRIGER, "Couleur absente du .bkp", `Couleur ${a.couleur} (face ${a.face}) absente du .bkp : panneau pas optimisé`);
+  }
+
+  // Pièces à livrer une autre semaine que le lancement.
+  if (p.semainesLivraison.length > 1 && p.poste !== "Casse") {
+    const principale = semainePrincipale(p);
+    for (const s of p.semainesLivraison) {
+      if (s === principale) continue;
+      for (const cle of s.cles || []) ajouter(cle, GRAVITE.VERIFIER, "À livrer une autre semaine", `À livrer en semaine ${s.semaine} (le lancement est pour la semaine ${principale.semaine})`);
+    }
+  }
+
+  // Pièces aussi dans un autre lancement de la semaine, ou déjà lancées la semaine d'avant (l'autre onglet).
+  const autre = p.parite === "paire" ? "impaire" : "paire";
+  const nomDe = (o) => `${titreCase(o)} (${o.strat.name})`;
+  const clesDuLancement = (await resume(p.strat, p.bkp)).cles;
+  for (const o of pairesDeLaSemaine(p.parite)) {
+    if (o === p || !o.strat) continue;
+    const cles = (await resume(o.strat, o.bkp)).cles;
+    for (const cle of clesDuLancement) if (cles.has(cle)) ajouter(cle, GRAVITE.CORRIGER, "Lancée deux fois", `Lancée deux fois : aussi dans ${nomDe(o)}`);
+  }
+  if (p.poste === "Casse" && p.strat) {
+    const r = await calculerCasse(p, pairesDeLaSemaine(autre), numeroSemaine(autre));
+    if (r.autreSemaineChargee) notes.push(`Casse : chargez la semaine ${r.semaineAvant || "d'avant"} dans l'autre onglet pour voir les pièces relancées.`);
+    for (const t of r.dejaLancees) ajouter(t.ligne.cle, GRAVITE.VERIFIER, "Casse : relancée", `Relancée : déjà lancée en semaine ${r.semaineAvant} dans ${t.lancement}`);
+    for (const l of r.rajouts) ajouter(l.cle, GRAVITE.INFO, "Casse : rajout", `Rajout : pas lancée en semaine ${r.semaineAvant}`);
+  } else {
+    for (const o of pairesDeLaSemaine(autre)) {
+      if (!o.strat || o.poste === "Casse") continue;
+      const cles = (await resume(o.strat, o.bkp)).cles;
+      for (const cle of clesDuLancement) if (cles.has(cle) && cle.length > 3) ajouter(cle, GRAVITE.VERIFIER, "Déjà lancée la semaine d'avant", `Déjà lancée en ${libelleOnglet(autre)} dans ${nomDe(o)}`);
+    }
+  }
+
+  // Diakonos : pièces commandées qui ne sont dans aucun lancement comparé.
+  const semaine = pairesDeLaSemaine(p.parite);
+  const toutes = [...semaine, ...pairesDeLaSemaine(autre)];
+  const groupe = groupeDiakonosDossier(p);
+  const diakonos = diakonosDeLaCase(p);
+  let rd = null;
+  if (groupe) rd = await calculerDiakonosDossier(groupe, toutes);
+  else if (diakonos && diakonos.strat) rd = await calculerDiakonos(diakonos, String(numeroSemaine(p.parite)).padStart(2, "0"), semaine, toutes);
+  if (rd && rd.erreur) notes.push(`Diakonos illisible : ${rd.erreur}`);
+  else if (rd) {
+    const portee = porteeDiakonos(rd);
+    for (const m of rd.manquantes) {
+      const ailleurs = rd.ailleurs.get(m.cle);
+      hors.push({
+        cle: m.cle,
+        article: m.article,
+        dimensions: dimensionsDiakonos(m),
+        coloris: m.coloris,
+        texte: `Commandée (Diakonos) mais absente ${portee.de}${ailleurs ? ` : elle est dans ${ailleurs}` : ""}`,
+      });
+    }
+    notes.push(`Diakonos : ${rd.fichier}, comparé à ${rd.lancements.join(", ") || "aucun lancement"}.`);
+  }
+  return { parCle, hors, notes };
+}
+
+async function problemesLancementXlsx(p) {
+  const { parCle, hors, notes } = await problemesDuLancement(p);
+  const classeur = await classeurEnCache(p.strat);
+  const { feuille, entetes } = trouverFeuilleEtEntetes(classeur);
+  const doublons = doublonsLancement(classeur).lignes;
+  const valeur = (r, c) => {
+    const v = cellValue(feuille.getRow(r).getCell(c));
+    return v === null || v === undefined ? "" : v;
+  };
+  let nbColonnes = 0;
+  feuille.getRow(1).eachCell({ includeEmpty: false }, (_c, n) => (nbColonnes = Math.max(nbColonnes, n)));
+
+  // Charte Laisné Industrie : en-tête bordeaux, rouge clair = à corriger, ambre = à vérifier.
+  const BORDEAUX = "FF78140C";
+  const FOND = { [GRAVITE.CORRIGER]: "FFF9D9D4", [GRAVITE.VERIFIER]: "FFFFF1CC", [GRAVITE.INFO]: "FFF4F3F1" };
+  const fond = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
+  const enTete = (ligne) =>
+    ligne.eachCell((c) => {
+      c.font = { name: "Lato", bold: true, color: { argb: "FFFFFFFF" } };
+      c.fill = fond(BORDEAUX);
+      c.alignment = { vertical: "middle", wrapText: true };
+    });
+  const wb = new ExcelJS.Workbook();
+
+  // 1. Le lancement, ligne par ligne, avec ses problèmes.
+  const f1 = wb.addWorksheet("Lancement", { views: [{ state: "frozen", xSplit: 2, ySplit: 1 }] });
+  const titres = [];
+  for (let c = 1; c <= nbColonnes; c++) titres.push(String(valeur(1, c)));
+  enTete(f1.addRow(["Problèmes", "Ligne Excel", ...titres]));
+  const compte = { [GRAVITE.CORRIGER]: 0, [GRAVITE.VERIFIER]: 0, [GRAVITE.INFO]: 0 };
+  const parType = new Map();
+  const cleDeLigne = (r) => {
+    const commande = String(valeur(r, entetes[COL_COMMANDE])).trim();
+    if (!commande) return null;
+    const cleColonne = entetes[COL_CLE] ? String(valeur(r, entetes[COL_CLE])).trim() : "";
+    return cleColonne || cleLigne(commande, entetes[COL_LIGNE] ? valeur(r, entetes[COL_LIGNE]) : null);
+  };
+  const protection = (r) => estProtection(entetes[COL_AGGLO] ? valeur(r, entetes[COL_AGGLO]) : "");
+  // Les problèmes d'une pièce vont sur ses vraies lignes ; sur ses lignes de protection seulement si elle n'a qu'elles.
+  const clesAvecPiece = new Set();
+  for (let r = 2; r <= (feuille.rowCount || 0); r++) if (cleDeLigne(r) && !protection(r)) clesAvecPiece.add(cleDeLigne(r));
+  for (let r = 2; r <= (feuille.rowCount || 0); r++) {
+    const cle = cleDeLigne(r);
+    if (!cle) continue;
+    const liste = protection(r) && clesAvecPiece.has(cle) ? [] : [...(parCle.get(cle) || [])];
+    if (doublons.has(r)) liste.unshift({ gravite: GRAVITE.CORRIGER, type: "Ligne en double", texte: "Ligne en double : identique à une ligne au-dessus (à supprimer)" });
+    const valeurs = [];
+    for (let c = 1; c <= nbColonnes; c++) valeurs.push(valeur(r, c));
+    const ligne = f1.addRow([liste.map((x) => x.texte).join("\n"), r, ...valeurs]);
+    ligne.font = { name: "Lato" };
+    if (!liste.length) continue;
+    const gravite = Math.max(...liste.map((x) => x.gravite));
+    compte[gravite]++;
+    for (const x of liste) parType.set(x.type, (parType.get(x.type) || 0) + 1);
+    ligne.eachCell({ includeEmpty: true }, (c) => (c.fill = fond(FOND[gravite])));
+    ligne.getCell(1).font = { name: "Lato", bold: true, color: { argb: gravite === GRAVITE.INFO ? "FF22231D" : BORDEAUX } };
+    ligne.getCell(1).alignment = { wrapText: true, vertical: "top" };
+  }
+  f1.getColumn(1).width = 70;
+  f1.getColumn(2).width = 8;
+  for (let c = 3; c <= nbColonnes + 2; c++) f1.getColumn(c).width = Math.min(30, Math.max(10, titres[c - 3].length + 2));
+  f1.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: nbColonnes + 2 } };
+
+  // 2. Les pièces à problème qui ne sont pas dans le lancement.
+  const f2 = wb.addWorksheet("Hors du lancement", { views: [{ state: "frozen", ySplit: 1 }] });
+  enTete(f2.addRow(["Pièce (commande + ligne)", "Article", "Dimensions", "Coloris", "Problème"]));
+  for (const h of hors) {
+    const ligne = f2.addRow([h.cle, h.article || "", h.dimensions || "", h.coloris || "", h.texte]);
+    ligne.font = { name: "Lato" };
+    ligne.eachCell({ includeEmpty: true }, (c) => (c.fill = fond(FOND[GRAVITE.CORRIGER])));
+  }
+  if (!hors.length) f2.addRow(["Aucune"]).font = { name: "Lato", italic: true };
+  [26, 22, 16, 12, 90].forEach((w, i) => (f2.getColumn(i + 1).width = w));
+
+  // 3. Résumé.
+  const f3 = wb.addWorksheet("Résumé");
+  f3.addRow([`${titreCase(p)} — ${p.strat.name}`]).font = { name: "Raleway", bold: true, size: 16, color: { argb: BORDEAUX } };
+  f3.addRow([`Problèmes du lancement · ${new Date().toLocaleDateString("fr-FR")} · LAISNÉ INDUSTRIE — document interne`]).font = { name: "Lato", italic: true, color: { argb: "FF797978" } };
+  f3.addRow([]);
+  const ligneCompte = (texte, n, argb) => {
+    const l = f3.addRow([texte, n]);
+    l.font = { name: "Lato", bold: true };
+    if (argb) l.getCell(1).fill = fond(argb);
+  };
+  ligneCompte("Lignes à corriger (rouge)", compte[GRAVITE.CORRIGER], FOND[GRAVITE.CORRIGER]);
+  ligneCompte("Lignes à vérifier (jaune)", compte[GRAVITE.VERIFIER], FOND[GRAVITE.VERIFIER]);
+  ligneCompte("Lignes avec une remarque (gris)", compte[GRAVITE.INFO], FOND[GRAVITE.INFO]);
+  ligneCompte("Pièces à problème hors du lancement", hors.length, null);
+  f3.addRow([]);
+  if (parType.size) {
+    enTete(f3.addRow(["Problème", "Lignes"]));
+    for (const [type, n] of [...parType.entries()].sort((a, b) => b[1] - a[1])) f3.addRow([type, n]).font = { name: "Lato" };
+    f3.addRow([]);
+  }
+  const fichiers = [
+    ["Lancement", p.strat && p.strat.name],
+    ["Liste de coupe", p.coupe && p.coupe.name],
+    ["Fichier .bkp", p.bkp && p.bkp.name],
+  ];
+  for (const [nom, f] of fichiers) f3.addRow([nom, f || "—"]).font = { name: "Lato" };
+  for (const n of notes) f3.addRow([n]).font = { name: "Lato", italic: true };
+  f3.getColumn(1).width = 60;
+  f3.getColumn(2).width = 40;
+
+  const base = p.strat.name.replace(/\.[^.]*$/, "");
+  return { nom: `${base}_problemes.xlsx`, octets: new Uint8Array(await wb.xlsx.writeBuffer()) };
+}
+
+async function exporterProblemesLancement(p) {
+  if (!p.strat) {
+    alert(`${titreCase(p)} : ajoutez d'abord le fichier de lancement.`);
+    return;
+  }
+  const { nom, octets } = await problemesLancementXlsx(p);
+  telecharger(nom, octets, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 }
 
 </script>
