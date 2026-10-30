@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V4.8 — Contrôle de coupe</title>
+<title>Sentinelle V4.9 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -255,7 +255,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V4.8</div>
+        <div class="sous-titre">Contrôle de coupe · V4.9</div>
       </div>
     </div>
   </header>
@@ -288,7 +288,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V4.8 · Contrôle de coupe</span>
+    <span>Sentinelle V4.9 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -1208,10 +1208,21 @@ function estFichierPDF(fichier) {
   return /\.pdf$/i.test(fichier.name);
 }
 
-async function chargerDocumentPDF(fichier) {
+// Quelques workers pdf.js : les PDF d'un scan (listes de coupe) se lisent en parallèle, un par processeur.
+let workersPdf = null;
+let prochainWorkerPdf = 0;
+function workerPdf() {
   initialiserPdfJs();
+  if (!workersPdf) {
+    const n = Math.max(1, Math.min(4, (navigator.hardwareConcurrency || 2) - 1));
+    workersPdf = Array.from({ length: n }, () => new pdfjsLib.PDFWorker());
+  }
+  return workersPdf[prochainWorkerPdf++ % workersPdf.length];
+}
+
+async function chargerDocumentPDF(fichier) {
   const buffer = await fichier.arrayBuffer();
-  const tache = pdfjsLib.getDocument({ data: buffer });
+  const tache = pdfjsLib.getDocument({ data: buffer, worker: workerPdf() });
   return await tache.promise;
 }
 
@@ -1242,13 +1253,9 @@ async function extraireLignesPagePDF(page) {
 }
 
 async function extraireLignesTextePDF(documentPDF) {
-  const toutesLesLignes = [];
-  for (let n = 1; n <= documentPDF.numPages; n++) {
-    const page = await documentPDF.getPage(n);
-    const lignes = await extraireLignesPagePDF(page);
-    for (const l of lignes) if (l) toutesLesLignes.push(l);
-  }
-  return toutesLesLignes;
+  // Toutes les pages demandées d'un coup (le worker les enchaîne sans attendre), remises dans l'ordre.
+  const pages = await Promise.all(Array.from({ length: documentPDF.numPages }, (_, i) => documentPDF.getPage(i + 1).then(extraireLignesPagePDF)));
+  return pages.flat().filter(Boolean);
 }
 
 // Ligne d'en-tête d'une pièce : "N°. Description Matériau Long Largeur Qté"
@@ -2465,13 +2472,25 @@ function texteCttBkp(fichier) {
 }
 
 // Quantités réellement optimisées par clé (protections comprises : Contrôle Scies).
+// Quantités par clé, calculées une fois par fichier (avec et sans les panneaux de protection).
+const cacheQuantitesBkp = new WeakMap();
+function quantitesBkp(fichier, sansProtections) {
+  if (!cacheQuantitesBkp.has(fichier)) cacheQuantitesBkp.set(fichier, {});
+  const parVariante = cacheQuantitesBkp.get(fichier);
+  if (!parVariante[sansProtections]) {
+    parVariante[sansProtections] = texteCttBkp(fichier).then((texte) => lireQuantitesCtt(texte, sansProtections));
+    parVariante[sansProtections].catch(() => delete parVariante[sansProtections]);
+  }
+  return parVariante[sansProtections];
+}
+
 async function lireBkp(fichier) {
-  return lireQuantitesCtt(await texteCttBkp(fichier));
+  return new Map(await quantitesBkp(fichier, false));
 }
 
 // Quantités par clé sans les panneaux de protection (contrôle principal sans liste de coupe).
 async function lireBkpSansProtections(fichier) {
-  return lireQuantitesCtt(await texteCttBkp(fichier), true);
+  return new Map(await quantitesBkp(fichier, true));
 }
 
 async function lireCouleursBkp(fichier) {
@@ -4298,9 +4317,16 @@ function slug(texte) {
     .toLowerCase();
 }
 
-// Laisse le navigateur repeindre l'écran avant de continuer.
+// Laisse le navigateur repeindre l'écran avant de continuer. Un message (et non requestAnimationFrame
+// ou setTimeout) : il passe aussi quand l'onglet est caché, où les deux autres sont figés ou ralentis.
+const canalTick = new MessageChannel();
+const attentesTick = [];
+canalTick.port1.onmessage = () => attentesTick.shift()();
 function tick() {
-  return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+  return new Promise((resolve) => {
+    attentesTick.push(resolve);
+    canalTick.port2.postMessage(null);
+  });
 }
 
 // ---- Cases ----
@@ -4415,22 +4441,36 @@ const libelleOnglet = (parite) => `Semaine ${numeroSemaine(parite)}`;
 
 const DB_MEMOIRE_NOM = "sentinelle-memoire";
 const MAGASIN_PAIRES = "paires";
+const MAGASIN_FICHIERS = "fichiers"; // contenu des fichiers, clé « case||rôle »
 
+let baseMemoire = null;
 function ouvrirBaseMemoire() {
-  return new Promise((resolve, reject) => {
-    if (!window.indexedDB) {
-      reject(new Error("IndexedDB indisponible"));
-      return;
-    }
-    const requete = indexedDB.open(DB_MEMOIRE_NOM, 1);
-    requete.onupgradeneeded = () => {
-      const db = requete.result;
-      if (!db.objectStoreNames.contains(MAGASIN_PAIRES)) db.createObjectStore(MAGASIN_PAIRES, { keyPath: "cleMemoire" });
-    };
-    requete.onsuccess = () => resolve(requete.result);
-    requete.onerror = () => reject(requete.error);
-  });
+  if (!baseMemoire) {
+    baseMemoire = new Promise((resolve, reject) => {
+      if (!window.indexedDB) {
+        reject(new Error("IndexedDB indisponible"));
+        return;
+      }
+      const requete = indexedDB.open(DB_MEMOIRE_NOM, 2);
+      requete.onupgradeneeded = () => {
+        const db = requete.result;
+        if (!db.objectStoreNames.contains(MAGASIN_PAIRES)) db.createObjectStore(MAGASIN_PAIRES, { keyPath: "cleMemoire" });
+        if (!db.objectStoreNames.contains(MAGASIN_FICHIERS)) db.createObjectStore(MAGASIN_FICHIERS);
+      };
+      requete.onsuccess = () => resolve(requete.result);
+      requete.onerror = () => reject(requete.error);
+    });
+    baseMemoire.catch(() => (baseMemoire = null));
+  }
+  return baseMemoire;
 }
+
+const finTransaction = (tx) =>
+  new Promise((resolve) => {
+    tx.oncomplete = resolve;
+    tx.onerror = resolve;
+    tx.onabort = resolve;
+  });
 
 const cleMemoire = (p) => `${p.poste}||${p.label}`;
 
@@ -4446,37 +4486,77 @@ async function sauvegarderDansMemoire(p, champs) {
       req.onerror = () => resolve({ cleMemoire: cle });
     });
     magasin.put({ ...existant, ...champs, cleMemoire: cle });
-    await new Promise((resolve) => {
-      tx.oncomplete = resolve;
-      tx.onerror = resolve;
-    });
+    await finTransaction(tx);
   } catch (_erreur) {
     // Mémorisation indisponible : sans effet sur le fonctionnement normal.
   }
 }
 
+// Les fiches des cases, avec le contenu de leurs fichiers (rangé à part, ou dans la fiche pour les versions d'avant).
 async function lireToutesLesMemoires() {
   try {
     const db = await ouvrirBaseMemoire();
-    return await new Promise((resolve) => {
-      const req = db.transaction(MAGASIN_PAIRES, "readonly").objectStore(MAGASIN_PAIRES).getAll();
-      req.onsuccess = () => resolve(req.result || []);
-      req.onerror = () => resolve([]);
-    });
+    const tx = db.transaction([MAGASIN_PAIRES, MAGASIN_FICHIERS], "readonly");
+    const lire = (requete) =>
+      new Promise((resolve) => {
+        requete.onsuccess = () => resolve(requete.result || []);
+        requete.onerror = () => resolve([]);
+      });
+    const [fiches, cles, contenus] = await Promise.all([
+      lire(tx.objectStore(MAGASIN_PAIRES).getAll()),
+      lire(tx.objectStore(MAGASIN_FICHIERS).getAllKeys()),
+      lire(tx.objectStore(MAGASIN_FICHIERS).getAll()),
+    ]);
+    const parCle = new Map(cles.map((c, i) => [c, contenus[i]]));
+    for (const fiche of fiches) {
+      for (const [role, champ] of Object.entries(CHAMP_FICHIER)) {
+        const f = fiche[champ];
+        if (f && !f.bytes && parCle.has(`${fiche.cleMemoire}||${role}`)) f.bytes = parCle.get(`${fiche.cleMemoire}||${role}`);
+      }
+    }
+    return fiches;
   } catch (_erreur) {
     return [];
+  }
+}
+
+// Fiches des versions d'avant : leurs fichiers passent dans le magasin à part (une fois, en arrière-plan).
+async function rangerFichiersMemorises(fiches) {
+  for (const fiche of fiches) {
+    const roles = Object.entries(CHAMP_FICHIER).filter(([, champ]) => fiche[champ] && fiche[champ].bytes && !fiche[champ].separe);
+    if (!roles.length) continue;
+    try {
+      const db = await ouvrirBaseMemoire();
+      const tx = db.transaction([MAGASIN_PAIRES, MAGASIN_FICHIERS], "readwrite");
+      const magasin = tx.objectStore(MAGASIN_PAIRES);
+      const actuelle = await new Promise((resolve) => {
+        const req = magasin.get(fiche.cleMemoire);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+      if (actuelle) {
+        for (const [role, champ] of Object.entries(CHAMP_FICHIER)) {
+          const f = actuelle[champ];
+          if (!f || !f.bytes || f.separe) continue;
+          tx.objectStore(MAGASIN_FICHIERS).put(f.bytes, `${fiche.cleMemoire}||${role}`);
+          actuelle[champ] = { nom: f.nom, type: f.type, lastModified: f.lastModified, separe: true };
+        }
+        magasin.put(actuelle);
+      }
+      await finTransaction(tx);
+    } catch (_erreur) {
+      // sans effet : l'ancienne fiche reste lisible
+    }
   }
 }
 
 async function effacerMemoire(p) {
   try {
     const db = await ouvrirBaseMemoire();
-    const tx = db.transaction(MAGASIN_PAIRES, "readwrite");
+    const tx = db.transaction([MAGASIN_PAIRES, MAGASIN_FICHIERS], "readwrite");
     tx.objectStore(MAGASIN_PAIRES).delete(cleMemoire(p));
-    await new Promise((resolve) => {
-      tx.oncomplete = resolve;
-      tx.onerror = resolve;
-    });
+    for (const role of Object.keys(CHAMP_FICHIER)) tx.objectStore(MAGASIN_FICHIERS).delete(`${cleMemoire(p)}||${role}`);
+    await finTransaction(tx);
   } catch (_erreur) {
     // sans effet
   }
@@ -4485,9 +4565,17 @@ async function effacerMemoire(p) {
 const CHAMP_FICHIER = { strat: "fichierStrat", coupe: "fichierCoupe", bkp: "fichierBkp", sommaire: "fichierSommaire", diakonos: "fichierDiakonos" };
 
 async function memoriserFichier(p, role, fichier) {
-  const bytes = await fichier.arrayBuffer();
+  try {
+    const bytes = await fichier.arrayBuffer();
+    const db = await ouvrirBaseMemoire();
+    const tx = db.transaction(MAGASIN_FICHIERS, "readwrite");
+    tx.objectStore(MAGASIN_FICHIERS).put(bytes, `${cleMemoire(p)}||${role}`);
+    await finTransaction(tx);
+  } catch (_erreur) {
+    return;
+  }
   await sauvegarderDansMemoire(p, {
-    [CHAMP_FICHIER[role]]: { nom: fichier.name, type: fichier.type, lastModified: fichier.lastModified, bytes },
+    [CHAMP_FICHIER[role]]: { nom: fichier.name, type: fichier.type, lastModified: fichier.lastModified, separe: true },
   });
 }
 
@@ -4513,7 +4601,7 @@ function resultatsAMemoriser(p) {
 const enregistrer = (p) => sauvegarderDansMemoire(p, resultatsAMemoriser(p));
 
 function fichierDepuisMemoire(f) {
-  return f ? new File([f.bytes], f.nom, { type: f.type || "", lastModified: f.lastModified || Date.now() }) : null;
+  return f && f.bytes ? new File([f.bytes], f.nom, { type: f.type || "", lastModified: f.lastModified || Date.now() }) : null;
 }
 
 function restaurer(p, rec) {
@@ -4544,6 +4632,7 @@ function restaurer(p, rec) {
 
 async function initialiserPaires() {
   const memoires = await lireToutesLesMemoires();
+  rangerFichiersMemorises(memoires);
   const parCle = new Map(memoires.map((r) => [r.cleMemoire, r]));
   for (const poste of [...POSTES_SEMAINE, ...POSTES_DIAKONOS]) {
     for (const parite of ["paire", "impaire"]) {
@@ -4670,9 +4759,23 @@ const resumes = new Map();
 const cleResume = (strat, bkp) => `${idFichier(strat)}#${idFichier(bkp)}`;
 const resumeEnCache = (strat, bkp) => resumes.get(cleResume(strat, bkp)) || null;
 
-async function resume(strat, bkp) {
+const resumesEnCours = new Map();
+function resume(strat, bkp) {
   const cle = cleResume(strat, bkp);
-  if (resumes.has(cle)) return resumes.get(cle);
+  if (resumes.has(cle)) return Promise.resolve(resumes.get(cle));
+  if (!resumesEnCours.has(cle))
+    resumesEnCours.set(
+      cle,
+      calculerResume(strat, bkp).then((r) => {
+        resumes.set(cle, r);
+        resumesEnCours.delete(cle);
+        return r;
+      })
+    );
+  return resumesEnCours.get(cle);
+}
+
+async function calculerResume(strat, bkp) {
   // lancements : codes écrits dans le fichier (« LAN264601 »).
   const r = { prevues: NaN, bkp: null, cles: new Set(), lancements: new Set() };
   let lignes = null;
@@ -4696,7 +4799,6 @@ async function resume(strat, bkp) {
       r.bkp = NaN; // .bkp illisible : l'erreur sera visible via « Vérifier Scies »
     }
   }
-  resumes.set(cle, r);
   return r;
 }
 
@@ -4891,7 +4993,8 @@ async function calculerCasse(p, autreSemaine, numeroAutre) {
   // dejaLancees : pièces relancées (déjà lancées la semaine d'avant) ; rajouts : les autres.
   const r = { cle: cleCasse(p, autreSemaine, numeroAutre), semaineAvant: semaineAvantCasse(p), autreSemaineChargee: null, nbPieces: 0, dejaLancees: [], rajouts: [], nbAutres: 0, lancements: [], erreur: null };
   const autre = String(numeroAutre).padStart(2, "0");
-  if (!r.semaineAvant || r.semaineAvant !== autre) {
+  // Rien de chargé dans l'onglet de la semaine d'avant : impossible de séparer relancées et rajouts.
+  if (!r.semaineAvant || r.semaineAvant !== autre || !autreSemaine.some((o) => o.strat)) {
     r.autreSemaineChargee = autre;
     return r;
   }
@@ -5831,27 +5934,6 @@ async function lancerUnePaire(p, fin) {
   let etape = "lecture du fichier de lancement";
   try {
     const strat = await stratEnCache(p.strat);
-    // Une casse reprend par nature des pièces de plusieurs semaines : pas de confirmation.
-    if (strat.semaines.length > 1 && p.poste !== "Casse") {
-      p.etat = "⚠️ semaines de livraison différentes détectées — confirmation demandée…";
-      rafraichir(p);
-      const detail = strat.semaines.map((s) => `— semaine ${s.semaine}/${s.annee} : ${s.nbPieces} pièce(s)`).join("\n");
-      const continuer = await demanderConfirmation(
-        "⚠ Semaines de livraison différentes",
-        `${nomComplet(p)} : plusieurs semaines de livraison différentes trouvées dans le fichier de lancement :\n\n${detail}\n\n` +
-          "Normalement, un fichier de lancement ne contient qu'une seule semaine de livraison. Continuer quand même ?",
-        "Continuer"
-      );
-      if (!continuer) {
-        p.enCours = false;
-        p.etat = "❌ contrôle annulé (semaines de livraison différentes)";
-        p.etatErreur = true;
-        rafraichir(p);
-        const msg = `${nomComplet(p)} : contrôle annulé — semaines de livraison différentes non confirmées.`;
-        if (seul) alert(msg);
-        return terminer(msg, false);
-      }
-    }
     p.etat = p.coupe ? "⏳ lecture de la liste de coupe…" : "⏳ comparaison avec le .bkp…";
     rafraichir(p);
     await tick();
@@ -6138,38 +6220,46 @@ async function placerFichiersScannes(parite, r) {
     a.paire.etatErreur = false;
   }
   if (parite === onglet) afficher();
+  const stockage = [];
+  // Un fichier inchangé depuis le dernier scan (même nom, taille, date) garde sa lecture en cache et n'est pas recopié.
+  const prendre = async (p, role, entree) => {
+    const f = await entree.getFile();
+    if (!memeFichier(p[role], f)) {
+      p[role] = f;
+      stockage.push(memoriserFichier(p, role, f));
+    }
+    return p[role];
+  };
   for (const a of affectations) {
     const p = a.paire;
     const g = a.cible;
     try {
-      p.strat = await g.strat.entree.getFile();
+      await prendre(p, "strat", g.strat.entree);
       p.semaine = await detecterSemaine(p);
       const deplace = ranger(p);
-      await memoriserFichier(p, "strat", p.strat);
       let suffixe = "";
       if (g.coupe) {
-        p.coupe = await g.coupe.entree.getFile();
-        await memoriserFichier(p, "coupe", p.coupe);
+        await prendre(p, "coupe", g.coupe.entree);
         suffixe = " + coupe";
       }
       if (g.bkp) {
-        p.bkp = await g.bkp.entree.getFile();
-        await memoriserFichier(p, "bkp", p.bkp);
+        await prendre(p, "bkp", g.bkp.entree);
         suffixe += " + .bkp";
       }
       if (g.sommaire) {
-        p.sommaire = await g.sommaire.entree.getFile();
-        await memoriserFichier(p, "sommaire", p.sommaire);
+        await prendre(p, "sommaire", g.sommaire.entree);
         suffixe += " + sommaire";
       }
       // Rangé par dossier : le dossier et son Diakonos remplacent ceux d'avant.
       p.dossier = g.dossier || null;
       if (g.dossier || g.diakonos) {
-        p.diakonos = g.diakonos ? await g.diakonos.entree.getFile() : null;
-        if (p.diakonos) {
-          await memoriserFichier(p, "diakonos", p.diakonos);
+        if (g.diakonos) {
+          await prendre(p, "diakonos", g.diakonos.entree);
           suffixe += " + Diakonos";
-        } else await sauvegarderDansMemoire(p, { fichierDiakonos: null });
+        } else {
+          p.diakonos = null;
+          await sauvegarderDansMemoire(p, { fichierDiakonos: null });
+        }
       }
       enregistrer(p);
       a.copie = true;
@@ -6182,9 +6272,8 @@ async function placerFichiersScannes(parite, r) {
   for (const d of r.diakonos) {
     const p = paireFixe(POSTES_DIAKONOS[d.tour === "2" ? 1 : 0], parite);
     try {
-      p.strat = await d.fichier.entree.getFile();
+      await prendre(p, "strat", d.fichier.entree);
       p.semaine = d.semaine;
-      await memoriserFichier(p, "strat", p.strat);
       lignes.push(`✔ ${p.poste} : ${d.fichier.nom}`);
     } catch (erreur) {
       lignes.push(`❌ ${p.poste} : ${erreur && erreur.message ? erreur.message : erreur}`);
@@ -6202,7 +6291,9 @@ async function placerFichiersScannes(parite, r) {
   if (r.dossiersLus && r.dossiersLus.length) compte.push(`Dossiers lus : ${r.dossiersLus.join(", ")}`);
   etatsScan[parite] = { lignes: compte, erreur: lignes.length === 0 };
   if (parite === onglet) afficher();
-  // Le scan sert à éviter les clics : les contrôles possibles partent tout seuls.
+  // Le scan sert à éviter les clics : les contrôles possibles partent tout seuls. Tous les fichiers sont lus
+  // d'avance, en parallèle (les listes de coupe PDF sur plusieurs processeurs).
+  prelireFichiers(affectations.filter((a) => a.copie).map((a) => a.paire));
   for (const a of affectations) {
     if (!a.copie) continue;
     // GO avec la liste de coupe, ou à défaut avec le .bkp (semaines de livraison, pièces manquantes…).
@@ -6214,8 +6305,22 @@ async function placerFichiersScannes(parite, r) {
     if (a.cible.bkp) await new Promise((resolve) => lancerControleScies(a.paire, resolve));
     await problemesAutomatiques(a.paire);
   }
+  await Promise.all(stockage);
   scansEnCours.delete(parite);
   if (parite === onglet) afficher();
+}
+
+const memeFichier = (a, b) => Boolean(a && b && a.name === b.name && a.size === b.size && a.lastModified === b.lastModified);
+
+// Lance la lecture de tous les fichiers des cases (chaque lecture est mise en cache) ; les erreurs apparaîtront au contrôle.
+function prelireFichiers(cases) {
+  const ignorer = () => {};
+  for (const p of cases) {
+    if (p.strat) stratEnCache(p.strat).catch(ignorer);
+    if (p.bkp) texteCttBkp(p.bkp).catch(ignorer);
+    if (p.diakonos) diakonosEnCache(p.diakonos).catch(ignorer);
+  }
+  for (const p of cases) if (p.coupe) sourceCoupeEnCache(p.coupe).catch(ignorer);
 }
 
 // ---- Fenêtre de confirmation intégrée à la page ----
@@ -6520,86 +6625,190 @@ if ("serviceWorker" in navigator && (location.protocol === "http:" || location.p
   window.addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
 }
 
-// ---- Problèmes du lancement (.xlsx) : le fichier de lancement, ligne par ligne, avec en tête de chaque
-// ligne les problèmes trouvés (contrôle de la liste de coupe ou du .bkp, scies, couleurs, livraison,
-// doublons, pièces lancées ailleurs, casse) ; puis les pièces à problème qui ne sont pas dans le
-// lancement (en trop, Diakonos) et un résumé. ----
+// ---- Rapport des problèmes du lancement (.xlsx), une seule feuille à lire de haut en bas :
+// 1. le bilan de chaque contrôle en une phrase (ce que l'écran affichait) ;
+// 2. le détail des pièces à problème, regroupées par problème, chacun expliqué en clair ;
+// 3. les fichiers comparés. ----
 
 const GRAVITE = { CORRIGER: 2, VERIFIER: 1, INFO: 0 };
+const A_FAIRE = { [GRAVITE.CORRIGER]: "À corriger", [GRAVITE.VERIFIER]: "À vérifier", [GRAVITE.INFO]: "Pour info" };
 
-// Problèmes de chaque ligne du lancement, par clé (commande + ligne) ; et ceux hors du lancement.
+// Les problèmes, dans l'ordre du rapport, avec ce qu'ils veulent dire.
+const PROBLEMES = [
+  ["Absente de la liste de coupe", "Pièce du lancement introuvable dans la liste de coupe Cut Rite : elle ne sera pas débitée."],
+  ["Quantité différente dans la liste de coupe", "La liste de coupe ne prévoit pas le même nombre de pièces que le lancement."],
+  ["Absente du .bkp", "Pièce du lancement introuvable dans l'optimisation (.bkp) : aucun panneau n'est prévu pour elle."],
+  ["Quantité différente dans le .bkp", "L'optimisation (.bkp) ne prévoit pas le même nombre de pièces que le lancement."],
+  ["Couleur absente du .bkp", "Aucun panneau de ce coloris dans l'optimisation (.bkp) : ces pièces ne sont pas optimisées."],
+  ["Ligne en double", "Deux lignes identiques dans le fichier de lancement : la pièce serait fabriquée deux fois. Le bouton « Créer le lancement sans doublons » de Sentinelle retire la ligne en trop."],
+  ["Lancée deux fois", "La même pièce est aussi dans un autre lancement de la semaine : risque de la fabriquer deux fois."],
+  ["Commandée, pas lancée (Diakonos)", "Pièce commandée (fichier Diakonos) qui n'est dans aucun des lancements comparés : elle ne sera pas fabriquée."],
+  ["En trop dans la liste de coupe", "Pièce de la liste de coupe qui n'est pas dans ce lancement."],
+  ["En trop dans le .bkp", "Pièce de l'optimisation (.bkp) qui n'est pas dans ce lancement."],
+  ["Autre semaine de livraison", "Pièce à livrer une autre semaine que le reste du lancement : vérifier qu'elle doit bien être fabriquée maintenant."],
+  ["Déjà lancée la semaine d'avant", "La pièce était déjà dans un lancement de l'autre semaine chargée : vérifier qu'il faut bien la refaire."],
+  ["Casse : relancée", "Pièce de la casse déjà lancée la semaine d'avant : c'est une pièce refaite."],
+  ["Casse : rajout", "Pièce de la casse qui n'était pas lancée la semaine d'avant : c'est un rajout."],
+];
+const RANG_PROBLEME = new Map(PROBLEMES.map(([type], i) => [type, i]));
+const SENS_PROBLEME = new Map(PROBLEMES);
+
+// Tous les contrôles du lancement : le bilan (une phrase par contrôle), les problèmes de chaque pièce du lancement
+// (par clé commande + ligne) et ceux des pièces qui n'y sont pas.
 async function problemesDuLancement(p) {
-  const parCle = new Map(); // clé → [{ gravite, type, texte }]
-  const hors = []; // { cle, article, dimensions, coloris, texte }
-  const ajouter = (cle, gravite, type, texte) => {
+  const parCle = new Map(); // clé → [{ gravite, type, detail }]
+  const hors = []; // { gravite, type, detail, cle, article, dimensions, coloris }
+  const bilan = []; // { statut: "ok" | "alerte" | "attention" | "info", controle, texte }
+  const ajouter = (cle, gravite, type, detail) => {
     if (!parCle.has(cle)) parCle.set(cle, []);
-    parCle.get(cle).push({ gravite, type, texte });
+    parCle.get(cle).push({ gravite, type, detail });
   };
-  const source = sourceControle(p);
-  const notes = [];
+  const dehors = (h) => hors.push({ gravite: GRAVITE.CORRIGER, article: "", dimensions: "", coloris: "", ...h });
+  const bkp = p.source === "bkp";
+  const dans = bkp ? "le .bkp" : "la liste de coupe";
+  const de = bkp ? "du .bkp" : "de la liste de coupe";
+  const strat = await stratEnCache(p.strat);
 
-  // Contrôle (liste de coupe, sinon .bkp).
+  // Lancement contre la liste de coupe (sinon contre le .bkp).
+  const controle = bkp ? "Lancement / .bkp (pas de liste de coupe)" : "Lancement / liste de coupe";
+  const signales = new Set(); // pièces déjà signalées par ce contrôle quand il se fait avec le .bkp
   if (p.rapport) {
-    for (const l of p.rapport.lignes) {
+    const r = p.rapport;
+    const enPieces = r.piecesAttendues > 0 || r.piecesTrouvees > 0;
+    const attendu = Math.trunc(enPieces ? r.piecesAttendues : r.totalAttendu);
+    const trouve = fmtNombre(enPieces ? r.piecesTrouvees : r.totalTrouve);
+    let texte = r.nbAnomalies === 0
+      ? `Tout est correct : les ${attendu} pièces du lancement sont dans ${dans}.`
+      : `${r.nbAnomalies} pièce(s) à vérifier : ${attendu} pièces dans le lancement, ${trouve} dans ${dans}.`;
+    if (p.nbUnitaires !== null && p.nbPiecesTrouvees) {
+      const unitaire = (p.nbUnitaires * 100) / p.nbPiecesTrouvees;
+      texte += ` Liste de coupe : ${pourcent(unitaire)} % des pièces en unitaire, ${pourcent(100 - unitaire)} % en grain matching.`;
+    }
+    bilan.push({ statut: r.nbAnomalies ? "alerte" : "ok", controle, texte });
+    for (const l of r.lignes) {
       if (l.statut === "OK") continue;
+      // Pièce assemblée (compact + support…) : les quantités comptent les couches.
       const couches = (l.couches || 1) > 1;
       const unite = (n) => (couches ? `${fmtNombre(n)} couche(s)` : `${fmtNombre(n)} pièce(s)`);
-      const debut = couches ? `pièce en ${l.couches} couches, ` : "";
-      if (l.statut === "Manquant") ajouter(l.cle, GRAVITE.CORRIGER, `Absente de ${source}`, `Absente de ${source} : ${debut}${unite(l.qte_attendue)} prévue(s), aucune trouvée`);
-      else if (l.statut === "En trop") hors.push({ cle: l.cle, article: l.article || "", texte: `Dans ${source} (${fmtNombre(l.qte_trouvee)}), mais pas dans le lancement` });
+      const debut = couches ? `Pièce en ${l.couches} couches : ` : "";
+      if (bkp) signales.add(l.cle);
+      if (l.statut === "Manquant") ajouter(l.cle, GRAVITE.CORRIGER, `Absente ${de}`, `${debut}${unite(l.qte_attendue)} dans le lancement, aucune dans ${dans}`);
+      else if (l.statut === "En trop") dehors({ cle: l.cle, article: l.article || "", type: `En trop dans ${dans}`, detail: `${unite(l.qte_trouvee)} dans ${dans}, rien dans le lancement` });
       else {
         const ecart = Math.abs(l.qte_trouvee - l.qte_attendue);
-        ajouter(l.cle, GRAVITE.CORRIGER, `Quantité différente dans ${source}`,
-          `Quantité différente dans ${source} : ${debut}${unite(l.qte_attendue)} prévue(s), ${fmtNombre(l.qte_trouvee)} trouvée(s) (${fmtNombre(ecart)} ${l.qte_trouvee < l.qte_attendue ? "en moins" : "en trop"})`);
+        ajouter(l.cle, GRAVITE.CORRIGER, `Quantité différente dans ${dans}`,
+          `${debut}${unite(l.qte_attendue)} dans le lancement, ${fmtNombre(l.qte_trouvee)} dans ${dans} (${fmtNombre(ecart)} ${l.qte_trouvee < l.qte_attendue ? "en moins" : "en trop"})`);
       }
     }
-  } else notes.push("Contrôle de la liste de coupe pas encore fait (bouton GO).");
+  } else
+    bilan.push({ statut: "info", controle: "Lancement / liste de coupe", texte: p.coupe || p.bkp ? "Pas encore fait (bouton GO)." : "Pas de liste de coupe ni de .bkp : pas de contrôle." });
 
-  // Scies (.bkp).
-  if (p.erreurScies) notes.push(`Scies : ${p.erreurScies}`);
-  for (const e of p.ecartsScies || []) {
-    if (e.attendu === 0) hors.push({ cle: e.cle, article: "", texte: `Dans le .bkp (${fmtNombre(e.trouve)}), mais pas dans le lancement` });
-    else if (e.trouve === 0) ajouter(e.cle, GRAVITE.CORRIGER, "Absente du .bkp (scies)", `Absente du .bkp : pas optimisée (${fmtNombre(e.attendu)} prévue(s))`);
-    else ajouter(e.cle, GRAVITE.VERIFIER, "Quantité différente dans le .bkp", `Scies : ${fmtNombre(e.trouve)} dans le .bkp au lieu de ${fmtNombre(e.attendu)}`);
-  }
-
-  // Couleurs absentes du .bkp.
-  if (p.couleurs && !p.couleurs.sansStratifie) {
-    for (const a of p.couleurs.absentes) for (const cle of a.cles) ajouter(cle, GRAVITE.CORRIGER, "Couleur absente du .bkp", `Couleur ${a.couleur} (face ${a.face}) absente du .bkp : panneau pas optimisé`);
-  }
-
-  // Pièces à livrer une autre semaine que le lancement.
-  if (p.semainesLivraison.length > 1 && p.poste !== "Casse") {
-    const principale = semainePrincipale(p);
-    for (const s of p.semainesLivraison) {
-      if (s === principale) continue;
-      for (const cle of s.cles || []) ajouter(cle, GRAVITE.VERIFIER, "À livrer une autre semaine", `À livrer en semaine ${s.semaine} (le lancement est pour la semaine ${principale.semaine})`);
+  // Scies : le lancement (protections comprises) contre ce qui est optimisé dans le .bkp.
+  if (p.erreurScies) bilan.push({ statut: "alerte", controle: "Scies (.bkp)", texte: `Contrôle impossible : ${p.erreurScies}` });
+  else if (!p.ecartsScies) bilan.push({ statut: "info", controle: "Scies (.bkp)", texte: p.bkp ? "Pas encore fait (bouton Vérifier Scies)." : "Pas de .bkp : pas de contrôle." });
+  else {
+    const panneaux = `${fmtNombre(p.totalScies || 0)} panneaux`;
+    bilan.push(p.ecartsScies.length
+      ? { statut: "alerte", controle: "Scies (.bkp)", texte: `${p.ecartsScies.length} pièce(s) différente(s) entre le lancement et le .bkp (${panneaux} vérifiés).` }
+      : { statut: "ok", controle: "Scies (.bkp)", texte: `Tout correspond : ${panneaux}.` });
+    for (const e of p.ecartsScies) {
+      if (signales.has(e.cle)) continue; // déjà dans le contrôle avec le .bkp
+      if (e.attendu === 0) dehors({ cle: e.cle, type: "En trop dans le .bkp", detail: `${fmtNombre(e.trouve)} dans le .bkp, rien dans le lancement` });
+      else if (e.trouve === 0) ajouter(e.cle, GRAVITE.CORRIGER, "Absente du .bkp", `${fmtNombre(e.attendu)} pièce(s) dans le lancement, aucune dans le .bkp`);
+      else ajouter(e.cle, GRAVITE.VERIFIER, "Quantité différente dans le .bkp", `${fmtNombre(e.attendu)} pièce(s) dans le lancement, ${fmtNombre(e.trouve)} dans le .bkp`);
     }
   }
 
-  // Pièces aussi dans un autre lancement de la semaine, ou déjà lancées la semaine d'avant (l'autre onglet).
+  // Couleurs du lancement absentes du .bkp.
+  if (p.couleurs) {
+    const c = p.couleurs;
+    if (c.sansStratifie) bilan.push({ statut: "info", controle: "Couleurs (.bkp)", texte: "Pas de stratifié dans ce .bkp." });
+    else if (!c.absentes.length) bilan.push({ statut: "ok", controle: "Couleurs (.bkp)", texte: `Les ${c.nbCouleurs} couleurs du lancement sont dans le .bkp.` });
+    else {
+      bilan.push({ statut: "alerte", controle: "Couleurs (.bkp)",
+        texte: `${c.absentes.length} couleur(s) du lancement absente(s) du .bkp : ${c.absentes.map((a) => `${a.couleur} (face ${a.face})`).join(", ")}. Ces panneaux ne sont pas optimisés.` });
+      // Une ligne par pièce, toutes ses faces ensemble.
+      const parPiece = new Map();
+      for (const a of c.absentes) for (const cle of a.cles) parPiece.set(cle, [...(parPiece.get(cle) || []), a]);
+      for (const [cle, liste] of parPiece) {
+        const faces = [...new Set(liste.map((a) => a.couleur))].map((couleur) => {
+          const lesFaces = liste.filter((a) => a.couleur === couleur).map((a) => a.face);
+          return `${couleur} (${lesFaces.length > 1 ? `faces ${lesFaces.join(" et ")}` : `face ${lesFaces[0]}`})`;
+        });
+        ajouter(cle, GRAVITE.CORRIGER, "Couleur absente du .bkp", `Couleur ${faces.join(", ")} : pas de panneau dans le .bkp`);
+      }
+    }
+  }
+
+  // Semaines de livraison (une casse en mélange toujours plusieurs).
+  if (p.poste !== "Casse" && strat.semaines.length) {
+    const principale = strat.semaines.reduce((a, s) => (s.nbPieces > a.nbPieces ? s : a), strat.semaines[0]);
+    const autres = strat.semaines.filter((s) => s !== principale);
+    if (!autres.length) bilan.push({ statut: "ok", controle: "Semaine de livraison", texte: `Toutes les pièces sont à livrer en semaine ${principale.semaine}.` });
+    else {
+      const n = autres.reduce((t, s) => t + s.nbPieces, 0);
+      bilan.push({ statut: "attention", controle: "Semaine de livraison",
+        texte: `${n} pièce(s) à livrer une autre semaine que la semaine ${principale.semaine} : ${autres.map((s) => `${s.nbPieces} en semaine ${s.semaine}`).join(", ")}.` });
+      for (const s of autres) for (const cle of s.cles || []) ajouter(cle, GRAVITE.VERIFIER, "Autre semaine de livraison", `À livrer en semaine ${s.semaine} ; le reste du lancement est pour la semaine ${principale.semaine}`);
+    }
+  }
+
+  // Lignes en double dans le fichier de lancement (signalées ligne par ligne plus bas).
+  const nbDoublons = strat.doublons.length;
+  bilan.push(nbDoublons
+    ? { statut: "alerte", controle: "Lignes en double", texte: `${nbDoublons} pièce(s) en double dans le fichier de lancement : ${strat.doublons.map((d) => d.cle).join(", ")}.` }
+    : { statut: "ok", controle: "Lignes en double", texte: "Aucune ligne en double dans le fichier de lancement." });
+
+  // Pièces aussi dans un autre lancement de la semaine.
   const autre = p.parite === "paire" ? "impaire" : "paire";
   const nomDe = (o) => `${titreCase(o)} (${o.strat.name})`;
   const clesDuLancement = (await resume(p.strat, p.bkp)).cles;
+  const deuxFois = new Map(); // lancement → nombre de pièces en commun
   for (const o of pairesDeLaSemaine(p.parite)) {
     if (o === p || !o.strat) continue;
     const cles = (await resume(o.strat, o.bkp)).cles;
-    for (const cle of clesDuLancement) if (cles.has(cle)) ajouter(cle, GRAVITE.CORRIGER, "Lancée deux fois", `Lancée deux fois : aussi dans ${nomDe(o)}`);
-  }
-  if (p.poste === "Casse" && p.strat) {
-    const r = await calculerCasse(p, pairesDeLaSemaine(autre), numeroSemaine(autre));
-    if (r.autreSemaineChargee) notes.push(`Casse : chargez la semaine ${r.semaineAvant || "d'avant"} dans l'autre onglet pour voir les pièces relancées.`);
-    for (const t of r.dejaLancees) ajouter(t.ligne.cle, GRAVITE.VERIFIER, "Casse : relancée", `Relancée : déjà lancée en semaine ${r.semaineAvant} dans ${t.lancement}`);
-    for (const l of r.rajouts) ajouter(l.cle, GRAVITE.INFO, "Casse : rajout", `Rajout : pas lancée en semaine ${r.semaineAvant}`);
-  } else {
-    for (const o of pairesDeLaSemaine(autre)) {
-      if (!o.strat || o.poste === "Casse") continue;
-      const cles = (await resume(o.strat, o.bkp)).cles;
-      for (const cle of clesDuLancement) if (cles.has(cle) && cle.length > 3) ajouter(cle, GRAVITE.VERIFIER, "Déjà lancée la semaine d'avant", `Déjà lancée en ${libelleOnglet(autre)} dans ${nomDe(o)}`);
+    for (const cle of clesDuLancement) {
+      if (!cles.has(cle)) continue;
+      ajouter(cle, GRAVITE.CORRIGER, "Lancée deux fois", `Aussi dans ${nomDe(o)}`);
+      deuxFois.set(nomDe(o), (deuxFois.get(nomDe(o)) || 0) + 1);
     }
   }
+  bilan.push(deuxFois.size
+    ? { statut: "alerte", controle: "Autres lancements de la semaine", texte: `Pièces aussi lancées ailleurs : ${[...deuxFois].map(([nom, n]) => `${n} dans ${nom}`).join(", ")}.` }
+    : { statut: "ok", controle: "Autres lancements de la semaine", texte: "Aucune pièce de ce lancement n'est dans un autre lancement de la semaine." });
 
-  // Diakonos : pièces commandées qui ne sont dans aucun lancement comparé.
+  // Pièces déjà lancées dans l'autre onglet semaine ; la casse a sa propre analyse (relancées / rajouts).
+  const autresLancements = pairesDeLaSemaine(autre).filter((o) => o.strat);
+  if (p.poste === "Casse") {
+    const r = await calculerCasse(p, pairesDeLaSemaine(autre), numeroSemaine(autre));
+    if (r.erreur) bilan.push({ statut: "alerte", controle: "Casse", texte: `Casse illisible : ${r.erreur}` });
+    else if (r.autreSemaineChargee)
+      bilan.push({ statut: "info", controle: "Casse", texte: `Pour séparer les pièces relancées des rajouts, chargez la semaine ${r.semaineAvant || "d'avant"} dans l'autre onglet.` });
+    else {
+      bilan.push({ statut: r.dejaLancees.length ? "attention" : "ok", controle: "Casse",
+        texte: `${r.dejaLancees.length} pièce(s) relancée(s) (déjà lancées en semaine ${r.semaineAvant}) et ${r.rajouts.length} rajout(s).` });
+      for (const t of r.dejaLancees) ajouter(t.ligne.cle, GRAVITE.VERIFIER, "Casse : relancée", `Déjà lancée en semaine ${r.semaineAvant} dans ${t.lancement}`);
+      for (const l of r.rajouts) ajouter(l.cle, GRAVITE.INFO, "Casse : rajout", `Pas lancée en semaine ${r.semaineAvant}`);
+    }
+  } else if (!autresLancements.length)
+    bilan.push({ statut: "info", controle: `Déjà lancée en ${libelleOnglet(autre)}`, texte: `Aucun lancement chargé en ${libelleOnglet(autre)} : pas de comparaison.` });
+  else {
+    let n = 0;
+    for (const o of autresLancements) {
+      if (o.poste === "Casse") continue;
+      const cles = (await resume(o.strat, o.bkp)).cles;
+      for (const cle of clesDuLancement) {
+        if (!cles.has(cle) || cle.length <= 3) continue;
+        ajouter(cle, GRAVITE.VERIFIER, "Déjà lancée la semaine d'avant", `Déjà dans ${libelleOnglet(autre)} : ${nomDe(o)}`);
+        n++;
+      }
+    }
+    bilan.push(n
+      ? { statut: "attention", controle: `Déjà lancée en ${libelleOnglet(autre)}`, texte: `${n} pièce(s) déjà dans un lancement de ${libelleOnglet(autre)}.` }
+      : { statut: "ok", controle: `Déjà lancée en ${libelleOnglet(autre)}`, texte: `Aucune pièce déjà lancée en ${libelleOnglet(autre)}.` });
+  }
+
+  // Diakonos : chaque pièce commandée doit être dans un des lancements comparés.
   const semaine = pairesDeLaSemaine(p.parite);
   const toutes = [...semaine, ...pairesDeLaSemaine(autre)];
   const groupe = groupeDiakonosDossier(p);
@@ -6607,134 +6816,216 @@ async function problemesDuLancement(p) {
   let rd = null;
   if (groupe) rd = await calculerDiakonosDossier(groupe, toutes);
   else if (diakonos && diakonos.strat) rd = await calculerDiakonos(diakonos, String(numeroSemaine(p.parite)).padStart(2, "0"), semaine, toutes);
-  if (rd && rd.erreur) notes.push(`Diakonos illisible : ${rd.erreur}`);
-  else if (rd) {
+  if (!rd) bilan.push({ statut: "info", controle: "Diakonos", texte: "Pas de fichier Diakonos pour ce lancement." });
+  else if (rd.erreur) bilan.push({ statut: "alerte", controle: "Diakonos", texte: `Diakonos illisible : ${rd.erreur}` });
+  else {
     const portee = porteeDiakonos(rd);
+    if (!rd.lancements.length) bilan.push({ statut: "attention", controle: "Diakonos", texte: `${portee.aucun}.` });
+    else if (!rd.manquantes.length) bilan.push({ statut: "ok", controle: "Diakonos", texte: `Les ${rd.nbPieces} pièces commandées sont ${portee.dans}.` });
+    else bilan.push({ statut: "alerte", controle: "Diakonos", texte: `${rd.manquantes.length} pièce(s) commandée(s) absente(s) ${portee.de} (sur ${rd.nbPieces}).` });
     for (const m of rd.manquantes) {
       const ailleurs = rd.ailleurs.get(m.cle);
-      hors.push({
+      dehors({
         cle: m.cle,
         article: m.article,
         dimensions: dimensionsDiakonos(m),
         coloris: m.coloris,
-        texte: `Commandée (Diakonos) mais absente ${portee.de}${ailleurs ? ` : elle est dans ${ailleurs}` : ""}`,
+        type: "Commandée, pas lancée (Diakonos)",
+        detail: `Absente ${portee.de}${ailleurs ? ` ; elle est dans ${ailleurs}` : ""}`,
       });
     }
-    notes.push(`Diakonos : ${rd.fichier}, comparé à ${rd.lancements.join(", ") || "aucun lancement"}.`);
   }
-  return { parCle, hors, notes };
+  // Pièces hors du lancement sans description (en trop dans la liste de coupe ou le .bkp) : celle du Diakonos.
+  const decrites = new Map(hors.filter((h) => h.article).map((h) => [h.cle, h]));
+  for (const h of hors) {
+    const d = decrites.get(h.cle);
+    if (!h.article && d) Object.assign(h, { article: d.article, dimensions: d.dimensions, coloris: d.coloris });
+  }
+  return { parCle, hors, bilan, diakonos: rd };
 }
 
 async function problemesLancementXlsx(p) {
-  const { parCle, hors, notes } = await problemesDuLancement(p);
+  const { parCle, hors, bilan, diakonos } = await problemesDuLancement(p);
   const classeur = await classeurEnCache(p.strat);
   const { feuille, entetes } = trouverFeuilleEtEntetes(classeur);
   const doublons = doublonsLancement(classeur).lignes;
-  const valeur = (r, c) => {
-    const v = cellValue(feuille.getRow(r).getCell(c));
+  const colonne = (r, nom) => {
+    const v = entetes[nom] ? cellValue(feuille.getRow(r).getCell(entetes[nom])) : null;
     return v === null || v === undefined ? "" : v;
   };
-  let nbColonnes = 0;
-  feuille.getRow(1).eachCell({ includeEmpty: false }, (_c, n) => (nbColonnes = Math.max(nbColonnes, n)));
 
-  // Charte Laisné Industrie : en-tête bordeaux, rouge clair = à corriger, ambre = à vérifier.
-  const BORDEAUX = "FF78140C";
-  const FOND = { [GRAVITE.CORRIGER]: "FFF9D9D4", [GRAVITE.VERIFIER]: "FFFFF1CC", [GRAVITE.INFO]: "FFF4F3F1" };
-  const fond = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
-  const enTete = (ligne) =>
-    ligne.eachCell((c) => {
-      c.font = { name: "Lato", bold: true, color: { argb: "FFFFFFFF" } };
-      c.fill = fond(BORDEAUX);
-      c.alignment = { vertical: "middle", wrapText: true };
-    });
-  const wb = new ExcelJS.Workbook();
-
-  // 1. Le lancement, ligne par ligne, avec ses problèmes.
-  const f1 = wb.addWorksheet("Lancement", { views: [{ state: "frozen", xSplit: 2, ySplit: 1 }] });
-  const titres = [];
-  for (let c = 1; c <= nbColonnes; c++) titres.push(String(valeur(1, c)));
-  enTete(f1.addRow(["Problèmes", "Ligne Excel", ...titres]));
-  const compte = { [GRAVITE.CORRIGER]: 0, [GRAVITE.VERIFIER]: 0, [GRAVITE.INFO]: 0 };
-  const parType = new Map();
+  // Les lignes du lancement, avec leurs problèmes.
   const cleDeLigne = (r) => {
-    const commande = String(valeur(r, entetes[COL_COMMANDE])).trim();
+    const commande = String(colonne(r, COL_COMMANDE)).trim();
     if (!commande) return null;
-    const cleColonne = entetes[COL_CLE] ? String(valeur(r, entetes[COL_CLE])).trim() : "";
-    return cleColonne || cleLigne(commande, entetes[COL_LIGNE] ? valeur(r, entetes[COL_LIGNE]) : null);
+    const cleColonne = String(colonne(r, COL_CLE)).trim();
+    return cleColonne || cleLigne(commande, entetes[COL_LIGNE] ? colonne(r, COL_LIGNE) : null);
   };
-  const protection = (r) => estProtection(entetes[COL_AGGLO] ? valeur(r, entetes[COL_AGGLO]) : "");
+  const protection = (r) => estProtection(colonne(r, COL_AGGLO));
   // Les problèmes d'une pièce vont sur ses vraies lignes ; sur ses lignes de protection seulement si elle n'a qu'elles.
   const clesAvecPiece = new Set();
   for (let r = 2; r <= (feuille.rowCount || 0); r++) if (cleDeLigne(r) && !protection(r)) clesAvecPiece.add(cleDeLigne(r));
+
+  // Une ligne du rapport par pièce et par problème (les lignes Excel d'une même pièce regroupées).
+  const dimensions = (r) => [colonne(r, "conf_longueur"), colonne(r, "conf_largeur"), colonne(r, "conf_epaisseur")].filter((v) => v !== "").join(" × ");
+  const joindre = (valeurs) => [...new Set(valeurs.map(String).filter(Boolean))].join(" / ");
+  const parProbleme = new Map();
   for (let r = 2; r <= (feuille.rowCount || 0); r++) {
     const cle = cleDeLigne(r);
     if (!cle) continue;
     const liste = protection(r) && clesAvecPiece.has(cle) ? [] : [...(parCle.get(cle) || [])];
-    if (doublons.has(r)) liste.unshift({ gravite: GRAVITE.CORRIGER, type: "Ligne en double", texte: "Ligne en double : identique à une ligne au-dessus (à supprimer)" });
-    const valeurs = [];
-    for (let c = 1; c <= nbColonnes; c++) valeurs.push(valeur(r, c));
-    const ligne = f1.addRow([liste.map((x) => x.texte).join("\n"), r, ...valeurs]);
-    ligne.font = { name: "Lato" };
-    if (!liste.length) continue;
-    const gravite = Math.max(...liste.map((x) => x.gravite));
-    compte[gravite]++;
-    for (const x of liste) parType.set(x.type, (parType.get(x.type) || 0) + 1);
-    ligne.eachCell({ includeEmpty: true }, (c) => (c.fill = fond(FOND[gravite])));
-    ligne.getCell(1).font = { name: "Lato", bold: true, color: { argb: gravite === GRAVITE.INFO ? "FF22231D" : BORDEAUX } };
-    ligne.getCell(1).alignment = { wrapText: true, vertical: "top" };
+    if (doublons.has(r)) liste.unshift({ gravite: GRAVITE.CORRIGER, type: "Ligne en double", detail: "Identique à une ligne au-dessus : la retirer" });
+    for (const x of liste) {
+      const id = `${cle}|${x.type}|${x.detail}`;
+      if (!parProbleme.has(id)) parProbleme.set(id, { ...x, cle, rangs: [] });
+      parProbleme.get(id).rangs.push(r);
+    }
   }
-  f1.getColumn(1).width = 70;
-  f1.getColumn(2).width = 8;
-  for (let c = 3; c <= nbColonnes + 2; c++) f1.getColumn(c).width = Math.min(30, Math.max(10, titres[c - 3].length + 2));
-  f1.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: nbColonnes + 2 } };
+  const pieces = [...parProbleme.values()].map((e) => ({
+    ...e,
+    article: joindre(e.rangs.map((r) => colonne(r, COL_ARTICLE))),
+    dimensions: joindre(e.rangs.map(dimensions)),
+    coloris: joindre(e.rangs.map((r) => colonne(r, "coloris"))),
+    quantite: joindre(e.rangs.map((r) => colonne(r, COL_QTE))),
+    lignes: e.rangs.join(", "),
+  }));
+  for (const h of hors) pieces.push({ ...h, quantite: "", lignes: "hors lancement", rangs: [Infinity] });
 
-  // 2. Les pièces à problème qui ne sont pas dans le lancement.
-  const f2 = wb.addWorksheet("Hors du lancement", { views: [{ state: "frozen", ySplit: 1 }] });
-  enTete(f2.addRow(["Pièce (commande + ligne)", "Article", "Dimensions", "Coloris", "Problème"]));
-  for (const h of hors) {
-    const ligne = f2.addRow([h.cle, h.article || "", h.dimensions || "", h.coloris || "", h.texte]);
-    ligne.font = { name: "Lato" };
-    ligne.eachCell({ includeEmpty: true }, (c) => (c.fill = fond(FOND[GRAVITE.CORRIGER])));
+  // Regroupées par problème, dans l'ordre du rapport (les plus graves d'abord).
+  const groupes = new Map();
+  for (const e of pieces) {
+    if (!groupes.has(e.type)) groupes.set(e.type, []);
+    groupes.get(e.type).push(e);
   }
-  if (!hors.length) f2.addRow(["Aucune"]).font = { name: "Lato", italic: true };
-  [26, 22, 16, 12, 90].forEach((w, i) => (f2.getColumn(i + 1).width = w));
+  const ordre = [...groupes.keys()].sort(
+    (a, b) => Math.max(...groupes.get(b).map((e) => e.gravite)) - Math.max(...groupes.get(a).map((e) => e.gravite)) || (RANG_PROBLEME.get(a) ?? 99) - (RANG_PROBLEME.get(b) ?? 99)
+  );
+  for (const type of ordre) groupes.get(type).sort((a, b) => a.rangs[0] - b.rangs[0] || a.cle.localeCompare(b.cle));
+  const aTraiter = pieces.filter((e) => e.gravite > GRAVITE.INFO);
+  const nbCorriger = aTraiter.filter((e) => e.gravite === GRAVITE.CORRIGER).length;
 
-  // 3. Résumé.
-  const f3 = wb.addWorksheet("Résumé");
-  f3.addRow([`${titreCase(p)} — ${p.strat.name}`]).font = { name: "Raleway", bold: true, size: 16, color: { argb: BORDEAUX } };
-  f3.addRow([`Problèmes du lancement · ${new Date().toLocaleDateString("fr-FR")} · LAISNÉ INDUSTRIE — document interne`]).font = { name: "Lato", italic: true, color: { argb: "FF797978" } };
-  f3.addRow([]);
-  const ligneCompte = (texte, n, argb) => {
-    const l = f3.addRow([texte, n]);
-    l.font = { name: "Lato", bold: true };
-    if (argb) l.getCell(1).fill = fond(argb);
+  // Mise en page (charte Laisné Industrie) : une feuille A4 paysage, lue de haut en bas.
+  const BORDEAUX = "FF78140C";
+  const NOIR = "FF22231D";
+  const GRIS = "FF797978";
+  const COULEURS = {
+    ok: { fond: "FFE3F1E4", texte: "FF2E7D32", libelle: "✔ OK" },
+    alerte: { fond: "FFF9D9D4", texte: "FFC62828", libelle: "⚠ Problème" },
+    attention: { fond: "FFFFF1CC", texte: "FFB45309", libelle: "⚠ À vérifier" },
+    info: { fond: "FFF4F3F1", texte: GRIS, libelle: "— Info" },
   };
-  ligneCompte("Lignes à corriger (rouge)", compte[GRAVITE.CORRIGER], FOND[GRAVITE.CORRIGER]);
-  ligneCompte("Lignes à vérifier (jaune)", compte[GRAVITE.VERIFIER], FOND[GRAVITE.VERIFIER]);
-  ligneCompte("Lignes avec une remarque (gris)", compte[GRAVITE.INFO], FOND[GRAVITE.INFO]);
-  ligneCompte("Pièces à problème hors du lancement", hors.length, null);
-  f3.addRow([]);
-  if (parType.size) {
-    enTete(f3.addRow(["Problème", "Lignes"]));
-    for (const [type, n] of [...parType.entries()].sort((a, b) => b[1] - a[1])) f3.addRow([type, n]).font = { name: "Lato" };
-    f3.addRow([]);
+  const STATUT_GRAVITE = { [GRAVITE.CORRIGER]: "alerte", [GRAVITE.VERIFIER]: "attention", [GRAVITE.INFO]: "info" };
+  const LARGEURS = [14, 21, 18, 21, 10, 6, 50, 12]; // À faire, pièce, article, dimensions, coloris, qté, explication, lignes
+  const NB = LARGEURS.length;
+  const fond = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
+  const filet = { style: "thin", color: { argb: "FFE9E7E3" } };
+  const bordure = { top: filet, bottom: filet, left: filet, right: filet };
+  // Hauteur d'une ligne d'après la longueur du texte (Excel ne l'ajuste pas tout seul sur les cellules fusionnées).
+  const hauteur = (texte, largeur) => Math.max(18, 15 * String(texte).split("\n").reduce((t, l) => t + Math.max(1, Math.ceil((l.length * 1.25) / largeur)), 0) + 4);
+  const largeurDe = (de, a) => LARGEURS.slice(de - 1, a).reduce((t, l) => t + l, 0);
+
+  const wb = new ExcelJS.Workbook();
+  const base = p.strat.name.replace(/\.[^.]*$/, "");
+  const f = wb.addWorksheet("Rapport", {
+    views: [{ showGridLines: false }],
+    pageSetup: { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
+    headerFooter: { oddFooter: `&L${base} — LAISNÉ INDUSTRIE, document interne&RPage &P / &N` },
+  });
+  LARGEURS.forEach((l, i) => (f.getColumn(i + 1).width = l));
+  // Une ligne de texte sur toute la largeur.
+  const bandeau = (texte, police, options = {}) => {
+    const ligne = f.addRow([texte]);
+    f.mergeCells(ligne.number, 1, ligne.number, NB);
+    const c = ligne.getCell(1);
+    c.font = { name: "Lato", ...police };
+    c.alignment = { vertical: "middle", wrapText: true, indent: options.indent || 0 };
+    if (options.fond) c.fill = fond(options.fond);
+    if (options.bordureGauche) c.border = { left: { style: "thick", color: { argb: options.bordureGauche } } };
+    ligne.height = options.hauteur || hauteur(texte, largeurDe(1, NB));
+    return ligne;
+  };
+  const titreSection = (texte) => {
+    f.addRow([]);
+    bandeau(texte, { bold: true, size: 12, color: { argb: "FFFFFFFF" } }, { fond: BORDEAUX, hauteur: 22, indent: 1 });
+  };
+
+  // En-tête.
+  bandeau(`${titreCase(p)} — ${base}`, { name: "Raleway", bold: true, size: 18, color: { argb: BORDEAUX } }, { hauteur: 30 });
+  bandeau(`Rapport de contrôle du lancement · semaine ${numeroSemaine(p.parite)} · ${new Date().toLocaleDateString("fr-FR")} · LAISNÉ INDUSTRIE — document interne`,
+    { italic: true, color: { argb: GRIS } });
+  const nbVerifier = aTraiter.length - nbCorriger;
+  const resumeTexte = !aTraiter.length
+    ? "Aucun problème trouvé."
+    : `${nbCorriger ? `${nbCorriger} problème(s) à corriger${nbVerifier ? `, ${nbVerifier} à vérifier` : ""}` : `${nbVerifier} problème(s) à vérifier`}. Le détail des pièces est plus bas.`;
+  bandeau(resumeTexte, { bold: true, size: 13, color: { argb: aTraiter.length ? COULEURS.alerte.texte : COULEURS.ok.texte } },
+    { fond: aTraiter.length ? COULEURS.alerte.fond : COULEURS.ok.fond, hauteur: 26, indent: 1 });
+
+  // 1. Bilan des contrôles.
+  titreSection("1. Bilan des contrôles");
+  for (const b of bilan) {
+    const ligne = f.addRow([COULEURS[b.statut].libelle, b.controle, "", b.texte]);
+    f.mergeCells(ligne.number, 2, ligne.number, 3);
+    f.mergeCells(ligne.number, 4, ligne.number, NB);
+    ligne.eachCell({ includeEmpty: true }, (c, n) => {
+      c.font = { name: "Lato", bold: n <= 2, color: { argb: n === 1 ? COULEURS[b.statut].texte : NOIR } };
+      c.alignment = { vertical: "middle", wrapText: true };
+      c.border = bordure;
+    });
+    ligne.getCell(1).fill = fond(COULEURS[b.statut].fond);
+    ligne.height = Math.max(hauteur(b.texte, largeurDe(4, NB)), hauteur(b.controle, largeurDe(2, 3)));
   }
+
+  // 2. Détail des pièces, problème par problème.
+  titreSection(aTraiter.length || pieces.length ? "2. Détail des pièces à problème" : "2. Détail des pièces : aucune pièce à problème");
+  if (pieces.length) {
+    const entete = f.addRow(["À faire", "Pièce (commande + ligne)", "Article", "Dimensions (L × l × ép.)", "Coloris", "Qté", "Explication", "Ligne(s) Excel du lancement"]);
+    entete.eachCell((c) => {
+      c.font = { name: "Lato", bold: true, size: 9, color: { argb: BORDEAUX } };
+      c.alignment = { vertical: "bottom", wrapText: true };
+      c.border = { bottom: { style: "medium", color: { argb: BORDEAUX } } };
+    });
+    entete.height = 30;
+    for (const type of ordre) {
+      const liste = groupes.get(type);
+      const statut = STATUT_GRAVITE[Math.max(...liste.map((e) => e.gravite))];
+      f.addRow([]).height = 8;
+      bandeau(`${type} — ${liste.length} pièce(s)`, { bold: true, size: 11, color: { argb: COULEURS[statut].texte } },
+        { fond: COULEURS[statut].fond, bordureGauche: COULEURS[statut].texte, hauteur: 20, indent: 1 });
+      if (SENS_PROBLEME.has(type)) bandeau(SENS_PROBLEME.get(type), { italic: true, size: 9, color: { argb: GRIS } }, { indent: 1 });
+      for (const e of liste) {
+        const ligne = f.addRow([A_FAIRE[e.gravite], e.cle, e.article, e.dimensions, e.coloris, e.quantite, e.detail, e.lignes]);
+        ligne.eachCell({ includeEmpty: true }, (c, n) => {
+          c.font = { name: "Lato", bold: n === 2, color: { argb: n === 1 ? COULEURS[STATUT_GRAVITE[e.gravite]].texte : NOIR } };
+          c.alignment = { vertical: "top", wrapText: true };
+          c.border = bordure;
+        });
+        ligne.height = Math.max(hauteur(e.detail, LARGEURS[6]), hauteur(e.dimensions, LARGEURS[3]), hauteur(e.lignes, LARGEURS[7]));
+      }
+    }
+  }
+
+  // 3. Fichiers comparés.
+  titreSection("3. Fichiers comparés");
   const fichiers = [
     ["Lancement", p.strat && p.strat.name],
-    ["Liste de coupe", p.coupe && p.coupe.name],
-    ["Fichier .bkp", p.bkp && p.bkp.name],
+    ["Liste de coupe", p.coupe ? p.coupe.name : "—"],
+    ["Optimisation (.bkp)", p.bkp ? p.bkp.name : "—"],
+    ["Diakonos", diakonos && diakonos.fichier ? `${diakonos.fichier}${diakonos.lancements && diakonos.lancements.length ? ` — comparé à ${diakonos.lancements.join(", ")}` : ""}` : "—"],
   ];
-  for (const [nom, f] of fichiers) f3.addRow([nom, f || "—"]).font = { name: "Lato" };
-  for (const n of notes) f3.addRow([n]).font = { name: "Lato", italic: true };
-  f3.getColumn(1).width = 60;
-  f3.getColumn(2).width = 40;
+  for (const [nom, valeur] of fichiers) {
+    const ligne = f.addRow(["", nom, "", valeur]);
+    f.mergeCells(ligne.number, 2, ligne.number, 3);
+    f.mergeCells(ligne.number, 4, ligne.number, NB);
+    ligne.getCell(2).font = { name: "Lato", bold: true, color: { argb: GRIS } };
+    ligne.getCell(4).font = { name: "Lato", color: { argb: NOIR } };
+    ligne.getCell(4).alignment = { wrapText: true, vertical: "top" };
+    ligne.height = hauteur(valeur, largeurDe(4, NB));
+  }
 
-  const base = p.strat.name.replace(/\.[^.]*$/, "");
-  const nbProblemes = compte[GRAVITE.CORRIGER] + compte[GRAVITE.VERIFIER] + hors.length;
-  return { nom: `${base}_problemes.xlsx`, octets: new Uint8Array(await wb.xlsx.writeBuffer()), nbProblemes };
+  return { nom: `${base}_problemes.xlsx`, octets: new Uint8Array(await wb.xlsx.writeBuffer()), nbProblemes: aTraiter.length };
 }
 
-// Après un contrôle : s'il y a un problème, le fichier des problèmes du lancement est créé tout seul.
+// Après un contrôle : s'il y a un problème, le rapport des problèmes du lancement est créé tout seul.
 async function problemesAutomatiques(p) {
   if (!p.strat) return;
   try {
