@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V4.3 — Contrôle de coupe</title>
+<title>Sentinelle V4.4 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -265,7 +265,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V4.3</div>
+        <div class="sous-titre">Contrôle de coupe · V4.4</div>
       </div>
     </div>
   </header>
@@ -298,7 +298,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V4.3 · Contrôle de coupe</span>
+    <span>Sentinelle V4.4 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -4994,12 +4994,12 @@ function afficherRapport(zone, p) {
   html +=
     r.nbAnomalies === 0
       ? bandeau(`✔ Tout est correct — ${attendu} pièces`, "ok")
-      : bandeau(`⚠ ${r.nbAnomalies} anomalie(s) — ${attendu} attendues, ${trouve} trouvées`, "alerte");
+      : bandeau(`⚠ ${r.nbAnomalies} pièce(s) à vérifier — ${attendu} pièces dans le lancement, ${trouve} dans ${sourceControle(p)}`, "alerte");
   const details = [];
-  if (p.source === "bkp") details.push("Comparé au .bkp");
+  if (p.source === "bkp") details.push("Pas de liste de coupe : lancement comparé au .bkp");
   if (p.nbUnitaires !== null && p.nbPiecesTrouvees) {
     const unitaire = (p.nbUnitaires * 100) / p.nbPiecesTrouvees;
-    details.push(`${pourcent(unitaire)} % unitaire · ${pourcent(100 - unitaire)} % grain matching`);
+    details.push(`Liste de coupe : ${pourcent(unitaire)} % des pièces en unitaire, ${pourcent(100 - unitaire)} % en grain matching`);
   }
   if (details.length) html += `<div class="note">${details.join(" · ")}</div>`;
   html += htmlSemainesLivraison(p);
@@ -5017,7 +5017,7 @@ function afficherRapport(zone, p) {
   }
   const anomalies = r.lignes.filter((l) => l.statut !== "OK");
   const tout = p.listeDepliee || anomalies.length <= LIMITE_LIGNES;
-  for (const l of tout ? anomalies : anomalies.slice(0, LIMITE_LIGNES)) html += htmlAnomalie(l);
+  for (const l of tout ? anomalies : anomalies.slice(0, LIMITE_LIGNES)) html += htmlAnomalie(l, p);
   if (!tout) html += `<button type="button" class="texte" data-action="deplier">Afficher les ${anomalies.length} anomalies</button>`;
   zone.innerHTML = html;
   const deplier = zone.querySelector('[data-action="deplier"]');
@@ -5061,21 +5061,31 @@ async function creerSansDoublons(p) {
   alert(message);
 }
 
-function htmlAnomalie(l) {
+// Ce à quoi le lancement a été comparé : la liste de coupe, sinon le .bkp.
+const sourceControle = (p) => (p.source === "bkp" ? "le .bkp" : "la liste de coupe");
+
+// Une pièce à vérifier, en une phrase : où elle est prévue, où elle est trouvée, ce qui manque.
+function htmlAnomalie(l, p) {
   const manquant = l.statut === "Manquant";
-  let detail = "";
-  if (l.article) detail += `${echapper(l.article)} · `;
-  if (l.lancement) detail += `${echapper(l.lancement)} · `;
-  if ((l.couches || 1) > 1) {
-    // Pièce assemblée : les quantités comptent les couches (compact, support…).
-    detail += `${fmtNombre(l.pieces)} pièce(s) de ${l.couches} couches : ${fmtNombre(l.qte_attendue)} couches attendues, ${fmtNombre(l.qte_trouvee)} trouvée(s)`;
-  } else {
-    detail += `attendu ${fmtNombre(l.qte_attendue)}, trouvé ${fmtNombre(l.qte_trouvee)} (écart ${fmtNombre(l.ecart)})`;
+  const source = sourceControle(p);
+  // Pièce assemblée (compact + support…) : les quantités comptent les couches.
+  const couches = (l.couches || 1) > 1;
+  const unite = (n) => (couches ? `${fmtNombre(n)} couche(s)` : `${fmtNombre(n)} pièce(s)`);
+  const titre =
+    l.statut === "Manquant" ? `Absente de ${source}` : l.statut === "En trop" ? "Pas dans le lancement" : l.statut === "Écart de quantité" ? "Quantité différente" : l.statut;
+  let detail;
+  if (l.statut === "Manquant") detail = `${unite(l.qte_attendue)} prévue(s) dans le lancement, aucune dans ${source}.`;
+  else if (l.statut === "En trop") detail = `${unite(l.qte_trouvee)} dans ${source}, mais rien dans le lancement.`;
+  else {
+    const ecart = Math.abs(l.qte_trouvee - l.qte_attendue);
+    detail = `${unite(l.qte_attendue)} prévue(s) dans le lancement, ${fmtNombre(l.qte_trouvee)} dans ${source} : ${fmtNombre(ecart)} ${l.qte_trouvee < l.qte_attendue ? "en moins" : "en trop"}.`;
   }
+  if (couches) detail = `Pièce en ${l.couches} couches : ${detail}`;
+  const article = l.article ? `Article ${echapper(l.article)} — ` : "";
   return `
     <div class="anomalie ${manquant ? "manquant" : "ecart"}">
-      <div class="anomalie-haut"><strong>${echapper(l.commande)}${l.ligne ? ` · ligne ${echapper(l.ligne)}` : ""}</strong><span>${echapper(l.statut)}</span></div>
-      <div>${detail}</div>
+      <div class="anomalie-haut"><strong>${echapper(l.commande)}${l.ligne ? ` · ligne ${echapper(l.ligne)}` : ""}</strong><span>${echapper(titre)}</span></div>
+      <div>${article}${echapper(detail)}</div>
     </div>`;
 }
 
@@ -5087,11 +5097,11 @@ function semainePrincipale(p) {
 function htmlSemainesLivraison(p) {
   if (p.semainesLivraison.length <= 1 || p.poste === "Casse") return "";
   const principale = semainePrincipale(p);
-  let texte = `⚠ Livraison de plusieurs semaines (principale : semaine ${echapper(principale.semaine)})`;
+  let texte = `⚠ Pièces à livrer une autre semaine — ce lancement est pour la semaine ${echapper(principale.semaine)}`;
   for (const s of p.semainesLivraison) {
     if (s === principale) continue;
     const cles = s.cles || [];
-    texte += `<br>Semaine ${echapper(s.semaine)} : ${s.nbPieces} pièce(s) — ${cles.length <= 6 ? cles.join(", ") : `${cles.slice(0, 6).join(", ")}…`}`;
+    texte += `<br>• ${s.nbPieces} pièce(s) à livrer en semaine ${echapper(s.semaine)} : ${echapper(cles.length <= 6 ? cles.join(", ") : `${cles.slice(0, 6).join(", ")}…`)}`;
   }
   return `<div class="bandeau attention normal">${texte}</div>`;
 }
@@ -5106,10 +5116,15 @@ function afficherScies(zone, p) {
   if (p.ecartsScies.length === 0) {
     html += bandeau(`✔ Scies : tout correspond — ${panneaux}`, "ok");
   } else {
-    html += bandeau(`⚠ Scies : ${p.ecartsScies.length} écart(s) sur ${panneaux}`, "alerte");
+    html += bandeau(`⚠ Scies : ${p.ecartsScies.length} pièce(s) différente(s) entre le lancement et le .bkp (${panneaux} vérifiés)`, "alerte");
     for (const e of p.ecartsScies) {
-      const type = e.attendu === 0 ? "en trop (absente du lancement)" : e.trouve === 0 ? "absente du .bkp" : "quantité différente";
-      html += `<div class="ligne-detail">${echapper(e.cle)} — attendu ${fmtNombre(e.attendu)}, .bkp ${fmtNombre(e.trouve)} — ${type}</div>`;
+      const texte =
+        e.attendu === 0
+          ? `${fmtNombre(e.trouve)} dans le .bkp, mais rien dans le lancement (en trop)`
+          : e.trouve === 0
+            ? `${fmtNombre(e.attendu)} prévue(s) dans le lancement, absente du .bkp (pas optimisée)`
+            : `${fmtNombre(e.attendu)} prévue(s) dans le lancement, ${fmtNombre(e.trouve)} dans le .bkp`;
+      html += `<div class="ligne-detail"><strong>${echapper(e.cle)}</strong> : ${texte}</div>`;
     }
   }
   html += htmlCouleurs(p.couleurs);
@@ -5121,11 +5136,11 @@ function htmlCouleurs(c) {
   if (!c) return "";
   if (c.sansStratifie) return '<div class="note">Couleurs : pas de stratifié dans ce .bkp</div>';
   if (c.absentes.length === 0) return bandeau(`✔ Couleurs : les ${c.nbCouleurs} couleurs sont dans le .bkp`, "ok");
-  let html = bandeau(`⚠ Couleurs : ${c.absentes.length} absente(s) du .bkp`, "alerte");
+  let html = bandeau(`⚠ Couleurs : ${c.absentes.length} couleur(s) du lancement absente(s) du .bkp — ces panneaux ne sont pas optimisés`, "alerte");
   for (const a of c.absentes) {
     const n = a.cles.length;
     const pieces = n <= 4 ? a.cles.join(", ") : `${a.cles.slice(0, 4).join(", ")}… (${n})`;
-    html += `<div class="ligne-detail">${echapper(a.couleur)} (${a.face}) — ${fmtNombre(a.nbPieces)} pièce(s) : ${echapper(pieces)}</div>`;
+    html += `<div class="ligne-detail">Couleur <strong>${echapper(a.couleur)}</strong> (face ${echapper(a.face)}) : ${fmtNombre(a.nbPieces)} pièce(s) — ${echapper(pieces)}</div>`;
   }
   return html;
 }
@@ -5779,10 +5794,10 @@ function htmlDoublonsRecap(lignes) {
   }
   const groupes = doublonsEntreLancements(clesParLancement);
   if (groupes.length === 0) return "";
-  let html = '<div class="alertes-recap"><div class="titre-alerte alerte">⚠ Pièces lancées deux fois</div>';
+  let html = '<div class="alertes-recap"><div class="titre-alerte alerte">⚠ Pièces lancées deux fois : elles sont dans deux lancements</div>';
   for (const g of groupes) {
     const p = paireParNom.get(g.lancements[0]);
-    html += `<div class="ligne-alerte" ${p ? `data-case="${p.id}"` : ""}>${echapper(listeClesRecap(g.cles))} — ${echapper(g.lancements.join(" + "))}</div>`;
+    html += `<div class="ligne-alerte" ${p ? `data-case="${p.id}"` : ""}>${echapper(listeClesRecap(g.cles))} : dans ${echapper(g.lancements.join(" et dans "))}</div>`;
   }
   return html + "</div>";
 }
@@ -5799,7 +5814,7 @@ function htmlDejaLancees(lignes, autres, libelleAutre) {
       const communes = [...l.cles].filter((cle) => o.cles.has(cle) && cle.length > 3).sort();
       if (communes.length === 0) continue;
       if (!html) html = `<div class="alertes-recap"><div class="titre-alerte alerte">⚠ Pièces déjà lancées en ${echapper(libelleAutre)}</div>`;
-      html += `<div class="ligne-alerte" data-case="${l.paire.id}">${echapper(listeClesRecap(communes))} — ${echapper(nomLancementRecap(l))} et ${echapper(nomLancementRecap(o))}</div>`;
+      html += `<div class="ligne-alerte" data-case="${l.paire.id}">${echapper(listeClesRecap(communes))} : dans ${echapper(nomLancementRecap(l))}, et déjà dans ${echapper(nomLancementRecap(o))}</div>`;
     }
   }
   return html ? html + "</div>" : "";
@@ -5814,8 +5829,8 @@ function htmlAutresSemainesLivraison(lignes) {
     const principale = semainePrincipale(p);
     for (const s of p.semainesLivraison) {
       if (s === principale) continue;
-      if (!html) html = '<div class="alertes-recap"><div class="titre-alerte attention">⚠ Pièces d\'une autre semaine de livraison</div>';
-      html += `<div class="ligne-alerte" data-case="${p.id}">${echapper(listeClesRecap(s.cles || []))} à livrer semaine ${echapper(s.semaine)} — ${echapper(nomLancementRecap(l))}</div>`;
+      if (!html) html = '<div class="alertes-recap"><div class="titre-alerte attention">⚠ Pièces à livrer une autre semaine que leur lancement</div>';
+      html += `<div class="ligne-alerte" data-case="${p.id}">${echapper(listeClesRecap(s.cles || []))} : à livrer en semaine ${echapper(s.semaine)}, lancées dans ${echapper(nomLancementRecap(l))} (semaine ${echapper(semainePrincipale(p).semaine)})</div>`;
     }
   }
   return html ? html + "</div>" : "";
