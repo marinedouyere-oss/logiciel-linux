@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V4.4 — Contrôle de coupe</title>
+<title>Sentinelle V4.5 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -265,7 +265,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V4.4</div>
+        <div class="sous-titre">Contrôle de coupe · V4.5</div>
       </div>
     </div>
   </header>
@@ -298,7 +298,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V4.4 · Contrôle de coupe</span>
+    <span>Sentinelle V4.5 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -6159,7 +6159,20 @@ async function scannerDossier(parite) {
     return;
   }
   const r = repartirFichiersDossier(fichiers, parite, handle.name);
+  r.dossiersLus = dossiersLus(fichiers);
   await placerFichiersScannes(parite, r);
+}
+
+// « 1ER TOUR AGGLO (7 fichiers), FENO (7 fichiers)… » : ce que le scan a vu, sous-dossier par sous-dossier.
+function dossiersLus(fichiers) {
+  const parDossier = new Map();
+  for (const f of fichiers) {
+    const nom = f.chemin && f.chemin.length ? f.chemin.join("/") : "";
+    parDossier.set(nom, (parDossier.get(nom) || 0) + 1);
+  }
+  return [...parDossier.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([nom, n]) => `${nom || "dossier principal"} (${n} fichier${n > 1 ? "s" : ""})`);
 }
 
 // Fichiers du dossier et de ses sous-dossiers (un par lancement : « 1ER TOUR AGGLO », « FENO »…),
@@ -6181,7 +6194,7 @@ async function listerDossier(handle, chemin, fichiers) {
 async function placerFichiersScannes(parite, r) {
   if (r.aucunLancement && !r.diakonos.length) {
     scansEnCours.delete(parite);
-    compteRendu(parite, ["Aucun lancement dans ce dossier."], true);
+    compteRendu(parite, ["Aucun lancement dans ce dossier.", ...(r.dossiersLus && r.dossiersLus.length ? [`Dossiers lus : ${r.dossiersLus.join(", ")}`] : [])], true);
     return;
   }
   const lignes = [];
@@ -6270,6 +6283,7 @@ async function placerFichiersScannes(parite, r) {
   if (lignes.length === 0) compte.push("Aucun lancement de cette semaine dans ce dossier.");
   compte.push(...lignes);
   if (r.nonReconnus.length) compte.push(`Non reconnu(s) : ${r.nonReconnus.join(", ")}`);
+  if (r.dossiersLus && r.dossiersLus.length) compte.push(`Dossiers lus : ${r.dossiersLus.join(", ")}`);
   etatsScan[parite] = { lignes: compte, erreur: lignes.length === 0 };
   if (parite === onglet) afficher();
   // Le scan sert à éviter les clics : les contrôles possibles partent tout seuls.
