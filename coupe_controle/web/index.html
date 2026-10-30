@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V4.0 — Contrôle de coupe</title>
+<title>Sentinelle V4.1 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -212,7 +212,7 @@
 
   <header class="barre">
     <h1>Sentinelle</h1>
-    <div class="sous-titre">Contrôle de coupe · V4.0</div>
+    <div class="sous-titre">Contrôle de coupe · V4.1</div>
   </header>
   <nav class="onglets">
     <button type="button" class="onglet-btn actif" data-onglet="paire">Semaine</button>
@@ -4423,7 +4423,8 @@ const cleCasse = (p, autreSemaine, numeroAutre) =>
   [idFichier(p.strat), p.semaine, numeroAutre, ...autreSemaine.filter((o) => o.strat).map((o) => idFichier(o.strat))].join("|");
 
 async function calculerCasse(p, autreSemaine, numeroAutre) {
-  const r = { cle: cleCasse(p, autreSemaine, numeroAutre), semaineAvant: semaineAvantCasse(p), autreSemaineChargee: null, nbPieces: 0, dejaLancees: [], nbAutres: 0, erreur: null };
+  // dejaLancees : pièces relancées (déjà lancées la semaine d'avant) ; rajouts : les autres.
+  const r = { cle: cleCasse(p, autreSemaine, numeroAutre), semaineAvant: semaineAvantCasse(p), autreSemaineChargee: null, nbPieces: 0, dejaLancees: [], rajouts: [], nbAutres: 0, lancements: [], erreur: null };
   const autre = String(numeroAutre).padStart(2, "0");
   if (!r.semaineAvant || r.semaineAvant !== autre) {
     r.autreSemaineChargee = autre;
@@ -4437,6 +4438,7 @@ async function calculerCasse(p, autreSemaine, numeroAutre) {
     return r;
   }
   r.nbPieces = lignes.length;
+  r.lancements = autreSemaine.filter((o) => o.strat).map((o) => o.strat.name);
   for (const l of lignes) {
     let origine = null;
     for (const o of autreSemaine) {
@@ -4446,17 +4448,46 @@ async function calculerCasse(p, autreSemaine, numeroAutre) {
       }
     }
     if (origine) r.dejaLancees.push({ ligne: l, lancement: origine });
-    else r.nbAutres++;
+    else {
+      r.rajouts.push(l);
+      r.nbAutres++;
+    }
   }
   return r;
 }
 
+const dimensionsCasse = (l) => (l.longueurFinie != null && l.largeurFinie != null ? `${fmtDim(l.longueurFinie)} × ${fmtDim(l.largeurFinie)}` : "");
+const colorisCasse = (l) => (l.toutesDonnees && l.toutesDonnees.coloris) || "";
+
 // « CVC26100337006 · CRED14 · 955 × 270 · coloris 975 »
 function descriptionCasse(l, separateur) {
-  const coloris = l.toutesDonnees && l.toutesDonnees.coloris;
-  return [l.cle, l.article, l.longueurFinie != null && l.largeurFinie != null ? `${fmtDim(l.longueurFinie)} × ${fmtDim(l.largeurFinie)}` : "", coloris ? `coloris ${coloris}` : ""]
-    .filter(Boolean)
-    .join(separateur);
+  const coloris = colorisCasse(l);
+  return [l.cle, l.article, dimensionsCasse(l), coloris ? `coloris ${coloris}` : ""].filter(Boolean).join(separateur);
+}
+
+// Pages du rapport du lancement de la casse : pièces relancées, puis rajouts.
+function partiesCasse(r, base) {
+  const relancees = partieRapport("Relancées", `${base} — Casse : pièces relancées`, ["Commande + ligne", "Article", "Dimensions", "Coloris", "Lancée dans", "Qté"], [34, 34, 26, 18, 58, 12], 5);
+  relancees.total = false;
+  if (r.erreur) {
+    [relancees.statut, relancees.couleurStatut] = [`Casse illisible : ${r.erreur}`, 0xc62828];
+    return [relancees];
+  }
+  if (r.autreSemaineChargee) {
+    [relancees.statut, relancees.couleurStatut] = [`Chargez la semaine ${r.semaineAvant || "d'avant"} dans l'autre onglet pour séparer les pièces relancées et les rajouts`, 0xe65100];
+    return [relancees];
+  }
+  if (!r.dejaLancees.length) [relancees.statut, relancees.couleurStatut] = [`Aucune pièce de la casse n'était lancée en semaine ${r.semaineAvant}`, 0x2e7d32];
+  else [relancees.statut, relancees.couleurStatut] = [`${r.dejaLancees.length} pièce(s) relancée(s) : déjà lancée(s) en semaine ${r.semaineAvant}`, 0xe65100];
+  for (const t of r.dejaLancees) relancees.rangees.push([t.ligne.cle, t.ligne.article || "", dimensionsCasse(t.ligne), colorisCasse(t.ligne), t.lancement, String(t.ligne.pieces)]);
+  if (r.lancements.length) relancees.notes.push(["Comparé à : ", r.lancements.join(", ")]);
+  const rajouts = partieRapport("Rajouts", `${base} — Casse : rajouts`, ["Commande + ligne", "Article", "Dimensions", "Coloris", "Qté"], [40, 52, 36, 36, 18], 4);
+  rajouts.total = false;
+  rajouts.statut = r.rajouts.length
+    ? `${r.rajouts.length} rajout(s) : pièce(s) pas lancée(s) en semaine ${r.semaineAvant}`
+    : `Aucun rajout : toutes les pièces étaient lancées en semaine ${r.semaineAvant}`;
+  for (const l of r.rajouts) rajouts.rangees.push([l.cle, l.article || "", dimensionsCasse(l), colorisCasse(l), String(l.pieces)]);
+  return [relancees, rajouts];
 }
 
 function remplirCasse(zone, p) {
@@ -4781,7 +4812,7 @@ function diakonosDeLaCase(p) {
   return tour ? paireFixe(POSTES_DIAKONOS[tour === "2" ? 1 : 0], p.parite) : null;
 }
 
-// Une page par liste du sommaire (agglo, strats, couleurs), puis le Diakonos du tour.
+// Une page par liste du sommaire (agglo, strats, couleurs), puis le Diakonos du tour ou, pour la casse, les pièces relancées et les rajouts.
 async function rapportLancement(p) {
   const autre = p.parite === "paire" ? "impaire" : "paire";
   const semaine = pairesDeLaSemaine(p.parite);
@@ -4796,12 +4827,13 @@ async function rapportLancement(p) {
   const base = s ? baseSommaire(s) : baseLancement(nomLancement);
   const diakonos = diakonosDeLaCase(p);
   if (diakonos && diakonos.strat) parties.push(partieDiakonos(await calculerDiakonos(diakonos, numero, semaine, [...semaine, ...pairesDeLaSemaine(autre)]), base));
+  const casse = estCasse(p, nomLancement);
+  if (casse && p.strat) parties.push(...partiesCasse(await calculerCasse(p, pairesDeLaSemaine(autre), numeroSemaine(autre)), base));
   let nbPieces = null;
   if (p.strat) {
     const r = await resume(p.strat, p.bkp);
     if (!Number.isNaN(r.prevues)) nbPieces = String(Math.trunc(r.prevues));
   }
-  const casse = p.poste === "Casse" || /CASSE/i.test(nomLancement);
   const sem = p.semaine || (s ? extraireSemaine(s.lancement) : null);
   const couleur = couleurSemaine(parseInt(sem || numero, 10), casse);
   const sousTitre = s ? sousTitreSommaire(s) : `${nomLancement} · Laisné Industrie`;
@@ -4823,9 +4855,12 @@ function partieDiakonos(r, base) {
   return p;
 }
 
+// Casse (case Casse ou lancement « …CASSE ») : le rapport détaille les pièces relancées et les rajouts.
+const estCasse = (p, nomLancement) => p.poste === "Casse" || /CASSE/i.test(nomLancement || "");
+
 async function exporterLancement(p) {
   const diakonos = diakonosDeLaCase(p);
-  if (!p.sommaire && !(diakonos && diakonos.strat)) {
+  if (!p.sommaire && !(diakonos && diakonos.strat) && !(p.strat && estCasse(p, p.strat.name))) {
     alert(`${titreCase(p)} : ajoutez le sommaire Cut Rite${diakonos ? " (ou le fichier Diakonos)" : ""} pour faire le rapport du lancement.`);
     return;
   }

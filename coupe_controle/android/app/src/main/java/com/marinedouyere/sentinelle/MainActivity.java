@@ -649,8 +649,13 @@ public class MainActivity extends AppCompatActivity {
         return tour != null && depot.paireDiakonos(tour, p.parite).strat != null;
     }
 
+    /** Casse (case Casse ou lancement « …CASSE ») : le rapport détaille les pièces relancées et les rajouts. */
+    private static boolean estCasse(Paire p, String nomLancement) {
+        return "Casse".equals(p.poste) || (nomLancement != null && nomLancement.toUpperCase(Locale.ROOT).contains("CASSE"));
+    }
+
     void exporterLancement(Paire p) {
-        if (p.sommaire == null && !aDiakonos(p)) {
+        if (p.sommaire == null && !aDiakonos(p) && !(p.strat != null && estCasse(p, p.strat.nom))) {
             alerte(titreCase(p) + " : ajoutez le sommaire Cut Rite" + (ControleDiakonos.tourDeLaCase(p) != null ? " (ou le fichier Diakonos)" : "")
                     + " pour faire le rapport du lancement.");
             return;
@@ -675,15 +680,17 @@ public class MainActivity extends AppCompatActivity {
     void exporterLancementVers(Paire p, Uri uri) {
         final String autre = Depot.PAIRE.equals(p.parite) ? Depot.IMPAIRE : Depot.PAIRE;
         final List<Paire> semaine = depot.pairesDeLaSemaine(p.parite);
+        final List<Paire> autreSemaine = depot.pairesDeLaSemaine(autre);
         final List<Paire> toutes = new ArrayList<>(semaine);
-        toutes.addAll(depot.pairesDeLaSemaine(autre));
+        toutes.addAll(autreSemaine);
         final String numero = String.format(Locale.ROOT, "%02d", numeroSemaine(p.parite));
+        final int numeroAutre = numeroSemaine(autre);
         final String tour = ControleDiakonos.tourDeLaCase(p);
         final Paire diakonos = tour != null ? depot.paireDiakonos(tour, p.parite) : null;
         app.annexe.execute(() -> {
             String erreur = null;
             try {
-                byte[] octets = rapportLancement(p, diakonos, numero, semaine, toutes);
+                byte[] octets = rapportLancement(p, diakonos, numero, semaine, toutes, autreSemaine, numeroAutre);
                 try (OutputStream sortie = "file".equals(uri.getScheme())
                         ? new FileOutputStream(new File(uri.getPath()))
                         : getContentResolver().openOutputStream(uri, "wt")) {
@@ -701,8 +708,12 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    /** Hors du fil d'affichage : une page par liste du sommaire (agglo, strats, couleurs), puis le Diakonos du tour. */
-    byte[] rapportLancement(Paire p, Paire diakonos, String numero, List<Paire> semaine, List<Paire> toutes) throws Exception {
+    /**
+     * Hors du fil d'affichage : une page par liste du sommaire (agglo, strats, couleurs), puis le Diakonos du tour
+     * ou, pour la casse, les pièces relancées et les rajouts.
+     */
+    byte[] rapportLancement(Paire p, Paire diakonos, String numero, List<Paire> semaine, List<Paire> toutes, List<Paire> autreSemaine,
+            int numeroAutre) throws Exception {
         List<RapportsSommaire.Partie> parties = new ArrayList<>();
         SommaireCutRite s = null;
         if (p.sommaire != null) {
@@ -714,12 +725,13 @@ public class MainActivity extends AppCompatActivity {
         if (diakonos != null && diakonos.strat != null) {
             parties.add(ControleDiakonos.partie(ControleDiakonos.calculer(diakonos, numero, semaine, toutes, controles), base));
         }
+        boolean casse = estCasse(p, nomLancement);
+        if (casse && p.strat != null) parties.addAll(ControleCasse.parties(ControleCasse.calculer(p, autreSemaine, numeroAutre, controles), base));
         String nbPieces = null;
         if (p.strat != null) {
             double prevues = controles.resume(p.strat, p.bkp).prevues;
             if (!Double.isNaN(prevues)) nbPieces = Js.entierTronque(prevues);
         }
-        boolean casse = "Casse".equals(p.poste) || nomLancement.toUpperCase(Locale.ROOT).contains("CASSE");
         String sem = p.semaine != null ? p.semaine : s != null ? LecteurStrat.extraireSemaine(s.lancement) : null;
         String couleur = SommaireCutRite.couleurSemaine(sem != null ? Integer.parseInt(sem) : Integer.parseInt(numero), casse);
         String sousTitre = s != null ? RapportsSommaire.sousTitre(s) : nomLancement + " · Laisné Industrie";

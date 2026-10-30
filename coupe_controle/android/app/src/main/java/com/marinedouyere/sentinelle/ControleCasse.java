@@ -2,6 +2,7 @@ package com.marinedouyere.sentinelle;
 
 import com.marinedouyere.sentinelle.moteur.Js;
 import com.marinedouyere.sentinelle.moteur.LecteurStrat;
+import com.marinedouyere.sentinelle.moteur.RapportsSommaire;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -27,8 +28,13 @@ final class ControleCasse {
         /** Semaine chargée dans l'autre onglet (null si c'est la bonne). */
         String autreSemaineChargee;
         int nbPieces;
+        /** Pièces relancées : déjà lancées la semaine d'avant. */
         final List<Trouvee> dejaLancees = new ArrayList<>();
+        /** Rajouts : pièces qui n'étaient pas lancées la semaine d'avant. */
+        final List<LecteurStrat.LigneStrat> rajouts = new ArrayList<>();
         int nbAutres;
+        /** Lancements de la semaine d'avant comparés. */
+        final List<String> lancements = new ArrayList<>();
         String erreur;
     }
 
@@ -67,6 +73,7 @@ final class ControleCasse {
             return r;
         }
         r.nbPieces = lignes.size();
+        for (Paire p : autreSemaine) if (p.strat != null) r.lancements.add(p.strat.nom);
         for (LecteurStrat.LigneStrat l : lignes) {
             String origine = null;
             for (Paire p : autreSemaine) {
@@ -76,6 +83,7 @@ final class ControleCasse {
                 }
             }
             if (origine == null) {
+                r.rajouts.add(l);
                 r.nbAutres++;
                 continue;
             }
@@ -92,9 +100,64 @@ final class ControleCasse {
         List<String> morceaux = new ArrayList<>();
         morceaux.add(l.cle);
         if (l.article != null && !l.article.isEmpty()) morceaux.add(l.article);
-        if (l.longueurFinie != null && l.largeurFinie != null) morceaux.add(Js.dimension(l.longueurFinie) + " × " + Js.dimension(l.largeurFinie));
-        String coloris = l.toutesDonnees == null ? null : l.toutesDonnees.get("coloris");
-        if (coloris != null && !coloris.isEmpty()) morceaux.add("coloris " + coloris);
+        String dimensions = dimensions(l);
+        if (!dimensions.isEmpty()) morceaux.add(dimensions);
+        String coloris = coloris(l);
+        if (!coloris.isEmpty()) morceaux.add("coloris " + coloris);
         return String.join(separateur, morceaux);
+    }
+
+    private static String dimensions(LecteurStrat.LigneStrat l) {
+        return l.longueurFinie != null && l.largeurFinie != null ? Js.dimension(l.longueurFinie) + " × " + Js.dimension(l.largeurFinie) : "";
+    }
+
+    private static String article(LecteurStrat.LigneStrat l) {
+        return l.article == null ? "" : l.article;
+    }
+
+    private static String coloris(LecteurStrat.LigneStrat l) {
+        String coloris = l.toutesDonnees == null ? null : l.toutesDonnees.get("coloris");
+        return coloris == null ? "" : coloris;
+    }
+
+    /** Pages du rapport du lancement : pièces relancées, puis rajouts. */
+    static List<RapportsSommaire.Partie> parties(Resultat r, String base) {
+        List<RapportsSommaire.Partie> parties = new ArrayList<>();
+        RapportsSommaire.Partie relancees = RapportsSommaire.partie("Relancées", base + " — Casse : pièces relancées",
+                new String[] {"Commande + ligne", "Article", "Dimensions", "Coloris", "Lancée dans", "Qté"}, new double[] {34, 34, 26, 18, 58, 12}, 5);
+        relancees.total = false;
+        parties.add(relancees);
+        if (r.erreur != null) {
+            relancees.statut = "Casse illisible : " + r.erreur;
+            relancees.couleurStatut = 0xC62828;
+            return parties;
+        }
+        if (r.autreSemaineChargee != null) {
+            relancees.statut = "Chargez la semaine " + (r.semaineAvant == null ? "d'avant" : r.semaineAvant)
+                    + " dans l'autre onglet pour séparer les pièces relancées et les rajouts";
+            relancees.couleurStatut = 0xE65100;
+            return parties;
+        }
+        if (r.dejaLancees.isEmpty()) {
+            relancees.statut = "Aucune pièce de la casse n'était lancée en semaine " + r.semaineAvant;
+            relancees.couleurStatut = 0x2E7D32;
+        } else {
+            relancees.statut = r.dejaLancees.size() + " pièce(s) relancée(s) : déjà lancée(s) en semaine " + r.semaineAvant;
+            relancees.couleurStatut = 0xE65100;
+        }
+        for (Trouvee t : r.dejaLancees) {
+            LecteurStrat.LigneStrat l = t.ligne;
+            relancees.rangees.add(new String[] {l.cle, article(l), dimensions(l), coloris(l), t.lancement, Js.nombre(l.pieces)});
+        }
+        if (!r.lancements.isEmpty()) relancees.notes.add(new String[] {"Comparé à : ", String.join(", ", r.lancements)});
+
+        RapportsSommaire.Partie rajouts = RapportsSommaire.partie("Rajouts", base + " — Casse : rajouts",
+                new String[] {"Commande + ligne", "Article", "Dimensions", "Coloris", "Qté"}, new double[] {40, 52, 36, 36, 18}, 4);
+        rajouts.total = false;
+        rajouts.statut = r.rajouts.isEmpty() ? "Aucun rajout : toutes les pièces étaient lancées en semaine " + r.semaineAvant
+                : r.rajouts.size() + " rajout(s) : pièce(s) pas lancée(s) en semaine " + r.semaineAvant;
+        for (LecteurStrat.LigneStrat l : r.rajouts) rajouts.rangees.add(new String[] {l.cle, article(l), dimensions(l), coloris(l), Js.nombre(l.pieces)});
+        parties.add(rajouts);
+        return parties;
     }
 }

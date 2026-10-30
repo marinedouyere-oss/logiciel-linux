@@ -270,6 +270,25 @@ public class DossierReelTest {
         assertTrue(e, e.contains("à livrer semaine 44"));
         if (!captures.isEmpty()) capturer(a, new File(captures, "s45.png"), 12000);
 
+        // Rapport du lancement de la casse (sans sommaire) : pièces relancées, puis rajouts.
+        File pdfCasse = new File(a.getCacheDir(), "LAN2644CASSE_rapport_lancement.pdf");
+        a.exporterLancementVers(casse45, Uri.fromFile(pdfCasse));
+        long finPdf = System.currentTimeMillis() + 60_000;
+        while (!(pdfCasse.exists() && pdfCasse.length() > 0) && System.currentTimeMillis() < finPdf) {
+            ShadowLooper.idleMainLooper();
+            Thread.sleep(50);
+        }
+        Thread.sleep(300);
+        if (!captures.isEmpty()) java.nio.file.Files.copy(pdfCasse.toPath(), new File(captures, "appli_LAN2644CASSE_rapport_lancement.pdf").toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        String contenuCasse = new String(java.nio.file.Files.readAllBytes(pdfCasse.toPath()), java.nio.charset.StandardCharsets.ISO_8859_1);
+        // Relancées sur une page, les 47 rajouts sur deux.
+        assertTrue(contenuCasse.contains("/Count 3"));
+        for (String attendu : new String[] {"Casse : pi\\350ces relanc\\351es", "13 pi\\350ce\\(s\\) relanc\\351e\\(s\\) : d\\351j\\340 lanc\\351e\\(s\\) en semaine 44",
+                "CVC26100337006", "LAN264401STRAT.xlsx", "Casse : rajouts", "47 rajout\\(s\\) : pi\\350ce\\(s\\) pas lanc\\351e\\(s\\) en semaine 44", "JAUNE"}) {
+            assertTrue(attendu, contenuCasse.contains(attendu));
+        }
+
         // Rapport Excel de toute la semaine 45.
         File xlsx = new File(a.getCacheDir(), "rapport_semaine.xlsx");
         a.exporterSemaineVers(Depot.IMPAIRE, android.net.Uri.fromFile(xlsx));
