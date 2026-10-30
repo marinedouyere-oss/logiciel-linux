@@ -46,6 +46,7 @@ import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -70,7 +71,9 @@ public class MainActivity extends AppCompatActivity {
     private LinearLayout zoneRecap;
     private int generationRecap;
     /** Résultat Diakonos affiché dans la case Agglo de son tour (case Diakonos → zone). */
-    private final Map<Paire, LinearLayout> zonesDiakonos = new HashMap<>();
+    /** Zones Diakonos affichées (zone → case Diakonos) et zones de chaque case de lancement. */
+    private final Map<LinearLayout, Paire> zonesDiakonos = new LinkedHashMap<>();
+    private final Map<Paire, List<LinearLayout>> zonesDiakonosParCase = new HashMap<>();
     private int generationDiakonos;
     /** Dernier résultat Diakonos de chaque case (affiché pendant le nouveau calcul). */
     private final Map<String, ControleDiakonos.Resultat> resultatsDiakonos = new HashMap<>();
@@ -256,6 +259,7 @@ public class MainActivity extends AppCompatActivity {
         texteCompteur = null;
         zoneRecap = null;
         zonesDiakonos.clear();
+        zonesDiakonosParCase.clear();
         majOnglets();
         if (ongletSemaine()) {
             construireSemaine(onglet);
@@ -334,12 +338,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void rafraichir(Paire p) {
-        // Le fichier Diakonos est affiché dans la case Agglo de son tour.
-        if (p.estDiakonos()) p = depot.paireFixe(ControleDiakonos.posteAgglo(p), p.parite);
-        LinearLayout corps = cartes.get(p);
-        if (corps != null) {
-            corps.removeAllViews();
-            remplirCarte(corps, p);
+        if (p.estDiakonos()) {
+            // Le fichier Diakonos est affiché dans toutes les cases de son tour.
+            for (Map.Entry<LinearLayout, Paire> e : zonesDiakonos.entrySet()) if (e.getValue() == p) remplirZoneDiakonos(p, e.getKey());
+        } else {
+            LinearLayout corps = cartes.get(p);
+            if (corps != null) {
+                corps.removeAllViews();
+                remplirCarte(corps, p);
+            }
         }
         // Nouvelle semaine pour l'onglet (premier fichier chargé...) : compteur, dossier et cases en dépendent.
         if (majOnglets()) afficher();
@@ -396,9 +403,9 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    /** Remplit, dans chaque case Agglo affichée, la zone de son contrôle Diakonos. */
+    /** Remplit, dans chaque case affichée, les zones du contrôle Diakonos de son tour. */
     private void remplirDiakonos() {
-        for (Map.Entry<Paire, LinearLayout> e : zonesDiakonos.entrySet()) remplirZoneDiakonos(e.getKey(), e.getValue());
+        for (Map.Entry<LinearLayout, Paire> e : zonesDiakonos.entrySet()) remplirZoneDiakonos(e.getValue(), e.getKey());
     }
 
     private void remplirZoneDiakonos(Paire p, LinearLayout zone) {
@@ -488,13 +495,19 @@ public class MainActivity extends AppCompatActivity {
         corps.addView(entete);
 
         // Dans l'ordre de l'atelier : Diakonos, lancement, liste de coupe, .bkp, sommaire.
-        String tourDiakonos = ControleDiakonos.tourDeLaCase(p);
-        if (tourDiakonos != null && ongletSemaine()) {
-            Paire d = depot.paireDiakonos(tourDiakonos, p.parite);
-            LinearLayout zone = ui.colonne();
-            corps.addView(zone, ui.pleineLargeur());
-            zonesDiakonos.put(d, zone);
-            remplirZoneDiakonos(d, zone);
+        List<LinearLayout> anciennes = zonesDiakonosParCase.remove(p);
+        if (anciennes != null) for (LinearLayout z : anciennes) zonesDiakonos.remove(z);
+        if (ongletSemaine()) {
+            List<LinearLayout> zones = new ArrayList<>();
+            for (String tourDiakonos : ControleDiakonos.toursDeLaCase(p)) {
+                Paire d = depot.paireDiakonos(tourDiakonos, p.parite);
+                LinearLayout zone = ui.colonne();
+                corps.addView(zone, ui.pleineLargeur());
+                zonesDiakonos.put(zone, d);
+                zones.add(zone);
+                remplirZoneDiakonos(d, zone);
+            }
+            zonesDiakonosParCase.put(p, zones);
         }
         corps.addView(ligneFichier(p, Paire.STRAT, "Lancement"));
         corps.addView(ligneFichier(p, Paire.COUPE, "Liste de coupe"));
@@ -734,8 +747,10 @@ public class MainActivity extends AppCompatActivity {
         }
         String sem = p.semaine != null ? p.semaine : s != null ? LecteurStrat.extraireSemaine(s.lancement) : null;
         String couleur = SommaireCutRite.couleurSemaine(sem != null ? Integer.parseInt(sem) : Integer.parseInt(numero), casse);
-        String sousTitre = s != null ? RapportsSommaire.sousTitre(s) : nomLancement + " · Laisné Industrie";
-        return RapportsSommaire.rapportLancement(base + " — Rapport du lancement", sousTitre, nbPieces, couleur, parties);
+        String enTete = titreCase(p);
+        String sousTitre = s != null ? RapportsSommaire.sousTitre(s) : nomLancement.replaceAll("\\.[A-Za-z]+$", "");
+        return RapportsSommaire.rapportLancement(base + " — Rapport du lancement", enTete, sousTitre, sem != null ? sem : numero, nbPieces, couleur,
+                parties);
     }
 
     private View ligneFichier(Paire p, String role, String libelle) {

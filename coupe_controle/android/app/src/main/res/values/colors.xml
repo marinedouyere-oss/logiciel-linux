@@ -1,17 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Couleurs de Laisné plans de travail : rouge du logo, blanc et gris clair. -->
-    <color name="marque">#E3061C</color>
-    <color name="marque_fonce">#B00415</color>
-    <color name="marque_clair">#FDECEE</color>
-    <color name="marque_bord">#F4A9B0</color>
-    <color name="fond">#F5F5F5</color>
+    <!-- Charte graphique Laisné Industrie : bordeaux (couleur principale), saumon (secondaire), gris. -->
+    <color name="marque">#78140C</color>
+    <color name="marque_fonce">#78140C</color>
+    <color name="marque_clair">#FAF0EC</color>
+    <color name="marque_bord">#EAC2B7</color>
+    <color name="saumon">#EAC2B7</color>
+    <color name="fond">#F4F3F1</color>
+    <color name="texte">#22231D</color>
+    <!-- États des contrôles : vert si tout va bien, bordeaux pour une alerte, ambre pour une attention. -->
     <color name="ok_texte">#2E7D32</color>
-    <color name="ok_fond">#E3F4E6</color>
-    <color name="alerte_texte">#C62828</color>
-    <color name="alerte_fond">#FDE7E9</color>
-    <color name="attention_fond">#FFF4D6</color>
-    <color name="attention_texte">#8A5A00</color>
-    <color name="gris_texte">#5F6B76</color>
-    <color name="bordure">#DCE3EA</color>
+    <color name="ok_fond">#E8F3EA</color>
+    <color name="alerte_texte">#78140C</color>
+    <color name="alerte_fond">#FAF0EC</color>
+    <color name="attention_fond">#FBF3E1</color>
+    <color name="attention_texte">#7A5200</color>
+    <color name="gris_texte">#797978</color>
+    <color name="bordure">#E9E7E3</color>
 </resources>

@@ -15,29 +15,45 @@ public final class RapportsSommaire {
 
     private RapportsSommaire() {}
 
-    private static final double MARGE = 14 * PdfSimple.MM;
-    private static final double TAILLE = 9;
-    private static final double INTERLIGNE = 11.5;
-    private static final double REMPLISSAGE = 3.5;
-    // Couleurs de Laisné plans de travail : rouge du logo, blanc, gris clair.
-    private static final int ROUGE_LAISNE = 0xE3061C;
-    private static final int TITRE = 0xB00415;
-    private static final int GRIS_TEXTE = 0x555555;
-    private static final int TEXTE = 0x2B2B2B;
-    private static final int GRILLE = 0xD9D9D9;
-    private static final int FOND_PAIR = 0xF5F5F5;
-    private static final int FOND_TOTAL = 0xFDECEE;
+    // Charte graphique Laisné Industrie : A4, marges de 18 mm, bandeau bordeaux de 7 mm, pied de page à 12 mm du bord.
+    private static final double MM = PdfSimple.MM;
+    private static final double MARGE = 18 * MM;
+    private static final double UTILE = PdfSimple.LARGEUR - 2 * MARGE;
+    private static final double BANDEAU = 7 * MM;
+    private static final double LOGO = 38 * MM;
+    private static final double BAS = PdfSimple.HAUTEUR - 20 * MM;
+    private static final double TAILLE = 8.8;
+    private static final double TAILLE_ENTETE = 8;
+    private static final double INTERLIGNE = 11;
+    private static final double REMPLISSAGE = 4.5;
 
+    public static final int BORDEAUX = 0x78140C;
+    public static final int SAUMON = 0xEAC2B7;
+    public static final int SAUMON_PALE = 0xFAF0EC;
+    public static final int GRIS = 0x797978;
+    public static final int GRIS_CLAIR = 0xF4F3F1;
+    public static final int GRIS_FILET = 0xE9E7E3;
+    public static final int NOIR = 0x22231D;
+    private static final int GRIS_FONCE = 0x4D4D4B;
+    private static final int BLANC = 0xFFFFFF;
+
+    /** État d'une partie : tout va bien (encadré gris) ; les autres états sont mis en avant (encadré bordeaux). */
+    public static final int STATUT_OK = 0x2E7D32;
+    public static final int STATUT_ATTENTION = 0xE65100;
+    public static final int STATUT_ALERTE = 0xC62828;
+    private static final int TEXTE = NOIR;
+
+    /** Pastille de la couleur de la semaine (étiquettes de l'atelier). */
     static int couleurDuNom(String couleur) {
         switch (couleur == null ? "" : couleur) {
             case "ROSE":
-                return 0xD81B60;
+                return 0xE58FB0;
             case "BLEU":
-                return 0x1565C0;
+                return 0x3D7CC9;
             case "JAUNE":
-                return 0xF9A825;
+                return 0xF2C230;
             default:
-                return 0x607D8B;
+                return BLANC;
         }
     }
 
@@ -131,110 +147,237 @@ public final class RapportsSommaire {
     }
 
     public static String sousTitre(SommaireCutRite s) {
-        return s.lancement + " · sommaire Cut Rite du " + s.date + " · Laisné Industrie";
+        return s.lancement + " · sommaire Cut Rite du " + s.date;
+    }
+
+    /** En-tête : la case du lancement (« Agglo 1er tour », « Feno », « Casse »…), sinon le lancement. */
+    static String caseDuLancement(String lancement) {
+        ScanDossier.InfoNom info = ScanDossier.decoderNom(lancement);
+        return info != null && info.poste != null ? info.poste : lancement;
     }
 
     /** Nom de fichier → contenu, dans l'ordre : agglo, strats, couleurs. */
     public static Map<String, byte[]> creer(SommaireCutRite s, String nbPieces, String couleurSemaine) {
         String base = base(s);
+        String semaine = LecteurStrat.extraireSemaine(s.lancement);
         Map<String, byte[]> pdf = new LinkedHashMap<>();
-        for (Partie p : parties(s)) {
+        List<Partie> parties = parties(s);
+        for (int i = 0; i < parties.size(); i++) {
+            Partie p = parties.get(i);
             PdfSimple seul = new PdfSimple(p.titre);
-            dessiner(seul, sousTitre(s), p, nbPieces, couleurSemaine);
+            dessiner(seul, caseDuLancement(s.lancement), sousTitre(s), p, i + 1, semaine, nbPieces, couleurSemaine);
+            piedsDePage(seul, p.titre);
             pdf.put(base + "_" + p.nom + ".pdf", seul.octets());
         }
         return pdf;
     }
 
-    /** Rapport d'un lancement : un seul PDF, chaque partie sur sa page (agglo, strats, couleurs, Diakonos…). */
-    public static byte[] rapportLancement(String titre, String sousTitre, String nbPieces, String couleurSemaine, List<Partie> parties) {
+    /**
+     * Rapport d'un lancement : un seul PDF, chaque partie sur sa page (agglo, strats, couleurs, Diakonos…),
+     * avec en en-tête la case du lancement (« Agglo 1er tour », « Casse », « Feno », le chantier…).
+     */
+    public static byte[] rapportLancement(String titre, String enTete, String sousTitre, String semaine, String nbPieces,
+            String couleurSemaine, List<Partie> parties) {
         PdfSimple pdf = new PdfSimple(titre);
         for (int i = 0; i < parties.size(); i++) {
             if (i > 0) pdf.nouvellePage();
-            dessiner(pdf, sousTitre, parties.get(i), nbPieces, couleurSemaine);
+            dessiner(pdf, enTete, sousTitre, parties.get(i), i + 1, semaine, nbPieces, couleurSemaine);
         }
+        piedsDePage(pdf, titre);
         return pdf.octets();
     }
 
+    /** Bandeau bordeaux pleine largeur en tête de page, sans texte. */
+    private static void bandeau(PdfSimple pdf) {
+        pdf.rectangle(0, 0, PdfSimple.LARGEUR, BANDEAU, BORDEAUX, null, 0);
+    }
+
+    /** Confidentialité à gauche, nom du document au centre, pagination à droite (7,5 pt, gris). */
+    private static void piedsDePage(PdfSimple pdf, String nomDocument) {
+        double y = PdfSimple.HAUTEUR - 12 * MM;
+        int n = pdf.nbPages();
+        for (int i = 0; i < n; i++) {
+            pdf.allerPage(i);
+            pdf.texte(MARGE, y, "Document interne — LAISNÉ INDUSTRIE", 7.5, PdfSimple.Police.TEXTE, GRIS);
+            String nom = PdfSimple.couper(nomDocument, UTILE / 2, 7.5, PdfSimple.Police.TEXTE).get(0);
+            pdf.texte(PdfSimple.LARGEUR / 2 - PdfSimple.largeur(nom, 7.5, PdfSimple.Police.TEXTE) / 2, y, nom, 7.5, PdfSimple.Police.TEXTE, GRIS);
+            String page = (i + 1) + " / " + n;
+            pdf.texte(PdfSimple.LARGEUR - MARGE - PdfSimple.largeur(page, 7.5, PdfSimple.Police.TEXTE), y, page, 7.5, PdfSimple.Police.TEXTE, GRIS);
+        }
+    }
+
+    /** Chiffre clé : valeur en Raleway bordeaux, légende en Lato gris, fond saumon pâle et barre bordeaux à gauche. */
+    private static double chiffreCle(PdfSimple pdf, double x, double y, String valeur, String legende, Integer pastille) {
+        double l = 54 * MM;
+        double h = 15 * MM;
+        pdf.rectangle(x, y, l, h, SAUMON_PALE, null, 0);
+        pdf.rectangle(x, y, 3, h, BORDEAUX, null, 0);
+        double xv = x + 12;
+        if (pastille != null) {
+            pdf.rectangle(xv, y + 9, 13, 13, pastille, GRIS_FILET, 0.8);
+            xv += 19;
+        }
+        pdf.texte(xv, y + 21, valeur, 17, PdfSimple.Police.TITRE, BORDEAUX);
+        pdf.texte(x + 12, y + h - 7, legende, 7.8, PdfSimple.Police.TEXTE, GRIS);
+        return x + l + 5 * MM;
+    }
+
+    /** Pastille numérotée (cercle saumon de 6 mm, chiffre bordeaux à deux chiffres) ; renvoie la fin de la pastille. */
+    private static double pastille(PdfSimple pdf, double x, double yBase, int numero) {
+        double r = 3 * MM;
+        String n = String.format(java.util.Locale.ROOT, "%02d", numero);
+        pdf.disque(x + r, yBase - 4, r, SAUMON);
+        pdf.texte(x + r - PdfSimple.largeur(n, 8, PdfSimple.Police.TITRE) / 2, yBase - 1.2, n, 8, PdfSimple.Police.TITRE, BORDEAUX);
+        return x + 2 * r;
+    }
+
     /** Dessine une partie à partir du haut de la page courante. */
-    private static void dessiner(PdfSimple pdf, String sousTitre, Partie p, String nbPieces, String couleurSemaine) {
-        double y = MARGE + 16;
-        pdf.texte(MARGE, y, p.titre, 16, true, TITRE);
-        y += 13;
-        pdf.texte(MARGE, y, sousTitre, 9, false, GRIS_TEXTE);
-        y += 19;
-        double x = MARGE;
-        if (nbPieces != null) {
-            x = morceau(pdf, x, y, "Nombre de pièces : ", false, TEXTE);
-            x = morceau(pdf, x, y, nbPieces, true, TEXTE);
+    private static void dessiner(PdfSimple pdf, String enTete, String sousTitre, Partie p, int numero, String semaine, String nbPieces,
+            String couleurSemaine) {
+        bandeau(pdf);
+        double hLogo = pdf.logo(PdfSimple.LARGEUR - MARGE - LOGO, BANDEAU + 7 * MM, LOGO);
+        double largeurTitres = UTILE - LOGO - 8 * MM;
+        double y = BANDEAU + 7 * MM - 8;
+        for (String ligne : PdfSimple.couper(enTete, largeurTitres, 26, PdfSimple.Police.TITRE)) {
+            y += 30;
+            pdf.texte(MARGE, y, ligne, 26, PdfSimple.Police.TITRE, GRIS);
         }
-        if (couleurSemaine != null) {
-            if (nbPieces != null) x = morceau(pdf, x, y, "     ·     ", false, TEXTE);
-            x = morceau(pdf, x, y, "Couleurs semaine : ", false, TEXTE);
-            morceau(pdf, x, y, couleurSemaine, true, couleurDuNom(couleurSemaine));
+        for (String ligne : PdfSimple.couper(sousTitre, largeurTitres, 11.5, PdfSimple.Police.TITRE)) {
+            y += 16;
+            pdf.texte(MARGE, y, ligne, 11.5, PdfSimple.Police.TITRE, BORDEAUX);
         }
-        if (nbPieces != null || couleurSemaine != null) y += 12;
-        if (p.statut != null) {
-            y += 8;
-            morceau(pdf, MARGE, y, p.statut, true, p.couleurStatut);
-            y += 10;
+        y = Math.max(y + 10, BANDEAU + 7 * MM + hLogo + 8);
+        pdf.filet(MARGE, PdfSimple.LARGEUR - MARGE, y, SAUMON, 1);
+        y += 12;
+
+        if (semaine != null || nbPieces != null || couleurSemaine != null) {
+            double x = MARGE;
+            if (semaine != null) x = chiffreCle(pdf, x, y, semaine, "Semaine", null);
+            if (nbPieces != null) x = chiffreCle(pdf, x, y, nbPieces, "Nombre de pièces", null);
+            if (couleurSemaine != null) chiffreCle(pdf, x, y, couleurSemaine, "Couleurs semaine", couleurDuNom(couleurSemaine));
+            y += 15 * MM + 14;
         }
 
-        double[] l = new double[p.largeursMm.length];
-        for (int i = 0; i < l.length; i++) l[i] = p.largeursMm[i] * PdfSimple.MM;
+        y += 14;
+        double xTitre = pastille(pdf, MARGE, y, numero) + 8;
+        for (String ligne : PdfSimple.couper(p.titre, PdfSimple.LARGEUR - MARGE - xTitre, 11.5, PdfSimple.Police.TITRE)) {
+            pdf.texte(xTitre, y, ligne, 11.5, PdfSimple.Police.TITRE, BORDEAUX);
+            y += 15;
+        }
+        y += 2;
+
+        if (p.statut != null) y = encadre(pdf, y, p.statut, p.couleurStatut != STATUT_OK && p.couleurStatut != TEXTE) + 10;
+        else y += 4;
+
+        double[] l = largeurs(p);
         List<String[]> lignes = p.total ? avecTotal(p) : p.rangees;
-        if (!lignes.isEmpty()) y = ligneTableau(pdf, y, p.entete, l, p.nbColonnesTexte, ROUGE_LAISNE, true, 0xFFFFFF);
+        if (!lignes.isEmpty()) y = enteteTableau(pdf, y, p.entete, l, p.nbColonnesTexte);
         for (int i = 0; i < lignes.size(); i++) {
             boolean estTotal = p.total && i == lignes.size() - 1;
-            double h = hauteur(lignes.get(i), l, estTotal);
-            if (y + h > PdfSimple.HAUTEUR - MARGE) {
+            PdfSimple.Police police = estTotal ? PdfSimple.Police.GRAS : PdfSimple.Police.TEXTE;
+            double h = hauteur(lignes.get(i), l, police);
+            if (y + h > BAS) {
                 pdf.nouvellePage();
-                y = ligneTableau(pdf, MARGE, p.entete, l, p.nbColonnesTexte, ROUGE_LAISNE, true, 0xFFFFFF);
+                bandeau(pdf);
+                y = enteteTableau(pdf, BANDEAU + 12 * MM, p.entete, l, p.nbColonnesTexte);
             }
-            Integer fond = estTotal ? Integer.valueOf(FOND_TOTAL) : i % 2 == 1 ? Integer.valueOf(FOND_PAIR) : null;
-            y = ligneTableau(pdf, y, lignes.get(i), l, p.nbColonnesTexte, fond, estTotal, 0x1F2933);
+            Integer fond = estTotal ? Integer.valueOf(BORDEAUX) : i % 2 == 1 ? Integer.valueOf(GRIS_CLAIR) : null;
+            y = ligneTableau(pdf, y, lignes.get(i), l, p.nbColonnesTexte, fond, police, estTotal ? BLANC : NOIR, !estTotal);
         }
         if (!p.notes.isEmpty()) {
-            y += 18;
+            y += 14;
             for (String[] n : p.notes) {
-                double xn = morceau(pdf, MARGE, y, n[0], true, TEXTE);
-                morceau(pdf, xn, y, n[1], false, TEXTE);
-                y += 14;
+                for (String ligne : PdfSimple.couper(n[0] + n[1], UTILE, 7.8, PdfSimple.Police.ITALIQUE)) {
+                    if (y > BAS + 10) {
+                        pdf.nouvellePage();
+                        bandeau(pdf);
+                        y = BANDEAU + 12 * MM;
+                    }
+                    pdf.texte(MARGE, y, ligne, 7.8, PdfSimple.Police.ITALIQUE, GRIS);
+                    y += 11;
+                }
             }
         }
     }
 
-    private static double morceau(PdfSimple pdf, double x, double y, String texte, boolean gras, int rgb) {
-        double taille = 12;
-        pdf.texte(x, y, texte, taille, gras, rgb);
-        return x + PdfSimple.largeur(texte, taille, gras);
+    /** Encadré de mise en avant : fond saumon pâle, barre bordeaux à gauche, texte bordeaux gras (gris pour un état normal). */
+    private static double encadre(PdfSimple pdf, double y, String texte, boolean enAvant) {
+        List<String> lignes = PdfSimple.couper(texte, UTILE - 24, 9.5, PdfSimple.Police.GRAS);
+        double h = lignes.size() * 13 + 14;
+        pdf.rectangle(MARGE, y, UTILE, h, enAvant ? SAUMON_PALE : GRIS_CLAIR, null, 0);
+        pdf.rectangle(MARGE, y, 3, h, enAvant ? BORDEAUX : GRIS, null, 0);
+        double yl = y + 7 + 9.5;
+        for (String ligne : lignes) {
+            pdf.texte(MARGE + 12, yl, ligne, 9.5, PdfSimple.Police.GRAS, enAvant ? BORDEAUX : NOIR);
+            yl += 13;
+        }
+        return y + h;
     }
 
-    private static double hauteur(String[] cellules, double[] l, boolean gras) {
+    /** Largeurs des colonnes, ramenées à la largeur utile de la page. */
+    private static double[] largeurs(Partie p) {
+        double somme = 0;
+        for (double v : p.largeursMm) somme += v;
+        double[] l = new double[p.largeursMm.length];
+        for (int i = 0; i < l.length; i++) l[i] = p.largeursMm[i] * UTILE / somme;
+        return l;
+    }
+
+    /** En-tête de tableau : fond bordeaux, texte blanc en capitales espacées. */
+    private static double enteteTableau(PdfSimple pdf, double y, String[] entete, double[] l, int nbColonnesTexte) {
+        String[] capitales = new String[entete.length];
+        for (int j = 0; j < entete.length; j++) capitales[j] = entete[j].toUpperCase(java.util.Locale.FRENCH);
+        int n = 1;
+        for (int j = 0; j < capitales.length; j++) {
+            n = Math.max(n, PdfSimple.couper(capitales[j], l[j] - 2 * REMPLISSAGE - 6, TAILLE_ENTETE, PdfSimple.Police.GRAS).size());
+        }
+        double h = n * 10 + 12;
+        pdf.rectangle(MARGE, y, UTILE, h, BORDEAUX, null, 0);
+        double x = MARGE;
+        for (int j = 0; j < capitales.length; j++) {
+            List<String> morceaux = PdfSimple.couper(capitales[j], l[j] - 2 * REMPLISSAGE - 6, TAILLE_ENTETE, PdfSimple.Police.GRAS);
+            double haut = y + (h - morceaux.size() * 10) / 2 + 7.5;
+            for (int k = 0; k < morceaux.size(); k++) {
+                String t = morceaux.get(k);
+                double lt = PdfSimple.largeur(t, TAILLE_ENTETE, PdfSimple.Police.GRAS, 0.6);
+                double xt = j >= nbColonnesTexte ? x + l[j] - REMPLISSAGE - lt : x + REMPLISSAGE;
+                pdf.texte(xt, haut + k * 10, t, TAILLE_ENTETE, PdfSimple.Police.GRAS, BLANC, 0.6);
+            }
+            x += l[j];
+        }
+        return y + h;
+    }
+
+    private static PdfSimple.Police policeCellule(PdfSimple.Police police, int colonne) {
+        return colonne == 0 ? PdfSimple.Police.GRAS : police;
+    }
+
+    private static double hauteur(String[] cellules, double[] l, PdfSimple.Police police) {
         int n = 1;
         for (int j = 0; j < cellules.length; j++) {
-            n = Math.max(n, PdfSimple.couper(cellules[j], l[j] - 2 * REMPLISSAGE, TAILLE, gras || j == 0).size());
+            n = Math.max(n, PdfSimple.couper(cellules[j], l[j] - 2 * REMPLISSAGE, TAILLE, policeCellule(police, j)).size());
         }
         return n * INTERLIGNE + 2 * REMPLISSAGE;
     }
 
-    /** Dessine une rangée (cellules à gauche, nombres à droite) et renvoie le bas de la rangée. */
+    /** Dessine une rangée (texte à gauche, nombres à droite, sans filets verticaux) et renvoie le bas de la rangée. */
     private static double ligneTableau(PdfSimple pdf, double y, String[] cellules, double[] l, int nbColonnesTexte, Integer fond,
-            boolean gras, int rgb) {
-        double h = hauteur(cellules, l, gras);
+            PdfSimple.Police police, int rgb, boolean filet) {
+        double h = hauteur(cellules, l, police);
+        if (fond != null) pdf.rectangle(MARGE, y, UTILE, h, fond, null, 0);
         double x = MARGE;
         for (int j = 0; j < cellules.length; j++) {
-            pdf.rectangle(x, y, l[j], h, fond, GRILLE, 0.4);
-            boolean g = gras || j == 0;
-            List<String> morceaux = PdfSimple.couper(cellules[j], l[j] - 2 * REMPLISSAGE, TAILLE, g);
+            PdfSimple.Police pj = policeCellule(police, j);
+            List<String> morceaux = PdfSimple.couper(cellules[j], l[j] - 2 * REMPLISSAGE, TAILLE, pj);
             double haut = y + (h - morceaux.size() * INTERLIGNE) / 2 + INTERLIGNE - 2.5;
             for (int k = 0; k < morceaux.size(); k++) {
                 String t = morceaux.get(k);
-                double xt = j >= nbColonnesTexte ? x + l[j] - REMPLISSAGE - PdfSimple.largeur(t, TAILLE, g) : x + REMPLISSAGE;
-                pdf.texte(xt, haut + k * INTERLIGNE, t, TAILLE, g, rgb);
+                double xt = j >= nbColonnesTexte ? x + l[j] - REMPLISSAGE - PdfSimple.largeur(t, TAILLE, pj) : x + REMPLISSAGE;
+                pdf.texte(xt, haut + k * INTERLIGNE, t, TAILLE, pj, rgb);
             }
             x += l[j];
         }
+        if (filet) pdf.filet(MARGE, MARGE + UTILE, y + h, GRIS_FILET, 0.5);
         return y + h;
     }
 }

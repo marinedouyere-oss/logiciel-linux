@@ -129,21 +129,21 @@ final class ControleCasse {
         parties.add(relancees);
         if (r.erreur != null) {
             relancees.statut = "Casse illisible : " + r.erreur;
-            relancees.couleurStatut = 0xC62828;
+            relancees.couleurStatut = RapportsSommaire.STATUT_ALERTE;
             return parties;
         }
         if (r.autreSemaineChargee != null) {
             relancees.statut = "Chargez la semaine " + (r.semaineAvant == null ? "d'avant" : r.semaineAvant)
                     + " dans l'autre onglet pour séparer les pièces relancées et les rajouts";
-            relancees.couleurStatut = 0xE65100;
+            relancees.couleurStatut = RapportsSommaire.STATUT_ATTENTION;
             return parties;
         }
         if (r.dejaLancees.isEmpty()) {
             relancees.statut = "Aucune pièce de la casse n'était lancée en semaine " + r.semaineAvant;
-            relancees.couleurStatut = 0x2E7D32;
+            relancees.couleurStatut = RapportsSommaire.STATUT_OK;
         } else {
             relancees.statut = r.dejaLancees.size() + " pièce(s) relancée(s) : déjà lancée(s) en semaine " + r.semaineAvant;
-            relancees.couleurStatut = 0xE65100;
+            relancees.couleurStatut = RapportsSommaire.STATUT_ATTENTION;
         }
         for (Trouvee t : r.dejaLancees) {
             LecteurStrat.LigneStrat l = t.ligne;

@@ -88,12 +88,15 @@ public class SommaireCutRiteTest {
         // Relu par PDFBox : le PDF est valide et contient les infos.
         List<String> relu = LecteurCoupePdf.lignesTexte(new ExtracteurPdfBox().elementsParPage(pdf.get("LAN264601_Couleurs.pdf")));
         String tout = String.join("\n", relu);
-        assertTrue(tout, tout.contains("Nombre de pièces : 340"));
-        assertTrue(tout, tout.contains("Couleurs semaine : ROSE"));
-        assertTrue(tout, tout.contains("1136-PF"));
         String captures = System.getenv("SENTINELLE_CAPTURES");
         if (captures != null && !captures.isEmpty()) {
             for (Map.Entry<String, byte[]> e : pdf.entrySet()) Files.write(new File(captures, "java_" + e.getKey()).toPath(), e.getValue());
         }
+        // Chiffres clés de la charte : valeur, puis sa légende.
+        assertTrue(tout, tout.contains("340") && tout.contains("Nombre de pièces"));
+        assertTrue(tout, tout.contains("ROSE") && tout.contains("Couleurs semaine"));
+        assertTrue(tout, tout.contains("Semaine") && tout.contains("46"));
+        assertTrue(tout, tout.contains("1136-PF"));
+        assertTrue(tout, tout.contains("Document interne — LAISNÉ INDUSTRIE") && tout.contains("1 / 1"));
     }
 }

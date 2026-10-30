@@ -424,6 +424,9 @@ public class DossierReelTest {
         int[] positions = {e.indexOf("Diakonos 1er tour (.xlsx)"), e.indexOf("Lancement\n✓ LAN264601START.xlsx"), e.indexOf("Liste de coupe\n"),
             e.indexOf("Fichier .bkp\n"), e.indexOf("Sommaire Cut Rite (.pdf)\n")};
         for (int i = 1; i < positions.length; i++) assertTrue(e, positions[i - 1] >= 0 && positions[i - 1] < positions[i]);
+        // Diakonos dans toutes les cases du tour : l'Agglo 1er tour et le recyclage (LAN264601…).
+        assertTrue(e, e.indexOf("Diakonos 1er tour (.xlsx)") != e.lastIndexOf("Diakonos 1er tour (.xlsx)"));
+        assertTrue(e, !e.contains("Diakonos 2ème tour (.xlsx)\n✓"));
         assertTrue(e, e.contains("📄 Rapport du lancement (.pdf)"));
         File pdf = new File(a.getCacheDir(), "LAN264601_rapport_lancement.pdf");
         a.exporterLancementVers(agglo1, Uri.fromFile(pdf));
@@ -436,7 +439,7 @@ public class DossierReelTest {
         assertTrue(contenuPdf.contains("/Count 5"));
         for (String attendu : new String[] {"Agglo : panneaux et restes", "Strats : panneaux et restes", "Couleurs de la feuille",
                 "Diakonos 1er tour", "3 pi\\350ce\\(s\\) Diakonos absente\\(s\\) des lancements du 1er tour", "CVC26100810001", "SAG38HYBLLINEX",
-                "Couleurs semaine : ", "ROSE", "(340)"}) {
+                "(Couleurs semaine)", "(ROSE)", "(340)", "(Semaine)", "(46)", "(Nombre de pi\\350ces)"}) {
             assertTrue(attendu, contenuPdf.contains(attendu));
         }
         if (!captures.isEmpty()) {
