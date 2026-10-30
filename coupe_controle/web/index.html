@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V4.5 — Contrôle de coupe</title>
+<title>Sentinelle V4.6 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -265,7 +265,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V4.5</div>
+        <div class="sous-titre">Contrôle de coupe · V4.6</div>
       </div>
     </div>
   </header>
@@ -298,7 +298,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V4.5 · Contrôle de coupe</span>
+    <span>Sentinelle V4.6 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -2667,7 +2667,8 @@ function semaineAffichee(semainesChargees, parite, aujourdHui = new Date()) {
 // SS = semaine, TT = tour (01/02, Agglo seulement), suffixe = STRAT (Agglo),
 // FENO, CASSE ou autre (Chantiers). Seuls les chiffres du code comptent
 // vraiment ; les mots-clés de poste sont cherchés n'importe où dans le nom.
-const POSTES_SEMAINE = ["Agglo 1er tour", "Feno", "Casse", "Agglo 2ème tour"];
+// Le recyclage a sa case, sous l'Agglo 1er tour.
+const POSTES_SEMAINE = ["Agglo 1er tour", "Recyclage", "Feno", "Casse", "Agglo 2ème tour"];
 const POSTE_CHANTIERS = "Chantiers";
 const MOTIF_DATE_SAUVEGARDE = /_\d{4}-\d{2}-\d{2}_\d{3,4}.*$/i;
 const MOTIF_STRAT = /STRAT|START/;
@@ -2716,6 +2717,7 @@ function decoderNomFichierPartage(nom) {
   let poste = null;
   if (nomMaj.includes("FENO")) poste = "Feno";
   else if (nomMaj.includes("CASSE")) poste = "Casse";
+  else if (nomMaj.includes("RECYCLAGE")) poste = "Recyclage";
   else if (MOTIF_STRAT.test(nomMaj) && tour === "01") poste = "Agglo 1er tour";
   else if (MOTIF_STRAT.test(nomMaj) && tour === "02") poste = "Agglo 2ème tour";
   return {
@@ -2753,6 +2755,7 @@ function posteDuDossier(nom) {
   const n = String(nom || "").toUpperCase().normalize("NFD").replace(/\p{M}/gu, "");
   if (n.includes("FENO")) return "Feno";
   if (n.includes("CASSE")) return "Casse";
+  if (n.includes("RECYCLAGE")) return "Recyclage";
   if (/(^|\D)1\s*(ERE|ER|E)?\s*TOUR|TOUR\s*0?1(\D|$)/.test(n)) return "Agglo 1er tour";
   if (/(^|\D)2\s*(EME|E|ND)?\s*TOUR|TOUR\s*0?2(\D|$)/.test(n)) return "Agglo 2ème tour";
   return null;
@@ -3051,8 +3054,8 @@ function selectionnerCibles(listeGroupes, pariteScan, res) {
 }
 
 // Un dossier de lancement (« 1ER TOUR AGGLO », « FENO », « CASSE », « AIRDESIGN »…) : son lancement
-// principal prend la case du dossier (un chantier si le dossier n'en désigne pas), les autres
-// lancements du dossier (recyclage, bis…) deviennent des chantiers. Liste de coupe, .bkp, sommaire et
+// principal prend la case du dossier (un chantier si le dossier n'en désigne pas) ; le recyclage
+// prend sa propre case, les autres lancements du dossier (bis…) deviennent des chantiers. Liste de coupe, .bkp, sommaire et
 // Diakonos vont au lancement dont ils portent le nom, sinon au lancement principal du dossier.
 function groupesDuDossier(dossier, semaine, fichiers, res, fichiersDiakonos) {
   const poste = posteDuDossier(dossier);
@@ -3095,6 +3098,7 @@ function groupesDuDossier(dossier, semaine, fichiers, res, fichiersDiakonos) {
     g.suffixe.length / 100;
   const principal = [...liste].sort((a, b) => score(b) - score(a))[0];
   principal.poste = poste || POSTE_CHANTIERS;
+  for (const g of liste) if (g !== principal && g.info.poste === "Recyclage") g.poste = "Recyclage";
   // Le dossier de la semaine décide de l'onglet (la casse rangée dans « Semaine 46 » y reste).
   for (const g of liste) {
     if (semaine) g.parite = pariteDuNumeroSemaine(semaine);
@@ -5251,11 +5255,13 @@ function majDiakonos() {
 const derniersDiakonosDossier = new Map(); // id de la case qui porte le Diakonos → { cle, r }
 
 // Groupe d'une case : les cases de l'onglet du même dossier, et celle qui porte le Diakonos (null s'il n'y en a pas).
+// Le recyclage est comparé avec le Diakonos de son dossier (celui du 1er tour), mais sa case n'en montre
+// que le sien s'il en a un.
 function groupeDiakonosDossier(p) {
   if (estDiakonos(p)) return null;
-  if (!p.dossier) return p.diakonos ? { porteur: p, membres: [p] } : null;
+  if (!p.dossier || p.poste === "Recyclage") return p.diakonos ? { porteur: p, membres: [p] } : null;
   const membres = pairesDeLaSemaine(p.parite).filter((o) => o.dossier === p.dossier);
-  const porteur = membres.find((o) => o.diakonos);
+  const porteur = membres.find((o) => o.diakonos && o.poste !== "Recyclage");
   return porteur ? { porteur, membres } : null;
 }
 
@@ -5411,7 +5417,7 @@ function diakonosDeLaCase(p) {
 // (LAN264601RECYCLAGE → 1er tour), sinon les deux (casse, chantier sans tour). Rien pour une case vide
 // ni pour le Feno (contrôlé avec le Feno, pas avec le Diakonos).
 function toursDiakonosDeLaCase(p) {
-  if (estDiakonos(p) || estFeno(p)) return [];
+  if (estDiakonos(p) || estFeno(p) || p.poste === "Recyclage") return [];
   if (p.poste === "Agglo 1er tour") return ["1"];
   if (p.poste === "Agglo 2ème tour") return ["2"];
   if (!p.strat) return [];
@@ -6216,6 +6222,13 @@ async function placerFichiersScannes(parite, r) {
       sauvegarderDansMemoire(p, { semaineParite: g.parite, codeLancement: identite });
     }
     affectations.push({ cible: g, paire: p, libelle: p.label, copie: false });
+  }
+  // Un lancement qui a maintenant sa case (ex. le recyclage, chantier dans les versions d'avant) n'est plus un chantier.
+  for (const g of r.fixes) {
+    for (const c of paires.filter((x) => estChantier(x) && x.codeLancement === `${g.code}|${g.suffixe}`)) {
+      await effacerMemoire(c);
+      paires.splice(paires.indexOf(c), 1);
+    }
   }
   for (const a of affectations) {
     a.paire.etat = "⏳ fichiers du dossier partagé…";
