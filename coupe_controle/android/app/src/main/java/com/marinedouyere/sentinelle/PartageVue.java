@@ -136,8 +136,10 @@ final class PartageVue {
                 if (resultat != null) {
                     donnees = resultat;
                     nomFichier = nomLu;
+                    app.partage = resultat;
                 }
                 construire();
+                if (resultat != null) activite.partageCharge();
             });
         });
     }

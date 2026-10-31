@@ -203,4 +203,84 @@ public class PartageTest {
         // Le choix est gardé : un nouvel écran relit le même fichier.
         assertEquals(Uri.fromFile(copie), a.partage().uri());
     }
+
+    private static Uri copie(MainActivity a, File source) throws Exception {
+        File dossier = new File(a.getCacheDir(), "originaux");
+        //noinspection ResultOfMethodCallIgnored
+        dossier.mkdirs();
+        File cible = new File(dossier, source.getName());
+        java.nio.file.Files.copy(source.toPath(), cible.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+        return Uri.fromFile(cible);
+    }
+
+    private static void choisir(MainActivity a, Paire p, String role, File source) throws Exception {
+        a.demanderFichier(p, role);
+        a.fichierChoisi(copie(a, source));
+        attendre(() -> p.fichier(role) != null && p.etat == null);
+    }
+
+    private static String texteCarte(MainActivity a, String titre) {
+        StringBuilder sb = new StringBuilder();
+        textes(a.getWindow().getDecorView(), sb);
+        String t = sb.toString();
+        // L'en-tête d'une case : son titre, puis tout de suite « Réinitialiser » (le tableau des lancements a aussi les postes).
+        int debut = -1;
+        for (int i = t.indexOf("\n" + titre + "\n"); i >= 0; i = t.indexOf("\n" + titre + "\n", i + 1)) {
+            int r = t.indexOf("Réinitialiser", i);
+            if (r >= 0 && r - i < 60) {
+                debut = i;
+                break;
+            }
+        }
+        if (debut < 0) return "";
+        int fin = t.indexOf("Réinitialiser", debut);
+        int suivante = t.indexOf("Réinitialiser", fin + 1);
+        return t.substring(debut, suivante < 0 ? t.length() : suivante);
+    }
+
+    /**
+     * Semaine 46 comme sur la capture : la case Casse n'affiche plus le Diakonos des tours ; le Diakonos du
+     * 2ème tour reconnaît LAN264602START comme lancement du 2ème tour ; la casse est comparée aux semaines
+     * du fichier partagé (44 et 45), comme la page web.
+     */
+    @Test
+    public void casseEtDiakonosAvecLeFichierPartage() throws Exception {
+        String chemin = System.getProperty("sentinelle.partage", "");
+        String s46 = System.getProperty("sentinelle.semaine46", "");
+        assumeTrue(!chemin.isEmpty() && !s46.isEmpty());
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
+        ShadowLooper.idleMainLooper();
+        SentinelleApp app = (SentinelleApp) a.getApplication();
+        try (FileInputStream in = new FileInputStream(chemin)) {
+            app.partage = FichierPartage.lire(in);
+        }
+        Paire casse = app.depot().paireFixe("Casse", Depot.PAIRE);
+        choisir(a, casse, Paire.STRAT, new File(s46, "CASSE/LAN2646CASSE.xlsx"));
+        Paire deuxieme = app.depot().paireFixe("Agglo 2ème tour", Depot.PAIRE);
+        choisir(a, deuxieme, Paire.STRAT, new File(s46, "2EME TOUR AGGLO/LAN264602START.xlsx"));
+        Paire diakonos = app.depot().paireDiakonos("2", Depot.PAIRE);
+        choisir(a, diakonos, Paire.STRAT, new File(s46, "2EME TOUR AGGLO/LAN264602STARTDIAKONOS.xlsx"));
+        a.afficher();
+        try {
+            attendre(() -> texteCarte(a, "Casse").contains("déjà lancée") && texteCarte(a, "Agglo 2ème tour").contains("Diakonos"));
+        } catch (AssertionError e) {
+            StringBuilder ecran = new StringBuilder();
+            textes(a.getWindow().getDecorView(), ecran);
+            throw new AssertionError("délai dépassé\n" + ecran, e);
+        }
+        Thread.sleep(500);
+        ShadowLooper.idleMainLooper();
+        String carteCasse = texteCarte(a, "Casse");
+        String carteDeuxieme = texteCarte(a, "Agglo 2ème tour");
+        System.out.println("CASSE\n" + carteCasse + "\n2EME TOUR\n" + carteDeuxieme);
+        assertFalse("pas de Diakonos dans la case Casse", carteCasse.contains("Diakonos"));
+        assertTrue(carteCasse, carteCasse.contains("15 pièce(s) de la casse déjà lancée(s) en semaines 44 et 45"));
+        assertTrue(carteCasse, carteCasse.contains("54 rajout(s) : pièce(s) pas lancée(s) en semaines 44 et 45"));
+        assertFalse(carteDeuxieme, carteDeuxieme.contains("320 pièce(s)"));
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+) pièce\\(s\\) Diakonos absente").matcher(carteDeuxieme);
+        if (m.find()) assertTrue(carteDeuxieme, Integer.parseInt(m.group(1)) <= 5);
+        assertFalse("une pièce absente n'est pas « lancée dans » le 2ème tour lui-même", carteDeuxieme.contains("lancée dans LAN264602START.xlsx"));
+        assertTrue(carteDeuxieme, carteDeuxieme.contains("Comparé à : LAN264602START.xlsx"));
+        assertFalse("la casse n'est pas un lancement du 2ème tour", carteDeuxieme.contains("Comparé à : LAN2646CASSE"));
+    }
 }

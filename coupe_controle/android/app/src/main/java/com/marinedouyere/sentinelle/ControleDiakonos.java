@@ -47,12 +47,23 @@ final class ControleDiakonos {
         return null;
     }
 
+    /** Feno : contrôlé avec son propre fichier, jamais avec le Diakonos des tours. */
+    static boolean estFeno(Paire p) {
+        return "Feno".equals(p.poste) || (p.strat != null && p.strat.nom.toUpperCase(java.util.Locale.ROOT).contains("FENO"));
+    }
+
+    /** Casse : ses pièces viennent de plusieurs lancements, elle n'a pas de tour. */
+    static boolean estCasse(Paire p) {
+        return "Casse".equals(p.poste) || (p.strat != null && p.strat.nom.toUpperCase(java.util.Locale.ROOT).contains("CASSE"));
+    }
+
     /**
-     * Tours dont une case montre le Diakonos : celui de l'Agglo, celui du code du lancement
-     * (LAN264401FENO → 1er tour), sinon les deux (casse, chantier sans tour). Rien pour une case vide.
+     * Tours dont une case montre le Diakonos (comme la page web) : celui de l'Agglo, celui du code du lancement
+     * (LAN264601TRIGANO → 1er tour), sinon les deux (chantier sans tour). Rien pour une case vide, ni pour le
+     * Feno, le recyclage ou la casse.
      */
     static List<String> toursDeLaCase(Paire p) {
-        if (p.estDiakonos()) return new ArrayList<>();
+        if (p.estDiakonos() || estFeno(p) || estCasse(p) || "Recyclage".equals(p.poste)) return new ArrayList<>();
         String tour = tourDeLaCase(p);
         if (tour != null) return Collections.singletonList(tour);
         if (p.strat == null) return new ArrayList<>();
@@ -129,13 +140,18 @@ final class ControleDiakonos {
         return p;
     }
 
-    /** Lancement de la semaine et du tour (un code sans tour, ex. LAN2646TRIGANO, vaut pour les deux tours). */
+    /**
+     * Lancement de la semaine et du tour (un code sans tour, ex. LAN2646TRIGANO, vaut pour les deux tours).
+     * Le tour se lit dans le nom du fichier (LAN264602START → 2ème tour) : la colonne « lancement » porte le
+     * numéro du lancement dans la semaine (LAN264607…), pas le tour. Elle ne sert que si le nom n'a pas de code.
+     * Ni le Feno (il a son propre contrôle) ni la casse (pièces d'autres semaines, sans tour) ne sont comptés.
+     */
     static boolean duTour(Paire p, Controles.Resume res, String semaine, String tour) {
-        Set<String> codes = new LinkedHashSet<>(res.lancements);
-        if (codes.isEmpty()) {
-            String code = ScanDossier.trouverCodeLancement(p.strat.nom);
-            if (code != null) codes.add(code);
-        }
+        if (estFeno(p) || estCasse(p)) return false;
+        Set<String> codes = new LinkedHashSet<>();
+        String codeDuNom = ScanDossier.trouverCodeLancement(p.strat.nom);
+        if (codeDuNom != null) codes.add(codeDuNom);
+        else codes.addAll(res.lancements);
         for (String code : codes) {
             String[] st = LecteurDiakonos.semaineEtTour(code);
             if (st == null || !st[0].equals(semaine)) continue;

@@ -278,6 +278,55 @@ final class FichierPartage {
         return res;
     }
 
+    // ---- bibliothèque : où une pièce était déjà lancée (pour la casse) ----
+
+    static final class Vu {
+        int ordre;
+        int semaine;
+        String lancement;
+    }
+
+    private Map<String, List<Vu>> index;
+
+    private synchronized Map<String, List<Vu>> index() {
+        if (index != null) return index;
+        Map<String, List<Vu>> m = new HashMap<>();
+        int iCle = Math.max(0, colonne("cle"));
+        for (Semaine s : semaines)
+            for (Lancement l : s.lancements) {
+                Vu vu = new Vu();
+                vu.ordre = s.annee * 100 + s.semaine;
+                vu.semaine = s.semaine;
+                vu.lancement = l.fichier.isEmpty() ? l.nom : l.fichier;
+                for (String[] piece : l.pieces) {
+                    if (iCle >= piece.length) continue;
+                    List<Vu> liste = m.get(piece[iCle]);
+                    if (liste == null) m.put(piece[iCle], liste = new ArrayList<>());
+                    liste.add(vu);
+                }
+            }
+        index = m;
+        return m;
+    }
+
+    /** Dernière semaine (strictement avant « avant » = année × 100 + semaine) où la pièce était lancée ; null sinon. */
+    Vu derniereFoisLancee(String cle, int avant) {
+        Vu meilleur = null;
+        List<Vu> liste = index().get(cle);
+        if (liste != null) for (Vu v : liste) if (v.ordre < avant && (meilleur == null || v.ordre > meilleur.ordre)) meilleur = v;
+        return meilleur;
+    }
+
+    /** Semaines du fichier avant « avant » (« 44 », « 45 »), de la plus ancienne à la plus récente. */
+    List<String> semainesAvant(int avant) {
+        List<Semaine> liste = new ArrayList<>();
+        for (Semaine s : semaines) if (s.annee * 100 + s.semaine < avant) liste.add(s);
+        Collections.sort(liste, (a, b) -> Integer.compare(a.annee * 100 + a.semaine, b.annee * 100 + b.semaine));
+        List<String> res = new ArrayList<>();
+        for (Semaine s : liste) res.add(String.format(Locale.ROOT, "%02d", s.semaine));
+        return res;
+    }
+
     // ---- recherche d'une pièce dans toutes les semaines ----
 
     static final class Trouvaille {

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V5.4 — Contrôle de coupe</title>
+<title>Sentinelle V5.5 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -262,7 +262,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V5.4</div>
+        <div class="sous-titre">Contrôle de coupe · V5.5</div>
       </div>
     </div>
   </header>
@@ -297,7 +297,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V5.4 · Contrôle de coupe</span>
+    <span>Sentinelle V5.5 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -5956,9 +5956,9 @@ const estFeno = (p) => p.poste === "Feno" || /FENO/i.test(p.strat ? p.strat.name
 // Lancement de la semaine et du tour (un code sans tour, ex. LAN2646TRIGANO, vaut pour les deux tours).
 // Le tour se lit dans le nom du fichier (LAN264601START → 1er tour) : la colonne « lancement » du fichier
 // porte le numéro du lancement dans la semaine (LAN264505 pour un Feno), pas le tour. Elle ne sert
-// que si le nom n'a pas de code.
+// que si le nom n'a pas de code. Ni le Feno (son propre contrôle) ni la casse (pièces d'autres semaines, sans tour).
 function duTourDiakonos(p, res, semaine, tour) {
-  if (estFeno(p)) return false;
+  if (estFeno(p) || estCasse(p, p.strat.name)) return false;
   const codeDuNom = trouverCodeLancement(p.strat.name);
   const codes = codeDuNom ? [codeDuNom] : [...res.lancements];
   return codes.some((code) => {
@@ -6199,10 +6199,10 @@ function diakonosDeLaCase(p) {
 }
 
 // Tours dont une case montre le Diakonos : celui de l'Agglo, celui du code du lancement
-// (LAN264601RECYCLAGE → 1er tour), sinon les deux (casse, chantier sans tour). Rien pour une case vide
-// ni pour le Feno (contrôlé avec le Feno, pas avec le Diakonos).
+// (LAN264601TRIGANO → 1er tour), sinon les deux (chantier sans tour). Rien pour une case vide, ni pour le
+// Feno (contrôlé avec le Feno), le recyclage ou la casse (ses pièces viennent de plusieurs lancements, sans tour).
 function toursDiakonosDeLaCase(p) {
-  if (estDiakonos(p) || estFeno(p) || p.poste === "Recyclage") return [];
+  if (estDiakonos(p) || estFeno(p) || p.poste === "Recyclage" || estCasse(p, p.strat ? p.strat.name : "")) return [];
   if (p.poste === "Agglo 1er tour") return ["1"];
   if (p.poste === "Agglo 2ème tour") return ["2"];
   if (!p.strat) return [];
@@ -7472,11 +7472,12 @@ async function problemesDuLancement(p) {
     else if (r.autreSemaineChargee)
       bilan.push({ statut: "info", controle: "Casse", texte: `Pour séparer les pièces relancées des rajouts, chargez la semaine ${r.semaineAvant || "d'avant"} dans l'autre onglet, ou ajoutez les semaines d'avant à la bibliothèque.` });
     else {
-      bilan.push({ statut: r.dejaLancees.length ? "attention" : "ok", controle: "Casse",
+      // Une pièce de casse déjà lancée avant, c'est normal (elle est refaite) : pour info, pas un problème.
+      bilan.push({ statut: "ok", controle: "Casse",
         texte: r.dejaLancees.length
           ? `${r.dejaLancees.length} pièce(s) relancée(s) (déjà lancées ${libelleSemaines(r.dejaLancees.map((t) => t.semaine))}) et ${r.rajouts.length} rajout(s).`
           : `Aucune pièce relancée (rien ${r.periode}) : ${r.rajouts.length} rajout(s).` });
-      for (const t of r.dejaLancees) ajouter(t.ligne.cle, GRAVITE.VERIFIER, "Casse : relancée", `Déjà lancée en semaine ${t.semaine} dans ${t.lancement}`);
+      for (const t of r.dejaLancees) ajouter(t.ligne.cle, GRAVITE.INFO, "Casse : relancée", `Déjà lancée en semaine ${t.semaine} dans ${t.lancement}`);
       for (const l of r.rajouts) ajouter(l.cle, GRAVITE.INFO, "Casse : rajout", `Pas lancée ${r.periode}`);
     }
   } else if (!autresLancements.length)
@@ -7983,7 +7984,7 @@ async function rapportSemaineXlsx(parite, options = {}) {
     else if (r.autreSemaineChargee) ligneBilan(`${debut} — pour compter les pièces déjà lancées, ${messageChargerCasse(r)}.`, "info");
     else
       ligneBilan(`${debut} — ${r.dejaLancees.length} déjà lancée(s)${r.dejaLancees.length ? ` ${libelleSemaines(r.dejaLancees.map((t) => t.semaine))}` : ""}, ${r.rajouts.length} rajout(s)` +
-        (r.dejaLancees.length ? ` (détail dans l'onglet « ${l.nom} »).` : "."), r.dejaLancees.length ? "attention" : "ok");
+        (r.dejaLancees.length ? ` (détail dans l'onglet « ${l.nom} »).` : "."), "ok");
   }
   return {
     nom: `rapport_sentinelle_${slug(titre)}.xlsx`,

@@ -216,14 +216,19 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        // Retour dans l'appli : le fichier partagé a pu changer sur le PC.
-        if (ONGLET_PARTAGE.equals(onglet)) partage().actualiser();
+        // Retour dans l'appli : le fichier partagé a pu changer sur le PC (la casse s'en sert aussi).
+        if (ONGLET_PARTAGE.equals(onglet) || (app.partage == null && partage().uri() != null)) partage().actualiser();
     }
 
     /** Onglet du fichier partagé (créé à la première visite). */
     PartageVue partage() {
         if (partage == null) partage = new PartageVue(this, ui, app);
         return partage;
+    }
+
+    /** Le fichier partagé vient d'être lu : la casse des onglets semaine se recalcule avec ses semaines. */
+    void partageCharge() {
+        if (ongletSemaine()) afficher();
     }
 
     /** Sélecteur d'Android pour choisir le fichier partagé (le Drive du compte de l'appareil y apparaît). */
@@ -590,13 +595,14 @@ public class MainActivity extends AppCompatActivity {
         final String autre = Depot.PAIRE.equals(parite) ? Depot.IMPAIRE : Depot.PAIRE;
         final List<Paire> autreSemaine = depot.pairesDeLaSemaine(autre);
         final int numeroAutre = numeroSemaine(autre);
-        final String cle = ControleCasse.cle(p, autreSemaine, numeroAutre);
+        final FichierPartage biblio = app.partage;
+        final String cle = ControleCasse.cle(p, autreSemaine, numeroAutre, biblio);
         ControleCasse.Resultat r = resultatsCasse.get(p.cle());
         if (r == null || !r.cle.equals(cle)) {
             zone.addView(ui.texte("…", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 0));
             if (casseEnCours.add(cle)) {
                 app.annexe.execute(() -> {
-                    ControleCasse.Resultat calcule = ControleCasse.calculer(p, autreSemaine, numeroAutre, controles);
+                    ControleCasse.Resultat calcule = ControleCasse.calculer(p, autreSemaine, numeroAutre, controles, biblio);
                     principal.post(() -> {
                         casseEnCours.remove(cle);
                         resultatsCasse.put(p.cle(), calcule);
@@ -613,24 +619,24 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
         if (r.autreSemaineChargee != null) {
-            zone.addView(ui.texte("Pour retrouver les pièces déjà lancées, chargez la semaine " + (r.semaineAvant == null ? "d'avant" : r.semaineAvant)
-                    + " dans l'autre onglet.", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 0));
+            zone.addView(ui.texte("Pour retrouver les pièces déjà lancées, " + ControleCasse.messageCharger(r) + ".", 13, false,
+                    ui.couleur(R.color.gris_texte)), ui.marges(6, 0));
             return;
         }
         if (r.dejaLancees.isEmpty()) {
-            zone.addView(ui.bandeau("Casse : aucune pièce n'était lancée en semaine " + r.semaineAvant,
+            zone.addView(ui.bandeau("Casse : aucune pièce n'était lancée " + r.periode + " — " + r.rajouts.size() + " rajout(s)",
                     ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte)), ui.marges(6, 0));
             return;
         }
-        zone.addView(ui.bandeau("🔁 " + r.dejaLancees.size() + " pièce(s) de la casse déjà lancée(s) en semaine " + r.semaineAvant,
+        zone.addView(ui.bandeau("🔁 " + r.dejaLancees.size() + " pièce(s) de la casse déjà lancée(s) " + r.ouDejaLancees(),
                 ui.couleur(R.color.attention_fond), ui.couleur(R.color.attention_texte)), ui.marges(6, 0));
         for (ControleCasse.Trouvee t : r.dejaLancees) {
-            TextView l = ui.texte(ControleCasse.description(t.ligne, " · ") + " — " + t.lancement, 13, false, 0xFF3E4C59);
+            TextView l = ui.texte(ControleCasse.description(t.ligne, " · ") + " — " + t.lancement + " (sem. " + t.semaine + ")", 13, false, 0xFF3E4C59);
             l.setPadding(0, ui.dp(4), 0, 0);
             zone.addView(l);
         }
         if (r.nbAutres > 0) {
-            zone.addView(ui.texte(r.nbAutres + " autre(s) pièce(s) pas lancée(s) en semaine " + r.semaineAvant, 12, false,
+            zone.addView(ui.texte(r.nbAutres + " rajout(s) : pièce(s) pas lancée(s) " + r.periode, 12, false,
                     ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
         }
     }
@@ -775,7 +781,7 @@ public class MainActivity extends AppCompatActivity {
             parties.add(ControleDiakonos.partie(ControleDiakonos.calculer(diakonos, numero, semaine, toutes, controles), base));
         }
         boolean casse = estCasse(p, nomLancement);
-        if (casse && p.strat != null) parties.addAll(ControleCasse.parties(ControleCasse.calculer(p, autreSemaine, numeroAutre, controles), base));
+        if (casse && p.strat != null) parties.addAll(ControleCasse.parties(ControleCasse.calculer(p, autreSemaine, numeroAutre, controles, app.partage), base));
         String nbPieces = null;
         if (p.strat != null) {
             double prevues = controles.resume(p.strat, p.bkp).prevues;
@@ -1332,7 +1338,7 @@ public class MainActivity extends AppCompatActivity {
                 for (Paire p : semaine) if (p.strat != null) controles.resume(p.strat, p.bkp);
                 for (Paire p : autreSemaine) if (p.strat != null) controles.resume(p.strat, p.bkp);
                 ControleCasse.Resultat analyseCasse = casse != null && casse.strat != null
-                        ? ControleCasse.calculer(casse, autreSemaine, numeroAutre, controles) : null;
+                        ? ControleCasse.calculer(casse, autreSemaine, numeroAutre, controles, app.partage) : null;
                 byte[] octets = RapportSemaine.xlsx(libelle, RecapLancements.lignes(semaine, controles),
                         RecapLancements.lignes(autreSemaine, controles), libelleAutre, analyseCasse);
                 try (OutputStream sortie = "file".equals(uri.getScheme())

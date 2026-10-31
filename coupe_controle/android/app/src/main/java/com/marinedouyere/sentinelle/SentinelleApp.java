@@ -17,6 +17,8 @@ public final class SentinelleApp extends Application {
     final ExecutorService fond = Executors.newSingleThreadExecutor();
     /** Calculs légers indépendants (compteur de pièces, détection de semaine). */
     final ExecutorService annexe = Executors.newSingleThreadExecutor();
+    /** Dernier fichier partagé lu (semaines gardées par Sentinelle sur le PC) : la casse s'en sert. */
+    volatile FichierPartage partage;
 
     synchronized Depot depot() {
         if (depot == null) depot = new Depot(this);
