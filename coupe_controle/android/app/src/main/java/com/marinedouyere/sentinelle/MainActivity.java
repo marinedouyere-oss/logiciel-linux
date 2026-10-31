@@ -20,7 +20,6 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.google.android.material.appbar.MaterialToolbar;
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.tabs.TabLayout;
@@ -141,13 +140,7 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout racine = ui.colonne();
         racine.setBackgroundColor(ui.couleur(R.color.fond));
 
-        MaterialToolbar barre = new MaterialToolbar(this);
-        barre.setTitle("Sentinelle");
-        barre.setSubtitle("Contrôle de coupe");
-        barre.setBackgroundColor(ui.couleur(R.color.marque));
-        barre.setTitleTextColor(0xFFFFFFFF);
-        barre.setSubtitleTextColor(0xDDFFFFFF);
-        racine.addView(barre, ui.pleineLargeur());
+        racine.addView(barreLaisne(), ui.pleineLargeur());
 
         onglets = new TabLayout(this);
         onglets.setBackgroundColor(0xFFFFFFFF);
@@ -188,6 +181,34 @@ public class MainActivity extends AppCompatActivity {
             public void onTabReselected(TabLayout.Tab tab) {}
         });
         afficher();
+    }
+
+    /** Barre du haut à la charte (comme la page web) : logo Laisné Industrie blanc, filet, « Sentinelle » et la version. */
+    private View barreLaisne() {
+        LinearLayout barre = ui.rangee();
+        barre.setBackgroundColor(ui.couleur(R.color.marque));
+        barre.setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(10));
+        android.widget.ImageView logo = new android.widget.ImageView(this);
+        logo.setImageResource(R.drawable.logo_laisne_blanc);
+        logo.setAdjustViewBounds(true);
+        logo.setContentDescription("LAISNÉ INDUSTRIE");
+        barre.addView(logo, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ui.dp(36)));
+        View filet = new View(this);
+        filet.setBackgroundColor(0x59FFFFFF);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Math.max(1, ui.dp(1)), ui.dp(34));
+        lp.setMargins(ui.dp(14), 0, ui.dp(14), 0);
+        barre.addView(filet, lp);
+        LinearLayout titres = ui.colonne();
+        titres.addView(ui.titre("Sentinelle", 20, 0xFFFFFFFF));
+        String version = "";
+        try {
+            version = " · V" + getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            // version inconnue
+        }
+        titres.addView(ui.texte("Contrôle de coupe" + version, 13, false, 0xDDFFFFFF));
+        barre.addView(titres);
+        return barre;
     }
 
     @Override

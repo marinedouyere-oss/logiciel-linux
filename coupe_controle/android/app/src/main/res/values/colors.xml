@@ -17,4 +17,6 @@
     <color name="attention_texte">#7A5200</color>
     <color name="gris_texte">#797978</color>
     <color name="bordure">#E9E7E3</color>
+    <!-- Fond de l'icône de l'appli. -->
+    <color name="icone_fond">#78140C</color>
 </resources>
