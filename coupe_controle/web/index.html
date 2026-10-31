@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V5.7 — Contrôle de coupe</title>
+<title>Sentinelle V5.8 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -269,7 +269,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V5.7</div>
+        <div class="sous-titre">Contrôle de coupe · V5.8</div>
       </div>
     </div>
   </header>
@@ -306,7 +306,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V5.7 · Contrôle de coupe</span>
+    <span>Sentinelle V5.8 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -4963,13 +4963,20 @@ function afficherBibliotheque() {
 //  - Retour latéral LG / LD (pas FG / FD, pas ETR… = sans retour) : cote finie +10 par retour ;
 //    débit = cote finie + 55 pour le FENO, + 50 pour le reste ; protection : débit = cote finie.
 //  - Support 10 brut (SAG10HYBR) : RCB en sous-face si elle est vide, toujours (MIXTE compris).
+// Corrections agglo (1er tour, 2ème tour, casse ; pas le recyclage ni les chantiers) :
+//  - Bandes : pièces « ban » en 28, 38 et plus, même agglo et mêmes couleurs dessus / dessous ; les largeurs
+//    de débit à 6 cm ou moins les unes des autres prennent la plus grande (le moins de largeurs possible,
+//    puis le moins de mm ajoutés). Lignes élargies surlignées en jaune.
+//  - Crédences (articles CRED12, CRED14) en 10 brut et 12 brut : RCB-CRED14 en sous-face si elle est vide
+//    ou « RCB » (pas les CBD, pas les CRED…G…, pas les supports de compacts).
+//  - Commentaire vide et usinage indiqué (info 3 atelier ou un des 4 usinages d'angle) : BAZ.
 
 const TYPES_REECRITURE = [
-  { id: "agglo1", libelle: "Agglo 1er tour", dossier: "1ER TOUR AGGLO", suffixe: "01START" },
-  { id: "agglo2", libelle: "Agglo 2ème tour", dossier: "2EME TOUR AGGLO", suffixe: "02START" },
+  { id: "agglo1", libelle: "Agglo 1er tour", dossier: "1ER TOUR AGGLO", suffixe: "01START", agglo: true },
+  { id: "agglo2", libelle: "Agglo 2ème tour", dossier: "2EME TOUR AGGLO", suffixe: "02START", agglo: true },
   { id: "recyclage", libelle: "Recyclage", dossier: "1ER TOUR AGGLO", suffixe: "01RECYCLAGE" },
   { id: "feno", libelle: "Feno", dossier: "FENO", suffixe: "01FENO", feno: true },
-  { id: "casse", libelle: "Casse", dossier: "CASSE", suffixe: "CASSE" },
+  { id: "casse", libelle: "Casse", dossier: "CASSE", suffixe: "CASSE", agglo: true },
   { id: "chantier", libelle: "Chantier", dossier: "CHANTIERS", suffixe: null },
 ];
 
@@ -4983,6 +4990,17 @@ const COLONNES_REECRITURE = {
   commentaire: "commentaire",
   finiTexte: "LongueurxLargeurxEpaisseur fini",
 };
+
+// Colonnes utiles aux corrections agglo (une règle dont une colonne manque ne s'applique pas).
+const COLONNES_AGGLO = {
+  largeur: "largeur",
+  coloris: "coloris",
+  idPlan: "idPlan",
+  cbd: "CBD",
+  info3: "info 3 atelier",
+  angles: ["Usinage angle avant gauche", "Usinage angle avant droit", "Usinage angle arrière gauche", "Usinage angle arrière droit"],
+};
+const ECART_BANDE = 60; // mm : pas plus de 6 cm entre deux pièces d'une même bande
 
 // Surlignage des lignes dont les dimensions sont corrigées (mêmes couleurs que les LAN faits à la main).
 const COULEUR_PLUS_10 = "FFFFFF00"; // jaune
@@ -5157,6 +5175,81 @@ function retoursLateraux(assemblage) {
 
 const supplementDebit = (agglo) => (agglo.startsWith("PROTECTION") ? 0 : agglo.startsWith("FENO") ? 55 : 50);
 
+// Largeurs d'une bande : découpage des largeurs (triées) en groupes de 6 cm au plus, avec le moins de groupes,
+// puis le moins de mm ajoutés. Chaque largeur -> la plus grande de son groupe.
+function harmoniserLargeurs(largeurs) {
+  const u = [...new Set(largeurs)].sort((a, b) => a - b);
+  const nb = new Map();
+  for (const w of largeurs) nb.set(w, (nb.get(w) || 0) + 1);
+  const meilleur = [{ groupes: 0, ajout: 0, debut: -1 }];
+  for (let j = 1; j <= u.length; j++) {
+    let m = null;
+    for (let i = 0; i < j; i++) {
+      if (u[j - 1] - u[i] > ECART_BANDE) continue;
+      let ajout = 0;
+      for (let k = i; k < j; k++) ajout += (u[j - 1] - u[k]) * nb.get(u[k]);
+      const c = { groupes: meilleur[i].groupes + 1, ajout: meilleur[i].ajout + ajout, debut: i };
+      if (!m || c.groupes < m.groupes || (c.groupes === m.groupes && c.ajout < m.ajout)) m = c;
+    }
+    meilleur.push(m);
+  }
+  const cible = new Map();
+  for (let j = u.length; j > 0; j = meilleur[j].debut) for (let k = meilleur[j].debut; k < j; k++) cible.set(u[k], u[j - 1]);
+  return cible;
+}
+
+// Corrections agglo : bandes (jaune), RCB-CRED14 sous les crédences en 10 / 12 brut, BAZ.
+function corrigerAgglo(analyse, changements, pieces, marques) {
+  const { colonnes, donnees } = analyse;
+  const cellule = (l, nom) => {
+    const c = colonnes[nom] && l.cellules.find((x) => x.col === colonnes[nom]);
+    return c ? String(c.valeur ?? "").trim() : "";
+  };
+  const C = COLONNES_REECRITURE;
+  const A = COLONNES_AGGLO;
+  // Bandes
+  if (colonnes[A.largeur] && colonnes[A.idPlan] && colonnes[A.coloris]) {
+    const groupes = new Map();
+    for (const l of donnees) {
+      const agglo = cellule(l, C.agglo).toUpperCase();
+      const m = agglo.match(/^SAG(\d+)/);
+      const largeur = nombreCellule(cellule(l, A.largeur));
+      if (!m || Number(m[1]) < 28 || cellule(l, A.idPlan).toLowerCase() !== "ban" || largeur == null) continue;
+      const k = [agglo, cellule(l, A.coloris), cellule(l, C.sousFace)].join("|");
+      if (!groupes.has(k)) groupes.set(k, []);
+      groupes.get(k).push({ l, largeur, agglo });
+    }
+    for (const pieces_ of groupes.values()) {
+      const cible = harmoniserLargeurs(pieces_.map((x) => x.largeur));
+      for (const x of pieces_) {
+        const w = cible.get(x.largeur);
+        if (w === x.largeur) continue;
+        const cle = cellule(x.l, C.cle);
+        changements.push({ ligne: x.l.numero, col: colonnes[A.largeur], avant: x.largeur, apres: w, nombre: true, cle, agglo: x.agglo, quoi: "largeur (bande)" });
+        marques.set(x.l.numero, COULEUR_PLUS_10);
+        pieces.bandes.add(`${cle}|${x.l.numero}`);
+      }
+    }
+  }
+  for (const l of donnees) {
+    const agglo = cellule(l, C.agglo).toUpperCase();
+    const cle = cellule(l, C.cle);
+    // Crédences (CRED12, CRED14) en 10 brut et 12 brut : RCB-CRED14 (sauf double face CBD).
+    const sousFace = cellule(l, C.sousFace);
+    const credence = /^CRED\d+$/i.test(cellule(l, "conf_article"));
+    if (credence && (agglo === "SAG10HYBR" || agglo === "SAG12HYBR") && !cellule(l, A.cbd) && (sousFace === "" || sousFace.toUpperCase() === "RCB")) {
+      changements.push({ ligne: l.numero, col: colonnes[C.sousFace], avant: sousFace || null, apres: "RCB-CRED14", nombre: false, cle, agglo, quoi: "sous-face" });
+      pieces.cred14.add(`${cle}|${l.numero}`);
+    }
+    // Commentaire vide et usinage indiqué : BAZ.
+    const usinage = cellule(l, A.info3) !== "" || A.angles.some((n) => cellule(l, n) !== "");
+    if (colonnes[C.commentaire] && usinage && cellule(l, C.commentaire) === "") {
+      changements.push({ ligne: l.numero, col: colonnes[C.commentaire], avant: null, apres: "BAZ", nombre: false, cle, agglo, quoi: "commentaire" });
+      pieces.baz.add(`${cle}|${l.numero}`);
+    }
+  }
+}
+
 // Les cellules à changer, et ce qu'il faut dire à l'écran (rien de tout ça ne va dans le fichier).
 function planifierCorrections(analyse, type) {
   const { colonnes, donnees } = analyse;
@@ -5164,6 +5257,10 @@ function planifierCorrections(analyse, type) {
   const pieces = { retours: new Set(), rcb: new Set() };
   const avertissements = [];
   const marques = new Map(); // ligne -> couleur (dimensions corrigées)
+  pieces.bandes = new Set();
+  pieces.cred14 = new Set();
+  pieces.baz = new Set();
+  if (type && type.agglo) corrigerAgglo(analyse, changements, pieces, marques);
   if (!type || !type.feno) return { changements, pieces, avertissements, marques };
   const val = (l, nom) => {
     const c = l.cellules.find((x) => x.col === colonnes[COLONNES_REECRITURE[nom]]);
@@ -5332,7 +5429,7 @@ async function ecrireLanCorrige(analyse, plan) {
       changees.add(ch.col);
       if (existante) {
         const s = attribut(existante.attrs, "s");
-        if (!ch.nombre && existante.valeur != null && String(existante.valeur).trim() !== "") throw new Error(`cellule ${ref} déjà remplie`);
+        if (!ch.nombre && existante.valeur != null && String(existante.valeur).trim() !== "" && String(existante.valeur).trim() !== String(ch.avant ?? "")) throw new Error(`cellule ${ref} déjà remplie`);
         operations.push({ debut: existante.debut, fin: existante.fin, col: ch.col, xml: celluleXml(ref, couleur ? styleFinal(s || "0") : s, ch, idx) });
       } else {
         const suivante = l.cellules.find((c) => c.col > ch.col);
@@ -5622,6 +5719,13 @@ async function lancerReecriture() {
 }
 
 function resumeCorrections(plan, type) {
+  if (type.agglo) {
+    const m = [];
+    if (plan.pieces.bandes.size) m.push(`${plan.pieces.bandes.size} pièce(s) élargie(s) pour les bandes (lignes en jaune)`);
+    if (plan.pieces.cred14.size) m.push(`RCB-CRED14 en sous-face sur ${plan.pieces.cred14.size} crédence(s) en 10 / 12 brut`);
+    if (plan.pieces.baz.size) m.push(`BAZ en commentaire sur ${plan.pieces.baz.size} ligne(s) avec usinage`);
+    return m.length ? `Corrections : ${m.join(" ; ")}.` : "Aucune correction à faire dans ce fichier.";
+  }
   if (!type.feno) return "Aucune correction automatique pour ce type de lancement : le fichier est enregistré tel quel, sous son vrai nom.";
   const morceaux = [];
   if (plan.pieces.retours.size) morceaux.push(`${plan.pieces.retours.size} pièce(s) avec retour LG / LD`);
@@ -5680,7 +5784,7 @@ function afficherReecriture() {
   const a = reecriture.analyse;
   let html = `<div class="carte">
     <div class="carte-titre">Réécriture du fichier de lancement</div>
-    <div class="note">Le fichier d'extraction du logiciel de gestion devient le LAN du lancement : vrai nom, corrections automatiques, rangé dans le dossier de la semaine. Rien n'est ajouté au fichier : seules les cellules corrigées changent, et les lignes dont les dimensions sont corrigées sont surlignées (jaune : +10, orange : +20).</div>
+    <div class="note">Le fichier d'extraction du logiciel de gestion devient le LAN du lancement : vrai nom, corrections automatiques, rangé dans le dossier de la semaine. Rien n'est ajouté au fichier : seules les cellules corrigées changent, et les lignes dont les dimensions sont corrigées sont surlignées (Feno : jaune +10, orange +20 ; agglo : jaune pour les bandes).</div>
     <div class="ligne-bibliotheque">Dossier des semaines : <strong>${reecriture.racine ? echapper(reecriture.racine.name) : "aucun dossier choisi"}</strong></div>
     <button type="button" class="contour pleine" id="btnRacineReecriture">${reecriture.racine ? "Changer le dossier des semaines" : "Choisir le dossier des semaines"}</button>
   </div>`;
