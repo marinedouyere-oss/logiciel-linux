@@ -1,0 +1,86 @@
+plugins {
+    id "com.android.application"
+}
+
+android {
+    namespace "com.marinedouyere.sentinelle"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.marinedouyere.sentinelle"
+        minSdk 24
+        targetSdk 34
+        versionCode 27
+        versionName "5.5"
+    }
+
+    // Clé de signature gardée dans le projet : chaque nouvelle version
+    // s'installe par-dessus l'ancienne, sans désinstaller.
+    signingConfigs {
+        debug {
+            storeFile file("sentinelle.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+            all {
+                systemProperty "robolectric.dependency.repo.url", "https://maven-central.storage-download.googleapis.com/maven2/"
+                systemProperty "sentinelle.fixtures", System.getenv("SENTINELLE_FIXTURES") ?: ""
+                systemProperty "sentinelle.captures", System.getenv("SENTINELLE_CAPTURES") ?: ""
+                systemProperty "sentinelle.semaine44", System.getenv("SENTINELLE_SEMAINE44") ?: ""
+                systemProperty "sentinelle.semaine45", System.getenv("SENTINELLE_SEMAINE45") ?: ""
+                systemProperty "sentinelle.semaine46", System.getenv("SENTINELLE_SEMAINE46") ?: ""
+                systemProperty "sentinelle.sommaire", System.getenv("SENTINELLE_SOMMAIRE") ?: ""
+                systemProperty "sentinelle.partage", System.getenv("SENTINELLE_PARTAGE") ?: ""
+                maxHeapSize = "3g"
+                testLogging {
+                    events "failed", "skipped"
+                    exceptionFormat "full"
+                    showStandardStreams = true
+                }
+            }
+        }
+    }
+
+    packagingOptions {
+        resources {
+            excludes += ["META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*"]
+            // Tables des algorithmes post-quantiques de Bouncy Castle (dépendance de
+            // PDFBox), jamais utilisées pour lire une liste de coupe.
+            excludes += ["org/bouncycastle/pqc/**/*.properties"]
+        }
+    }
+}
+
+dependencies {
+    implementation project(":moteur")
+    implementation "com.google.android.material:material:1.12.0"
+    implementation "androidx.appcompat:appcompat:1.7.0"
+    implementation "androidx.documentfile:documentfile:1.0.1"
+    // Lecture des listes de coupe PDF (portage Android de PDFBox).
+    implementation "com.tom-roush:pdfbox-android:2.0.27.0"
+
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "org.robolectric:robolectric:4.13"
+    testImplementation "androidx.test:core:1.6.1"
+}

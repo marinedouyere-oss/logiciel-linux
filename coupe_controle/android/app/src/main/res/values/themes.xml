@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Charte Laisné Industrie : Lato pour le texte, Raleway pour les titres, bordeaux en accent. -->
+    <style name="Theme.Sentinelle" parent="Theme.Material3.Light.NoActionBar">
+        <item name="colorPrimary">@color/marque</item>
+        <item name="colorPrimaryDark">@color/marque_fonce</item>
+        <item name="colorOnPrimary">#FFFFFF</item>
+        <item name="colorPrimaryContainer">@color/marque_clair</item>
+        <item name="colorOnPrimaryContainer">@color/marque</item>
+        <item name="colorSecondary">@color/marque</item>
+        <item name="colorSecondaryContainer">@color/marque_clair</item>
+        <item name="colorOnSecondaryContainer">@color/marque</item>
+        <item name="colorOutline">@color/marque</item>
+        <item name="colorSurface">#FFFFFF</item>
+        <item name="colorOnSurface">@color/texte</item>
+        <item name="colorOnSurfaceVariant">@color/gris_texte</item>
+        <item name="android:colorBackground">@color/fond</item>
+        <item name="android:statusBarColor">@color/marque</item>
+        <item name="android:fontFamily">@font/lato</item>
+        <item name="fontFamily">@font/lato</item>
+        <item name="android:textColor">@color/texte</item>
+        <item name="textAppearanceLabelLarge">@style/Texte.Bouton</item>
+        <item name="textAppearanceTitleSmall">@style/Texte.Onglet</item>
+        <item name="textAppearanceBodyLarge">@style/Texte.Corps</item>
+        <item name="textAppearanceBodyMedium">@style/Texte.Corps</item>
+        <item name="textAppearanceTitleLarge">@style/Texte.Titre</item>
+        <item name="textAppearanceTitleMedium">@style/Texte.Titre</item>
+    </style>
+
+    <style name="Texte.Bouton" parent="TextAppearance.Material3.LabelLarge">
+        <item name="fontFamily">@font/lato_bold</item>
+        <item name="android:fontFamily">@font/lato_bold</item>
+    </style>
+
+    <style name="Texte.Onglet" parent="TextAppearance.Material3.TitleSmall">
+        <item name="fontFamily">@font/lato_bold</item>
+        <item name="android:fontFamily">@font/lato_bold</item>
+        <item name="android:letterSpacing">0.04</item>
+    </style>
+
+    <style name="Texte.Corps" parent="TextAppearance.Material3.BodyMedium">
+        <item name="fontFamily">@font/lato</item>
+        <item name="android:fontFamily">@font/lato</item>
+    </style>
+
+    <style name="Texte.Titre" parent="TextAppearance.Material3.TitleLarge">
+        <item name="fontFamily">@font/raleway_bold</item>
+        <item name="android:fontFamily">@font/raleway_bold</item>
+    </style>
+</resources>
