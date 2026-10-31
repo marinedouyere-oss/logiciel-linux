@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V5.6 — Contrôle de coupe</title>
+<title>Sentinelle V5.6.1 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -269,7 +269,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V5.6</div>
+        <div class="sous-titre">Contrôle de coupe · V5.6.1</div>
       </div>
     </div>
   </header>
@@ -306,7 +306,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V5.6 · Contrôle de coupe</span>
+    <span>Sentinelle V5.6.1 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -4961,7 +4961,7 @@ function afficherBibliotheque() {
 // Corrections (Feno seulement, pour l'instant) :
 //  - Retour latéral LG / LD (pas FG / FD, pas ETR… = sans retour) : cote finie +10 par retour ;
 //    débit = cote finie + 55 pour le FENO, + 50 pour le reste ; protection : débit = cote finie.
-//  - Support 10 brut (SAG10HYBR) : RCB en sous-face si elle est vide (pas les pièces MIXTE).
+//  - Support 10 brut (SAG10HYBR) : RCB en sous-face si elle est vide, toujours (MIXTE compris).
 
 const TYPES_REECRITURE = [
   { id: "agglo1", libelle: "Agglo 1er tour", dossier: "1ER TOUR AGGLO", suffixe: "01START" },
@@ -5183,7 +5183,7 @@ function planifierCorrections(analyse, type) {
         pieces.retours.add(cle);
       }
     }
-    if (agglo === "SAG10HYBR" && String(val(l, "sousFace") ?? "").trim() === "" && !/MIXTE/i.test(String(val(l, "commentaire") ?? ""))) {
+    if (agglo === "SAG10HYBR" && String(val(l, "sousFace") ?? "").trim() === "") {
       changements.push({ ligne: l.numero, col: colonnes[COLONNES_REECRITURE.sousFace], avant: null, apres: "RCB", nombre: false, cle, agglo, quoi: "sous-face" });
       pieces.rcb.add(cle);
     }
