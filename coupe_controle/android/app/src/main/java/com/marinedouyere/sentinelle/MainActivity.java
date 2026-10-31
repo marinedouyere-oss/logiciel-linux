@@ -33,7 +33,6 @@ import com.marinedouyere.sentinelle.moteur.LecteurDiakonos;
 import com.marinedouyere.sentinelle.moteur.RapportsSommaire;
 import com.marinedouyere.sentinelle.moteur.SommaireCutRite;
 import com.marinedouyere.sentinelle.moteur.LecteurStrat;
-import com.marinedouyere.sentinelle.moteur.ScanDossier;
 import com.marinedouyere.sentinelle.moteur.Semaines;
 
 import java.io.File;
@@ -88,12 +87,6 @@ public class MainActivity extends AppCompatActivity {
     private String cleEnAttente;
     private String roleEnAttente;
 
-    private ActivityResultLauncher<Uri> choixDossier;
-    private String pariteDossierEnAttente;
-    /** Compte rendu du dernier scan, par semaine (lignes, et s'il s'agit d'une erreur). */
-    private final Map<String, List<String>> resultatsScan = new HashMap<>();
-    private final Set<String> scanEnErreur = new HashSet<>();
-    private final Set<String> scansEnCours = new HashSet<>();
 
     private ActivityResultLauncher<String> creationRapport;
     private String cleExport;
@@ -122,11 +115,9 @@ public class MainActivity extends AppCompatActivity {
             onglet = etat.getString("onglet", Depot.PAIRE);
             cleEnAttente = etat.getString("cleEnAttente");
             roleEnAttente = etat.getString("roleEnAttente");
-            pariteDossierEnAttente = etat.getString("pariteDossierEnAttente");
             cleExport = etat.getString("cleExport");
         }
         choixFichier = registerForActivityResult(new ActivityResultContracts.OpenDocument(), this::fichierChoisi);
-        choixDossier = registerForActivityResult(new ActivityResultContracts.OpenDocumentTree(), this::dossierChoisi);
         choixPartage = registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> partage().fichierChoisi(uri));
         creationRapport = registerForActivityResult(new ActivityResultContracts.CreateDocument(ExportRapport.TYPE_MIME),
                 this::emplacementRapportChoisi);
@@ -217,7 +208,6 @@ public class MainActivity extends AppCompatActivity {
         etat.putString("onglet", onglet);
         etat.putString("cleEnAttente", cleEnAttente);
         etat.putString("roleEnAttente", roleEnAttente);
-        etat.putString("pariteDossierEnAttente", pariteDossierEnAttente);
         etat.putString("cleExport", cleExport);
         etat.putString("cleRapportLancement", cleRapportLancement);
         etat.putString("cleCorrection", cleCorrection);
@@ -341,8 +331,6 @@ public class MainActivity extends AppCompatActivity {
         corpsRecap.addView(zoneRecap, ui.pleineLargeur());
         contenu.addView(carteRecap);
         majRecap();
-
-        contenu.addView(carteDossierPartage(parite));
 
         LinearLayout actions = ui.rangee();
         MaterialButton lancerTout = ui.bouton("Lancer le(s) contrôle(s)");
@@ -1308,229 +1296,6 @@ public class MainActivity extends AppCompatActivity {
             afficher();
             majCompteur();
         });
-    }
-
-    // ---- dossier partagé ----
-
-    private View carteDossierPartage(String parite) {
-        MaterialCardView carte = ui.carte();
-        LinearLayout corps = ui.colonne();
-        corps.setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(12));
-        carte.addView(corps);
-        corps.addView(ui.texte("📂 Dossier partagé", 16, true, 0xFF263238));
-        DossierPartage dossier = DossierPartage.memorise(this, parite);
-        if (dossier != null) corps.addView(ui.texte(dossier.nom, 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 0));
-        corps.addView(ui.espace(6));
-
-        LinearLayout boutons = ui.rangee();
-        MaterialButton choisir = ui.boutonContour(dossier != null ? "Changer" : "Choisir le dossier");
-        choisir.setOnClickListener(v -> choisirDossier(parite));
-        boutons.addView(choisir, ui.poids(1));
-        boutons.addView(new View(this), new LinearLayout.LayoutParams(ui.dp(8), 1));
-        MaterialButton scanner = ui.bouton("Scanner");
-        scanner.setEnabled(dossier != null && !scansEnCours.contains(parite));
-        scanner.setOnClickListener(v -> scannerDossier(parite));
-        boutons.addView(scanner, ui.poids(1));
-        corps.addView(boutons);
-
-        List<String> lignes = resultatsScan.get(parite);
-        if (lignes != null) {
-            TextView resultat = ui.texte(TextUtils.join("\n", lignes), 13, false,
-                    scanEnErreur.contains(parite) ? ui.couleur(R.color.alerte_texte) : 0xFF263238);
-            resultat.setLineSpacing(ui.dp(2), 1f);
-            corps.addView(resultat, ui.marges(8, 0));
-        }
-        return carte;
-    }
-
-    void choisirDossier(String parite) {
-        pariteDossierEnAttente = parite;
-        try {
-            choixDossier.launch(null);
-        } catch (Exception e) {
-            alerte("Impossible d'ouvrir le sélecteur de dossier : " + e.getMessage());
-        }
-    }
-
-    void dossierChoisi(Uri uri) {
-        String parite = pariteDossierEnAttente;
-        pariteDossierEnAttente = null;
-        if (uri == null || parite == null) return;
-        DossierPartage.memoriser(this, parite, uri);
-        resultatsScan.remove(parite);
-        scanEnErreur.remove(parite);
-        if (parite.equals(onglet)) afficher();
-    }
-
-    private void compteRendu(String parite, List<String> lignes, boolean erreur) {
-        resultatsScan.put(parite, lignes);
-        if (erreur) scanEnErreur.add(parite);
-        else scanEnErreur.remove(parite);
-        if (parite.equals(onglet)) afficher();
-    }
-
-    /** Une case à remplir par le scan : le lancement trouvé et la case qui le reçoit. */
-    private static final class Affectation {
-        final ScanDossier.Cible cible;
-        final Paire paire;
-        final String libelle;
-        boolean copie;
-
-        Affectation(ScanDossier.Cible cible, Paire paire, String libelle) {
-            this.cible = cible;
-            this.paire = paire;
-            this.libelle = libelle;
-        }
-    }
-
-    /** Scan du dossier partagé de la semaine, comme scannerDossierPartage() de l'appli web. */
-    void scannerDossier(String parite) {
-        final DossierPartage dossier = DossierPartage.memorise(this, parite);
-        if (dossier == null) {
-            compteRendu(parite, java.util.Collections.singletonList("Choisissez d'abord un dossier."), true);
-            return;
-        }
-        if (!scansEnCours.add(parite)) return;
-        compteRendu(parite, java.util.Collections.singletonList("Scan en cours…"), false);
-        app.annexe.execute(() -> {
-            List<ScanDossier.Fichier> fichiers;
-            try {
-                fichiers = dossier.lister(this);
-            } catch (Exception e) {
-                principal.post(() -> {
-                    scansEnCours.remove(parite);
-                    compteRendu(parite, java.util.Collections.singletonList("Dossier illisible : " + e.getMessage()
-                            + ". Rechoisissez-le."), true);
-                });
-                return;
-            }
-            android.icu.text.Collator ordre = android.icu.text.Collator.getInstance(android.icu.util.ULocale.ROOT);
-            ScanDossier.Resultat r = ScanDossier.scanner(fichiers, parite, ordre::compare);
-            principal.post(() -> placerFichiersScannes(parite, r));
-        });
-    }
-
-    private void placerFichiersScannes(String parite, ScanDossier.Resultat r) {
-        if (r.aucunLancement && r.diakonos.isEmpty()) {
-            scansEnCours.remove(parite);
-            List<String> lignes = new ArrayList<>();
-            lignes.add("Aucun lancement dans ce dossier.");
-            compteRendu(parite, lignes, true);
-            return;
-        }
-        final List<String> lignes = new ArrayList<>();
-        final List<Affectation> affectations = new ArrayList<>();
-        for (ScanDossier.Cible g : r.fixes) {
-            Paire p = depot.paireFixe(g.poste, g.parite);
-            if (p == null) {
-                lignes.add("— " + g.poste + " : case introuvable");
-                continue;
-            }
-            affectations.add(new Affectation(g, p, g.poste));
-        }
-        for (ScanDossier.Cible g : r.chantiers) {
-            String identite = g.identiteChantier();
-            Paire p = null;
-            for (Paire c : depot.paires) if (c.estChantier() && identite.equals(c.codeLancement)) p = c;
-            if (p == null) {
-                p = depot.ajouterChantier(g.parite);
-                p.codeLancement = identite;
-                depot.enregistrer(p);
-            }
-            affectations.add(new Affectation(g, p, p.label));
-        }
-        for (Affectation a : affectations) {
-            a.paire.etat = "⏳ fichiers du dossier partagé…";
-            a.paire.etatErreur = false;
-        }
-        afficher();
-        app.annexe.execute(() -> {
-            for (Affectation a : affectations) {
-                Paire p = a.paire;
-                ScanDossier.Cible g = a.cible;
-                try {
-                    copierDepuisDossier(p, Paire.STRAT, g.strat);
-                    p.semaine = controles.detecterSemaine(p);
-                    boolean deplace = ranger(p);
-                    String suffixe = "";
-                    if (g.coupe != null) {
-                        copierDepuisDossier(p, Paire.COUPE, g.coupe);
-                        suffixe = " + coupe";
-                    }
-                    if (g.bkp != null) {
-                        copierDepuisDossier(p, Paire.BKP, g.bkp);
-                        suffixe += " + .bkp";
-                    }
-                    depot.enregistrer(p);
-                    a.copie = true;
-                    lignes.add("✔ " + a.libelle + " : " + g.strat.nom + suffixe + (deplace ? " → semaine " + p.semaine : ""));
-                } catch (Exception e) {
-                    depot.enregistrer(p);
-                    lignes.add("❌ " + a.libelle + " : " + (e.getMessage() != null ? e.getMessage() : e));
-                }
-            }
-            for (ScanDossier.Diakonos d : r.diakonos) {
-                Paire p = depot.paireDiakonos(d.tour, parite);
-                try {
-                    copierDepuisDossier(p, Paire.STRAT, d.fichier);
-                    p.semaine = d.semaine;
-                    lignes.add("✔ " + p.poste + " : " + d.fichier.nom);
-                } catch (Exception e) {
-                    lignes.add("❌ " + p.poste + " : " + (e.getMessage() != null ? e.getMessage() : e));
-                }
-                depot.enregistrer(p);
-            }
-            principal.post(() -> {
-                for (Affectation a : affectations) {
-                    a.paire.etat = null;
-                    a.paire.etatErreur = false;
-                }
-                List<String> compte = new ArrayList<>();
-                if (lignes.isEmpty()) compte.add("Aucun lancement de cette semaine dans ce dossier.");
-                compte.addAll(lignes);
-                if (!r.nonReconnus.isEmpty()) compte.add("Non reconnu(s) : " + TextUtils.join(", ", r.nonReconnus));
-                compteRendu(parite, compte, lignes.isEmpty());
-                majCompteur();
-                // Le scan sert à éviter les clics : les contrôles possibles partent tout seuls.
-                lancerControlesScannes(parite, affectations, 0, compte);
-            });
-        });
-    }
-
-    private void copierDepuisDossier(Paire p, String role, ScanDossier.Fichier f) throws IOException {
-        try (InputStream entree = DossierPartage.ouvrir(this, f)) {
-            depot.copierFichier(p, role, f.nom, entree);
-        }
-    }
-
-    private void lancerControlesScannes(String parite, List<Affectation> affectations, int i, List<String> compte) {
-        if (i >= affectations.size()) {
-            scansEnCours.remove(parite);
-            if (parite.equals(onglet)) afficher();
-            return;
-        }
-        Affectation a = affectations.get(i);
-        Runnable suivant = () -> lancerControlesScannes(parite, affectations, i + 1, compte);
-        if (!a.copie) {
-            suivant.run();
-            return;
-        }
-        Runnable scies = () -> {
-            if (a.cible.bkp != null) lancerControleScies(a.paire, suivant);
-            else suivant.run();
-        };
-        // GO avec la liste de coupe, ou à défaut avec le .bkp (semaines de livraison, pièces manquantes…).
-        if (a.paire.coupe != null || a.paire.bkp != null) {
-            lancerUnePaire(a.paire, (erreur, resultat) -> {
-                if (erreur != null) {
-                    compte.add("❌ " + erreur);
-                    resultatsScan.put(parite, compte);
-                }
-                scies.run();
-            });
-        } else {
-            scies.run();
-        }
     }
 
     // ---- export du rapport ----

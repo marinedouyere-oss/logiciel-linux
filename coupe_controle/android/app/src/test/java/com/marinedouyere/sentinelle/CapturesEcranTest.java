@@ -160,34 +160,25 @@ public class CapturesEcranTest {
         //noinspection ResultOfMethodCallIgnored
         sortie.mkdirs();
 
-        File partage = new File(ApplicationProvider.getApplicationContext().getCacheDir(), "Lancements S41");
-        //noinspection ResultOfMethodCallIgnored
-        partage.mkdirs();
-        String bkp = "LAN264101STRAT_2026-09-22_0923_v12backup.bkp";
-        String[][] fichiers = {
-            {"strat_264101.xlsx", "LAN264101STRAT.xlsx"}, {"coupe_41_01.xlsx", "CUTRITE_LAN264101STRAT.xlsx"}, {bkp, bkp},
-            {"strat_264101.xlsx", "LAN2641TRIGANO.xlsx"}, {"strat_264001.xlsx", "LAN264001STRAT.xlsx"},
-        };
-        for (String[] x : fichiers) {
-            try (InputStream in = new FileInputStream(new File(dossier, x[0])); OutputStream out = new FileOutputStream(new File(partage, x[1]))) {
-                byte[] b = new byte[65536];
-                int n;
-                while ((n = in.read(b)) != -1) out.write(b, 0, n);
-            }
-        }
-
         MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
         SentinelleApp app = (SentinelleApp) a.getApplication();
         onglets(a.getWindow().getDecorView()).getTabAt(1).select();
         ShadowLooper.idleMainLooper();
-        a.choisirDossier(Depot.IMPAIRE);
-        a.dossierChoisi(Uri.fromFile(partage));
-        a.scannerDossier(Depot.IMPAIRE);
+        // Fichiers choisis un par un (l'appli ne scanne plus de dossier : elle lit le fichier partagé).
         Paire agglo = app.depot().paireFixe("Agglo 1er tour", Depot.IMPAIRE);
+        String bkp = "LAN264101STRAT_2026-09-22_0923_v12backup.bkp";
+        choisir(a, agglo, Paire.STRAT, original(dossier, "strat_264101.xlsx", "LAN264101STRAT.xlsx"));
+        choisir(a, agglo, Paire.COUPE, original(dossier, "coupe_41_01.xlsx", "CUTRITE_LAN264101STRAT.xlsx"));
+        choisir(a, agglo, Paire.BKP, original(dossier, bkp, bkp));
+        Paire feno = app.depot().paireFixe("Feno", Depot.IMPAIRE);
+        choisir(a, feno, Paire.STRAT, original(dossier, "strat_264001.xlsx", "LAN264001STRAT.xlsx"));
+        a.lancerUnePaire(agglo, null);
+        attendre(() -> !agglo.enCours && agglo.rapport != null);
+        a.lancerControleScies(agglo);
         attendre(() -> agglo.rapport != null && agglo.ecartsScies != null && !agglo.enCours);
         Thread.sleep(500);
         ShadowLooper.idleMainLooper();
-        capturer(a, new File(sortie, "4_scan.png"), 3200);
+        capturer(a, new File(sortie, "4_cases.png"), 3200);
 
         onglets(a.getWindow().getDecorView()).getTabAt(2).select();
         ShadowLooper.idleMainLooper();

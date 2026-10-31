@@ -159,6 +159,11 @@ public class PartageTest {
 
         MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
         ShadowLooper.idleMainLooper();
+        // L'appli ne scanne plus de dossier : elle se branche sur le fichier partagé.
+        StringBuilder semaine = new StringBuilder();
+        textes(a.getWindow().getDecorView(), semaine);
+        assertFalse(semaine.toString().contains("Dossier partagé"));
+        assertFalse(semaine.toString().contains("Scanner"));
         TabLayout onglets = chercherVue(a.getWindow().getDecorView(), TabLayout.class);
         assertNotNull(onglets);
         TabLayout.Tab partage = null;
