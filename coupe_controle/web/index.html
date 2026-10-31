@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V4.9 — Contrôle de coupe</title>
+<title>Sentinelle V5.0 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -140,9 +140,10 @@
   table.recap .lancement { color: var(--gris); font-size: 0.85em; }
   table.recap tr.titre-semaine td { color: var(--bordeaux); font-family: var(--titres); font-weight: 700; padding-top: 12px; border-bottom: 1px solid var(--saumon); }
   table.recap tr.total td { background: var(--bordeaux); font-weight: 700; color: #fff; border-bottom: none; }
-  table.recap tr.total td.alerte, table.recap tr.total td.ok, table.recap tr.total td.pale, table.recap tr.total td.gris { color: #fff; }
+  table.recap tr.total td.alerte, table.recap tr.total td.attention, table.recap tr.total td.ok, table.recap tr.total td.pale, table.recap tr.total td.gris { color: #fff; }
   table.recap td.ok { color: var(--ok-texte); font-weight: 700; }
   table.recap td.alerte { color: var(--alerte-texte); font-weight: 700; }
+  table.recap td.attention { color: var(--attention-texte); font-weight: 700; }
   table.recap td.pale { color: #a9a8a6; }
   table.recap td.gris { color: var(--gris-texte); }
   .alertes-recap { margin-top: 12px; }
@@ -255,7 +256,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V4.9</div>
+        <div class="sous-titre">Contrôle de coupe · V5.0</div>
       </div>
     </div>
   </header>
@@ -288,7 +289,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V4.9 · Contrôle de coupe</span>
+    <span>Sentinelle V5.0 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -1262,12 +1263,16 @@ async function extraireLignesTextePDF(documentPDF) {
 // Long./Largeur acceptent une virgule décimale par prudence (comme
 // toFloatOrNull ailleurs dans ce fichier) : ces deux valeurs ne servent
 // qu'à reconnaître la ligne, pas à être stockées.
-const MOTIF_ENTETE_PIECE_PDF = /^(\d+)\.\s*(\S+)\s+(\S+)\s+([\d.,]+)\s+([\d.,]+)\s+(\d+)\b/;
+// Le code matériau peut être vide (pièce sans panneau support, ex. « 1. TD98401 4100.0 105.0 5 ») : sans
+// lui, la ligne n'était pas reconnue et la pièce manquait au compte.
+const MOTIF_ENTETE_PIECE_PDF = /^(\d+)\.\s*(\S+)\s+(?:(\S+)\s+)?([\d.,]+)\s+([\d.,]+)\s+(\d+)\b/;
 // Les valeurs de détail sont séparées par des virgules ; le grain matching
 // peut contenir un espace interne (ex. "T1:1 2:1" = positions 1 et 2), donc
 // on borne par la virgule plutôt que par un espace pour ne pas le tronquer.
 const MOTIF_CLE_DETAIL_PDF = /5\.num commande\+ligne\s+([^,\s]+)/;
 const MOTIF_GRAIN_DETAIL_PDF = /18\.Grain matching\s+([^,]+)/;
+const MOTIF_COMMANDE_DETAIL_PDF = /(?:^|[\s,])2\.Numero commande\s+([^,\s]+)/;
+const MOTIF_LIGNE_DETAIL_PDF = /(?:^|[\s,])3\.Ligne de commande\s+(\d+)/;
 const MOTIF_RESERVE_NUE_PDF = /^T\d+\/\d+$/i;
 
 // Champs additionnels du détail PDF utilisés pour le schéma de pièce dans
@@ -2127,7 +2132,7 @@ function extraireRecordsPDF(lignesTexte) {
       if (courant) records.push(courant);
       courant = {
         desc: m[2],
-        materiau: m[3],
+        materiau: m[3] || "",
         qte: parseInt(m[6], 10),
         detailTexte: "",
         cle: null,
@@ -2142,6 +2147,13 @@ function extraireRecordsPDF(lignesTexte) {
   for (const r of records) {
     const cleM = MOTIF_CLE_DETAIL_PDF.exec(r.detailTexte);
     r.cle = cleM ? cleM[1] : null;
+    // Sans « 5.num commande+ligne », la clé se refait avec la commande et la ligne (« 2.Numero commande CVC26080067,
+    // 3.Ligne de commande 1 » → CVC26080067001) : sinon la pièce, bien dans la liste, serait signalée absente.
+    if (!r.cle) {
+      const commande = MOTIF_COMMANDE_DETAIL_PDF.exec(r.detailTexte);
+      const ligne = MOTIF_LIGNE_DETAIL_PDF.exec(r.detailTexte);
+      if (commande && ligne) r.cle = cleLigne(commande[1], ligne[1]);
+    }
     const grainM = MOTIF_GRAIN_DETAIL_PDF.exec(r.detailTexte);
     r.grain = grainM ? grainM[1].trim() : null;
   }
@@ -2577,18 +2589,24 @@ function controlerCouleurs(lignesStrat, couleursBkp) {
       if (dessous) noter(dessous, "dessous", l.cle, qte);
     }
   }
+  // absentes : aucun panneau de ce coloris ; variantes : pas ce coloris exact, mais sa version PF (« 1136 » ↔ « 1136-PF »).
   const resultat = {
     sansStratifie: false,
     nbCouleurs: new Set([...demandes.values()].map((a) => a.couleur)).size,
     absentes: [],
+    variantes: [],
   };
   if (couleursBkp.sansStratifie) {
     resultat.sansStratifie = true;
     return resultat;
   }
+  const sansPf = (couleur) => String(couleur).replace(/-PF$/i, "").toUpperCase();
   for (const a of demandes.values()) {
     const presentes = a.face === "dessus" ? couleursBkp.dessus : couleursBkp.dessous;
-    if (!presentes.has(a.couleur)) resultat.absentes.push(a);
+    if (presentes.has(a.couleur)) continue;
+    const variante = [...presentes.keys()].find((c) => c !== a.couleur && sansPf(c) === sansPf(a.couleur));
+    if (variante) resultat.variantes.push({ ...a, variante });
+    else resultat.absentes.push(a);
   }
   return resultat;
 }
@@ -5027,12 +5045,6 @@ async function calculerCasse(p, autreSemaine, numeroAutre) {
 const dimensionsCasse = (l) => (l.longueurFinie != null && l.largeurFinie != null ? `${fmtDim(l.longueurFinie)} × ${fmtDim(l.largeurFinie)}` : "");
 const colorisCasse = (l) => (l.toutesDonnees && l.toutesDonnees.coloris) || "";
 
-// « CVC26100337006 · CRED14 · 955 × 270 · coloris 975 »
-function descriptionCasse(l, separateur) {
-  const coloris = colorisCasse(l);
-  return [l.cle, l.article, dimensionsCasse(l), coloris ? `coloris ${coloris}` : ""].filter(Boolean).join(separateur);
-}
-
 // Pages du rapport du lancement de la casse : pièces relancées, puis rajouts.
 function partiesCasse(r, base) {
   const relancees = partieRapport("Relancées", `${base} — Casse : pièces relancées`, ["Commande + ligne", "Article", "Dimensions", "Coloris", "Lancée dans", "Qté"], [34, 34, 26, 18, 58, 12], 5);
@@ -5180,8 +5192,13 @@ function afficherScies(zone, p) {
 function htmlCouleurs(c) {
   if (!c) return "";
   if (c.sansStratifie) return '<div class="note">Couleurs : pas de stratifié dans ce .bkp</div>';
-  if (c.absentes.length === 0) return bandeau(`✔ Couleurs : les ${c.nbCouleurs} couleurs sont dans le .bkp`, "ok");
-  return bandeau(`⚠ Couleurs : ${c.absentes.length} couleur(s) du lancement absente(s) du .bkp — ces panneaux ne sont pas optimisés`, "alerte");
+  const variantes = c.variantes || [];
+  if (c.absentes.length === 0 && !variantes.length) return bandeau(`✔ Couleurs : les ${c.nbCouleurs} couleurs sont dans le .bkp`, "ok");
+  let html = "";
+  if (c.absentes.length) html += bandeau(`⚠ Couleurs : ${c.absentes.length} couleur(s) du lancement absente(s) du .bkp — ces panneaux ne sont pas optimisés`, "alerte");
+  if (variantes.length)
+    html += bandeau(`⚠ Couleurs : ${variantes.map((v) => `${echapper(v.couleur)} remplacée par ${echapper(v.variante)}`).join(", ")} dans le .bkp — à vérifier`, "attention");
+  return html;
 }
 
 // ---- Diakonos : chaque pièce commandée doit être dans un lancement du même tour ----
@@ -5414,8 +5431,12 @@ function htmlDiakonos(r) {
   const portee = porteeDiakonos(r);
   if (r.erreur) return bandeau(`❌ Diakonos illisible : ${echapper(r.erreur)}`, "alerte");
   if (!r.lancements.length) return bandeau(`⚠ ${echapper(portee.aucun)}`, "attention");
+  const ailleurs = r.manquantes.filter((m) => r.ailleurs.has(m.cle)).length;
   let html = r.manquantes.length
-    ? bandeau(`⚠ ${r.manquantes.length} pièce(s) Diakonos absente(s) ${echapper(portee.de)}`, "alerte")
+    ? bandeau(
+        `⚠ ${r.manquantes.length} pièce(s) Diakonos absente(s) ${echapper(portee.de)}${ailleurs ? ` — dont ${ailleurs} lancée(s) dans un autre lancement` : ""}`,
+        ailleurs === r.manquantes.length ? "attention" : "alerte"
+      )
     : bandeau(`✔ Les ${r.nbPieces} pièces Diakonos sont ${echapper(portee.dans)}`, "ok");
   html += `<div class="note">Comparé à : ${r.lancements.map(echapper).join(", ")}</div>`;
   return html;
@@ -5521,158 +5542,8 @@ async function exporterLancement(p) {
 // Scies, couleurs, semaines de livraison, doublons).
 
 async function exporterSemaine(parite) {
-  const autre = parite === "paire" ? "impaire" : "paire";
-  for (const p of [...pairesDeLaSemaine(parite), ...pairesDeLaSemaine(autre)]) if (p.strat) await resume(p.strat, p.bkp);
-  const lignes = lignesRecap(pairesDeLaSemaine(parite));
-  const autres = lignesRecap(pairesDeLaSemaine(autre));
-  const casse = paireFixe("Casse", parite);
-  const analyseCasse = casse && casse.strat ? await calculerCasse(casse, pairesDeLaSemaine(autre), numeroSemaine(autre)) : null;
-  const titre = libelleOnglet(parite);
-  // Charte Laisné Industrie : en-têtes et total en aplat bordeaux (texte blanc), lignes alternées gris clair,
-  // Raleway pour le titre, Lato pour le reste ; vert / rouge / jaune pour l'état des contrôles.
-  const BORDEAUX = "FF78140C", GRIS_CLAIR = "FFF4F3F1";
-  const blancGras = { bold: true, color: { argb: "FFFFFFFF" } };
-  const fond = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
-  const VERT = "FFC6EFCE", ROUGE = "FFFFC7CE", JAUNE = "FFFFEB9C";
-  const enTeteCharte = (r) =>
-    r.eachCell((c) => {
-      c.font = blancGras;
-      c.fill = fond(BORDEAUX);
-    });
-
-  const wb = new ExcelJS.Workbook();
-  const f1 = wb.addWorksheet(titre);
-  f1.addRow([`Sentinelle — ${titre} — ${new Date().toLocaleDateString("fr-FR")}`]).font = { name: "Raleway", bold: true, size: 16, color: { argb: BORDEAUX } };
-  f1.addRow(["LAISNÉ INDUSTRIE — document interne"]).font = { italic: true, size: 9, color: { argb: "FF797978" } };
-  f1.addRow([]);
-  enTeteCharte(f1.addRow(["Poste", "Lancement", "Pièces prévues", "Pièces .bkp", "Contrôle", "Scies", "Couleurs"]));
-  const etatControle = (p) => (!p.rapport ? "—" : p.rapport.nbAnomalies === 0 ? "OK" : `${p.rapport.nbAnomalies} anomalie(s)`);
-  const etatScies = (p) => (p.erreurScies ? "illisible" : !p.ecartsScies ? "—" : p.ecartsScies.length === 0 ? "OK" : `${p.ecartsScies.length} écart(s)`);
-  const etatCouleurs = (p) =>
-    !p.couleurs ? "—" : p.couleurs.sansStratifie ? "pas de stratifié" : p.couleurs.absentes.length === 0 ? "OK" : `${p.couleurs.absentes.length} absente(s)`;
-  const couleurEtat = (texte) => (texte === "OK" ? VERT : texte === "—" || texte === "pas de stratifié" ? null : ROUGE);
-  for (const l of lignes) {
-    const p = l.paire;
-    const valeurs = [
-      l.nom + (l.semaine && plusieursSemaines(lignes) ? ` (sem ${l.semaine})` : ""),
-      l.lancement,
-      Number.isNaN(l.prevues) ? "?" : l.prevues,
-      p.bkp ? (l.bkp === null || Number.isNaN(l.bkp) ? "?" : l.bkp) : "—",
-      etatControle(p),
-      etatScies(p),
-      etatCouleurs(p),
-    ];
-    const r = f1.addRow(valeurs);
-    if (lignes.indexOf(l) % 2 === 1) for (let i = 1; i <= valeurs.length; i++) r.getCell(i).fill = fond(GRIS_CLAIR);
-    [5, 6, 7].forEach((i) => {
-      const c = couleurEtat(valeurs[i - 1]);
-      if (c) r.getCell(i).fill = fond(c);
-    });
-  }
-  const t = totauxRecap(lignes);
-  const total = f1.addRow(["Total", "", t.prevues, t.auMoinsUnBkp ? t.bkp : "—", t.anomalies || "", t.ecarts || "", t.couleurs || ""]);
-  enTeteCharte(total);
-
-  const alertes = alertesSemaine(lignes, autres, libelleOnglet(autre));
-  for (const bloc of alertes) {
-    f1.addRow([]);
-    const r = f1.addRow([bloc.titre]);
-    r.font = { bold: true, color: { argb: BORDEAUX } };
-    for (const ligne of bloc.lignes) f1.addRow([ligne]);
-  }
-  if (analyseCasse && !analyseCasse.erreur && !analyseCasse.autreSemaineChargee && analyseCasse.dejaLancees.length) {
-    f1.addRow([]);
-    f1.addRow([`Casse : pièces déjà lancées en semaine ${analyseCasse.semaineAvant}`]).font = { bold: true, color: { argb: BORDEAUX } };
-    for (const t of analyseCasse.dejaLancees) f1.addRow([`${descriptionCasse(t.ligne, " — ")} — ${t.lancement}`]);
-    if (analyseCasse.nbAutres) f1.addRow([`${analyseCasse.nbAutres} autre(s) pièce(s) pas lancée(s) en semaine ${analyseCasse.semaineAvant}`]);
-  }
-  [26, 30, 15, 13, 18, 14, 16].forEach((w, i) => (f1.getColumn(i + 1).width = w));
-
-  const f2 = wb.addWorksheet("Anomalies");
-  enTeteCharte(f2.addRow(["Poste", "Lancement", "Contrôle", "Clé / commande", "Ligne", "Article", "Attendu", "Trouvé", "Détail"]));
-  let nb = 0;
-  const ajouter = (valeurs, couleur) => {
-    const r = f2.addRow(valeurs);
-    if (couleur) r.eachCell((c) => (c.fill = fond(couleur)));
-    nb++;
-  };
-  for (const l of lignes) {
-    const p = l.paire;
-    if (p.rapport) {
-      for (const a of p.rapport.lignes.filter((x) => x.statut !== "OK")) {
-        const detail = (a.couches || 1) > 1 ? `${a.statut} — pièce de ${a.couches} couches (quantités en couches)` : a.statut;
-        ajouter([l.nom, l.lancement, "Contrôle", a.cle, a.ligne, a.article, a.qte_attendue, a.qte_trouvee, detail], a.statut === "Manquant" ? ROUGE : JAUNE);
-      }
-      for (const d of p.doublons || []) {
-        ajouter([l.nom, l.lancement, "Doublon", d.cle, d.ligne, d.articles.join(" / "), "", "", `${d.nbLignes} lignes identiques dans le lancement`], JAUNE);
-      }
-    }
-    if (p.erreurScies) ajouter([l.nom, l.lancement, "Scies", "", "", "", "", "", p.erreurScies], ROUGE);
-    for (const e of p.ecartsScies || []) {
-      const type = e.attendu === 0 ? "en trop (absente du lancement)" : e.trouve === 0 ? "absente du .bkp" : "quantité différente";
-      ajouter([l.nom, l.lancement, "Scies", e.cle, "", "", e.attendu, e.trouve, type], ROUGE);
-    }
-    if (p.couleurs && !p.couleurs.sansStratifie) {
-      for (const a of p.couleurs.absentes) {
-        ajouter([l.nom, l.lancement, "Couleur", a.cles.join(", "), "", "", a.nbPieces, 0, `couleur ${a.couleur} (${a.face}) absente du .bkp`], ROUGE);
-      }
-    }
-    if (p.semainesLivraison.length > 1 && p.poste !== "Casse") {
-      const principale = semainePrincipale(p);
-      for (const s of p.semainesLivraison) {
-        if (s === principale) continue;
-        ajouter([l.nom, l.lancement, "Livraison", (s.cles || []).join(", "), "", "", s.nbPieces, "", `à livrer semaine ${s.semaine} (lancement : semaine ${principale.semaine})`], JAUNE);
-      }
-    }
-  }
-  if (nb === 0) f2.addRow(["Aucune anomalie"]);
-  [20, 26, 12, 34, 7, 18, 9, 9, 48].forEach((w, i) => (f2.getColumn(i + 1).width = w));
-  // Lato partout où une autre police n'est pas déjà choisie (le titre est en Raleway).
-  for (const feuille of [f1, f2]) feuille.eachRow((r) => r.eachCell((c) => (c.font = { name: "Lato", ...(c.font || {}) })));
-
-  const buffer = await wb.xlsx.writeBuffer();
-  const url = URL.createObjectURL(new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `rapport_sentinelle_${slug(titre)}.xlsx`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-}
-
-const plusieursSemaines = (lignes) => new Set(lignes.map((l) => l.semaine)).size > 1;
-
-// Les alertes du tableau des lancements, en texte (pour le rapport).
-function alertesSemaine(lignes, autres, libelleAutre) {
-  const blocs = [];
-  const clesParLancement = new Map(lignes.filter((l) => l.cles).map((l) => [nomLancementRecap(l), l.cles]));
-  const doublons = doublonsEntreLancements(clesParLancement);
-  if (doublons.length) {
-    blocs.push({ titre: "Pièces lancées deux fois", lignes: doublons.map((g) => `${g.cles.join(", ")} — ${g.lancements.join(" + ")}`) });
-  }
-  const deja = [];
-  for (const l of lignes) {
-    for (const o of autres) {
-      // La casse a sa propre analyse (pièces déjà lancées la semaine d'avant).
-      if (l.paire.poste === "Casse" || o.paire.poste === "Casse") continue;
-      if (!l.cles || !o.cles) continue;
-      const communes = [...l.cles].filter((cle) => o.cles.has(cle) && cle.length > 3).sort();
-      if (communes.length) deja.push(`${communes.join(", ")} — ${nomLancementRecap(l)} et ${nomLancementRecap(o)}`);
-    }
-  }
-  if (deja.length) blocs.push({ titre: `Pièces déjà lancées en ${libelleAutre}`, lignes: deja });
-  const livraison = [];
-  for (const l of lignes) {
-    const p = l.paire;
-    if (p.semainesLivraison.length <= 1 || p.poste === "Casse") continue;
-    const principale = semainePrincipale(p);
-    for (const s of p.semainesLivraison) {
-      if (s !== principale) livraison.push(`${(s.cles || []).join(", ")} à livrer semaine ${s.semaine} — ${nomLancementRecap(l)}`);
-    }
-  }
-  if (livraison.length) blocs.push({ titre: "Pièces d'une autre semaine de livraison", lignes: livraison });
-  return blocs;
+  const { nom, octets } = await rapportSemaineXlsx(parite);
+  telecharger(nom, octets, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
 }
 
 // ---- Compteur ----
@@ -5758,12 +5629,13 @@ function celluleScies(p) {
 
 function celluleCouleurs(p) {
   if (!p.couleurs || p.couleurs.sansStratifie) return '<td class="centre pale">—</td>';
-  if (p.couleurs.absentes.length === 0) return '<td class="centre ok">✔ OK</td>';
-  return `<td class="centre alerte">⚠ ${p.couleurs.absentes.length}</td>`;
+  if (p.couleurs.absentes.length) return `<td class="centre alerte">⚠ ${p.couleurs.absentes.length}</td>`;
+  if ((p.couleurs.variantes || []).length) return `<td class="centre attention" title="Couleur remplacée par sa version PF dans le .bkp">≈ ${p.couleurs.variantes.length} PF</td>`;
+  return '<td class="centre ok">✔ OK</td>';
 }
 
 function totauxRecap(lignes) {
-  const t = { prevues: 0, bkp: 0, prevuesConnues: true, bkpConnus: true, auMoinsUnBkp: false, anomalies: 0, ecarts: 0, couleurs: 0 };
+  const t = { prevues: 0, bkp: 0, prevuesConnues: true, bkpConnus: true, auMoinsUnBkp: false, anomalies: 0, ecarts: 0, couleurs: 0, couleursPf: 0 };
   for (const l of lignes) {
     if (l.prevues === null || Number.isNaN(l.prevues)) t.prevuesConnues = false;
     else t.prevues += l.prevues;
@@ -5774,7 +5646,10 @@ function totauxRecap(lignes) {
     }
     if (l.paire.rapport) t.anomalies += l.paire.rapport.nbAnomalies;
     if (l.paire.ecartsScies) t.ecarts += l.paire.ecartsScies.length;
-    if (l.paire.couleurs) t.couleurs += l.paire.couleurs.absentes.length;
+    if (l.paire.couleurs) {
+      t.couleurs += l.paire.couleurs.absentes.length;
+      t.couleursPf += (l.paire.couleurs.variantes || []).length;
+    }
   }
   return t;
 }
@@ -5782,7 +5657,9 @@ function totauxRecap(lignes) {
 function ligneTotalRecap(libelle, t) {
   const alerte = (n) => `<td class="centre alerte">${n > 0 ? `⚠ ${n}` : ""}</td>`;
   return `<tr class="total"><td>${echapper(libelle)}</td><td class="droite">${t.prevuesConnues ? fmtNombre(t.prevues) : "…"}</td>
-    <td class="droite">${!t.auMoinsUnBkp ? "—" : t.bkpConnus ? fmtNombre(t.bkp) : "…"}</td>${alerte(t.anomalies)}${alerte(t.ecarts)}${alerte(t.couleurs)}</tr>`;
+    <td class="droite">${!t.auMoinsUnBkp ? "—" : t.bkpConnus ? fmtNombre(t.bkp) : "…"}</td>${alerte(t.anomalies)}${alerte(t.ecarts)}${
+      t.couleurs || !t.couleursPf ? alerte(t.couleurs) : `<td class="centre attention">≈ ${t.couleursPf} PF</td>`
+    }</tr>`;
 }
 
 const nomLancementRecap = (l) => `${l.nom} (${l.lancement})`;
@@ -5986,8 +5863,8 @@ async function lancerTousLesControles() {
       if (erreur) erreurs.push(erreur);
       if (resultat) auMoinsUnResultat = true;
     });
-    await problemesAutomatiques(p);
   }
+  if (await rapportSemaineAutomatique(onglet)) for (const p of visibles) rafraichir(p);
   if (erreurs.length) alert("Certaines cases n'ont pas pu être traitées :\n\n" + erreurs.join("\n"));
   else if (!auMoinsUnResultat) alert("Sélectionnez au moins un fichier de lancement (avec, si possible, une liste de coupe ou un .bkp).");
 }
@@ -6303,7 +6180,12 @@ async function placerFichiersScannes(parite, r) {
       });
     }
     if (a.cible.bkp) await new Promise((resolve) => lancerControleScies(a.paire, resolve));
-    await problemesAutomatiques(a.paire);
+  }
+  // Un seul fichier pour toute la semaine (un onglet par lancement), s'il y a un problème.
+  const rapport = await rapportSemaineAutomatique(parite);
+  if (rapport) {
+    compte.push(`📊 ${rapport.nbProblemes} problème(s) : rapport ${rapport.nom} créé (un onglet par lancement)`);
+    for (const a of affectations) rafraichir(a.paire);
   }
   await Promise.all(stockage);
   scansEnCours.delete(parite);
@@ -6633,25 +6515,31 @@ if ("serviceWorker" in navigator && (location.protocol === "http:" || location.p
 const GRAVITE = { CORRIGER: 2, VERIFIER: 1, INFO: 0 };
 const A_FAIRE = { [GRAVITE.CORRIGER]: "À corriger", [GRAVITE.VERIFIER]: "À vérifier", [GRAVITE.INFO]: "Pour info" };
 
-// Les problèmes, dans l'ordre du rapport, avec ce qu'ils veulent dire.
+// Les problèmes, dans l'ordre du rapport : ce qu'ils veulent dire, et que faire.
 const PROBLEMES = [
-  ["Absente de la liste de coupe", "Pièce du lancement introuvable dans la liste de coupe Cut Rite : elle ne sera pas débitée."],
-  ["Quantité différente dans la liste de coupe", "La liste de coupe ne prévoit pas le même nombre de pièces que le lancement."],
-  ["Absente du .bkp", "Pièce du lancement introuvable dans l'optimisation (.bkp) : aucun panneau n'est prévu pour elle."],
-  ["Quantité différente dans le .bkp", "L'optimisation (.bkp) ne prévoit pas le même nombre de pièces que le lancement."],
-  ["Couleur absente du .bkp", "Aucun panneau de ce coloris dans l'optimisation (.bkp) : ces pièces ne sont pas optimisées."],
-  ["Ligne en double", "Deux lignes identiques dans le fichier de lancement : la pièce serait fabriquée deux fois. Le bouton « Créer le lancement sans doublons » de Sentinelle retire la ligne en trop."],
-  ["Lancée deux fois", "La même pièce est aussi dans un autre lancement de la semaine : risque de la fabriquer deux fois."],
-  ["Commandée, pas lancée (Diakonos)", "Pièce commandée (fichier Diakonos) qui n'est dans aucun des lancements comparés : elle ne sera pas fabriquée."],
-  ["En trop dans la liste de coupe", "Pièce de la liste de coupe qui n'est pas dans ce lancement."],
-  ["En trop dans le .bkp", "Pièce de l'optimisation (.bkp) qui n'est pas dans ce lancement."],
-  ["Autre semaine de livraison", "Pièce à livrer une autre semaine que le reste du lancement : vérifier qu'elle doit bien être fabriquée maintenant."],
-  ["Déjà lancée la semaine d'avant", "La pièce était déjà dans un lancement de l'autre semaine chargée : vérifier qu'il faut bien la refaire."],
-  ["Casse : relancée", "Pièce de la casse déjà lancée la semaine d'avant : c'est une pièce refaite."],
-  ["Casse : rajout", "Pièce de la casse qui n'était pas lancée la semaine d'avant : c'est un rajout."],
+  ["Absente de la liste de coupe", "Pièce du lancement introuvable dans la liste de coupe Cut Rite : elle ne sera pas débitée.",
+    "l'ajouter à l'optimisation Cut Rite (ou vérifier qu'elle est débitée ailleurs)."],
+  ["Quantité différente dans la liste de coupe", "La liste de coupe ne prévoit pas le même nombre de pièces que le lancement.", "corriger la quantité dans l'optimisation."],
+  ["Absente du .bkp", "Pièce du lancement introuvable dans l'optimisation (.bkp) : aucun panneau n'est prévu pour elle.", "l'ajouter à l'optimisation."],
+  ["Quantité différente dans le .bkp", "L'optimisation (.bkp) ne prévoit pas le même nombre de pièces que le lancement.", "corriger la quantité dans l'optimisation."],
+  ["Couleur absente du .bkp", "Aucun panneau de ce coloris dans l'optimisation (.bkp) : ces pièces ne sont pas optimisées.", "ajouter un panneau de ce coloris à l'optimisation."],
+  ["Ligne en double", "Deux lignes identiques dans le fichier de lancement : la pièce serait fabriquée deux fois.",
+    "supprimer la ligne en trop (bouton « Créer le lancement sans doublons » de Sentinelle)."],
+  ["Lancée deux fois", "La même pièce est aussi dans un autre lancement de la semaine : risque de la fabriquer deux fois.", "la retirer d'un des deux lancements."],
+  ["Débitée, mais pas dans le lancement", "Pièce prévue à la découpe (liste de coupe, .bkp) qui n'est pas dans le fichier de lancement.",
+    "l'ajouter au fichier de lancement si elle est commandée (Diakonos), sinon la retirer de l'optimisation."],
+  ["Commandée, pas lancée (Diakonos)", "Pièce commandée (fichier Diakonos) qui n'est dans aucun des lancements comparés : elle ne sera pas fabriquée.",
+    "l'ajouter à un lancement."],
+  ["Couleur en version PF", "Le lancement demande un coloris, le .bkp utilise sa version PF (même décor) : à confirmer.", "vérifier que la version PF convient."],
+  ["Commandée ici, lancée ailleurs (Diakonos)", "Pièce commandée pour ces lancements, mais lancée dans un autre : elle sera fabriquée, ailleurs que prévu.",
+    "vérifier que c'est voulu."],
+  ["Autre semaine de livraison", "Pièce à livrer une autre semaine que le reste du lancement.", "vérifier qu'elle doit bien être fabriquée maintenant."],
+  ["Déjà lancée la semaine d'avant", "La pièce était déjà dans un lancement de l'autre semaine chargée.", "vérifier qu'il faut bien la refaire."],
+  ["Casse : relancée", "Pièce de la casse déjà lancée la semaine d'avant : c'est une pièce refaite.", ""],
+  ["Casse : rajout", "Pièce de la casse qui n'était pas lancée la semaine d'avant : c'est un rajout.", ""],
 ];
 const RANG_PROBLEME = new Map(PROBLEMES.map(([type], i) => [type, i]));
-const SENS_PROBLEME = new Map(PROBLEMES);
+const SENS_PROBLEME = new Map(PROBLEMES.map(([type, sens, queFaire]) => [type, { sens, queFaire }]));
 
 // Tous les contrôles du lancement : le bilan (une phrase par contrôle), les problèmes de chaque pièce du lancement
 // (par clé commande + ligne) et ceux des pièces qui n'y sont pas.
@@ -6693,7 +6581,8 @@ async function problemesDuLancement(p) {
       const debut = couches ? `Pièce en ${l.couches} couches : ` : "";
       if (bkp) signales.add(l.cle);
       if (l.statut === "Manquant") ajouter(l.cle, GRAVITE.CORRIGER, `Absente ${de}`, `${debut}${unite(l.qte_attendue)} dans le lancement, aucune dans ${dans}`);
-      else if (l.statut === "En trop") dehors({ cle: l.cle, article: l.article || "", type: `En trop dans ${dans}`, detail: `${unite(l.qte_trouvee)} dans ${dans}, rien dans le lancement` });
+      else if (l.statut === "En trop")
+        dehors({ cle: l.cle, article: l.article || "", type: `En trop dans ${dans}`, quantite: fmtNombre(l.qte_trouvee), detail: `${unite(l.qte_trouvee)} dans ${dans}, rien dans le lancement` });
       else {
         const ecart = Math.abs(l.qte_trouvee - l.qte_attendue);
         ajouter(l.cle, GRAVITE.CORRIGER, `Quantité différente dans ${dans}`,
@@ -6713,30 +6602,38 @@ async function problemesDuLancement(p) {
       : { statut: "ok", controle: "Scies (.bkp)", texte: `Tout correspond : ${panneaux}.` });
     for (const e of p.ecartsScies) {
       if (signales.has(e.cle)) continue; // déjà dans le contrôle avec le .bkp
-      if (e.attendu === 0) dehors({ cle: e.cle, type: "En trop dans le .bkp", detail: `${fmtNombre(e.trouve)} dans le .bkp, rien dans le lancement` });
+      if (e.attendu === 0) dehors({ cle: e.cle, type: "En trop dans le .bkp", quantite: fmtNombre(e.trouve), detail: `${fmtNombre(e.trouve)} dans le .bkp, rien dans le lancement` });
       else if (e.trouve === 0) ajouter(e.cle, GRAVITE.CORRIGER, "Absente du .bkp", `${fmtNombre(e.attendu)} pièce(s) dans le lancement, aucune dans le .bkp`);
       else ajouter(e.cle, GRAVITE.VERIFIER, "Quantité différente dans le .bkp", `${fmtNombre(e.attendu)} pièce(s) dans le lancement, ${fmtNombre(e.trouve)} dans le .bkp`);
     }
   }
 
-  // Couleurs du lancement absentes du .bkp.
+  // Couleurs du lancement absentes du .bkp, ou remplacées par leur version PF.
   if (p.couleurs) {
     const c = p.couleurs;
+    const variantes = c.variantes || [];
+    // « 1136 (faces dessus et dessous) » : une ligne par pièce, toutes ses faces ensemble.
+    const faces = (liste) =>
+      [...new Set(liste.map((a) => a.couleur))].map((couleur) => {
+        const lesFaces = liste.filter((a) => a.couleur === couleur).map((a) => a.face);
+        return `${couleur} (${lesFaces.length > 1 ? `faces ${lesFaces.join(" et ")}` : `face ${lesFaces[0]}`})`;
+      });
+    const parPiece = (liste) => {
+      const m = new Map();
+      for (const a of liste) for (const cle of a.cles) m.set(cle, [...(m.get(cle) || []), a]);
+      return m;
+    };
     if (c.sansStratifie) bilan.push({ statut: "info", controle: "Couleurs (.bkp)", texte: "Pas de stratifié dans ce .bkp." });
-    else if (!c.absentes.length) bilan.push({ statut: "ok", controle: "Couleurs (.bkp)", texte: `Les ${c.nbCouleurs} couleurs du lancement sont dans le .bkp.` });
+    else if (!c.absentes.length && !variantes.length) bilan.push({ statut: "ok", controle: "Couleurs (.bkp)", texte: `Les ${c.nbCouleurs} couleurs du lancement sont dans le .bkp.` });
     else {
-      bilan.push({ statut: "alerte", controle: "Couleurs (.bkp)",
-        texte: `${c.absentes.length} couleur(s) du lancement absente(s) du .bkp : ${c.absentes.map((a) => `${a.couleur} (face ${a.face})`).join(", ")}. Ces panneaux ne sont pas optimisés.` });
-      // Une ligne par pièce, toutes ses faces ensemble.
-      const parPiece = new Map();
-      for (const a of c.absentes) for (const cle of a.cles) parPiece.set(cle, [...(parPiece.get(cle) || []), a]);
-      for (const [cle, liste] of parPiece) {
-        const faces = [...new Set(liste.map((a) => a.couleur))].map((couleur) => {
-          const lesFaces = liste.filter((a) => a.couleur === couleur).map((a) => a.face);
-          return `${couleur} (${lesFaces.length > 1 ? `faces ${lesFaces.join(" et ")}` : `face ${lesFaces[0]}`})`;
-        });
-        ajouter(cle, GRAVITE.CORRIGER, "Couleur absente du .bkp", `Couleur ${faces.join(", ")} : pas de panneau dans le .bkp`);
-      }
+      const phrases = [];
+      if (c.absentes.length) phrases.push(`${c.absentes.length} couleur(s) du lancement absente(s) du .bkp : ${faces(c.absentes).join(", ")}. Ces panneaux ne sont pas optimisés.`);
+      if (variantes.length)
+        phrases.push(`${[...new Set(variantes.map((v) => `${v.couleur} remplacée par ${v.variante}`))].join(", ")} dans le .bkp (version PF, même décor) : à confirmer.`);
+      bilan.push({ statut: c.absentes.length ? "alerte" : "attention", controle: "Couleurs (.bkp)", texte: phrases.join(" ") });
+      for (const [cle, liste] of parPiece(c.absentes)) ajouter(cle, GRAVITE.CORRIGER, "Couleur absente du .bkp", `Couleur ${faces(liste).join(", ")} : pas de panneau dans le .bkp`);
+      for (const [cle, liste] of parPiece(variantes))
+        ajouter(cle, GRAVITE.VERIFIER, "Couleur en version PF", `Couleur ${faces(liste).join(", ")} : le .bkp utilise ${[...new Set(liste.map((v) => v.variante))].join(", ")}`);
     }
   }
 
@@ -6822,7 +6719,17 @@ async function problemesDuLancement(p) {
     const portee = porteeDiakonos(rd);
     if (!rd.lancements.length) bilan.push({ statut: "attention", controle: "Diakonos", texte: `${portee.aucun}.` });
     else if (!rd.manquantes.length) bilan.push({ statut: "ok", controle: "Diakonos", texte: `Les ${rd.nbPieces} pièces commandées sont ${portee.dans}.` });
-    else bilan.push({ statut: "alerte", controle: "Diakonos", texte: `${rd.manquantes.length} pièce(s) commandée(s) absente(s) ${portee.de} (sur ${rd.nbPieces}).` });
+    else {
+      const lanceesAilleurs = rd.manquantes.filter((m) => rd.ailleurs.has(m.cle));
+      const ou = [...new Set(lanceesAilleurs.map((m) => rd.ailleurs.get(m.cle)))].join(", ");
+      const nulle = rd.manquantes.length - lanceesAilleurs.length;
+      bilan.push({
+        statut: nulle ? "alerte" : "attention",
+        controle: "Diakonos",
+        texte: `${rd.manquantes.length} pièce(s) commandée(s) absente(s) ${portee.de} (sur ${rd.nbPieces})` +
+          (lanceesAilleurs.length ? ` : ${lanceesAilleurs.length} lancée(s) ailleurs (${ou})${nulle ? `, ${nulle} dans aucun lancement chargé` : ""}.` : " : aucune n'est dans un autre lancement chargé."),
+      });
+    }
     for (const m of rd.manquantes) {
       const ailleurs = rd.ailleurs.get(m.cle);
       dehors({
@@ -6832,19 +6739,66 @@ async function problemesDuLancement(p) {
         coloris: m.coloris,
         type: "Commandée, pas lancée (Diakonos)",
         detail: `Absente ${portee.de}${ailleurs ? ` ; elle est dans ${ailleurs}` : ""}`,
+        diakonos: true,
+        porteeDe: portee.de,
+        porteeDans: portee.dans,
+        ailleurs,
       });
     }
   }
-  // Pièces hors du lancement sans description (en trop dans la liste de coupe ou le .bkp) : celle du Diakonos.
-  const decrites = new Map(hors.filter((h) => h.article).map((h) => [h.cle, h]));
-  for (const h of hors) {
-    const d = decrites.get(h.cle);
-    if (!h.article && d) Object.assign(h, { article: d.article, dimensions: d.dimensions, coloris: d.coloris });
-  }
-  return { parCle, hors, bilan, diakonos: rd };
+  return { parCle, hors: diagnostiquerHors(hors), bilan, diakonos: rd };
 }
 
-async function problemesLancementXlsx(p) {
+// Une pièce hors du lancement peut être signalée par plusieurs contrôles (en trop dans la liste de coupe, en trop
+// dans le .bkp, commandée dans le Diakonos) : un seul constat par pièce, qui dit tout.
+function diagnostiquerHors(hors) {
+  const parCle = new Map();
+  for (const h of hors) parCle.set(h.cle, [...(parCle.get(h.cle) || []), h]);
+  const resultat = [];
+  for (const [cle, liste] of parCle) {
+    const decrite = liste.find((h) => h.article) || liste[0];
+    const piece = { cle, article: decrite.article || "", dimensions: decrite.dimensions || "", coloris: decrite.coloris || "" };
+    const enTrop = liste.filter((h) => h.type.startsWith("En trop"));
+    const diakonos = liste.find((h) => h.diakonos);
+    if (enTrop.length) {
+      const ou = enTrop.map((h) => h.type.replace("En trop dans ", "") + (h.quantite ? ` (${h.quantite})` : "")).join(" et ");
+      resultat.push({
+        ...piece,
+        gravite: GRAVITE.CORRIGER,
+        type: "Débitée, mais pas dans le lancement",
+        detail: diakonos
+          ? `Dans ${ou}, et commandée (Diakonos), mais absente du fichier de lancement : le lancement est incomplet`
+          : `Dans ${ou}, mais pas dans le fichier de lancement`,
+      });
+    } else if (diakonos && diakonos.ailleurs)
+      resultat.push({ ...piece, gravite: GRAVITE.VERIFIER, type: "Commandée ici, lancée ailleurs (Diakonos)", detail: `Pas ${diakonos.porteeDans}, mais lancée dans ${diakonos.ailleurs}` });
+    else if (diakonos) resultat.push({ ...piece, gravite: GRAVITE.CORRIGER, type: "Commandée, pas lancée (Diakonos)", detail: `Absente ${diakonos.porteeDe} et des autres lancements chargés` });
+    else resultat.push(...liste);
+  }
+  return resultat;
+}
+
+// Charte Laisné Industrie pour les rapports de problèmes.
+const CHARTE_RAPPORT = {
+  BORDEAUX: "FF78140C",
+  NOIR: "FF22231D",
+  GRIS: "FF797978",
+  COULEURS: {
+    ok: { fond: "FFE3F1E4", texte: "FF2E7D32", libelle: "✔ OK", symbole: "✔" },
+    alerte: { fond: "FFF9D9D4", texte: "FFC62828", libelle: "⚠ Problème", symbole: "⚠" },
+    attention: { fond: "FFFFF1CC", texte: "FFB45309", libelle: "⚠ À vérifier", symbole: "⚠" },
+    info: { fond: "FFF4F3F1", texte: "FF797978", libelle: "— Info", symbole: "—" },
+  },
+};
+const fondRapport = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
+const MISE_EN_PAGE_RAPPORT = (pied) => ({
+  views: [{ showGridLines: false }],
+  pageSetup: { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
+  headerFooter: { oddFooter: `&L${pied} — LAISNÉ INDUSTRIE, document interne&RPage &P / &N` },
+});
+
+// Écrit le rapport des problèmes d'un lancement dans une nouvelle feuille du classeur ; renvoie son bilan.
+async function feuilleRapportLancement(wb, p, nomFeuille) {
   const { parCle, hors, bilan, diakonos } = await problemesDuLancement(p);
   const classeur = await classeurEnCache(p.strat);
   const { feuille, entetes } = trouverFeuilleEtEntetes(classeur);
@@ -6885,11 +6839,15 @@ async function problemesLancementXlsx(p) {
     ...e,
     article: joindre(e.rangs.map((r) => colonne(r, COL_ARTICLE))),
     dimensions: joindre(e.rangs.map(dimensions)),
-    coloris: joindre(e.rangs.map((r) => colonne(r, "coloris"))),
+    coloris: joindre(e.rangs.map((r) => {
+      const dessus = String(colonne(r, "coloris"));
+      const dessous = String(colonne(r, "coloris_inf"));
+      return dessous && dessous !== dessus ? `${dessus} / ${dessous}` : dessus;
+    })),
     quantite: joindre(e.rangs.map((r) => colonne(r, COL_QTE))),
     lignes: e.rangs.join(", "),
   }));
-  for (const h of hors) pieces.push({ ...h, quantite: "", lignes: "hors lancement", rangs: [Infinity] });
+  for (const h of hors) pieces.push({ ...h, quantite: h.quantite || "", lignes: "hors lancement", rangs: [Infinity] });
 
   // Regroupées par problème, dans l'ordre du rapport (les plus graves d'abord).
   const groupes = new Map();
@@ -6904,33 +6862,20 @@ async function problemesLancementXlsx(p) {
   const aTraiter = pieces.filter((e) => e.gravite > GRAVITE.INFO);
   const nbCorriger = aTraiter.filter((e) => e.gravite === GRAVITE.CORRIGER).length;
 
-  // Mise en page (charte Laisné Industrie) : une feuille A4 paysage, lue de haut en bas.
-  const BORDEAUX = "FF78140C";
-  const NOIR = "FF22231D";
-  const GRIS = "FF797978";
-  const COULEURS = {
-    ok: { fond: "FFE3F1E4", texte: "FF2E7D32", libelle: "✔ OK" },
-    alerte: { fond: "FFF9D9D4", texte: "FFC62828", libelle: "⚠ Problème" },
-    attention: { fond: "FFFFF1CC", texte: "FFB45309", libelle: "⚠ À vérifier" },
-    info: { fond: "FFF4F3F1", texte: GRIS, libelle: "— Info" },
-  };
+  // Mise en page : une feuille A4 paysage, lue de haut en bas.
+  const { BORDEAUX, NOIR, GRIS, COULEURS } = CHARTE_RAPPORT;
   const STATUT_GRAVITE = { [GRAVITE.CORRIGER]: "alerte", [GRAVITE.VERIFIER]: "attention", [GRAVITE.INFO]: "info" };
   const LARGEURS = [14, 21, 18, 21, 10, 6, 50, 12]; // À faire, pièce, article, dimensions, coloris, qté, explication, lignes
   const NB = LARGEURS.length;
-  const fond = (argb) => ({ type: "pattern", pattern: "solid", fgColor: { argb } });
+  const fond = fondRapport;
   const filet = { style: "thin", color: { argb: "FFE9E7E3" } };
   const bordure = { top: filet, bottom: filet, left: filet, right: filet };
   // Hauteur d'une ligne d'après la longueur du texte (Excel ne l'ajuste pas tout seul sur les cellules fusionnées).
   const hauteur = (texte, largeur) => Math.max(18, 15 * String(texte).split("\n").reduce((t, l) => t + Math.max(1, Math.ceil((l.length * 1.25) / largeur)), 0) + 4);
   const largeurDe = (de, a) => LARGEURS.slice(de - 1, a).reduce((t, l) => t + l, 0);
 
-  const wb = new ExcelJS.Workbook();
   const base = p.strat.name.replace(/\.[^.]*$/, "");
-  const f = wb.addWorksheet("Rapport", {
-    views: [{ showGridLines: false }],
-    pageSetup: { orientation: "landscape", paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0, margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
-    headerFooter: { oddFooter: `&L${base} — LAISNÉ INDUSTRIE, document interne&RPage &P / &N` },
-  });
+  const f = wb.addWorksheet(nomFeuille, MISE_EN_PAGE_RAPPORT(base));
   LARGEURS.forEach((l, i) => (f.getColumn(i + 1).width = l));
   // Une ligne de texte sur toute la largeur.
   const bandeau = (texte, police, options = {}) => {
@@ -6978,20 +6923,29 @@ async function problemesLancementXlsx(p) {
   // 2. Détail des pièces, problème par problème.
   titreSection(aTraiter.length || pieces.length ? "2. Détail des pièces à problème" : "2. Détail des pièces : aucune pièce à problème");
   if (pieces.length) {
-    const entete = f.addRow(["À faire", "Pièce (commande + ligne)", "Article", "Dimensions (L × l × ép.)", "Coloris", "Qté", "Explication", "Ligne(s) Excel du lancement"]);
+    const entete = f.addRow(["À faire", "Pièce (commande + ligne)", "Article", "Dimensions (L × l × ép.)", "Coloris (dessus / dessous)", "Qté", "Explication", "Ligne(s) Excel du lancement"]);
     entete.eachCell((c) => {
       c.font = { name: "Lato", bold: true, size: 9, color: { argb: BORDEAUX } };
       c.alignment = { vertical: "bottom", wrapText: true };
       c.border = { bottom: { style: "medium", color: { argb: BORDEAUX } } };
     });
-    entete.height = 30;
+    entete.height = 42;
     for (const type of ordre) {
       const liste = groupes.get(type);
       const statut = STATUT_GRAVITE[Math.max(...liste.map((e) => e.gravite))];
       f.addRow([]).height = 8;
       bandeau(`${type} — ${liste.length} pièce(s)`, { bold: true, size: 11, color: { argb: COULEURS[statut].texte } },
         { fond: COULEURS[statut].fond, bordureGauche: COULEURS[statut].texte, hauteur: 20, indent: 1 });
-      if (SENS_PROBLEME.has(type)) bandeau(SENS_PROBLEME.get(type), { italic: true, size: 9, color: { argb: GRIS } }, { indent: 1 });
+      if (SENS_PROBLEME.has(type)) {
+        const { sens, queFaire } = SENS_PROBLEME.get(type);
+        const ligne = bandeau(`${sens}${queFaire ? ` Que faire : ${queFaire}` : ""}`, { size: 9, color: { argb: GRIS } }, { indent: 1 });
+        ligne.getCell(1).value = {
+          richText: [
+            { text: `${sens}${queFaire ? " " : ""}`, font: { name: "Lato", italic: true, size: 9, color: { argb: GRIS } } },
+            ...(queFaire ? [{ text: "Que faire : ", font: { name: "Lato", bold: true, size: 9, color: { argb: NOIR } } }, { text: queFaire, font: { name: "Lato", size: 9, color: { argb: NOIR } } }] : []),
+          ],
+        };
+      }
       for (const e of liste) {
         const ligne = f.addRow([A_FAIRE[e.gravite], e.cle, e.article, e.dimensions, e.coloris, e.quantite, e.detail, e.lignes]);
         ligne.eachCell({ includeEmpty: true }, (c, n) => {
@@ -7022,7 +6976,131 @@ async function problemesLancementXlsx(p) {
     ligne.height = hauteur(valeur, largeurDe(4, NB));
   }
 
-  return { nom: `${base}_problemes.xlsx`, octets: new Uint8Array(await wb.xlsx.writeBuffer()), nbProblemes: aTraiter.length };
+  return { base, bilan, nbCorriger, nbVerifier };
+}
+
+async function problemesLancementXlsx(p) {
+  const wb = new ExcelJS.Workbook();
+  const { base, nbCorriger, nbVerifier } = await feuilleRapportLancement(wb, p, "Rapport");
+  return { nom: `${base}_problemes.xlsx`, octets: new Uint8Array(await wb.xlsx.writeBuffer()), nbProblemes: nbCorriger + nbVerifier };
+}
+
+// Nom de feuille Excel : 31 caractères au plus, sans : \ / ? * [ ], unique dans le classeur.
+function nomFeuilleExcel(texte, pris) {
+  const propre = String(texte).replace(/[:\\/?*[\]]/g, "-").slice(0, 31) || "Feuille";
+  let nom = propre;
+  for (let i = 2; pris.has(nom.toLowerCase()); i++) nom = `${propre.slice(0, 27)} (${i})`;
+  pris.add(nom.toLowerCase());
+  return nom;
+}
+
+// Rapport de la semaine : une synthèse (un lancement par ligne, un contrôle par colonne, lien vers son onglet),
+// puis le rapport de chaque lancement dans son onglet.
+async function rapportSemaineXlsx(parite) {
+  const { BORDEAUX, NOIR, GRIS, COULEURS } = CHARTE_RAPPORT;
+  const titre = libelleOnglet(parite);
+  const wb = new ExcelJS.Workbook();
+  const pris = new Set();
+  const f = wb.addWorksheet(nomFeuilleExcel(`${titre} — synthèse`, pris), MISE_EN_PAGE_RAPPORT(titre));
+  const lancements = [];
+  for (const p of pairesDeLaSemaine(parite)) {
+    if (!p.strat) continue;
+    const nom = nomFeuilleExcel(titreCase(p), pris);
+    lancements.push({ p, nom, ...(await feuilleRapportLancement(wb, p, nom)) });
+  }
+
+  const COLONNES = [
+    ["Poste", 22, null],
+    ["Lancement", 25, null],
+    ["Liste de coupe", 11, (c) => c.startsWith("Lancement /")],
+    ["Scies", 9, (c) => c === "Scies (.bkp)"],
+    ["Couleurs", 10, (c) => c === "Couleurs (.bkp)"],
+    ["Livraison", 10, (c) => c === "Semaine de livraison"],
+    ["Doublons", 10, (c) => c === "Lignes en double"],
+    ["Lancée 2 fois", 10, (c) => c === "Autres lancements de la semaine"],
+    ["Semaine d'avant / casse", 14, (c) => c === "Casse" || c.startsWith("Déjà lancée en")],
+    ["Diakonos", 10, (c) => c === "Diakonos"],
+    ["À corriger", 10, null],
+    ["À vérifier", 10, null],
+  ];
+  COLONNES.forEach(([, largeur], i) => (f.getColumn(i + 1).width = largeur));
+  const NB = COLONNES.length;
+  const bandeau = (texte, police, options = {}) => {
+    const ligne = f.addRow([texte]);
+    f.mergeCells(ligne.number, 1, ligne.number, NB);
+    const c = ligne.getCell(1);
+    c.font = { name: "Lato", ...police };
+    c.alignment = { vertical: "middle", wrapText: true, indent: options.indent || 0 };
+    if (options.fond) c.fill = fondRapport(options.fond);
+    ligne.height = options.hauteur || 18;
+    return ligne;
+  };
+  const nbCorriger = lancements.reduce((t, l) => t + l.nbCorriger, 0);
+  const nbVerifier = lancements.reduce((t, l) => t + l.nbVerifier, 0);
+  const avecProblemes = lancements.filter((l) => l.nbCorriger + l.nbVerifier).length;
+  bandeau(`${titre} — rapport de contrôle des lancements`, { name: "Raleway", bold: true, size: 18, color: { argb: BORDEAUX } }, { hauteur: 30 });
+  bandeau(`${new Date().toLocaleDateString("fr-FR")} · LAISNÉ INDUSTRIE — document interne`, { italic: true, color: { argb: GRIS } });
+  const probleme = nbCorriger + nbVerifier > 0;
+  bandeau(
+    probleme
+      ? `${nbCorriger + nbVerifier} problème(s) dans ${avecProblemes} lancement(s) sur ${lancements.length} : ${nbCorriger} à corriger, ${nbVerifier} à vérifier.`
+      : `Aucun problème dans les ${lancements.length} lancement(s).`,
+    { bold: true, size: 13, color: { argb: probleme ? COULEURS.alerte.texte : COULEURS.ok.texte } },
+    { fond: probleme ? COULEURS.alerte.fond : COULEURS.ok.fond, hauteur: 26, indent: 1 }
+  );
+  bandeau("Cliquez sur un poste pour ouvrir son rapport (un onglet par lancement, en bas).", { italic: true, size: 9, color: { argb: GRIS } });
+  f.addRow([]);
+  const entete = f.addRow(COLONNES.map(([nom]) => nom));
+  entete.eachCell((c) => {
+    c.font = { name: "Lato", bold: true, size: 9, color: { argb: "FFFFFFFF" } };
+    c.fill = fondRapport(BORDEAUX);
+    c.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  });
+  entete.height = 34;
+  const filet = { style: "thin", color: { argb: "FFE9E7E3" } };
+  for (const l of lancements) {
+    const valeurs = COLONNES.map(([nom, , controle]) => {
+      if (nom === "Poste") return { text: titreCase(l.p), hyperlink: `#'${l.nom}'!A1` };
+      if (nom === "Lancement") return l.base;
+      if (nom === "À corriger") return l.nbCorriger || "";
+      if (nom === "À vérifier") return l.nbVerifier || "";
+      const b = l.bilan.find((x) => controle(x.controle));
+      return b ? COULEURS[b.statut].symbole : "—";
+    });
+    const ligne = f.addRow(valeurs);
+    ligne.height = 20;
+    ligne.eachCell({ includeEmpty: true }, (c, n) => {
+      const [nom, , controle] = COLONNES[n - 1];
+      c.border = { top: filet, bottom: filet, left: filet, right: filet };
+      c.alignment = { vertical: "middle", horizontal: n <= 2 ? "left" : "center" };
+      c.font = { name: "Lato", color: { argb: NOIR } };
+      if (nom === "Poste") c.font = { name: "Lato", bold: true, underline: true, color: { argb: BORDEAUX } };
+      if (nom === "À corriger" && l.nbCorriger) c.font = { name: "Lato", bold: true, color: { argb: COULEURS.alerte.texte } };
+      if (nom === "À vérifier" && l.nbVerifier) c.font = { name: "Lato", bold: true, color: { argb: COULEURS.attention.texte } };
+      if (controle) {
+        const b = l.bilan.find((x) => controle(x.controle));
+        const statut = b ? b.statut : "info";
+        c.fill = fondRapport(COULEURS[statut].fond);
+        c.font = { name: "Lato", bold: true, color: { argb: COULEURS[statut].texte } };
+        if (b) c.note = b.texte;
+      }
+    });
+  }
+  const total = f.addRow(["Total", "", "", "", "", "", "", "", "", "", nbCorriger || "", nbVerifier || ""]);
+  total.eachCell({ includeEmpty: true }, (c, n) => {
+    c.font = { name: "Lato", bold: true, color: { argb: "FFFFFFFF" } };
+    c.fill = fondRapport(BORDEAUX);
+    c.alignment = { horizontal: n <= 2 ? "left" : "center" };
+  });
+  f.addRow([]);
+  bandeau("✔ OK · ⚠ rouge : à corriger · ⚠ jaune : à vérifier · — : pas de contrôle (fichier manquant). Survolez une case pour lire le bilan.",
+    { size: 9, color: { argb: GRIS } });
+  return {
+    nom: `rapport_sentinelle_${slug(titre)}.xlsx`,
+    octets: new Uint8Array(await wb.xlsx.writeBuffer()),
+    nbProblemes: nbCorriger + nbVerifier,
+    lancements,
+  };
 }
 
 // Après un contrôle : s'il y a un problème, le rapport des problèmes du lancement est créé tout seul.
@@ -7037,6 +7115,22 @@ async function problemesAutomatiques(p) {
     rafraichir(p);
   } catch (_erreur) {
     // Le bouton « Problèmes du lancement » reste là pour réessayer.
+  }
+}
+
+// Après le scan d'une semaine : un seul fichier, le rapport de la semaine, s'il y a un problème.
+async function rapportSemaineAutomatique(parite) {
+  try {
+    const { nom, octets, nbProblemes, lancements } = await rapportSemaineXlsx(parite);
+    for (const l of lancements) {
+      const n = l.nbCorriger + l.nbVerifier;
+      l.p.etat = n ? `📊 ${n} problème(s) : voir l'onglet « ${l.nom} » du rapport ${nom}` : null;
+      l.p.etatErreur = false;
+    }
+    if (nbProblemes) telecharger(nom, octets, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    return nbProblemes ? { nom, nbProblemes } : null;
+  } catch (_erreur) {
+    return null; // le bouton « Exporter le rapport de la semaine » reste là pour réessayer
   }
 }
 
