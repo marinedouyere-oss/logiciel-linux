@@ -55,6 +55,8 @@ import java.util.Set;
 public class MainActivity extends AppCompatActivity {
 
     static final String ONGLET_RECHERCHE = "recherche";
+    /** Onglet du fichier partagé écrit par Sentinelle sur le PC (l'appli le lit). */
+    static final String ONGLET_PARTAGE = "partage";
     private static final int LIMITE_LIGNES = 60;
 
     private SentinelleApp app;
@@ -80,6 +82,8 @@ public class MainActivity extends AppCompatActivity {
     private final Map<Paire, LinearLayout> cartes = new HashMap<>();
     private final Set<Paire> listesDepliees = new HashSet<>();
     private RechercheVue recherche;
+    private PartageVue partage;
+    private ActivityResultLauncher<String[]> choixPartage;
 
     private ActivityResultLauncher<String[]> choixFichier;
     private String cleEnAttente;
@@ -124,6 +128,7 @@ public class MainActivity extends AppCompatActivity {
         }
         choixFichier = registerForActivityResult(new ActivityResultContracts.OpenDocument(), this::fichierChoisi);
         choixDossier = registerForActivityResult(new ActivityResultContracts.OpenDocumentTree(), this::dossierChoisi);
+        choixPartage = registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> partage().fichierChoisi(uri));
         creationRapport = registerForActivityResult(new ActivityResultContracts.CreateDocument(ExportRapport.TYPE_MIME),
                 this::emplacementRapportChoisi);
         creationRapportLancement = registerForActivityResult(new ActivityResultContracts.CreateDocument("application/pdf"),
@@ -151,6 +156,7 @@ public class MainActivity extends AppCompatActivity {
         onglets.addTab(onglets.newTab().setText(libelleOnglet(Depot.PAIRE)).setTag(Depot.PAIRE));
         onglets.addTab(onglets.newTab().setText(libelleOnglet(Depot.IMPAIRE)).setTag(Depot.IMPAIRE));
         onglets.addTab(onglets.newTab().setText("Recherche").setTag(ONGLET_RECHERCHE));
+        onglets.addTab(onglets.newTab().setText("Partagé").setTag(ONGLET_PARTAGE));
         racine.addView(onglets, ui.pleineLargeur());
 
         defilement = new ScrollView(this);
@@ -172,6 +178,7 @@ public class MainActivity extends AppCompatActivity {
                 onglet = (String) tab.getTag();
                 afficher();
                 defilement.scrollTo(0, 0);
+                if (ONGLET_PARTAGE.equals(onglet)) partage().actualiser();
             }
 
             @Override
@@ -193,6 +200,24 @@ public class MainActivity extends AppCompatActivity {
         etat.putString("cleExport", cleExport);
         etat.putString("cleRapportLancement", cleRapportLancement);
         etat.putString("cleCorrection", cleCorrection);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Retour dans l'appli : le fichier partagé a pu changer sur le PC.
+        if (ONGLET_PARTAGE.equals(onglet)) partage().actualiser();
+    }
+
+    /** Onglet du fichier partagé (créé à la première visite). */
+    PartageVue partage() {
+        if (partage == null) partage = new PartageVue(this, ui, app);
+        return partage;
+    }
+
+    /** Sélecteur d'Android pour choisir le fichier partagé (le Drive du compte de l'appareil y apparaît). */
+    void choisirFichierPartage() {
+        choixPartage.launch(new String[] {"*/*"});
     }
 
     /** Onglet Recherche (créé à la première visite). */
@@ -219,7 +244,7 @@ public class MainActivity extends AppCompatActivity {
         boolean ongletAfficheChange = false;
         for (int i = 0; i < onglets.getTabCount(); i++) {
             TabLayout.Tab t = onglets.getTabAt(i);
-            if (t == null || ONGLET_RECHERCHE.equals(t.getTag())) continue;
+            if (t == null || ONGLET_RECHERCHE.equals(t.getTag()) || ONGLET_PARTAGE.equals(t.getTag())) continue;
             String libelle = libelleOnglet((String) t.getTag());
             if (t.getText() == null || !libelle.contentEquals(t.getText())) {
                 t.setText(libelle);
@@ -263,6 +288,8 @@ public class MainActivity extends AppCompatActivity {
         majOnglets();
         if (ongletSemaine()) {
             construireSemaine(onglet);
+        } else if (ONGLET_PARTAGE.equals(onglet)) {
+            contenu.addView(partage().vue());
         } else {
             contenu.addView(recherche().vue());
         }

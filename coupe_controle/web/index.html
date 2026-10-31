@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V5.2 — Contrôle de coupe</title>
+<title>Sentinelle V5.3 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -262,7 +262,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V5.2</div>
+        <div class="sous-titre">Contrôle de coupe · V5.3</div>
       </div>
     </div>
   </header>
@@ -297,7 +297,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V5.2 · Contrôle de coupe</span>
+    <span>Sentinelle V5.3 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -4322,18 +4322,20 @@ async function lignesDeLaCommande(commande, sources) {
 // (commande + ligne, article, dimensions, coloris…) et le bilan des contrôles. La casse s'en sert pour savoir si
 // une pièce était déjà lancée une semaine d'avant, même ancienne.
 //
-// Rangement : une copie dans le navigateur (IndexedDB) et, si un dossier Drive est choisi, un fichier par semaine
-// dans ce dossier (« sentinelle_semaine_2026-46.json.gz » : JSON compressé gzip). Tous les postes (PC, appli) qui
-// pointent sur le même dossier Drive partagent la même bibliothèque : à chaque synchronisation, chaque semaine est
+// Rangement : une copie dans le navigateur (IndexedDB) et, si un dossier est choisi (sur le Drive), le fichier partagé
+// « sentinelle_partage.json.gz » dans ce dossier, avec toutes les infos que Sentinelle génère. L'appli Android se
+// branche sur ce fichier. Les PC qui choisissent le même dossier partagent la même bibliothèque : chaque semaine est
 // fusionnée lancement par lancement (le plus récent gagne) ; une semaine retirée garde la date du retrait.
 
-const FORMAT_BIBLIOTHEQUE = "sentinelle-bibliotheque-1";
+const FORMAT_PARTAGE = "sentinelle-partage-1";
+const NOM_FICHIER_PARTAGE = "sentinelle_partage.json.gz";
+const ID_FICHIER_CONNU = "__fichier_partage"; // dernier état connu du fichier partagé (dans IndexedDB)
 // Une pièce = un tableau dans cet ordre (le fichier redonne l'ordre dans « colonnesPieces »).
 const COLONNES_PIECES_BIBLIOTHEQUE = ["cle", "commande", "ligne", "article", "pieces", "longueur", "largeur", "epaisseur", "coloris", "coloris_inf", "matiere", "livraison"];
 const DB_BIBLIOTHEQUE = "sentinelle-bibliotheque";
 const MAGASIN_SEMAINES = "semaines";
+// Un fichier par semaine : rangement de la V5.2, repris une fois.
 const MOTIF_FICHIER_SEMAINE = /^sentinelle_semaine_(\d{4})-(\d{2})\.json\.gz$/;
-const nomFichierSemaine = (id) => `sentinelle_semaine_${id}.json.gz`;
 const idSemaine = (annee, semaine) => `${annee}-${String(semaine).padStart(2, "0")}`;
 const ordreSemaine = (annee, semaine) => annee * 100 + Number(semaine);
 // « LAN264601START_corrige » remplace « LAN264601START » : même lancement.
@@ -4343,7 +4345,8 @@ const bibliotheque = {
   semaines: new Map(), // id « 2026-46 » → fiche de la semaine
   generation: 0, // change à chaque modification (les calculs de casse se refont)
   index: null, // clé de pièce → [{ ordre, annee, semaine, lancement, casse }]
-  dossier: null, // poignée du dossier Drive partagé
+  dossier: null, // poignée du dossier du fichier partagé (sur le Drive)
+  fichier: null, // fichier partagé au dernier échange { lastModified, size, signature }
   synchro: null, // synchronisation en cours (promesse)
   etat: null, // dernier compte rendu { lignes, erreur }
   enCours: false, // ajout de semaines en cours
@@ -4396,7 +4399,7 @@ function changementBibliotheque() {
   bibliotheque.index = null;
 }
 
-// Au démarrage : la copie du navigateur, puis le dossier Drive s'il est déjà autorisé.
+// Au démarrage : la copie du navigateur, puis le fichier partagé si son dossier est déjà autorisé.
 async function chargerBibliotheque() {
   try {
     const db = await ouvrirBaseBibliotheque();
@@ -4405,7 +4408,10 @@ async function chargerBibliotheque() {
       requete.onsuccess = () => resolve(requete.result || []);
       requete.onerror = () => resolve([]);
     });
-    for (const s of fiches) bibliotheque.semaines.set(s.id, s);
+    for (const s of fiches) {
+      if (s.id === ID_FICHIER_CONNU) bibliotheque.fichier = s;
+      else bibliotheque.semaines.set(s.id, s);
+    }
   } catch (_erreur) {
     // pas de copie locale
   }
@@ -4493,7 +4499,9 @@ function ficheLancementBibliotheque(nomFichier, strat, infos) {
     dossier: infos.dossier || null,
     casse: Boolean(infos.casse),
     fichiers: infos.fichiers || {},
+    recap: infos.recap || null,
     controle: infos.controle || null,
+    problemes: infos.problemes || [],
     nbPieces: strat.lignes.reduce((t, l) => t + (l.pieces || 0), 0),
     pieces,
   };
@@ -4503,7 +4511,7 @@ const nouvelleSemaineBibliotheque = (annee, semaine) => ({
   id: idSemaine(annee, semaine), annee, semaine, maj: "", supprimeeLe: null, colonnesPieces: COLONNES_PIECES_BIBLIOTHEQUE, lancements: [],
 });
 
-// Range des lancements dans leurs semaines (un lancement du même nom remplace l'ancien), puis envoie au Drive.
+// Range des lancements dans leurs semaines (un lancement du même nom remplace l'ancien), puis met à jour le fichier partagé.
 async function archiverLancements(items) {
   const maj = new Date().toISOString();
   const touchees = new Map();
@@ -4542,6 +4550,19 @@ async function archiverOnglet(parite, lancementsRapport) {
       const c = controles.get(p);
       const fichiers = {};
       for (const role of ["coupe", "bkp", "sommaire", "diakonos"]) if (p[role]) fichiers[role] = p[role].name;
+      // Le tableau des lancements de l'onglet, tel qu'il est affiché.
+      const r = await resume(p.strat, p.bkp);
+      const nombre = (v) => (v === null || v === undefined || Number.isNaN(v) ? null : v);
+      const couleurs = p.couleurs && !p.couleurs.sansStratifie ? p.couleurs : null;
+      const recap = {
+        prevues: nombre(r.prevues),
+        bkp: p.bkp ? nombre(r.bkp) : null,
+        source: p.source || null,
+        controle: p.rapport ? p.rapport.nbAnomalies : null,
+        scies: p.erreurScies ? -1 : p.ecartsScies ? p.ecartsScies.length : null,
+        couleursAbsentes: couleurs ? couleurs.absentes.length : null,
+        couleursPf: couleurs ? (couleurs.variantes || []).length : null,
+      };
       items.push({
         ...sem,
         lancement: ficheLancementBibliotheque(p.strat.name, strat, {
@@ -4550,6 +4571,8 @@ async function archiverOnglet(parite, lancementsRapport) {
           casse,
           fichiers,
           controle: c ? { nbCorriger: c.nbCorriger, nbVerifier: c.nbVerifier, bilan: c.bilan.map(({ statut, controle, texte }) => ({ statut, controle, texte })) } : null,
+          problemes: c && c.details ? c.details : [],
+          recap,
         }),
       });
     } catch (_erreur) {
@@ -4565,13 +4588,19 @@ async function archiverOnglet(parite, lancementsRapport) {
 function texteArchivage(a) {
   if (!a) return null;
   const semaines = [...new Set(a.semaines.map((s) => String(s.semaine).padStart(2, "0")))].join(", ");
-  const ou = !bibliotheque.dossier ? "" : a.drive && a.drive.ok ? " et sur le Drive" : " (pas encore sur le Drive : onglet Bibliothèque, Synchroniser)";
+  const ou = !bibliotheque.dossier ? "" : a.drive && a.drive.ok ? " et dans le fichier partagé" : " (fichier partagé pas encore à jour : onglet Bibliothèque, Synchroniser)";
   return `📚 ${a.nbLancements} lancement(s) gardé(s) dans la bibliothèque (semaine ${semaines})${ou}`;
 }
 
-// ---- Partage par le dossier Drive ----
+// ---- Le fichier partagé (dans le dossier Drive choisi) ----
+// Un seul fichier, « sentinelle_partage.json.gz » (JSON compressé gzip) :
+// { format, genere, par, colonnesPieces, explications, semaines: [{ id, annee, semaine, maj, supprimeeLe, lancements }] }.
+// Chaque lancement : nom, fichier, poste, dossier, casse, fichiers comparés, recap (prévues, .bkp, contrôle, scies,
+// couleurs), controle (bilan de chaque contrôle), problemes (pièce par pièce), pieces (une ligne par pièce).
+// L'appli Android se branche dessus (elle le lit) ; les PC qui choisissent le même dossier le complètent tour à tour.
 
 const signatureSemaine = (s) => (s ? JSON.stringify([s.supprimeeLe || "", ...s.lancements.map((l) => `${cleNomLancement(l.nom)}@${l.maj}`).sort()]) : "");
+const signatureDesSemaines = (liste) => liste.map((s) => `${s.id}:${signatureSemaine(s)}`).sort().join("|");
 
 // Deux versions d'une semaine : lancement par lancement, le plus récent ; un retrait efface ce qui est plus ancien.
 function fusionnerSemaines(a, b) {
@@ -4598,15 +4627,41 @@ async function lireJsonCompresse(fichier) {
   return JSON.parse(await new Response(flux).text());
 }
 
-async function ecrireSemaineDrive(s) {
-  const { drive: _drive, ...contenu } = s;
-  const octets = await compresserJson({ format: FORMAT_BIBLIOTHEQUE, par: "Sentinelle (page web)", ...contenu });
-  const fh = await bibliotheque.dossier.getFileHandle(nomFichierSemaine(s.id), { create: true });
+// Ce que le fichier partagé contient (toutes les semaines, retirées comprises pour que le retrait se propage).
+function contenuFichierPartage() {
+  const semaines = [...bibliotheque.semaines.values()]
+    .map(({ drive: _drive, ...s }) => s)
+    .sort((a, b) => ordreSemaine(a.annee, a.semaine) - ordreSemaine(b.annee, b.semaine));
+  return {
+    format: FORMAT_PARTAGE,
+    genere: new Date().toISOString(),
+    par: `${document.title.split(" — ")[0]} (page web)`,
+    colonnesPieces: COLONNES_PIECES_BIBLIOTHEQUE,
+    explications: Object.fromEntries(PROBLEMES.map(([type, sens, queFaire]) => [type, { sens, queFaire }])),
+    semaines,
+  };
+}
+
+async function ecrireFichierPartage() {
+  const octets = await compresserJson(contenuFichierPartage());
+  const fh = await bibliotheque.dossier.getFileHandle(NOM_FICHIER_PARTAGE, { create: true });
   const w = await fh.createWritable();
   await w.write(octets);
   await w.close();
   const f = await fh.getFile();
-  s.drive = { lastModified: f.lastModified, size: f.size, signature: signatureSemaine(s) };
+  return { lastModified: f.lastModified, size: f.size };
+}
+
+async function enregistrerFichierConnu(infos) {
+  bibliotheque.fichier = infos;
+  try {
+    const db = await ouvrirBaseBibliotheque();
+    const tx = db.transaction(MAGASIN_SEMAINES, "readwrite");
+    tx.objectStore(MAGASIN_SEMAINES).put({ id: ID_FICHIER_CONNU, ...infos });
+    await finTransaction(tx);
+  } catch (_erreur) {
+    // sans IndexedDB : le fichier sera relu à la prochaine ouverture
+  }
 }
 
 async function autorisationBibliotheque(interactif) {
@@ -4622,62 +4677,79 @@ async function autorisationBibliotheque(interactif) {
   }
 }
 
-// Échange avec le dossier Drive : ce qui manque ou a changé d'un côté passe de l'autre. Renvoie { ok, recues, envoyees }.
+// Semaines écrites par la V5.2 (un fichier par semaine) : reprises une fois, tant que le fichier partagé n'existe pas.
+async function semainesDesAnciensFichiers() {
+  const semaines = [];
+  for await (const [nom, entree] of bibliotheque.dossier.entries()) {
+    const m = MOTIF_FICHIER_SEMAINE.exec(nom);
+    if (!m || entree.kind !== "file") continue;
+    try {
+      const s = await lireJsonCompresse(await entree.getFile());
+      if (s && Array.isArray(s.lancements)) semaines.push({ ...s, id: `${m[1]}-${m[2]}` });
+    } catch (_erreur) {
+      // fichier abîmé : ignoré
+    }
+  }
+  return semaines;
+}
+
+// Échange avec le fichier partagé : ce qu'il contient de nouveau entre dans la bibliothèque, puis il est réécrit s'il
+// lui manque quelque chose. Renvoie { ok, recues, ecrit }.
 function synchroniserBibliotheque(interactif) {
   if (!bibliotheque.dossier) return Promise.resolve(null);
   if (bibliotheque.synchro) return bibliotheque.synchro;
   bibliotheque.synchro = (async () => {
-    const r = { ok: false, recues: 0, envoyees: 0 };
+    const r = { ok: false, recues: 0, ecrit: false };
     try {
       if (!(await autorisationBibliotheque(interactif))) {
-        bibliotheque.etat = { lignes: ["Dossier Drive pas encore autorisé : cliquez sur « Synchroniser »."], erreur: true };
+        bibliotheque.etat = { lignes: ["Dossier du fichier partagé pas encore autorisé : cliquez sur « Synchroniser »."], erreur: true };
         return r;
       }
-      const vus = new Set();
-      for await (const [nom, entree] of bibliotheque.dossier.entries()) {
-        const m = MOTIF_FICHIER_SEMAINE.exec(nom);
-        if (!m || entree.kind !== "file") continue;
-        const id = `${m[1]}-${m[2]}`;
-        vus.add(id);
-        const f = await entree.getFile();
-        const locale = bibliotheque.semaines.get(id) || null;
-        const dejaVu = locale && locale.drive && locale.drive.lastModified === f.lastModified && locale.drive.size === f.size;
-        let fusion = locale;
-        let signatureDrive = dejaVu ? locale.drive.signature : null;
-        if (!dejaVu) {
-          let distante;
-          try {
-            distante = await lireJsonCompresse(f);
-          } catch (_erreur) {
-            continue; // fichier abîmé ou en cours d'écriture : à la prochaine fois
-          }
-          if (!distante || !Array.isArray(distante.lancements)) continue;
-          const { format: _f, par: _p, ...semaine } = distante;
-          signatureDrive = signatureSemaine(semaine);
-          fusion = fusionnerSemaines(locale ? { ...locale } : null, { ...semaine, id });
-          if (!locale || signatureSemaine(fusion) !== signatureSemaine(locale)) r.recues++;
-          fusion.drive = { lastModified: f.lastModified, size: f.size, signature: signatureDrive };
-        }
-        let ecrite = false;
-        if (signatureSemaine(fusion) !== signatureDrive) {
-          await ecrireSemaineDrive(fusion);
-          r.envoyees++;
-          ecrite = true;
-        }
-        if (ecrite || !dejaVu) await enregistrerSemaineLocale(fusion);
+      let fh = null;
+      try {
+        fh = await bibliotheque.dossier.getFileHandle(NOM_FICHIER_PARTAGE);
+      } catch (_absent) {
+        fh = null;
       }
-      for (const s of [...bibliotheque.semaines.values()]) {
-        if (vus.has(s.id)) continue;
-        await ecrireSemaineDrive(s);
-        await enregistrerSemaineLocale(s);
-        r.envoyees++;
+      let distantes = null; // semaines lues dans le fichier (null : fichier inchangé depuis le dernier échange)
+      let signatureFichier = null;
+      if (fh) {
+        const f = await fh.getFile();
+        const connu = bibliotheque.fichier && bibliotheque.fichier.lastModified === f.lastModified && bibliotheque.fichier.size === f.size;
+        if (connu) signatureFichier = bibliotheque.fichier.signature;
+        else {
+          const contenu = await lireJsonCompresse(f);
+          if (!contenu || !Array.isArray(contenu.semaines)) throw new Error(`${NOM_FICHIER_PARTAGE} n'est pas un fichier Sentinelle`);
+          distantes = contenu.semaines;
+          signatureFichier = signatureDesSemaines(distantes);
+        }
+      } else distantes = await semainesDesAnciensFichiers();
+      for (const d of distantes || []) {
+        if (!d || !d.id || !Array.isArray(d.lancements)) continue;
+        const locale = bibliotheque.semaines.get(d.id) || null;
+        const fusion = fusionnerSemaines(locale ? { ...locale } : null, d);
+        if (!locale || signatureSemaine(fusion) !== signatureSemaine(locale)) {
+          await enregistrerSemaineLocale(fusion);
+          r.recues++;
+        }
+      }
+      const signatureLocale = signatureDesSemaines([...bibliotheque.semaines.values()]);
+      if (!fh || signatureLocale !== signatureFichier) {
+        await enregistrerFichierConnu({ ...(await ecrireFichierPartage()), signature: signatureLocale });
+        r.ecrit = true;
+      } else if (distantes) {
+        const f = await fh.getFile();
+        await enregistrerFichierConnu({ lastModified: f.lastModified, size: f.size, signature: signatureLocale });
       }
       r.ok = true;
       const heure = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-      bibliotheque.etat = { lignes: [`Synchronisée avec le Drive à ${heure} : ${r.recues} semaine(s) reçue(s), ${r.envoyees} envoyée(s).`], erreur: false };
+      bibliotheque.etat = {
+        lignes: [`Fichier partagé à jour (${heure}) : ${r.recues} semaine(s) reçue(s)${r.ecrit ? ", fichier réécrit" : ""}.`],
+        erreur: false,
+      };
       if (r.recues) changementBibliotheque();
     } catch (erreur) {
-      bibliotheque.etat = { lignes: [`Synchronisation impossible : ${erreur && erreur.message ? erreur.message : erreur}`], erreur: true };
+      bibliotheque.etat = { lignes: [`Fichier partagé illisible ou impossible à écrire : ${erreur && erreur.message ? erreur.message : erreur}`], erreur: true };
     } finally {
       bibliotheque.synchro = null;
     }
@@ -4704,7 +4776,7 @@ async function choisirDossierBibliotheque() {
   apresSynchro(await synchroniserBibliotheque(true));
 }
 
-// Avant un scan (clic de l'utilisateur) : l'autorisation d'écrire sur le Drive, si elle manque.
+// Avant un scan (clic de l'utilisateur) : l'autorisation d'écrire le fichier partagé, si elle manque.
 async function autoriserBibliothequeAuClic() {
   if (!bibliotheque.dossier) return;
   try {
@@ -4787,7 +4859,7 @@ async function importerSemainesBibliotheque() {
   }
 }
 
-// Retirer une semaine (partout : la date du retrait part aussi sur le Drive).
+// Retirer une semaine (partout : la date du retrait part aussi dans le fichier partagé).
 async function retirerSemaineBibliotheque(id) {
   const s = bibliotheque.semaines.get(id);
   if (!s) return;
@@ -4822,13 +4894,14 @@ function afficherBibliotheque() {
     <div class="carte-titre">Bibliothèque des semaines</div>
     <div class="note">Chaque semaine scannée est gardée ici (lancements, pièces, bilan des contrôles). La casse s'en sert pour savoir si une pièce était déjà lancée, même plusieurs semaines avant.</div>
     ${partage
-      ? `<div class="ligne-bibliotheque">Dossier partagé (Drive) : <strong>${d ? echapper(d.name) : "aucun"}</strong></div>
+      ? `<div class="ligne-bibliotheque">Fichier partagé : <strong>${d ? `${echapper(d.name)} / ${NOM_FICHIER_PARTAGE}` : "aucun dossier choisi"}</strong></div>
+    <div class="note">Sentinelle y écrit toutes les semaines (lancements, résultats, problèmes, pièces). L'appli Android se branche sur ce fichier. Mettez-le dans un dossier du Drive.</div>
     <div class="boutons-carte">
-      <button type="button" class="contour" id="btnDossierBibliotheque">${d ? "Changer de dossier" : "Choisir le dossier Drive"}</button>
+      <button type="button" class="contour" id="btnDossierBibliotheque">${d ? "Changer de dossier" : "Choisir le dossier du fichier partagé"}</button>
       <button type="button" id="btnSynchroniser" ${d && !bibliotheque.synchro ? "" : "disabled"}>Synchroniser</button>
     </div>
     <button type="button" class="contour pleine" id="btnImporterSemaines" ${bibliotheque.enCours ? "disabled" : ""}>+ Ajouter les semaines d'avant (choisir le dossier des archives)</button>`
-      : '<div class="note">Partage par le Drive et ajout des semaines d\'avant : ouvrez la page dans Chrome ou Edge sur PC.</div>'}
+      : '<div class="note">Fichier partagé et ajout des semaines d\'avant : ouvrez la page dans Chrome ou Edge sur PC.</div>'}
     ${etat ? `<div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes.map(echapper).join("<br>")}</div>` : ""}
   </div>`;
   html += `<div class="carte"><div class="carte-titre">Semaines gardées (${semaines.length})</div>`;
@@ -7698,7 +7771,14 @@ async function feuilleRapportLancement(wb, p, nomFeuille) {
     ligne.height = hauteur(valeur, largeurDe(4, NB));
   }
 
-  return { base, bilan, nbCorriger, nbVerifier, problemes: aTraiter.map((e) => ({ id: `${e.cle}|${e.type}`, gravite: e.gravite })) };
+  // Le détail, dans l'ordre du rapport, pour le fichier partagé (l'appli Android l'affiche).
+  const NIVEAU = { [GRAVITE.CORRIGER]: "corriger", [GRAVITE.VERIFIER]: "verifier", [GRAVITE.INFO]: "info" };
+  const texte = (v) => (v === null || v === undefined ? "" : String(v));
+  const details = ordre.flatMap((type) => groupes.get(type)).map((e) => ({
+    niveau: NIVEAU[e.gravite], type: e.type, cle: e.cle, article: texte(e.article), dimensions: texte(e.dimensions), coloris: texte(e.coloris),
+    quantite: texte(e.quantite), detail: texte(e.detail), lignes: texte(e.lignes),
+  }));
+  return { base, bilan, nbCorriger, nbVerifier, details, problemes: aTraiter.map((e) => ({ id: `${e.cle}|${e.type}`, gravite: e.gravite })) };
 }
 
 async function problemesLancementXlsx(p) {
