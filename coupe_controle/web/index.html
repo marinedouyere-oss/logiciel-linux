@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V5.5 — Contrôle de coupe</title>
+<title>Sentinelle V5.6 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -145,6 +145,13 @@
   table.recap td.alerte { color: var(--alerte-texte); font-weight: 700; }
   /* Bibliothèque des semaines */
   .ligne-bibliotheque { margin: 10px 0 4px; font-size: 0.9rem; }
+  .formulaire-reecriture { display: flex; flex-wrap: wrap; gap: 10px 14px; margin: 4px 0 8px; }
+  .formulaire-reecriture label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; color: var(--gris-texte); font-weight: 700; }
+  .formulaire-reecriture input, .formulaire-reecriture select {
+    padding: 8px 10px; font-family: var(--texte); font-size: 0.95rem; border: 1px solid #cfccc6; border-radius: 3px; background: #fff; color: var(--noir); min-width: 0;
+  }
+  .formulaire-reecriture input[type="number"] { width: 90px; }
+  .formulaire-reecriture input:focus, .formulaire-reecriture select:focus { outline: none; border-color: var(--bordeaux); box-shadow: 0 0 0 2px var(--saumon-pale); }
   table.recap.bibliotheque td { vertical-align: top; }
   table.recap .lancements-bibliotheque { font-size: 0.85em; line-height: 1.5; }
   .alerte-texte { color: var(--alerte-texte); font-weight: 700; }
@@ -262,7 +269,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V5.5</div>
+        <div class="sous-titre">Contrôle de coupe · V5.6</div>
       </div>
     </div>
   </header>
@@ -272,6 +279,7 @@
       <button type="button" class="onglet-btn" data-onglet="impaire">Semaine</button>
       <button type="button" class="onglet-btn" data-onglet="recherche">Recherche</button>
       <button type="button" class="onglet-btn" data-onglet="bibliotheque">Bibliothèque</button>
+      <button type="button" class="onglet-btn" data-onglet="reecriture">Réécriture</button>
     </div>
   </nav>
   <main>
@@ -294,10 +302,11 @@
       <div id="resultatsRecherche"></div>
     </div>
     <div id="pageBibliotheque" class="inactif"></div>
+    <div id="pageReecriture" class="inactif"></div>
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V5.5 · Contrôle de coupe</span>
+    <span>Sentinelle V5.6 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -4943,6 +4952,645 @@ function afficherBibliotheque() {
   page.querySelectorAll("[data-retirer]").forEach((b) => b.addEventListener("click", () => retirerSemaineBibliotheque(b.dataset.retirer)));
 }
 
+// ---- Réécriture : l'extraction du logiciel de gestion devient le LAN du lancement ----
+// RÈGLE ABSOLUE : rien n'est ajouté au fichier. Même onglet, mêmes lignes, même ordre, mêmes colonnes,
+// même mise en forme. Seules les cellules à corriger changent de valeur. Le fichier est modifié
+// directement dans son XML (pas de réécriture par une bibliothèque Excel), puis relu et comparé
+// cellule par cellule à l'original avant d'être enregistré.
+//
+// Corrections (Feno seulement, pour l'instant) :
+//  - Retour latéral LG / LD (pas FG / FD, pas ETR… = sans retour) : cote finie +10 par retour ;
+//    débit = cote finie + 55 pour le FENO, + 50 pour le reste ; protection : débit = cote finie.
+//  - Support 10 brut (SAG10HYBR) : RCB en sous-face si elle est vide (pas les pièces MIXTE).
+
+const TYPES_REECRITURE = [
+  { id: "agglo1", libelle: "Agglo 1er tour", dossier: "1ER TOUR AGGLO", suffixe: "01START" },
+  { id: "agglo2", libelle: "Agglo 2ème tour", dossier: "2EME TOUR AGGLO", suffixe: "02START" },
+  { id: "recyclage", libelle: "Recyclage", dossier: "1ER TOUR AGGLO", suffixe: "01RECYCLAGE" },
+  { id: "feno", libelle: "Feno", dossier: "FENO", suffixe: "01FENO", feno: true },
+  { id: "casse", libelle: "Casse", dossier: "CASSE", suffixe: "CASSE" },
+  { id: "chantier", libelle: "Chantier", dossier: "CHANTIERS", suffixe: null },
+];
+
+const COLONNES_REECRITURE = {
+  cle: "commande+ligne",
+  fini: "conf_longueur",
+  debit: "longueur",
+  agglo: "agglo",
+  sousFace: "coloris_inf",
+  assemblage: "info atelier assemblage",
+  commentaire: "commentaire",
+  finiTexte: "LongueurxLargeurxEpaisseur fini",
+};
+
+const TYPE_CLASSEUR = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
+const TYPE_CLASSEUR_MACROS = "application/vnd.ms-excel.sheet.macroEnabled.main+xml";
+
+// ---- Lecture du XML du classeur ----
+
+function texteXml(t) {
+  return t
+    .replace(/&#x([0-9a-fA-F]+);/g, (_m, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&#(\d+);/g, (_m, d) => String.fromCodePoint(parseInt(d, 10)))
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&");
+}
+
+const xmlEchapper = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+const textesDesT = (xml) => [...xml.matchAll(/<t\b[^>]*?(?:\/>|>([\s\S]*?)<\/t>)/g)].map((m) => texteXml(m[1] || "")).join("");
+
+function chaineesPartagees(xml) {
+  if (!xml) return [];
+  return [...xml.matchAll(/<si\b[^>]*?(?:\/>|>([\s\S]*?)<\/si>)/g)].map((m) => textesDesT((m[1] || "").replace(/<rPh\b[\s\S]*?<\/rPh>/g, "")));
+}
+
+function indexColonne(lettres) {
+  let n = 0;
+  for (const c of lettres) n = n * 26 + (c.charCodeAt(0) - 64);
+  return n;
+}
+
+function lettresColonne(n) {
+  let s = "";
+  while (n > 0) {
+    const r = (n - 1) % 26;
+    s = String.fromCharCode(65 + r) + s;
+    n = Math.floor((n - 1) / 26);
+  }
+  return s;
+}
+
+const attribut = (attrs, nom) => {
+  const m = attrs.match(new RegExp(`\\b${nom}="([^"]*)"`));
+  return m ? m[1] : null;
+};
+
+// Cellules d'une ligne : position dans le contenu de la ligne, colonne, valeur lue.
+function cellulesDeLigne(contenu, sst) {
+  const cellules = [];
+  for (const m of contenu.matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+    const attrs = m[1];
+    const ref = attribut(attrs, "r");
+    if (!ref) throw new Error("cellule sans référence (format de classeur non pris en charge)");
+    const mr = ref.match(/^([A-Z]+)(\d+)$/);
+    if (!mr) throw new Error(`référence de cellule illisible : ${ref}`);
+    const interieur = m[2] || "";
+    const type = attribut(attrs, "t");
+    const v = interieur.match(/<v\b[^>]*>([\s\S]*?)<\/v>/);
+    let valeur = null;
+    if (type === "s") valeur = v ? sst[Number(v[1])] ?? null : null;
+    else if (type === "inlineStr") valeur = textesDesT(interieur);
+    else if (v) valeur = texteXml(v[1]);
+    cellules.push({ debut: m.index, fin: m.index + m[0].length, xml: m[0], attrs, ref, col: indexColonne(mr[1]), valeur, formule: /<f\b/.test(interieur) });
+  }
+  return cellules;
+}
+
+// Les lignes de la feuille : position dans le XML, numéro, cellules.
+function lignesDeFeuille(xml, sst) {
+  const debutDonnees = xml.indexOf("<sheetData");
+  if (debutDonnees < 0) throw new Error("feuille sans données");
+  const lignes = [];
+  const re = /<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g;
+  re.lastIndex = debutDonnees;
+  let m;
+  while ((m = re.exec(xml))) {
+    const numero = Number(attribut(m[1], "r"));
+    if (!numero) throw new Error("ligne sans numéro (format de classeur non pris en charge)");
+    const contenu = m[2] || "";
+    const ouverture = m[0].length - contenu.length - (m[2] === undefined ? 0 : "</row>".length);
+    lignes.push({ debut: m.index, fin: m.index + m[0].length, numero, xml: m[0], ouverture: m[0].slice(0, ouverture), debutContenu: m.index + ouverture, contenu, cellules: cellulesDeLigne(contenu, sst) });
+  }
+  return lignes;
+}
+
+function cheminCible(base, cible) {
+  if (cible.startsWith("/")) return cible.slice(1);
+  const parties = base.split("/").slice(0, -1);
+  for (const p of cible.split("/")) {
+    if (p === "..") parties.pop();
+    else if (p !== ".") parties.push(p);
+  }
+  return parties.join("/");
+}
+
+// Les parties du classeur (archive zip) : [nom, octets], dans l'ordre de l'archive.
+async function partiesClasseur(octets) {
+  const tampon = octets.buffer.slice(octets.byteOffset, octets.byteOffset + octets.byteLength);
+  let entrees;
+  try {
+    entrees = await listerEntreesZip(tampon);
+  } catch (_erreur) {
+    throw new Error("ce n'est pas un classeur Excel");
+  }
+  const parties = [];
+  for (const e of entrees) if (!e.nom.endsWith("/")) parties.push([e.nom, await extraireEntreeZip(tampon, e)]);
+  if (!parties.length) throw new Error("ce n'est pas un classeur Excel");
+  return parties;
+}
+
+// Ouvre le classeur d'extraction : première feuille, chaînes partagées, lignes et colonnes.
+async function analyserExtraction(octets) {
+  const parties = await partiesClasseur(octets);
+  const decodeur = new TextDecoder("utf-8");
+  const lire = (chemin) => {
+    const x = parties.find(([n]) => n === chemin);
+    return x ? decodeur.decode(x[1]) : null;
+  };
+  if (parties.some(([n]) => /vbaProject\.bin$/i.test(n))) throw new Error("le fichier contient des macros : Sentinelle ne le réécrit pas");
+  const classeur = lire("xl/workbook.xml");
+  const liens = lire("xl/_rels/workbook.xml.rels");
+  if (!classeur || !liens) throw new Error("ce n'est pas un classeur Excel");
+  const feuille = classeur.match(/<sheet\b([^>]*?)\/?>/);
+  if (!feuille) throw new Error("classeur sans feuille");
+  const nomFeuille = texteXml(attribut(feuille[1], "name") || "");
+  const idFeuille = attribut(feuille[1], "r:id");
+  const relations = [...liens.matchAll(/<Relationship\b([^>]*?)\/?>/g)].map((m) => ({ id: attribut(m[1], "Id"), type: attribut(m[1], "Type") || "", cible: attribut(m[1], "Target") || "" }));
+  const relFeuille = relations.find((r) => r.id === idFeuille);
+  if (!relFeuille) throw new Error("feuille introuvable dans le classeur");
+  const cheminFeuille = cheminCible("xl/workbook.xml", relFeuille.cible);
+  const relChaines = relations.find((r) => /\/sharedStrings$/.test(r.type));
+  const cheminChaines = relChaines ? cheminCible("xl/workbook.xml", relChaines.cible) : null;
+  const xmlFeuille = lire(cheminFeuille);
+  if (!xmlFeuille) throw new Error("feuille illisible");
+  const xmlChaines = cheminChaines ? lire(cheminChaines) : null;
+  const sst = chaineesPartagees(xmlChaines);
+  const lignes = lignesDeFeuille(xmlFeuille, sst);
+  const entete = lignes.find((l) => l.numero === 1);
+  if (!entete) throw new Error("ligne d'en-têtes introuvable");
+  const colonnes = {};
+  for (const c of entete.cellules) if (c.valeur != null) colonnes[String(c.valeur).trim()] = c.col;
+  const manquantes = Object.values(COLONNES_REECRITURE).filter((n) => !colonnes[n]);
+  if (manquantes.length) throw new Error(`colonnes introuvables : ${manquantes.join(", ")}`);
+  const donnees = lignes.filter((l) => l.numero > 1 && l.cellules.some((c) => c.valeur != null && String(c.valeur).trim() !== ""));
+  return { parties, nomFeuille, cheminFeuille, cheminChaines, xmlFeuille, xmlChaines, sst, lignes, colonnes, donnees };
+}
+
+// ---- Corrections ----
+
+const nombreCellule = (v) => {
+  if (v == null || String(v).trim() === "") return null;
+  const n = Number(String(v).replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+};
+
+// Retours latéraux (LG / LD) de la colonne assemblage ; FG / FD et ETR… (sans retour) ne comptent pas.
+function retoursLateraux(assemblage) {
+  let n = 0;
+  for (const t of String(assemblage || "").toUpperCase().split(/[\s\-]+/)) if (/^L[GD]\d*$/.test(t)) n++;
+  return n;
+}
+
+const supplementDebit = (agglo) => (agglo.startsWith("PROTECTION") ? 0 : agglo.startsWith("FENO") ? 55 : 50);
+
+// Les cellules à changer, et ce qu'il faut dire à l'écran (rien de tout ça ne va dans le fichier).
+function planifierCorrections(analyse, type) {
+  const { colonnes, donnees } = analyse;
+  const changements = [];
+  const pieces = { retours: new Set(), rcb: new Set() };
+  const avertissements = [];
+  if (!type || !type.feno) return { changements, pieces, avertissements };
+  const val = (l, nom) => {
+    const c = l.cellules.find((x) => x.col === colonnes[COLONNES_REECRITURE[nom]]);
+    return c ? c.valeur : null;
+  };
+  const deja = new Set();
+  const couchesParCle = new Map();
+  for (const l of donnees) {
+    const cle = String(val(l, "cle") ?? "").trim();
+    const agglo = String(val(l, "agglo") ?? "").trim().toUpperCase();
+    if (cle) {
+      if (!couchesParCle.has(cle)) couchesParCle.set(cle, []);
+      couchesParCle.get(cle).push(agglo);
+    }
+    const n = retoursLateraux(val(l, "assemblage"));
+    if (n) {
+      const fini = nombreCellule(val(l, "fini"));
+      const debit = nombreCellule(val(l, "debit"));
+      const m = String(val(l, "finiTexte") ?? "").match(/^\s*(\d+(?:[.,]\d+)?)\s*[xX]/);
+      const finiErp = m ? Number(m[1].replace(",", ".")) : null;
+      if (fini == null || debit == null) avertissements.push(`${cle || `ligne ${l.numero}`} (${agglo}) : cote finie ou débit illisible, ligne pas corrigée.`);
+      else if (finiErp != null && Math.abs(finiErp - fini) > 0.01) deja.add(cle || `ligne ${l.numero}`);
+      else {
+        const nouveauFini = fini + 10 * n;
+        const nouveauDebit = Math.max(nouveauFini + supplementDebit(agglo), agglo.startsWith("PROTECTION") ? 0 : debit);
+        changements.push({ ligne: l.numero, col: colonnes[COLONNES_REECRITURE.fini], avant: fini, apres: nouveauFini, nombre: true, cle, agglo, quoi: "cote finie" });
+        changements.push({ ligne: l.numero, col: colonnes[COLONNES_REECRITURE.debit], avant: debit, apres: nouveauDebit, nombre: true, cle, agglo, quoi: "débit" });
+        pieces.retours.add(cle);
+      }
+    }
+    if (agglo === "SAG10HYBR" && String(val(l, "sousFace") ?? "").trim() === "" && !/MIXTE/i.test(String(val(l, "commentaire") ?? ""))) {
+      changements.push({ ligne: l.numero, col: colonnes[COLONNES_REECRITURE.sousFace], avant: null, apres: "RCB", nombre: false, cle, agglo, quoi: "sous-face" });
+      pieces.rcb.add(cle);
+    }
+  }
+  if (deja.size) avertissements.push(`Déjà retouché à la main (cote finie différente du logiciel de gestion), pas corrigé : ${[...deja].join(", ")}.`);
+  for (const [cle, couches] of couchesParCle) {
+    if (couches.every((a) => a.startsWith("PROTECTION"))) avertissements.push(`${cle} : seulement la protection dans le fichier (pas de décor ni de support).`);
+  }
+  return { changements, pieces, avertissements };
+}
+
+// ---- Écriture : seules les cellules prévues changent ----
+
+const formatNombre = (n) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000));
+
+function celluleXml(ref, style, ch, indexChaine) {
+  const s = style != null ? ` s="${style}"` : "";
+  if (ch.nombre) return `<c r="${ref}"${s}><v>${formatNombre(ch.apres)}</v></c>`;
+  if (indexChaine != null) return `<c r="${ref}"${s} t="s"><v>${indexChaine}</v></c>`;
+  return `<c r="${ref}"${s} t="inlineStr"><is><t>${xmlEchapper(ch.apres)}</t></is></c>`;
+}
+
+async function ecrireLanCorrige(analyse, changements) {
+  const { lignes, cheminFeuille, cheminChaines } = analyse;
+  const encodeur = new TextEncoder();
+  const parties = analyse.parties.map(([n, o]) => [n, o]);
+  const remplacer = (nom, texte) => {
+    const x = parties.find(([n]) => n === nom);
+    if (!x) throw new Error(`partie ${nom} introuvable`);
+    x[1] = encodeur.encode(texte);
+  };
+  let xmlFeuille = analyse.xmlFeuille;
+  let xmlChaines = analyse.xmlChaines;
+  const sst = analyse.sst.slice();
+  let ajoutsChaines = 0;
+  let referencesChaines = 0;
+  const indexDe = (texte) => {
+    if (xmlChaines == null) return null;
+    let i = sst.indexOf(texte);
+    if (i < 0) {
+      i = sst.length;
+      sst.push(texte);
+      ajoutsChaines++;
+    }
+    referencesChaines++;
+    return i;
+  };
+  const parLigne = new Map();
+  for (const ch of changements) {
+    if (!parLigne.has(ch.ligne)) parLigne.set(ch.ligne, []);
+    parLigne.get(ch.ligne).push(ch);
+  }
+  // Des dernières lignes vers les premières : les positions du XML restent justes.
+  for (const l of [...lignes].filter((x) => parLigne.has(x.numero)).sort((a, b) => b.debut - a.debut)) {
+    let contenu = l.contenu;
+    const style = (l.cellules.find((c) => c.col === analyse.colonnes[COLONNES_REECRITURE.agglo]) || l.cellules[0] || {}).attrs;
+    const styleLigne = style ? attribut(style, "s") : null;
+    const operations = [];
+    for (const ch of parLigne.get(l.numero)) {
+      const ref = `${lettresColonne(ch.col)}${l.numero}`;
+      const existante = l.cellules.find((c) => c.col === ch.col);
+      const idx = ch.nombre ? null : indexDe(ch.apres);
+      if (existante) {
+        const s = attribut(existante.attrs, "s");
+        if (!ch.nombre && existante.valeur != null && String(existante.valeur).trim() !== "") throw new Error(`cellule ${ref} déjà remplie`);
+        operations.push({ debut: existante.debut, fin: existante.fin, xml: celluleXml(ref, s, ch, idx) });
+      } else {
+        const suivante = l.cellules.find((c) => c.col > ch.col);
+        const pos = suivante ? suivante.debut : contenu.length;
+        operations.push({ debut: pos, fin: pos, xml: celluleXml(ref, styleLigne, ch, idx) });
+      }
+    }
+    operations.sort((a, b) => b.debut - a.debut || b.fin - a.fin);
+    for (const o of operations) contenu = contenu.slice(0, o.debut) + o.xml + contenu.slice(o.fin);
+    const ouverture = l.xml.endsWith("/>") ? `${l.xml.slice(0, -2)}>` : l.ouverture;
+    xmlFeuille = xmlFeuille.slice(0, l.debut) + ouverture + contenu + "</row>" + xmlFeuille.slice(l.fin);
+  }
+  remplacer(cheminFeuille, xmlFeuille);
+  if (xmlChaines != null && referencesChaines) {
+    const ajout = sst.slice(sst.length - ajoutsChaines).map((t) => `<si><t>${xmlEchapper(t)}</t></si>`).join("");
+    xmlChaines = xmlChaines.replace(/<sst\b([^>]*)>/, (m, attrs) => {
+      let a = attrs;
+      const compte = attribut(a, "count");
+      const uniques = attribut(a, "uniqueCount");
+      if (compte != null) a = a.replace(/\bcount="\d+"/, `count="${Number(compte) + referencesChaines}"`);
+      if (uniques != null) a = a.replace(/\buniqueCount="\d+"/, `uniqueCount="${Number(uniques) + ajoutsChaines}"`);
+      return `<sst${a}>`;
+    });
+    if (ajoutsChaines) xmlChaines = xmlChaines.replace(/<\/sst>\s*$/, `${ajout}</sst>`);
+    remplacer(cheminChaines, xmlChaines);
+  }
+  // Un .xlsx ne peut pas être déclaré « classeur à macros » (l'extraction arrive en .xlsm, sans macro).
+  const types = parties.find(([n]) => n === "[Content_Types].xml");
+  if (!types) throw new Error("classeur sans [Content_Types].xml");
+  const texteTypes = new TextDecoder("utf-8").decode(types[1]);
+  if (texteTypes.includes(TYPE_CLASSEUR_MACROS)) remplacer("[Content_Types].xml", texteTypes.split(TYPE_CLASSEUR_MACROS).join(TYPE_CLASSEUR));
+  return ecrireZip(parties);
+}
+
+// Relit le fichier écrit et le compare à l'original : toutes les cellules identiques sauf les cellules prévues,
+// mêmes lignes, même onglet, le reste de la feuille et toutes les autres parties du classeur identiques.
+// Sinon : rien n'est enregistré.
+async function verifierLanCorrige(octetsOrigine, octetsCorriges, changements) {
+  const a = await analyserExtraction(octetsOrigine);
+  const b = await analyserExtraction(octetsCorriges);
+  const erreurs = [];
+  const valeurs = (an) => {
+    const m = new Map();
+    for (const l of an.lignes) for (const c of l.cellules) m.set(`${l.numero}:${c.col}`, { v: c.valeur == null ? "" : String(c.valeur), s: attribut(c.attrs, "s"), f: c.formule });
+    return m;
+  };
+  const va = valeurs(a);
+  const vb = valeurs(b);
+  const prevus = new Map(changements.map((ch) => [`${ch.ligne}:${ch.col}`, ch]));
+  if (a.nomFeuille !== b.nomFeuille) erreurs.push("nom de l'onglet");
+  // Mêmes lignes, dans le même ordre, avec les mêmes attributs.
+  const ouvertures = (an) => an.lignes.map((l) => l.ouverture.replace(/\/>$/, ">")).join("\n");
+  if (ouvertures(a) !== ouvertures(b)) erreurs.push("lignes");
+  // Le reste de la feuille (colonnes, mise en page…) identique.
+  const horsDonnees = (x) => x.slice(0, x.indexOf("<sheetData")) + x.slice(x.indexOf("</sheetData>"));
+  if (horsDonnees(a.xmlFeuille) !== horsDonnees(b.xmlFeuille)) erreurs.push("mise en forme de la feuille");
+  for (const [k, ch] of prevus) {
+    const y = vb.get(k);
+    const ok = y && !y.f && (ch.nombre ? Number(y.v) === Number(formatNombre(ch.apres)) : y.v === ch.apres);
+    if (!ok) erreurs.push(`cellule ${k} mal écrite`);
+  }
+  for (const [k, x] of va) {
+    if (prevus.has(k)) continue;
+    const y = vb.get(k);
+    if (!y || y.v !== x.v || y.s !== x.s || y.f !== x.f) erreurs.push(`cellule ${k} changée`);
+  }
+  for (const k of vb.keys()) if (!va.has(k) && !prevus.has(k)) erreurs.push(`cellule ${k} ajoutée`);
+  // Chaînes partagées : celles d'origine à la même place (une chaîne peut seulement s'ajouter à la fin).
+  if (a.sst.some((x, i) => b.sst[i] !== x)) erreurs.push("chaînes du classeur");
+  // Toutes les autres parties du classeur : identiques octet par octet.
+  const noms = (an) => an.parties.map(([n]) => n).join("|");
+  if (noms(a) !== noms(b)) erreurs.push("parties du classeur");
+  for (const [n, octetsA] of a.parties) {
+    const pb = b.parties.find(([x]) => x === n);
+    if (n === a.cheminFeuille || n === a.cheminChaines || !pb) continue;
+    let xa = octetsA;
+    const xb = pb[1];
+    if (n === "[Content_Types].xml") {
+      xa = new TextEncoder().encode(new TextDecoder().decode(xa).split(TYPE_CLASSEUR_MACROS).join(TYPE_CLASSEUR));
+    }
+    if (xa.length !== xb.length || xa.some((o, i) => o !== xb[i])) erreurs.push(`partie ${n} changée`);
+  }
+  if (erreurs.length) throw new Error(`vérification du fichier corrigé : ${erreurs.slice(0, 5).join(", ")}`);
+}
+
+// Nom réel du lancement : LAN + année + semaine + tour/type (ou nom du chantier).
+function nomLancementReecrit(reglage) {
+  const type = TYPES_REECRITURE.find((t) => t.id === reglage.type);
+  const aa = String(reglage.annee || "").padStart(2, "0").slice(-2);
+  const ss = String(reglage.semaine || "").padStart(2, "0");
+  if (!type || !/^\d{2}$/.test(aa) || !/^\d{2}$/.test(ss) || Number(ss) < 1 || Number(ss) > 53) return null;
+  if (type.suffixe) return `LAN${aa}${ss}${type.suffixe}.xlsx`;
+  const chantier = String(reglage.chantier || "").trim().replace(/[\\/:*?"<>|]+/g, "").replace(/\s+/g, " ");
+  return chantier ? `LAN${aa}${ss}${chantier}.xlsx` : null;
+}
+
+// ---- Dossier des semaines ----
+
+const nomDossierSemaine = (ss) => `Semaine ${String(ss).padStart(2, "0")}`;
+const memeNomDossier = (a, b) => a.trim().toLocaleUpperCase("fr") === b.trim().toLocaleUpperCase("fr");
+
+// Les dossiers « Semaine NN » sous le dossier choisi (jusqu'à 3 niveaux : année / mois / semaine).
+async function chercherDossiersSemaine(racine, semaine, profondeur = 3, chemin = []) {
+  const trouves = [];
+  const re = new RegExp(`^semaine\\s*0*${Number(semaine)}$`, "i");
+  for await (const [nom, entree] of racine.entries()) {
+    if (entree.kind !== "directory") continue;
+    if (re.test(nom.trim())) trouves.push({ dossier: entree, chemin: [...chemin, nom] });
+    else if (profondeur > 1 && !/^semaine/i.test(nom.trim())) trouves.push(...(await chercherDossiersSemaine(entree, semaine, profondeur - 1, [...chemin, nom])));
+  }
+  return trouves;
+}
+
+async function sousDossier(parent, nom) {
+  for await (const [n, entree] of parent.entries()) if (entree.kind === "directory" && memeNomDossier(n, nom)) return { dossier: entree, nom: n, cree: false };
+  return { dossier: await parent.getDirectoryHandle(nom, { create: true }), nom, cree: true };
+}
+
+async function fichierExiste(dossier, nom) {
+  for await (const [n, entree] of dossier.entries()) if (entree.kind === "file" && n.toLocaleUpperCase("fr") === nom.toLocaleUpperCase("fr")) return true;
+  return false;
+}
+
+// ---- L'onglet ----
+
+const reecriture = {
+  racine: null, // dossier des semaines (choisi une fois, gardé dans le navigateur)
+  chargee: false,
+  fichier: null, // { nom, octets }
+  analyse: null,
+  erreur: null,
+  reglage: { semaine: "", annee: "", type: "", chantier: "" },
+  etat: null, // { lignes, erreur }
+  enCours: false,
+};
+
+async function chargerReecriture() {
+  if (reecriture.chargee) return;
+  reecriture.chargee = true;
+  if (typeof window.showDirectoryPicker === "function") reecriture.racine = await chargerPoigneeDossierPartage("reecriture");
+}
+
+function afficherBlocage(titre, message) {
+  const annuler = $("modaleConfirmationAnnuler");
+  annuler.hidden = true;
+  return demanderConfirmation(titre, message, "OK").finally(() => (annuler.hidden = false));
+}
+
+async function choisirRacineReecriture() {
+  try {
+    const handle = await window.showDirectoryPicker({ id: "reecriture", mode: "readwrite" });
+    reecriture.racine = handle;
+    await sauvegarderPoigneeDossierPartage(handle, "reecriture");
+  } catch (_annulation) {
+    return;
+  }
+  afficherReecriture();
+}
+
+async function fichierExtractionChoisi(fichier) {
+  if (!fichier) return;
+  reecriture.etat = null;
+  reecriture.erreur = null;
+  reecriture.analyse = null;
+  try {
+    const octets = new Uint8Array(await fichier.arrayBuffer());
+    reecriture.fichier = { nom: fichier.name, octets };
+    reecriture.analyse = await analyserExtraction(octets);
+    const m = reecriture.analyse.nomFeuille.match(/^LAN(\d{2})(\d{2})/i);
+    if (m) {
+      reecriture.reglage.annee = m[1];
+      reecriture.reglage.semaine = m[2];
+    }
+  } catch (erreur) {
+    reecriture.erreur = erreur && erreur.message ? erreur.message : String(erreur);
+  }
+  afficherReecriture();
+}
+
+async function lancerReecriture() {
+  if (reecriture.enCours) return;
+  const r = reecriture.reglage;
+  const type = TYPES_REECRITURE.find((t) => t.id === r.type);
+  const nom = nomLancementReecrit(r);
+  if (!reecriture.analyse || !type || !nom || !reecriture.racine) return;
+  reecriture.enCours = true;
+  const etat = (lignes, erreur = false) => {
+    reecriture.etat = { lignes, erreur };
+    afficherReecriture();
+  };
+  try {
+    const racine = reecriture.racine;
+    if (racine.queryPermission && (await racine.queryPermission({ mode: "readwrite" })) !== "granted") {
+      if ((await racine.requestPermission({ mode: "readwrite" })) !== "granted") throw new Error("accès au dossier refusé");
+    }
+    const ss = String(r.semaine).padStart(2, "0");
+    const semaines = await chercherDossiersSemaine(racine, ss);
+    let dossierSemaine;
+    let cheminSemaine;
+    if (semaines.length > 1) {
+      await afficherBlocage("Plusieurs dossiers pour cette semaine", `Il y a ${semaines.length} dossiers « ${nomDossierSemaine(ss)} » dans « ${racine.name} » :\n${semaines.map((s) => s.chemin.join(" / ")).join("\n")}\n\nChoisissez un dossier des semaines plus précis (par exemple celui de l'année). Rien n'a été enregistré.`);
+      etat(["Rien n'a été enregistré."], true);
+      return;
+    }
+    if (semaines.length === 1) {
+      dossierSemaine = semaines[0].dossier;
+      cheminSemaine = [racine.name, ...semaines[0].chemin];
+    } else {
+      if (!(await demanderConfirmation(`Créer le dossier « ${nomDossierSemaine(ss)} » ?`, `Il n'existe pas encore dans « ${racine.name} ». Sentinelle va le créer pour y ranger le lancement.`, "Créer"))) {
+        etat(["Rien n'a été enregistré."], true);
+        return;
+      }
+      dossierSemaine = await racine.getDirectoryHandle(nomDossierSemaine(ss), { create: true });
+      cheminSemaine = [racine.name, nomDossierSemaine(ss)];
+    }
+    const sous = await sousDossier(dossierSemaine, type.dossier);
+    const chemin = [...cheminSemaine, sous.nom].join(" / ");
+    if (await fichierExiste(sous.dossier, nom)) {
+      await afficherBlocage("Le fichier existe déjà", `« ${nom} » existe déjà dans :\n${chemin}\n\nSentinelle ne l'écrase pas. Rien n'a été enregistré.`);
+      etat([`⚠ « ${nom} » existe déjà dans ${chemin} : rien n'a été enregistré.`], true);
+      return;
+    }
+    // Les corrections sont refaites sur une copie neuve de l'extraction (l'analyse affichée reste intacte).
+    const analyse = await analyserExtraction(reecriture.fichier.octets);
+    const plan = planifierCorrections(analyse, type);
+    const octets = await ecrireLanCorrige(analyse, plan.changements);
+    await verifierLanCorrige(reecriture.fichier.octets, octets, plan.changements);
+    const fh = await sous.dossier.getFileHandle(nom, { create: true });
+    const w = await fh.createWritable();
+    await w.write(octets);
+    await w.close();
+    etat([`✔ Enregistré : ${chemin} / ${nom}`, resumeCorrections(plan, type)]);
+  } catch (erreur) {
+    etat([`Réécriture impossible : ${erreur && erreur.message ? erreur.message : erreur}. Rien n'a été enregistré.`], true);
+  } finally {
+    reecriture.enCours = false;
+    afficherReecriture();
+  }
+}
+
+function resumeCorrections(plan, type) {
+  if (!type.feno) return "Aucune correction automatique pour ce type de lancement : le fichier est enregistré tel quel, sous son vrai nom.";
+  const morceaux = [];
+  if (plan.pieces.retours.size) morceaux.push(`${plan.pieces.retours.size} pièce(s) avec retour LG / LD`);
+  if (plan.pieces.rcb.size) morceaux.push(`RCB en sous-face sur ${plan.pieces.rcb.size} support(s) 10 brut`);
+  return morceaux.length ? `Corrections : ${morceaux.join(" ; ")}.` : "Aucune correction à faire dans ce fichier.";
+}
+
+function peutReecrire() {
+  return Boolean(reecriture.analyse && nomLancementReecrit(reecriture.reglage) && reecriture.racine && !reecriture.enCours);
+}
+
+function apercuReecriture() {
+  const r = reecriture.reglage;
+  const type = TYPES_REECRITURE.find((t) => t.id === r.type);
+  const nom = nomLancementReecrit(r);
+  const a = reecriture.analyse;
+  const plan = a && type ? planifierCorrections(a, type) : null;
+  let html = "";
+  if (nom && type) html += `<div class="ligne-bibliotheque">Nom : <strong>${echapper(nom)}</strong> — rangé dans <strong>${echapper(nomDossierSemaine(r.semaine))} / ${echapper(type.dossier)}</strong></div>`;
+  if (!plan) return html;
+  html += `<div class="compte-rendu">${echapper(resumeCorrections(plan, type))}</div>`;
+  if (plan.avertissements.length) html += `<div class="compte-rendu erreur">${plan.avertissements.map((t) => `⚠ ${echapper(t)}`).join("<br>")}</div>`;
+  if (plan.changements.length) {
+    html += `<details class="donnees"><summary>Voir les cellules corrigées (${plan.changements.length})</summary><table class="recap"><thead><tr><th>Pièce</th><th>Matière</th><th>Cellule</th><th class="droite">Avant</th><th class="droite">Après</th></tr></thead><tbody>${plan.changements
+      .map((ch, i) => `<tr class="${i % 2 ? "impaire" : ""}"><td>${echapper(ch.cle)}</td><td>${echapper(ch.agglo)}</td><td>${echapper(ch.quoi)} (${lettresColonne(ch.col)}${ch.ligne})</td><td class="droite">${ch.avant == null ? "vide" : echapper(formatNombre(ch.avant))}</td><td class="droite"><strong>${echapper(ch.nombre ? formatNombre(ch.apres) : ch.apres)}</strong></td></tr>`)
+      .join("")}</tbody></table></details>`;
+  }
+  return html;
+}
+
+function majApercuReecriture() {
+  const zone = $("reecApercu");
+  if (zone) zone.innerHTML = apercuReecriture();
+  const bouton = $("btnReecrire");
+  if (bouton) bouton.disabled = !peutReecrire();
+  const etat = $("reecEtat");
+  if (etat && !reecriture.etat) etat.remove();
+}
+
+function afficherReecriture() {
+  const page = $("pageReecriture");
+  if (!page) return;
+  if (!reecriture.chargee) {
+    chargerReecriture().then(afficherReecriture);
+    return;
+  }
+  if (typeof window.showDirectoryPicker !== "function") {
+    page.innerHTML = `<div class="carte"><div class="carte-titre">Réécriture</div><div class="note">La réécriture des fichiers de lancement se fait sur le PC : ouvrez la page dans Chrome ou Edge.</div></div>`;
+    return;
+  }
+  const r = reecriture.reglage;
+  const a = reecriture.analyse;
+  let html = `<div class="carte">
+    <div class="carte-titre">Réécriture du fichier de lancement</div>
+    <div class="note">Le fichier d'extraction du logiciel de gestion devient le LAN du lancement : vrai nom, corrections automatiques, rangé dans le dossier de la semaine. Rien n'est ajouté au fichier : seules les cellules corrigées changent.</div>
+    <div class="ligne-bibliotheque">Dossier des semaines : <strong>${reecriture.racine ? echapper(reecriture.racine.name) : "aucun dossier choisi"}</strong></div>
+    <button type="button" class="contour pleine" id="btnRacineReecriture">${reecriture.racine ? "Changer le dossier des semaines" : "Choisir le dossier des semaines"}</button>
+  </div>`;
+  html += `<div class="carte">
+    <div class="carte-titre">1. Fichier d'extraction</div>
+    <button type="button" class="contour pleine" id="btnExtraction">${reecriture.fichier ? "Changer de fichier" : "Choisir le fichier d'extraction (.xlsm, .xlsx)"}</button>
+    <input type="file" id="choixExtraction" accept=".xlsx,.xlsm" hidden>
+    ${reecriture.fichier ? `<div class="ligne-bibliotheque">Fichier : <strong>${echapper(reecriture.fichier.nom)}</strong>${a ? ` — onglet ${echapper(a.nomFeuille)}, ${a.donnees.length} ligne(s)` : ""}</div>` : ""}
+    ${reecriture.erreur ? `<div class="compte-rendu erreur">Fichier illisible : ${echapper(reecriture.erreur)}</div>` : ""}
+  </div>`;
+  html += `<div class="carte">
+    <div class="carte-titre">2. Le lancement</div>
+    <div class="formulaire-reecriture">
+      <label>Semaine<input type="number" id="reecSemaine" min="1" max="53" value="${echapper(r.semaine)}"></label>
+      <label>Année<input type="number" id="reecAnnee" min="0" max="99" value="${echapper(r.annee)}"></label>
+      <label>Type<select id="reecType"><option value="">— choisir —</option>${TYPES_REECRITURE.map((t) => `<option value="${t.id}" ${t.id === r.type ? "selected" : ""}>${t.libelle}</option>`).join("")}</select></label>
+      ${r.type === "chantier" ? `<label>Nom du chantier<input type="text" id="reecChantier" value="${echapper(r.chantier)}" placeholder="AIRDESIGN"></label>` : ""}
+    </div>
+    <div id="reecApercu">${apercuReecriture()}</div>
+    <button type="button" class="pleine" id="btnReecrire" ${peutReecrire() ? "" : "disabled"}>${reecriture.enCours ? "Enregistrement…" : "Réécrire et enregistrer"}</button>
+    ${!reecriture.racine && a ? '<div class="note">Choisissez d\'abord le dossier des semaines.</div>' : ""}
+    ${reecriture.etat ? `<div id="reecEtat" class="compte-rendu ${reecriture.etat.erreur ? "erreur" : ""}">${reecriture.etat.lignes.map(echapper).join("<br>")}</div>` : ""}
+  </div>`;
+  page.innerHTML = html;
+  $("btnRacineReecriture").addEventListener("click", choisirRacineReecriture);
+  $("btnExtraction").addEventListener("click", () => $("choixExtraction").click());
+  $("choixExtraction").addEventListener("change", (e) => fichierExtractionChoisi(e.target.files && e.target.files[0]));
+  // Semaine, année, chantier : l'aperçu suit la frappe ; le type reconstruit la carte (champ du chantier).
+  const maj = (champ, cle) => {
+    const el = $(champ);
+    if (!el) return;
+    const surSaisie = () => {
+      reecriture.reglage[cle] = el.value.trim();
+      reecriture.etat = null;
+      if (el.tagName === "SELECT") afficherReecriture();
+      else majApercuReecriture();
+    };
+    el.addEventListener(el.tagName === "SELECT" ? "change" : "input", surSaisie);
+  };
+  maj("reecSemaine", "semaine");
+  maj("reecAnnee", "annee");
+  maj("reecType", "type");
+  maj("reecChantier", "chantier");
+  $("btnReecrire").addEventListener("click", lancerReecriture);
+}
+
 
 // ============================================================
 // Écran (même organisation que l'appli Android V3.4) : deux onglets
@@ -4999,7 +5647,7 @@ let prochainId = 1;
 let prochainNumeroChantier = 1;
 const paires = [];
 let onglet = "paire";
-// Onglet d'une semaine (et non Recherche ou Bibliothèque).
+// Onglet d'une semaine (et non Recherche, Bibliothèque ou Réécriture).
 const estOngletSemaine = (o = onglet) => o === "paire" || o === "impaire";
 
 function nouvellePaire(poste, label, parite) {
@@ -5532,8 +6180,10 @@ function afficher() {
   $("pageSemaine").classList.toggle("inactif", !estOngletSemaine());
   $("pageRecherche").classList.toggle("inactif", onglet !== "recherche");
   $("pageBibliotheque").classList.toggle("inactif", onglet !== "bibliotheque");
+  $("pageReecriture").classList.toggle("inactif", onglet !== "reecriture");
   if (estOngletSemaine()) construireSemaine(onglet);
   else if (onglet === "bibliotheque") afficherBibliotheque();
+  else if (onglet === "reecriture") afficherReecriture();
 }
 
 function majOnglets() {
