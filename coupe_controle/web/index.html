@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V5.0 — Contrôle de coupe</title>
+<title>Sentinelle V5.1 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -256,7 +256,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V5.0</div>
+        <div class="sous-titre">Contrôle de coupe · V5.1</div>
       </div>
     </div>
   </header>
@@ -289,7 +289,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V5.0 · Contrôle de coupe</span>
+    <span>Sentinelle V5.1 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -1265,7 +1265,9 @@ async function extraireLignesTextePDF(documentPDF) {
 // qu'à reconnaître la ligne, pas à être stockées.
 // Le code matériau peut être vide (pièce sans panneau support, ex. « 1. TD98401 4100.0 105.0 5 ») : sans
 // lui, la ligne n'était pas reconnue et la pièce manquait au compte.
-const MOTIF_ENTETE_PIECE_PDF = /^(\d+)\.\s*(\S+)\s+(?:(\S+)\s+)?([\d.,]+)\s+([\d.,]+)\s+(\d+)\b/;
+// Longueur et largeur s'écrivent toujours avec une décimale (« 4100.0 ») : sans elle, le code matériau facultatif
+// pourrait avaler la longueur et décaler la quantité.
+const MOTIF_ENTETE_PIECE_PDF = /^(\d+)\.\s*(\S+)\s+(?:(\S+)\s+)?(\d+[.,]\d+)\s+(\d+[.,]\d+)\s+(\d+)\b/;
 // Les valeurs de détail sont séparées par des virgules ; le grain matching
 // peut contenir un espace interne (ex. "T1:1 2:1" = positions 1 et 2), donc
 // on borne par la virgule plutôt que par un espace pour ne pas le tronquer.
@@ -2600,11 +2602,13 @@ function controlerCouleurs(lignesStrat, couleursBkp) {
     resultat.sansStratifie = true;
     return resultat;
   }
-  const sansPf = (couleur) => String(couleur).replace(/-PF$/i, "").toUpperCase();
   for (const a of demandes.values()) {
     const presentes = a.face === "dessus" ? couleursBkp.dessus : couleursBkp.dessous;
     if (presentes.has(a.couleur)) continue;
-    const variante = [...presentes.keys()].find((c) => c !== a.couleur && sansPf(c) === sansPf(a.couleur));
+    // Un coloris simple (« 1136 ») remplacé par sa version PF (« 1136-PF ») : à confirmer. L'inverse (un PF demandé,
+    // seul le simple optimisé) reste une couleur absente.
+    const versionPf = /-PF$/i.test(a.couleur) ? null : `${a.couleur}-PF`.toUpperCase();
+    const variante = versionPf && [...presentes.keys()].find((c) => String(c).toUpperCase() === versionPf);
     if (variante) resultat.variantes.push({ ...a, variante });
     else resultat.absentes.push(a);
   }
@@ -3444,7 +3448,7 @@ class PdfSimple {
       ["<< /Type /Catalog /Pages 2 0 R >>", null],
       [`<< /Type /Pages /Kids [${this.pages.map((_, i) => `${premierePage + 2 * i} 0 R`).join(" ")}] /Count ${this.pages.length} >>`, null],
       // Titre en UTF-16 (les informations du PDF ne sont pas en WinAnsi).
-      [`<< /Producer (Sentinelle) /Author (LAISNE INDUSTRIE) /Title <FEFF${[...this.titre].map((c) => c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")).join("")}> >>`, null],
+      [`<< /Producer (Sentinelle) /Author (LAISNE INDUSTRIE) /Title <FEFF${this.titre.split("").map((c) => c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")).join("")}> >>`, null],
     ];
     const logo = octetsBase64(LOGO_PDF.jpeg);
     objets.push([`<< /Type /XObject /Subtype /Image /Width ${LOGO_PDF.largeur} /Height ${LOGO_PDF.hauteur} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${logo.length} >>`, logo]);
@@ -4003,12 +4007,16 @@ function ouvrirBaseDossierPartage() {
 async function sauvegarderPoigneeDossierPartage(handle, parite) {
   try {
     const db = await ouvrirBaseDossierPartage();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(MAGASIN_DOSSIER_PARTAGE, "readwrite");
-      tx.objectStore(MAGASIN_DOSSIER_PARTAGE).put(handle, `dossier-${parite}`);
-      tx.oncomplete = resolve;
-      tx.onerror = () => reject(tx.error);
-    });
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(MAGASIN_DOSSIER_PARTAGE, "readwrite");
+        tx.objectStore(MAGASIN_DOSSIER_PARTAGE).put(handle, `dossier-${parite}`);
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    } finally {
+      db.close();
+    }
   } catch (_erreur) {
     // Mémorisation optionnelle : sans elle, il suffit de rechoisir le
     // dossier à la prochaine ouverture.
@@ -4018,14 +4026,18 @@ async function sauvegarderPoigneeDossierPartage(handle, parite) {
 async function chargerPoigneeDossierPartage(parite) {
   try {
     const db = await ouvrirBaseDossierPartage();
-    return await new Promise((resolve, reject) => {
-      const requete = db
-        .transaction(MAGASIN_DOSSIER_PARTAGE, "readonly")
-        .objectStore(MAGASIN_DOSSIER_PARTAGE)
-        .get(`dossier-${parite}`);
-      requete.onsuccess = () => resolve(requete.result || null);
-      requete.onerror = () => reject(requete.error);
-    });
+    try {
+      return await new Promise((resolve, reject) => {
+        const requete = db
+          .transaction(MAGASIN_DOSSIER_PARTAGE, "readonly")
+          .objectStore(MAGASIN_DOSSIER_PARTAGE)
+          .get(`dossier-${parite}`);
+        requete.onsuccess = () => resolve(requete.result || null);
+        requete.onerror = () => reject(requete.error);
+      });
+    } finally {
+      db.close();
+    }
   } catch (_erreur) {
     return null;
   }
@@ -4470,13 +4482,28 @@ function ouvrirBaseMemoire() {
         return;
       }
       const requete = indexedDB.open(DB_MEMOIRE_NOM, 2);
+      // Une page ouverte ailleurs sur une ancienne version bloque la mise à niveau : sans réponse, la page
+      // marche sans mémoire plutôt que de rester figée au démarrage.
+      const delai = setTimeout(() => reject(new Error("mémoire bloquée par un autre onglet")), 5000);
       requete.onupgradeneeded = () => {
         const db = requete.result;
         if (!db.objectStoreNames.contains(MAGASIN_PAIRES)) db.createObjectStore(MAGASIN_PAIRES, { keyPath: "cleMemoire" });
         if (!db.objectStoreNames.contains(MAGASIN_FICHIERS)) db.createObjectStore(MAGASIN_FICHIERS);
       };
-      requete.onsuccess = () => resolve(requete.result);
-      requete.onerror = () => reject(requete.error);
+      requete.onsuccess = () => {
+        clearTimeout(delai);
+        const db = requete.result;
+        // Une version plus récente ouverte dans un autre onglet : lui laisser la place.
+        db.onversionchange = () => {
+          db.close();
+          baseMemoire = null;
+        };
+        resolve(db);
+      };
+      requete.onerror = () => {
+        clearTimeout(delai);
+        reject(requete.error);
+      };
     });
     baseMemoire.catch(() => (baseMemoire = null));
   }
@@ -4597,6 +4624,19 @@ async function memoriserFichier(p, role, fichier) {
   });
 }
 
+async function oublierFichier(p, role) {
+  p[role] = null;
+  await sauvegarderDansMemoire(p, { [CHAMP_FICHIER[role]]: null });
+  try {
+    const db = await ouvrirBaseMemoire();
+    const tx = db.transaction(MAGASIN_FICHIERS, "readwrite");
+    tx.objectStore(MAGASIN_FICHIERS).delete(`${cleMemoire(p)}||${role}`);
+    await finTransaction(tx);
+  } catch (_erreur) {
+    // sans effet
+  }
+}
+
 function resultatsAMemoriser(p) {
   return {
     semaineParite: p.parite,
@@ -4688,6 +4728,13 @@ function viderPaire(p) {
   p.diakonos = null;
   p.dossier = null;
   p.semaine = null;
+  viderResultats(p);
+  p.etat = null;
+  p.etatErreur = false;
+}
+
+// Les résultats des contrôles (ils ne valent que pour les fichiers avec lesquels ils ont été faits).
+function viderResultats(p) {
   p.rapport = null;
   p.doublons = [];
   p.semainesLivraison = [];
@@ -4698,8 +4745,27 @@ function viderPaire(p) {
   p.totalScies = null;
   p.erreurScies = null;
   p.couleurs = null;
-  p.etat = null;
-  p.etatErreur = false;
+}
+
+// Un fichier changé à la main : les résultats faits avec l'ancien ne valent plus (refaire GO / Vérifier Scies).
+function oublierResultatsDe(p, role) {
+  if (role === "strat") viderResultats(p);
+  if (role === "coupe" || (role === "bkp" && p.source === "bkp")) {
+    p.rapport = null;
+    p.nbUnitaires = null;
+    p.nbPiecesTrouvees = null;
+    p.source = null;
+  }
+  if (role === "bkp") {
+    p.ecartsScies = null;
+    p.totalScies = null;
+    p.erreurScies = null;
+    p.couleurs = null;
+  }
+  if (role === "strat" || role === "coupe" || role === "bkp") {
+    p.etat = null;
+    p.etatErreur = false;
+  }
 }
 
 async function reinitialiser(p) {
@@ -5760,7 +5826,9 @@ async function fichierChoisi() {
       return;
     }
   }
+  const ancien = p[role];
   p[role] = fichier;
+  if (!estDiakonos(p) && !memeFichier(ancien, fichier)) oublierResultatsDe(p, role);
   let deplace = false;
   if (estDiakonos(p)) {
     p.semaine = decoderNomDiakonos(fichier.name).semaine;
@@ -5844,6 +5912,9 @@ async function lancerUnePaire(p, fin) {
     return terminer(null, true);
   } catch (erreur) {
     const message = `échec à l'étape « ${etape} » : ${erreur && erreur.message ? erreur.message : erreur}`;
+    // L'ancien résultat ne doit pas rester affiché comme s'il était bon.
+    p.rapport = null;
+    enregistrer(p);
     p.enCours = false;
     p.etat = `❌ ${message}`;
     p.etatErreur = true;
@@ -5902,6 +5973,7 @@ async function lancerControleScies(p, fin) {
   } catch (erreur) {
     p.ecartsScies = null;
     p.totalScies = null;
+    p.couleurs = null;
     p.erreurScies = `échec à l'étape « ${etape} » : ${erreur && erreur.message ? erreur.message : erreur}`;
   }
   enregistrer(p);
@@ -6026,9 +6098,15 @@ async function scannerDossier(parite) {
     compteRendu(parite, [`Dossier illisible : ${erreur && erreur.message ? erreur.message : erreur}. Rechoisissez-le.`], true);
     return;
   }
-  const r = repartirFichiersDossier(fichiers, parite, handle.name);
-  r.dossiersLus = dossiersLus(fichiers);
-  await placerFichiersScannes(parite, r);
+  try {
+    const r = repartirFichiersDossier(fichiers, parite, handle.name);
+    r.dossiersLus = dossiersLus(fichiers);
+    await placerFichiersScannes(parite, r);
+  } catch (erreur) {
+    // Jamais de bouton « Scanner » bloqué : l'erreur s'affiche et on peut relancer.
+    scansEnCours.delete(parite);
+    compteRendu(parite, [`Scan interrompu : ${erreur && erreur.message ? erreur.message : erreur}`], true);
+  }
 }
 
 // « 1ER TOUR AGGLO (7 fichiers), FENO (7 fichiers)… » : ce que le scan a vu, sous-dossier par sous-dossier.
@@ -6111,7 +6189,14 @@ async function placerFichiersScannes(parite, r) {
     const p = a.paire;
     const g = a.cible;
     try {
+      const ancienLancement = p.strat;
       await prendre(p, "strat", g.strat.entree);
+      const nouveauLancement = !memeFichier(ancienLancement, p.strat);
+      if (nouveauLancement) {
+        viderResultats(p);
+        for (const role of ["coupe", "bkp", "sommaire"]) if (!g[role] && p[role]) await oublierFichier(p, role);
+        if (!g.dossier && !g.diakonos && p.diakonos) await oublierFichier(p, "diakonos");
+      }
       p.semaine = await detecterSemaine(p);
       const deplace = ranger(p);
       let suffixe = "";
@@ -6133,10 +6218,7 @@ async function placerFichiersScannes(parite, r) {
         if (g.diakonos) {
           await prendre(p, "diakonos", g.diakonos.entree);
           suffixe += " + Diakonos";
-        } else {
-          p.diakonos = null;
-          await sauvegarderDansMemoire(p, { fichierDiakonos: null });
-        }
+        } else if (p.diakonos) await oublierFichier(p, "diakonos");
       }
       enregistrer(p);
       a.copie = true;
@@ -6146,8 +6228,10 @@ async function placerFichiersScannes(parite, r) {
       lignes.push(`❌ ${a.libelle} : ${erreur && erreur.message ? erreur.message : erreur}`);
     }
   }
+  const diakonosPlaces = [];
   for (const d of r.diakonos) {
     const p = paireFixe(POSTES_DIAKONOS[d.tour === "2" ? 1 : 0], parite);
+    diakonosPlaces.push(p);
     try {
       await prendre(p, "strat", d.fichier.entree);
       p.semaine = d.semaine;
@@ -6156,6 +6240,24 @@ async function placerFichiersScannes(parite, r) {
       lignes.push(`❌ ${p.poste} : ${erreur && erreur.message ? erreur.message : erreur}`);
     }
     enregistrer(p);
+  }
+  const placees = new Set([...affectations.filter((a) => a.copie).map((a) => a.paire), ...diakonosPlaces]);
+  if (affectations.some((a) => a.copie)) {
+    const semaineScan = semaineAffichee(affectations.filter((a) => a.copie).map((a) => a.paire.semaine), parite);
+    // Une casse de la semaine N se fabrique en N+1 : elle appartient à l'onglet N+1.
+    const deLaSemaine = (p) => {
+      const n = parseInt(p.semaine, 10);
+      return Number.isNaN(n) || n === semaineScan || (p.poste === "Casse" && (n % 52) + 1 === semaineScan);
+    };
+    for (const p of [...pairesDeLaSemaine(parite), ...diakonosDeLaSemaine(parite)]) {
+      if (placees.has(p) || !p.strat || deLaSemaine(p)) continue;
+      const ancienne = `${titreCase(p)} : ${p.strat.name} (semaine ${p.semaine}) retiré, ce n'est pas la semaine ${semaineScan}`;
+      if (estChantier(p)) {
+        await effacerMemoire(p);
+        paires.splice(paires.indexOf(p), 1);
+      } else await reinitialiser(p);
+      lignes.push(`🧹 ${ancienne}`);
+    }
   }
   for (const a of affectations) {
     a.paire.etat = null;
@@ -6321,12 +6423,19 @@ async function rechercher(requete) {
   zone.innerHTML = '<div class="note">Recherche en cours…</div>';
   await tick();
   let a;
+  let echec = null;
   try {
     a = await preparerRecherche(texte, sourcesRecherche(), bases);
+  } catch (erreur) {
+    echec = erreur && erreur.message ? erreur.message : String(erreur);
   } finally {
     if (numero === generationRecherche) $("btnRechercher").disabled = false;
   }
   if (numero !== generationRecherche) return;
+  if (echec) {
+    zone.innerHTML = `<div class="message-alerte">Recherche impossible : ${echapper(echec)}</div>`;
+    return;
+  }
   afficherRecherche(a);
 }
 
@@ -6528,6 +6637,8 @@ const PROBLEMES = [
   ["Lancée deux fois", "La même pièce est aussi dans un autre lancement de la semaine : risque de la fabriquer deux fois.", "la retirer d'un des deux lancements."],
   ["Débitée, mais pas dans le lancement", "Pièce prévue à la découpe (liste de coupe, .bkp) qui n'est pas dans le fichier de lancement.",
     "l'ajouter au fichier de lancement si elle est commandée (Diakonos), sinon la retirer de l'optimisation."],
+  ["Débitée ici, lancée ailleurs", "Pièce prévue à la découpe ici (liste de coupe, .bkp) alors qu'elle est dans un autre lancement.",
+    "la retirer de cette optimisation (ou de l'autre lancement)."],
   ["Commandée, pas lancée (Diakonos)", "Pièce commandée (fichier Diakonos) qui n'est dans aucun des lancements comparés : elle ne sera pas fabriquée.",
     "l'ajouter à un lancement."],
   ["Couleur en version PF", "Le lancement demande un coloris, le .bkp utilise sa version PF (même décor) : à confirmer.", "vérifier que la version PF convient."],
@@ -6665,7 +6776,7 @@ async function problemesDuLancement(p) {
     if (o === p || !o.strat) continue;
     const cles = (await resume(o.strat, o.bkp)).cles;
     for (const cle of clesDuLancement) {
-      if (!cles.has(cle)) continue;
+      if (!cles.has(cle) || !cleValable(cle)) continue;
       ajouter(cle, GRAVITE.CORRIGER, "Lancée deux fois", `Aussi dans ${nomDe(o)}`);
       deuxFois.set(nomDe(o), (deuxFois.get(nomDe(o)) || 0) + 1);
     }
@@ -6713,7 +6824,10 @@ async function problemesDuLancement(p) {
   let rd = null;
   if (groupe) rd = await calculerDiakonosDossier(groupe, toutes);
   else if (diakonos && diakonos.strat) rd = await calculerDiakonos(diakonos, String(numeroSemaine(p.parite)).padStart(2, "0"), semaine, toutes);
-  if (!rd) bilan.push({ statut: "info", controle: "Diakonos", texte: "Pas de fichier Diakonos pour ce lancement." });
+  if (rd && groupe && groupe.porteur !== p) {
+    bilan.push({ statut: "info", controle: "Diakonos", texte: `Le Diakonos du dossier (${rd.fichier}) est contrôlé dans le rapport de ${titreCase(groupe.porteur)}.` });
+    rd = null;
+  } else if (!rd) bilan.push({ statut: "info", controle: "Diakonos", texte: "Pas de fichier Diakonos pour ce lancement." });
   else if (rd.erreur) bilan.push({ statut: "alerte", controle: "Diakonos", texte: `Diakonos illisible : ${rd.erreur}` });
   else {
     const portee = porteeDiakonos(rd);
@@ -6746,7 +6860,15 @@ async function problemesDuLancement(p) {
       });
     }
   }
-  return { parCle, hors: diagnostiquerHors(hors), bilan, diakonos: rd };
+  for (const h of hors) {
+    if (!h.type.startsWith("En trop")) continue;
+    for (const o of toutes) {
+      if (o === p || !o.strat || !(await resume(o.strat, o.bkp)).cles.has(h.cle)) continue;
+      h.ailleurs = o.strat.name;
+      break;
+    }
+  }
+  return { parCle, hors: diagnostiquerHors(hors), bilan, diakonos: groupe && groupe.porteur !== p ? null : rd };
 }
 
 // Une pièce hors du lancement peut être signalée par plusieurs contrôles (en trop dans la liste de coupe, en trop
@@ -6760,7 +6882,12 @@ function diagnostiquerHors(hors) {
     const piece = { cle, article: decrite.article || "", dimensions: decrite.dimensions || "", coloris: decrite.coloris || "" };
     const enTrop = liste.filter((h) => h.type.startsWith("En trop"));
     const diakonos = liste.find((h) => h.diakonos);
-    if (enTrop.length) {
+    const ailleurs = (enTrop.find((h) => h.ailleurs) || {}).ailleurs || (diakonos && diakonos.ailleurs);
+    if (enTrop.length && ailleurs) {
+      // Débitée ici alors qu'elle est lancée ailleurs : elle serait débitée deux fois.
+      const ou = enTrop.map((h) => h.type.replace("En trop dans ", "")).join(" et ");
+      resultat.push({ ...piece, gravite: GRAVITE.CORRIGER, type: "Débitée ici, lancée ailleurs", detail: `Dans ${ou} de ce lancement, mais lancée dans ${ailleurs} : risque de la débiter deux fois` });
+    } else if (enTrop.length) {
       const ou = enTrop.map((h) => h.type.replace("En trop dans ", "") + (h.quantite ? ` (${h.quantite})` : "")).join(" et ");
       resultat.push({
         ...piece,
@@ -6902,8 +7029,8 @@ async function feuilleRapportLancement(wb, p, nomFeuille) {
   const resumeTexte = !aTraiter.length
     ? "Aucun problème trouvé."
     : `${nbCorriger ? `${nbCorriger} problème(s) à corriger${nbVerifier ? `, ${nbVerifier} à vérifier` : ""}` : `${nbVerifier} problème(s) à vérifier`}. Le détail des pièces est plus bas.`;
-  bandeau(resumeTexte, { bold: true, size: 13, color: { argb: aTraiter.length ? COULEURS.alerte.texte : COULEURS.ok.texte } },
-    { fond: aTraiter.length ? COULEURS.alerte.fond : COULEURS.ok.fond, hauteur: 26, indent: 1 });
+  const tete = !aTraiter.length ? COULEURS.ok : nbCorriger ? COULEURS.alerte : COULEURS.attention;
+  bandeau(resumeTexte, { bold: true, size: 13, color: { argb: tete.texte } }, { fond: tete.fond, hauteur: 26, indent: 1 });
 
   // 1. Bilan des contrôles.
   titreSection("1. Bilan des contrôles");
@@ -6976,7 +7103,7 @@ async function feuilleRapportLancement(wb, p, nomFeuille) {
     ligne.height = hauteur(valeur, largeurDe(4, NB));
   }
 
-  return { base, bilan, nbCorriger, nbVerifier };
+  return { base, bilan, nbCorriger, nbVerifier, problemes: aTraiter.map((e) => ({ id: `${e.cle}|${e.type}`, gravite: e.gravite })) };
 }
 
 async function problemesLancementXlsx(p) {
@@ -6996,7 +7123,7 @@ function nomFeuilleExcel(texte, pris) {
 
 // Rapport de la semaine : une synthèse (un lancement par ligne, un contrôle par colonne, lien vers son onglet),
 // puis le rapport de chaque lancement dans son onglet.
-async function rapportSemaineXlsx(parite) {
+async function rapportSemaineXlsx(parite, options = {}) {
   const { BORDEAUX, NOIR, GRIS, COULEURS } = CHARTE_RAPPORT;
   const titre = libelleOnglet(parite);
   const wb = new ExcelJS.Workbook();
@@ -7006,8 +7133,15 @@ async function rapportSemaineXlsx(parite) {
   for (const p of pairesDeLaSemaine(parite)) {
     if (!p.strat) continue;
     const nom = nomFeuilleExcel(titreCase(p), pris);
-    lancements.push({ p, nom, ...(await feuilleRapportLancement(wb, p, nom)) });
+    try {
+      lancements.push({ p, nom, ...(await feuilleRapportLancement(wb, p, nom)) });
+    } catch (erreur) {
+      // Lancement illisible : une ligne dans la synthèse, les autres lancements ont leur rapport.
+      const message = erreur && erreur.message ? erreur.message : String(erreur);
+      lancements.push({ p, nom: null, base: p.strat.name.replace(/\.[^.]*$/, ""), erreur: message, bilan: [], nbCorriger: 0, nbVerifier: 0, problemes: [] });
+    }
   }
+  if (options.seulementSiProbleme && !lancements.some((l) => l.nbCorriger + l.nbVerifier)) return { nbProblemes: 0, lancements };
 
   const COLONNES = [
     ["Poste", 22, null],
@@ -7035,18 +7169,28 @@ async function rapportSemaineXlsx(parite) {
     ligne.height = options.hauteur || 18;
     return ligne;
   };
-  const nbCorriger = lancements.reduce((t, l) => t + l.nbCorriger, 0);
-  const nbVerifier = lancements.reduce((t, l) => t + l.nbVerifier, 0);
+  // Une même pièce avec le même problème dans deux lancements (lancée deux fois) compte une fois pour la semaine.
+  const parProbleme = new Map();
+  for (const l of lancements) for (const x of l.problemes) parProbleme.set(x.id, Math.max(parProbleme.get(x.id) || 0, x.gravite));
+  const nbCorriger = [...parProbleme.values()].filter((g) => g === GRAVITE.CORRIGER).length;
+  const nbVerifier = parProbleme.size - nbCorriger;
   const avecProblemes = lancements.filter((l) => l.nbCorriger + l.nbVerifier).length;
+  const illisibles = lancements.filter((l) => l.erreur).length;
+  // Aucun contrôle fait (ni liste de coupe ni .bkp nulle part) : ne pas annoncer « aucun problème ».
+  const controlesFaits = lancements.some((l) => l.bilan.some((b) => (b.controle.startsWith("Lancement /") || b.controle === "Scies (.bkp)") && b.statut !== "info"));
   bandeau(`${titre} — rapport de contrôle des lancements`, { name: "Raleway", bold: true, size: 18, color: { argb: BORDEAUX } }, { hauteur: 30 });
   bandeau(`${new Date().toLocaleDateString("fr-FR")} · LAISNÉ INDUSTRIE — document interne`, { italic: true, color: { argb: GRIS } });
   const probleme = nbCorriger + nbVerifier > 0;
+  const tete = illisibles || nbCorriger ? COULEURS.alerte : nbVerifier ? COULEURS.attention : controlesFaits ? COULEURS.ok : COULEURS.info;
   bandeau(
-    probleme
+    (probleme
       ? `${nbCorriger + nbVerifier} problème(s) dans ${avecProblemes} lancement(s) sur ${lancements.length} : ${nbCorriger} à corriger, ${nbVerifier} à vérifier.`
-      : `Aucun problème dans les ${lancements.length} lancement(s).`,
-    { bold: true, size: 13, color: { argb: probleme ? COULEURS.alerte.texte : COULEURS.ok.texte } },
-    { fond: probleme ? COULEURS.alerte.fond : COULEURS.ok.fond, hauteur: 26, indent: 1 }
+      : controlesFaits
+        ? `Aucun problème dans les ${lancements.length} lancement(s).`
+        : `Aucun contrôle fait : il manque les listes de coupe et les .bkp des ${lancements.length} lancement(s).`) +
+      (illisibles ? ` ${illisibles} lancement(s) illisible(s).` : ""),
+    { bold: true, size: 13, color: { argb: tete.texte } },
+    { fond: tete.fond, hauteur: 26, indent: 1 }
   );
   bandeau("Cliquez sur un poste pour ouvrir son rapport (un onglet par lancement, en bas).", { italic: true, size: 9, color: { argb: GRIS } });
   f.addRow([]);
@@ -7060,8 +7204,9 @@ async function rapportSemaineXlsx(parite) {
   const filet = { style: "thin", color: { argb: "FFE9E7E3" } };
   for (const l of lancements) {
     const valeurs = COLONNES.map(([nom, , controle]) => {
-      if (nom === "Poste") return { text: titreCase(l.p), hyperlink: `#'${l.nom}'!A1` };
+      if (nom === "Poste") return l.nom ? { text: titreCase(l.p), hyperlink: `#'${l.nom}'!A1` } : titreCase(l.p);
       if (nom === "Lancement") return l.base;
+      if (l.erreur) return nom === "Liste de coupe" ? "❌ illisible" : "";
       if (nom === "À corriger") return l.nbCorriger || "";
       if (nom === "À vérifier") return l.nbVerifier || "";
       const b = l.bilan.find((x) => controle(x.controle));
@@ -7074,10 +7219,14 @@ async function rapportSemaineXlsx(parite) {
       c.border = { top: filet, bottom: filet, left: filet, right: filet };
       c.alignment = { vertical: "middle", horizontal: n <= 2 ? "left" : "center" };
       c.font = { name: "Lato", color: { argb: NOIR } };
-      if (nom === "Poste") c.font = { name: "Lato", bold: true, underline: true, color: { argb: BORDEAUX } };
+      if (nom === "Poste") c.font = { name: "Lato", bold: true, underline: Boolean(l.nom), color: { argb: BORDEAUX } };
       if (nom === "À corriger" && l.nbCorriger) c.font = { name: "Lato", bold: true, color: { argb: COULEURS.alerte.texte } };
       if (nom === "À vérifier" && l.nbVerifier) c.font = { name: "Lato", bold: true, color: { argb: COULEURS.attention.texte } };
-      if (controle) {
+      if (l.erreur && nom === "Liste de coupe") {
+        c.fill = fondRapport(COULEURS.alerte.fond);
+        c.font = { name: "Lato", bold: true, color: { argb: COULEURS.alerte.texte } };
+        c.note = `Lancement illisible : ${l.erreur}`;
+      } else if (controle && !l.erreur) {
         const b = l.bilan.find((x) => controle(x.controle));
         const statut = b ? b.statut : "info";
         c.fill = fondRapport(COULEURS[statut].fond);
@@ -7093,7 +7242,9 @@ async function rapportSemaineXlsx(parite) {
     c.alignment = { horizontal: n <= 2 ? "left" : "center" };
   });
   f.addRow([]);
-  bandeau("✔ OK · ⚠ rouge : à corriger · ⚠ jaune : à vérifier · — : pas de contrôle (fichier manquant). Survolez une case pour lire le bilan.",
+  const sommeLancements = lancements.reduce((t, l) => t + l.nbCorriger + l.nbVerifier, 0);
+  bandeau("✔ OK · ⚠ rouge : à corriger · ⚠ jaune : à vérifier · — : pas de contrôle (fichier manquant). Survolez une case pour lire le bilan." +
+    (sommeLancements !== nbCorriger + nbVerifier ? " Total : une pièce lancée dans deux lancements compte une seule fois." : ""),
     { size: 9, color: { argb: GRIS } });
   return {
     nom: `rapport_sentinelle_${slug(titre)}.xlsx`,
@@ -7121,11 +7272,15 @@ async function problemesAutomatiques(p) {
 // Après le scan d'une semaine : un seul fichier, le rapport de la semaine, s'il y a un problème.
 async function rapportSemaineAutomatique(parite) {
   try {
-    const { nom, octets, nbProblemes, lancements } = await rapportSemaineXlsx(parite);
+    const { nom, octets, nbProblemes, lancements } = await rapportSemaineXlsx(parite, { seulementSiProbleme: true });
     for (const l of lancements) {
+      if (l.p.etatErreur) continue; // l'erreur du contrôle reste affichée
       const n = l.nbCorriger + l.nbVerifier;
-      l.p.etat = n ? `📊 ${n} problème(s) : voir l'onglet « ${l.nom} » du rapport ${nom}` : null;
-      l.p.etatErreur = false;
+      if (n) l.p.etat = `📊 ${n} problème(s) : voir l'onglet « ${l.nom} » du rapport ${nom}`;
+      else if (l.erreur) {
+        l.p.etat = `❌ lancement illisible : ${l.erreur}`;
+        l.p.etatErreur = true;
+      }
     }
     if (nbProblemes) telecharger(nom, octets, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     return nbProblemes ? { nom, nbProblemes } : null;
