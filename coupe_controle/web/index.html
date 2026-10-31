@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V5.6.1 — Contrôle de coupe</title>
+<title>Sentinelle V5.7 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -269,7 +269,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V5.6.1</div>
+        <div class="sous-titre">Contrôle de coupe · V5.7</div>
       </div>
     </div>
   </header>
@@ -306,7 +306,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V5.6.1 · Contrôle de coupe</span>
+    <span>Sentinelle V5.7 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -4954,7 +4954,8 @@ function afficherBibliotheque() {
 
 // ---- Réécriture : l'extraction du logiciel de gestion devient le LAN du lancement ----
 // RÈGLE ABSOLUE : rien n'est ajouté au fichier. Même onglet, mêmes lignes, même ordre, mêmes colonnes,
-// même mise en forme. Seules les cellules à corriger changent de valeur. Le fichier est modifié
+// même mise en forme. Seules les cellules à corriger changent de valeur ; les lignes dont les dimensions
+// sont corrigées sont surlignées (jaune : +10, orange : +20), comme à la main. Le fichier est modifié
 // directement dans son XML (pas de réécriture par une bibliothèque Excel), puis relu et comparé
 // cellule par cellule à l'original avant d'être enregistré.
 //
@@ -4982,6 +4983,11 @@ const COLONNES_REECRITURE = {
   commentaire: "commentaire",
   finiTexte: "LongueurxLargeurxEpaisseur fini",
 };
+
+// Surlignage des lignes dont les dimensions sont corrigées (mêmes couleurs que les LAN faits à la main).
+const COULEUR_PLUS_10 = "FFFFFF00"; // jaune
+const COULEUR_PLUS_20 = "FFFFC000"; // orange
+const couleurMarque = (retours) => (retours >= 2 ? COULEUR_PLUS_20 : COULEUR_PLUS_10);
 
 const TYPE_CLASSEUR = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
 const TYPE_CLASSEUR_MACROS = "application/vnd.ms-excel.sheet.macroEnabled.main+xml";
@@ -5115,6 +5121,9 @@ async function analyserExtraction(octets) {
   const cheminFeuille = cheminCible("xl/workbook.xml", relFeuille.cible);
   const relChaines = relations.find((r) => /\/sharedStrings$/.test(r.type));
   const cheminChaines = relChaines ? cheminCible("xl/workbook.xml", relChaines.cible) : null;
+  const relStyles = relations.find((r) => /\/styles$/.test(r.type));
+  const cheminStyles = relStyles ? cheminCible("xl/workbook.xml", relStyles.cible) : null;
+  const xmlStyles = cheminStyles ? lire(cheminStyles) : null;
   const xmlFeuille = lire(cheminFeuille);
   if (!xmlFeuille) throw new Error("feuille illisible");
   const xmlChaines = cheminChaines ? lire(cheminChaines) : null;
@@ -5127,7 +5136,8 @@ async function analyserExtraction(octets) {
   const manquantes = Object.values(COLONNES_REECRITURE).filter((n) => !colonnes[n]);
   if (manquantes.length) throw new Error(`colonnes introuvables : ${manquantes.join(", ")}`);
   const donnees = lignes.filter((l) => l.numero > 1 && l.cellules.some((c) => c.valeur != null && String(c.valeur).trim() !== ""));
-  return { parties, nomFeuille, cheminFeuille, cheminChaines, xmlFeuille, xmlChaines, sst, lignes, colonnes, donnees };
+  const nbColonnes = Math.max(...entete.cellules.map((c) => c.col));
+  return { parties, nomFeuille, cheminFeuille, cheminChaines, cheminStyles, xmlFeuille, xmlChaines, xmlStyles, sst, lignes, colonnes, nbColonnes, donnees };
 }
 
 // ---- Corrections ----
@@ -5153,7 +5163,8 @@ function planifierCorrections(analyse, type) {
   const changements = [];
   const pieces = { retours: new Set(), rcb: new Set() };
   const avertissements = [];
-  if (!type || !type.feno) return { changements, pieces, avertissements };
+  const marques = new Map(); // ligne -> couleur (dimensions corrigées)
+  if (!type || !type.feno) return { changements, pieces, avertissements, marques };
   const val = (l, nom) => {
     const c = l.cellules.find((x) => x.col === colonnes[COLONNES_REECRITURE[nom]]);
     return c ? c.valeur : null;
@@ -5181,6 +5192,7 @@ function planifierCorrections(analyse, type) {
         changements.push({ ligne: l.numero, col: colonnes[COLONNES_REECRITURE.fini], avant: fini, apres: nouveauFini, nombre: true, cle, agglo, quoi: "cote finie" });
         changements.push({ ligne: l.numero, col: colonnes[COLONNES_REECRITURE.debit], avant: debit, apres: nouveauDebit, nombre: true, cle, agglo, quoi: "débit" });
         pieces.retours.add(cle);
+        marques.set(l.numero, couleurMarque(n));
       }
     }
     if (agglo === "SAG10HYBR" && String(val(l, "sousFace") ?? "").trim() === "") {
@@ -5192,7 +5204,7 @@ function planifierCorrections(analyse, type) {
   for (const [cle, couches] of couchesParCle) {
     if (couches.every((a) => a.startsWith("PROTECTION"))) avertissements.push(`${cle} : seulement la protection dans le fichier (pas de décor ni de support).`);
   }
-  return { changements, pieces, avertissements };
+  return { changements, pieces, avertissements, marques };
 }
 
 // ---- Écriture : seules les cellules prévues changent ----
@@ -5206,7 +5218,55 @@ function celluleXml(ref, style, ch, indexChaine) {
   return `<c r="${ref}"${s} t="inlineStr"><is><t>${xmlEchapper(ch.apres)}</t></is></c>`;
 }
 
-async function ecrireLanCorrige(analyse, changements) {
+// Les styles du classeur : remplissages et styles de cellule, et le reste du fichier de styles.
+function lireStyles(xml) {
+  const fills = xml && xml.match(/<fills\b([^>]*)>([\s\S]*?)<\/fills>/);
+  const xfs = xml && xml.match(/<cellXfs\b([^>]*)>([\s\S]*?)<\/cellXfs>/);
+  if (!fills || !xfs) throw new Error("styles du classeur illisibles");
+  return {
+    fills: [...fills[2].matchAll(/<fill\b[^>]*?(?:\/>|>[\s\S]*?<\/fill>)/g)].map((m) => m[0]),
+    xfs: [...xfs[2].matchAll(/<xf\b[^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g)].map((m) => m[0]),
+    reste: xml.replace(fills[0], "<fills/>").replace(xfs[0], "<cellXfs/>"),
+  };
+}
+
+const avecAttribut = (balise, nom, valeur) => {
+  const re = new RegExp(`\\s${nom}="[^"]*"`);
+  return re.test(balise) ? balise.replace(re, ` ${nom}="${valeur}"`) : balise.replace(/^<(\w+)/, `<$1 ${nom}="${valeur}"`);
+};
+const sansRemplissage = (xf) => xf.replace(/\sfillId="[^"]*"/, "").replace(/\sapplyFill="[^"]*"/, "");
+const couleurRemplissage = (fill) => ((fill || "").match(/<fgColor\b[^>]*\brgb="([0-9A-Fa-f]{8})"/) || [])[1] || null;
+
+// Ajoute les remplissages jaune / orange et, pour chaque style de cellule des lignes marquées, sa copie
+// avec ce remplissage. Renvoie le nouveau XML et la table « style|couleur » -> numéro du nouveau style.
+function stylesAvecMarques(xml, besoins) {
+  const st = lireStyles(xml);
+  const nouveauxFills = [];
+  const idFill = new Map();
+  for (const couleur of new Set([...besoins].map((b) => b.split("|")[1]))) {
+    idFill.set(couleur, st.fills.length + nouveauxFills.length);
+    nouveauxFills.push(`<fill><patternFill patternType="solid"><fgColor rgb="${couleur}"/><bgColor indexed="64"/></patternFill></fill>`);
+  }
+  const nouveauxXfs = [];
+  const table = new Map();
+  for (const b of besoins) {
+    const [s, couleur] = b.split("|");
+    const base = st.xfs[Number(s)] || st.xfs[0];
+    if (!base) throw new Error("style de cellule introuvable");
+    let xf = avecAttribut(base, "fillId", idFill.get(couleur));
+    xf = avecAttribut(xf, "applyFill", "1");
+    table.set(b, st.xfs.length + nouveauxXfs.length);
+    nouveauxXfs.push(xf);
+  }
+  const compter = (ouverture, ajout) => ouverture.replace(/\bcount="(\d+)"/, (_m, n) => `count="${Number(n) + ajout}"`);
+  let x = xml.replace(/(<fills\b[^>]*>)([\s\S]*?)(<\/fills>)/, (_m, o, c, f) => `${compter(o, nouveauxFills.length)}${c}${nouveauxFills.join("")}${f}`);
+  x = x.replace(/(<cellXfs\b[^>]*>)([\s\S]*?)(<\/cellXfs>)/, (_m, o, c, f) => `${compter(o, nouveauxXfs.length)}${c}${nouveauxXfs.join("")}${f}`);
+  return { xml: x, table };
+}
+
+async function ecrireLanCorrige(analyse, plan) {
+  const changements = plan.changements;
+  const marques = plan.marques || new Map();
   const { lignes, cheminFeuille, cheminChaines } = analyse;
   const encodeur = new TextEncoder();
   const parties = analyse.parties.map(([n, o]) => [n, o]);
@@ -5236,27 +5296,65 @@ async function ecrireLanCorrige(analyse, changements) {
     if (!parLigne.has(ch.ligne)) parLigne.set(ch.ligne, []);
     parLigne.get(ch.ligne).push(ch);
   }
+  const styleDeLigne = (l) => {
+    const c = l.cellules.find((x) => x.col === analyse.colonnes[COLONNES_REECRITURE.agglo]) || l.cellules[0];
+    return (c && attribut(c.attrs, "s")) || "0";
+  };
+  // Styles des lignes marquées : chaque style de cellule utilisé, avec la couleur de la ligne.
+  let tableStyles = new Map();
+  if (marques.size) {
+    const besoins = new Set();
+    for (const l of lignes) {
+      const couleur = marques.get(l.numero);
+      if (!couleur) continue;
+      for (let col = 1; col <= analyse.nbColonnes; col++) {
+        const c = l.cellules.find((x) => x.col === col);
+        besoins.add(`${(c && attribut(c.attrs, "s")) || (c ? "0" : styleDeLigne(l))}|${couleur}`);
+      }
+    }
+    if (!analyse.cheminStyles || !analyse.xmlStyles) throw new Error("classeur sans styles : surlignage impossible");
+    const r = stylesAvecMarques(analyse.xmlStyles, besoins);
+    tableStyles = r.table;
+    remplacer(analyse.cheminStyles, r.xml);
+  }
   // Des dernières lignes vers les premières : les positions du XML restent justes.
-  for (const l of [...lignes].filter((x) => parLigne.has(x.numero)).sort((a, b) => b.debut - a.debut)) {
+  for (const l of [...lignes].filter((x) => parLigne.has(x.numero) || marques.has(x.numero)).sort((a, b) => b.debut - a.debut)) {
     let contenu = l.contenu;
-    const style = (l.cellules.find((c) => c.col === analyse.colonnes[COLONNES_REECRITURE.agglo]) || l.cellules[0] || {}).attrs;
-    const styleLigne = style ? attribut(style, "s") : null;
+    const styleLigne = styleDeLigne(l);
+    const couleur = marques.get(l.numero);
+    const styleFinal = (s) => (couleur ? String(tableStyles.get(`${s}|${couleur}`)) : s);
     const operations = [];
-    for (const ch of parLigne.get(l.numero)) {
+    const changees = new Set();
+    for (const ch of parLigne.get(l.numero) || []) {
       const ref = `${lettresColonne(ch.col)}${l.numero}`;
       const existante = l.cellules.find((c) => c.col === ch.col);
       const idx = ch.nombre ? null : indexDe(ch.apres);
+      changees.add(ch.col);
       if (existante) {
         const s = attribut(existante.attrs, "s");
         if (!ch.nombre && existante.valeur != null && String(existante.valeur).trim() !== "") throw new Error(`cellule ${ref} déjà remplie`);
-        operations.push({ debut: existante.debut, fin: existante.fin, xml: celluleXml(ref, s, ch, idx) });
+        operations.push({ debut: existante.debut, fin: existante.fin, col: ch.col, xml: celluleXml(ref, couleur ? styleFinal(s || "0") : s, ch, idx) });
       } else {
         const suivante = l.cellules.find((c) => c.col > ch.col);
         const pos = suivante ? suivante.debut : contenu.length;
-        operations.push({ debut: pos, fin: pos, xml: celluleXml(ref, styleLigne, ch, idx) });
+        operations.push({ debut: pos, fin: pos, col: ch.col, xml: celluleXml(ref, styleFinal(styleLigne), ch, idx) });
       }
     }
-    operations.sort((a, b) => b.debut - a.debut || b.fin - a.fin);
+    if (couleur) {
+      for (let col = 1; col <= analyse.nbColonnes; col++) {
+        if (changees.has(col)) continue;
+        const existante = l.cellules.find((c) => c.col === col);
+        if (existante) {
+          const xml = existante.xml.replace(/^<c\b[^>]*?(?=\/?>)/, (ouverture) => avecAttribut(ouverture, "s", styleFinal(attribut(existante.attrs, "s") || "0")));
+          operations.push({ debut: existante.debut, fin: existante.fin, col, xml });
+        } else {
+          const suivante = l.cellules.find((c) => c.col > col);
+          const pos = suivante ? suivante.debut : contenu.length;
+          operations.push({ debut: pos, fin: pos, col, xml: `<c r="${lettresColonne(col)}${l.numero}" s="${styleFinal(styleLigne)}"/>` });
+        }
+      }
+    }
+    operations.sort((a, b) => b.debut - a.debut || b.fin - a.fin || b.col - a.col);
     for (const o of operations) contenu = contenu.slice(0, o.debut) + o.xml + contenu.slice(o.fin);
     const ouverture = l.xml.endsWith("/>") ? `${l.xml.slice(0, -2)}>` : l.ouverture;
     xmlFeuille = xmlFeuille.slice(0, l.debut) + ouverture + contenu + "</row>" + xmlFeuille.slice(l.fin);
@@ -5286,10 +5384,25 @@ async function ecrireLanCorrige(analyse, changements) {
 // Relit le fichier écrit et le compare à l'original : toutes les cellules identiques sauf les cellules prévues,
 // mêmes lignes, même onglet, le reste de la feuille et toutes les autres parties du classeur identiques.
 // Sinon : rien n'est enregistré.
-async function verifierLanCorrige(octetsOrigine, octetsCorriges, changements) {
+async function verifierLanCorrige(octetsOrigine, octetsCorriges, plan) {
+  const changements = plan.changements;
+  const marques = plan.marques || new Map();
   const a = await analyserExtraction(octetsOrigine);
   const b = await analyserExtraction(octetsCorriges);
   const erreurs = [];
+  // Styles : ceux d'origine gardés à la même place ; seuls des remplissages et des styles s'ajoutent à la fin.
+  const sa = a.xmlStyles ? lireStyles(a.xmlStyles) : null;
+  const sb = b.xmlStyles ? lireStyles(b.xmlStyles) : null;
+  if (sa && sb) {
+    if (sa.reste !== sb.reste || sa.fills.some((x, i) => sb.fills[i] !== x) || sa.xfs.some((x, i) => sb.xfs[i] !== x)) erreurs.push("styles du classeur");
+  } else if (marques.size) erreurs.push("styles du classeur");
+  // Une cellule d'une ligne marquée : même style qu'avant, avec la couleur de la ligne en plus.
+  const styleMarqueJuste = (sOrigine, sNouveau, couleur) => {
+    const xa = sa && (sa.xfs[Number(sOrigine || 0)] || null);
+    const xb = sb && (sb.xfs[Number(sNouveau || 0)] || null);
+    if (!xa || !xb || sansRemplissage(xa) !== sansRemplissage(xb)) return false;
+    return couleurRemplissage(sb.fills[Number((xb.match(/\bfillId="(\d+)"/) || [])[1])]) === couleur;
+  };
   const valeurs = (an) => {
     const m = new Map();
     for (const l of an.lignes) for (const c of l.cellules) m.set(`${l.numero}:${c.col}`, { v: c.valeur == null ? "" : String(c.valeur), s: attribut(c.attrs, "s"), f: c.formule });
@@ -5305,17 +5418,36 @@ async function verifierLanCorrige(octetsOrigine, octetsCorriges, changements) {
   // Le reste de la feuille (colonnes, mise en page…) identique.
   const horsDonnees = (x) => x.slice(0, x.indexOf("<sheetData")) + x.slice(x.indexOf("</sheetData>"));
   if (horsDonnees(a.xmlFeuille) !== horsDonnees(b.xmlFeuille)) erreurs.push("mise en forme de la feuille");
+  const couleurDe = (k) => marques.get(Number(k.split(":")[0]));
   for (const [k, ch] of prevus) {
     const y = vb.get(k);
     const ok = y && !y.f && (ch.nombre ? Number(y.v) === Number(formatNombre(ch.apres)) : y.v === ch.apres);
     if (!ok) erreurs.push(`cellule ${k} mal écrite`);
+    else if (couleurDe(k) && va.has(k) && !styleMarqueJuste(va.get(k).s, y.s, couleurDe(k))) erreurs.push(`couleur de la cellule ${k}`);
   }
   for (const [k, x] of va) {
     if (prevus.has(k)) continue;
     const y = vb.get(k);
-    if (!y || y.v !== x.v || y.s !== x.s || y.f !== x.f) erreurs.push(`cellule ${k} changée`);
+    const couleur = couleurDe(k) && Number(k.split(":")[1]) <= a.nbColonnes ? couleurDe(k) : null;
+    if (!y || y.v !== x.v || y.f !== x.f) erreurs.push(`cellule ${k} changée`);
+    else if (couleur ? !styleMarqueJuste(x.s, y.s, couleur) : y.s !== x.s) erreurs.push(`style de la cellule ${k} changé`);
   }
-  for (const k of vb.keys()) if (!va.has(k) && !prevus.has(k)) erreurs.push(`cellule ${k} ajoutée`);
+  for (const [k, y] of vb) {
+    if (va.has(k) || prevus.has(k)) continue;
+    // Seules des cellules vides colorées peuvent apparaître, dans les lignes marquées.
+    const couleur = couleurDe(k) && Number(k.split(":")[1]) <= a.nbColonnes ? couleurDe(k) : null;
+    const sb2 = sb && sb.xfs[Number(y.s || 0)];
+    const ok = couleur && y.v === "" && !y.f && sb2 && couleurRemplissage(sb.fills[Number((sb2.match(/\bfillId="(\d+)"/) || [])[1])]) === couleur;
+    if (!ok) erreurs.push(`cellule ${k} ajoutée`);
+  }
+  // Toutes les cellules (1 à la dernière colonne) des lignes marquées sont bien colorées.
+  for (const [numero, couleur] of marques) {
+    for (let col = 1; col <= a.nbColonnes; col++) {
+      const y = vb.get(`${numero}:${col}`);
+      const sb2 = y && sb && sb.xfs[Number(y.s || 0)];
+      if (!sb2 || couleurRemplissage(sb.fills[Number((sb2.match(/\bfillId="(\d+)"/) || [])[1])]) !== couleur) erreurs.push(`ligne ${numero} pas entièrement colorée`);
+    }
+  }
   // Chaînes partagées : celles d'origine à la même place (une chaîne peut seulement s'ajouter à la fin).
   if (a.sst.some((x, i) => b.sst[i] !== x)) erreurs.push("chaînes du classeur");
   // Toutes les autres parties du classeur : identiques octet par octet.
@@ -5323,7 +5455,7 @@ async function verifierLanCorrige(octetsOrigine, octetsCorriges, changements) {
   if (noms(a) !== noms(b)) erreurs.push("parties du classeur");
   for (const [n, octetsA] of a.parties) {
     const pb = b.parties.find(([x]) => x === n);
-    if (n === a.cheminFeuille || n === a.cheminChaines || !pb) continue;
+    if (n === a.cheminFeuille || n === a.cheminChaines || (n === a.cheminStyles && sa) || !pb) continue;
     let xa = octetsA;
     const xb = pb[1];
     if (n === "[Content_Types].xml") {
@@ -5474,8 +5606,8 @@ async function lancerReecriture() {
     // Les corrections sont refaites sur une copie neuve de l'extraction (l'analyse affichée reste intacte).
     const analyse = await analyserExtraction(reecriture.fichier.octets);
     const plan = planifierCorrections(analyse, type);
-    const octets = await ecrireLanCorrige(analyse, plan.changements);
-    await verifierLanCorrige(reecriture.fichier.octets, octets, plan.changements);
+    const octets = await ecrireLanCorrige(analyse, plan);
+    await verifierLanCorrige(reecriture.fichier.octets, octets, plan);
     const fh = await sous.dossier.getFileHandle(nom, { create: true });
     const w = await fh.createWritable();
     await w.write(octets);
@@ -5494,7 +5626,11 @@ function resumeCorrections(plan, type) {
   const morceaux = [];
   if (plan.pieces.retours.size) morceaux.push(`${plan.pieces.retours.size} pièce(s) avec retour LG / LD`);
   if (plan.pieces.rcb.size) morceaux.push(`RCB en sous-face sur ${plan.pieces.rcb.size} support(s) 10 brut`);
-  return morceaux.length ? `Corrections : ${morceaux.join(" ; ")}.` : "Aucune correction à faire dans ce fichier.";
+  const jaunes = [...plan.marques.values()].filter((c) => c === COULEUR_PLUS_10).length;
+  const oranges = plan.marques.size - jaunes;
+  const couleurs = [jaunes ? `${jaunes} en jaune (+10)` : "", oranges ? `${oranges} en orange (+20)` : ""].filter(Boolean).join(", ");
+  if (!morceaux.length) return "Aucune correction à faire dans ce fichier.";
+  return `Corrections : ${morceaux.join(" ; ")}.${couleurs ? ` Lignes surlignées : ${couleurs}.` : ""}`;
 }
 
 function peutReecrire() {
@@ -5544,7 +5680,7 @@ function afficherReecriture() {
   const a = reecriture.analyse;
   let html = `<div class="carte">
     <div class="carte-titre">Réécriture du fichier de lancement</div>
-    <div class="note">Le fichier d'extraction du logiciel de gestion devient le LAN du lancement : vrai nom, corrections automatiques, rangé dans le dossier de la semaine. Rien n'est ajouté au fichier : seules les cellules corrigées changent.</div>
+    <div class="note">Le fichier d'extraction du logiciel de gestion devient le LAN du lancement : vrai nom, corrections automatiques, rangé dans le dossier de la semaine. Rien n'est ajouté au fichier : seules les cellules corrigées changent, et les lignes dont les dimensions sont corrigées sont surlignées (jaune : +10, orange : +20).</div>
     <div class="ligne-bibliotheque">Dossier des semaines : <strong>${reecriture.racine ? echapper(reecriture.racine.name) : "aucun dossier choisi"}</strong></div>
     <button type="button" class="contour pleine" id="btnRacineReecriture">${reecriture.racine ? "Changer le dossier des semaines" : "Choisir le dossier des semaines"}</button>
   </div>`;
