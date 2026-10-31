@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V5.3 — Contrôle de coupe</title>
+<title>Sentinelle V5.4 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -262,7 +262,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V5.3</div>
+        <div class="sous-titre">Contrôle de coupe · V5.4</div>
       </div>
     </div>
   </header>
@@ -297,7 +297,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V5.3 · Contrôle de coupe</span>
+    <span>Sentinelle V5.4 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -4562,7 +4562,20 @@ async function archiverOnglet(parite, lancementsRapport) {
         scies: p.erreurScies ? -1 : p.ecartsScies ? p.ecartsScies.length : null,
         couleursAbsentes: couleurs ? couleurs.absentes.length : null,
         couleursPf: couleurs ? (couleurs.variantes || []).length : null,
+        casse: null,
       };
+      // Casse : combien de ses pièces étaient déjà lancées, combien de rajouts.
+      if (casse) {
+        const autre = parite === "paire" ? "impaire" : "paire";
+        const rc = await calculerCasse(p, pairesDeLaSemaine(autre), numeroSemaine(autre));
+        if (!rc.erreur && !rc.autreSemaineChargee)
+          recap.casse = {
+            dejaLancees: rc.dejaLancees.length,
+            rajouts: rc.rajouts.length,
+            ou: rc.dejaLancees.length ? libelleSemaines(rc.dejaLancees.map((t) => t.semaine)) : "",
+            periode: rc.periode,
+          };
+      }
       items.push({
         ...sem,
         lancement: ficheLancementBibliotheque(p.strat.name, strat, {
@@ -7693,6 +7706,8 @@ async function feuilleRapportLancement(wb, p, nomFeuille) {
   bandeau(`${titreCase(p)} — ${base}`, { name: "Raleway", bold: true, size: 18, color: { argb: BORDEAUX } }, { hauteur: 30 });
   bandeau(`Rapport de contrôle du lancement · semaine ${numeroSemaine(p.parite)} · ${new Date().toLocaleDateString("fr-FR")} · LAISNÉ INDUSTRIE — document interne`,
     { italic: true, color: { argb: GRIS } });
+  const comptes = await resume(p.strat, p.bkp);
+  bandeau(`${nombrePieces(comptes.prevues)} pièces prévues${p.bkp ? ` · ${nombrePieces(comptes.bkp)} dans le .bkp` : ""}`, { bold: true, color: { argb: NOIR } });
   const nbVerifier = aTraiter.length - nbCorriger;
   const resumeTexte = !aTraiter.length
     ? "Aucun problème trouvé."
@@ -7796,8 +7811,12 @@ function nomFeuilleExcel(texte, pris) {
   return nom;
 }
 
-// Rapport de la semaine : une synthèse (un lancement par ligne, un contrôle par colonne, lien vers son onglet),
-// puis le rapport de chaque lancement dans son onglet.
+// Nombre de pièces affiché (« ? » si le fichier est illisible).
+const nombrePieces = (v) => (v === null || v === undefined || Number.isNaN(v) ? "?" : fmtNombre(Math.trunc(v)));
+
+// Rapport de la semaine : une synthèse (un lancement par ligne avec son nombre de pièces, un contrôle par colonne,
+// lien vers son onglet ; puis le bilan de la semaine : pièces, lancées deux fois, casse), puis le rapport de chaque
+// lancement dans son onglet.
 async function rapportSemaineXlsx(parite, options = {}) {
   const { BORDEAUX, NOIR, GRIS, COULEURS } = CHARTE_RAPPORT;
   const titre = libelleOnglet(parite);
@@ -7817,10 +7836,18 @@ async function rapportSemaineXlsx(parite, options = {}) {
     }
   }
   if (options.seulementSiProbleme && !lancements.some((l) => l.nbCorriger + l.nbVerifier)) return { nbProblemes: 0, lancements };
+  for (const l of lancements) {
+    const r = await resume(l.p.strat, l.p.bkp);
+    l.prevues = r.prevues;
+    l.bkp = l.p.bkp ? r.bkp : null;
+    l.cles = r.cles;
+  }
 
   const COLONNES = [
     ["Poste", 22, null],
     ["Lancement", 25, null],
+    ["Pièces prévues", 9, null],
+    ["Pièces .bkp", 9, null],
     ["Liste de coupe", 11, (c) => c.startsWith("Lancement /")],
     ["Scies", 9, (c) => c === "Scies (.bkp)"],
     ["Couleurs", 10, (c) => c === "Couleurs (.bkp)"],
@@ -7881,6 +7908,8 @@ async function rapportSemaineXlsx(parite, options = {}) {
     const valeurs = COLONNES.map(([nom, , controle]) => {
       if (nom === "Poste") return l.nom ? { text: titreCase(l.p), hyperlink: `#'${l.nom}'!A1` } : titreCase(l.p);
       if (nom === "Lancement") return l.base;
+      if (nom === "Pièces prévues") return Number.isNaN(l.prevues) ? "?" : Math.trunc(l.prevues);
+      if (nom === "Pièces .bkp") return !l.p.bkp ? "—" : l.bkp === null || Number.isNaN(l.bkp) ? "?" : Math.trunc(l.bkp);
       if (l.erreur) return nom === "Liste de coupe" ? "❌ illisible" : "";
       if (nom === "À corriger") return l.nbCorriger || "";
       if (nom === "À vérifier") return l.nbVerifier || "";
@@ -7892,7 +7921,7 @@ async function rapportSemaineXlsx(parite, options = {}) {
     ligne.eachCell({ includeEmpty: true }, (c, n) => {
       const [nom, , controle] = COLONNES[n - 1];
       c.border = { top: filet, bottom: filet, left: filet, right: filet };
-      c.alignment = { vertical: "middle", horizontal: n <= 2 ? "left" : "center" };
+      c.alignment = { vertical: "middle", horizontal: n <= 2 ? "left" : nom.startsWith("Pièces") ? "right" : "center" };
       c.font = { name: "Lato", color: { argb: NOIR } };
       if (nom === "Poste") c.font = { name: "Lato", bold: true, underline: Boolean(l.nom), color: { argb: BORDEAUX } };
       if (nom === "À corriger" && l.nbCorriger) c.font = { name: "Lato", bold: true, color: { argb: COULEURS.alerte.texte } };
@@ -7910,17 +7939,52 @@ async function rapportSemaineXlsx(parite, options = {}) {
       }
     });
   }
-  const total = f.addRow(["Total", "", "", "", "", "", "", "", "", "", nbCorriger || "", nbVerifier || ""]);
+  const somme = (champ) => lancements.reduce((t, l) => t + (l[champ] === null || Number.isNaN(l[champ]) ? 0 : Math.trunc(l[champ])), 0);
+  const avecBkp = lancements.some((l) => l.p.bkp);
+  const total = f.addRow(COLONNES.map(([nom]) =>
+    nom === "Poste" ? "Total" : nom === "Pièces prévues" ? somme("prevues") : nom === "Pièces .bkp" ? (avecBkp ? somme("bkp") : "—")
+      : nom === "À corriger" ? nbCorriger || "" : nom === "À vérifier" ? nbVerifier || "" : ""));
   total.eachCell({ includeEmpty: true }, (c, n) => {
     c.font = { name: "Lato", bold: true, color: { argb: "FFFFFFFF" } };
     c.fill = fondRapport(BORDEAUX);
-    c.alignment = { horizontal: n <= 2 ? "left" : "center" };
+    c.alignment = { horizontal: n <= 2 ? "left" : COLONNES[n - 1][0].startsWith("Pièces") ? "right" : "center" };
   });
   f.addRow([]);
   const sommeLancements = lancements.reduce((t, l) => t + l.nbCorriger + l.nbVerifier, 0);
   bandeau("✔ OK · ⚠ rouge : à corriger · ⚠ jaune : à vérifier · — : pas de contrôle (fichier manquant). Survolez une case pour lire le bilan." +
     (sommeLancements !== nbCorriger + nbVerifier ? " Total : une pièce lancée dans deux lancements compte une seule fois." : ""),
     { size: 9, color: { argb: GRIS } });
+
+  // Bilan de la semaine : les pièces, les pièces lancées deux fois, les autres semaines de livraison, la casse.
+  f.addRow([]);
+  bandeau("Bilan de la semaine", { bold: true, size: 12, color: { argb: "FFFFFFFF" } }, { fond: BORDEAUX, hauteur: 22, indent: 1 });
+  const ligneBilan = (texte, statut) =>
+    bandeau(texte, { bold: statut !== "info", color: { argb: COULEURS[statut].texte === COULEURS.info.texte ? NOIR : COULEURS[statut].texte } },
+      { fond: statut === "info" ? null : COULEURS[statut].fond, indent: 1, hauteur: Math.max(20, 15 * Math.ceil(texte.length / 150) + 5) });
+  ligneBilan(`Pièces : ${somme("prevues")} prévues dans ${lancements.length} lancement(s)${avecBkp ? `, ${somme("bkp")} dans les .bkp` : ""}.`, "info");
+  const groupes = doublonsEntreLancements(new Map(lancements.filter((l) => l.cles).map((l) => [`${titreCase(l.p)} (${l.base})`, l.cles])));
+  const nbDeuxFois = groupes.reduce((t, g) => t + g.cles.length, 0);
+  if (nbDeuxFois)
+    ligneBilan(`${nbDeuxFois} pièce(s) lancée(s) deux fois : ${groupes.map((g) => `${g.cles.join(", ")} (${g.lancements.join(" et ")})`).join(" ; ")}.`, "alerte");
+  else ligneBilan("Aucune pièce lancée deux fois.", "ok");
+  let nbLivraison = 0;
+  for (const l of lancements) {
+    const p = l.p;
+    if (p.poste === "Casse" || p.semainesLivraison.length <= 1) continue;
+    const principale = semainePrincipale(p);
+    for (const s of p.semainesLivraison) if (s !== principale) nbLivraison += s.nbPieces;
+  }
+  if (nbLivraison) ligneBilan(`${nbLivraison} pièce(s) à livrer une autre semaine que leur lancement.`, "attention");
+  const autre = parite === "paire" ? "impaire" : "paire";
+  for (const l of lancements.filter((x) => x.p.poste === "Casse" && !x.erreur)) {
+    const r = await calculerCasse(l.p, pairesDeLaSemaine(autre), numeroSemaine(autre));
+    const debut = `Casse (${l.base}) : ${nombrePieces(l.prevues)} pièce(s)`;
+    if (r.erreur) ligneBilan(`${debut} — illisible : ${r.erreur}`, "alerte");
+    else if (r.autreSemaineChargee) ligneBilan(`${debut} — pour compter les pièces déjà lancées, ${messageChargerCasse(r)}.`, "info");
+    else
+      ligneBilan(`${debut} — ${r.dejaLancees.length} déjà lancée(s)${r.dejaLancees.length ? ` ${libelleSemaines(r.dejaLancees.map((t) => t.semaine))}` : ""}, ${r.rajouts.length} rajout(s)` +
+        (r.dejaLancees.length ? ` (détail dans l'onglet « ${l.nom} »).` : "."), r.dejaLancees.length ? "attention" : "ok");
+  }
   return {
     nom: `rapport_sentinelle_${slug(titre)}.xlsx`,
     octets: new Uint8Array(await wb.xlsx.writeBuffer()),

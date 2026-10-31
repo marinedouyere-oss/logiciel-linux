@@ -63,6 +63,11 @@ final class FichierPartage {
         Integer scies; // pièces différentes ; -1 : contrôle impossible
         Integer couleursAbsentes;
         Integer couleursPf;
+        /** Casse : pièces déjà lancées une semaine d'avant, rajouts (null : pas compté). */
+        Integer casseDejaLancees;
+        Integer casseRajouts;
+        String casseOu = "";
+        String cassePeriode = "";
         boolean controleFait;
         int nbCorriger;
         int nbVerifier;
@@ -203,6 +208,13 @@ final class FichierPartage {
             l.scies = entier(recap, "scies");
             l.couleursAbsentes = entier(recap, "couleursAbsentes");
             l.couleursPf = entier(recap, "couleursPf");
+            JSONObject casse = recap.optJSONObject("casse");
+            if (casse != null) {
+                l.casseDejaLancees = entier(casse, "dejaLancees");
+                l.casseRajouts = entier(casse, "rajouts");
+                l.casseOu = texte(casse, "ou");
+                l.cassePeriode = texte(casse, "periode");
+            }
         }
         JSONObject controle = jl.optJSONObject("controle");
         if (controle != null) {
@@ -248,6 +260,22 @@ final class FichierPartage {
                 l.pieces.add(valeurs);
             }
         return l;
+    }
+
+    /** Pièces de la semaine qui sont dans au moins deux de ses lancements (clé → lancements). */
+    static Map<String, List<String>> lanceesDeuxFois(Semaine s, int iCle) {
+        Map<String, List<String>> parCle = new LinkedHashMap<>();
+        for (Lancement l : s.lancements)
+            for (String[] piece : l.pieces) {
+                String cle = iCle >= 0 && iCle < piece.length ? piece[iCle] : "";
+                if (cle.length() <= 3 || !cle.substring(0, cle.length() - 3).matches(".*[A-Za-z].*")) continue;
+                List<String> ou = parCle.get(cle);
+                if (ou == null) parCle.put(cle, ou = new ArrayList<>());
+                if (!ou.contains(l.nom)) ou.add(l.nom);
+            }
+        Map<String, List<String>> res = new LinkedHashMap<>();
+        for (Map.Entry<String, List<String>> e : parCle.entrySet()) if (e.getValue().size() >= 2) res.put(e.getKey(), e.getValue());
+        return res;
     }
 
     // ---- recherche d'une pièce dans toutes les semaines ----

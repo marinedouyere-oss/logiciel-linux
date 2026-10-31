@@ -184,6 +184,9 @@ public class PartageTest {
         String texte = ecran.toString();
         assertTrue(texte.contains("Agglo 2ème tour"));
         assertTrue(texte.contains("à corriger"));
+        // Bilan de la semaine : total des pièces, casse (déjà lancées, rajouts).
+        assertTrue(texte.contains("Pièces : 951 prévues dans 6 lancement(s), 952 dans les .bkp."));
+        assertTrue(texte, texte.contains("Casse (LAN2646CASSE) : 75 pièce(s) — 15 déjà lancée(s) en semaines 44 et 45, 54 rajout(s)"));
         assertFalse(texte.contains("illisible"));
         String captures = System.getProperty("sentinelle.captures", "");
         if (!captures.isEmpty()) {

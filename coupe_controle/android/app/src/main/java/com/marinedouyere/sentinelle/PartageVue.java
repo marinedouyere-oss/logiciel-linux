@@ -463,7 +463,56 @@ final class PartageVue {
             r.addView(celluleTexte(celluleCouleurs(l), false), ui.poids(poids[5]));
             corps.addView(r);
         }
+        // Total de la semaine.
+        double prevues = 0;
+        double bkp = 0;
+        boolean avecBkp = false;
+        for (FichierPartage.Lancement l : s.lancements) {
+            if (l.prevues != null) prevues += Math.floor(l.prevues);
+            if (l.bkp != null) {
+                bkp += Math.floor(l.bkp);
+                avecBkp = true;
+            }
+        }
+        LinearLayout total = ui.rangee();
+        total.setBackgroundColor(Ui.BORDEAUX);
+        total.setPadding(ui.dp(6), ui.dp(7), ui.dp(6), ui.dp(7));
+        TextView libelleTotal = ui.texte("Total", 13, true, 0xFFFFFFFF);
+        total.addView(libelleTotal, ui.poids(poids[0]));
+        TextView tPrevues = ui.texte(nombre(prevues), 13, true, 0xFFFFFFFF);
+        tPrevues.setGravity(Gravity.END);
+        total.addView(tPrevues, ui.poids(poids[1]));
+        TextView tBkp = ui.texte(avecBkp ? nombre(bkp) : "—", 13, true, 0xFFFFFFFF);
+        tBkp.setGravity(Gravity.END);
+        total.addView(tBkp, ui.poids(poids[2]));
+        total.addView(ui.espace(1), ui.poids(poids[3] + poids[4] + poids[5]));
+        corps.addView(total);
+
+        // Bilan de la semaine : pièces, pièces lancées deux fois, casse.
+        corps.addView(ui.texte("Pièces : " + nombre(prevues) + " prévues dans " + s.lancements.size() + " lancement(s)"
+                + (avecBkp ? ", " + nombre(bkp) + " dans les .bkp" : "") + ".", 14, true, Ui.NOIR), ui.marges(10, 4));
+        Map<String, List<String>> deuxFois = FichierPartage.lanceesDeuxFois(s, donnees.colonne("cle"));
+        if (deuxFois.isEmpty()) corps.addView(ui.bandeau("✔ Aucune pièce lancée deux fois", ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte)), ui.marges(2, 2));
+        else corps.addView(ui.bandeau("⚠ " + deuxFois.size() + " pièce(s) lancée(s) deux fois : elles sont dans deux lancements",
+                ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)), ui.marges(2, 2));
+        for (FichierPartage.Lancement l : s.lancements) {
+            View casse = bandeauCasse(l, true);
+            if (casse != null) corps.addView(casse, ui.marges(2, 2));
+        }
         return carte;
+    }
+
+    /** « Casse : 61 pièces — 13 déjà lancée(s) en semaine 44, 47 rajout(s) » (null si ce n'est pas une casse comptée). */
+    private View bandeauCasse(FichierPartage.Lancement l, boolean avecNom) {
+        if (!l.casse) return null;
+        String debut = "Casse" + (avecNom ? " (" + l.nom + ")" : "") + " : " + nombre(l.prevues) + " pièce(s)";
+        if (l.casseDejaLancees == null)
+            return ui.bandeau(debut + " — pièces déjà lancées pas comptées (semaines d'avant absentes sur le PC)", Ui.GRIS_CLAIR, ui.couleur(R.color.gris_texte));
+        if (l.casseDejaLancees == 0)
+            return ui.bandeau(debut + " — aucune n'était déjà lancée " + l.cassePeriode + ", " + l.casseRajouts + " rajout(s)",
+                    ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte));
+        return ui.bandeau("🔁 " + debut + " — " + l.casseDejaLancees + " déjà lancée(s) " + l.casseOu + ", " + l.casseRajouts + " rajout(s)",
+                ui.couleur(R.color.attention_fond), ui.couleur(R.color.attention_texte));
     }
 
     private MaterialCardView carteLancement(FichierPartage.Lancement l, int numero) {
@@ -487,6 +536,8 @@ final class PartageVue {
                     : "⚠ " + (l.nbCorriger > 0 ? l.nbCorriger + " à corriger" : "") + (l.nbCorriger > 0 && l.nbVerifier > 0 ? " · " : "")
                     + (l.nbVerifier > 0 ? l.nbVerifier + " à vérifier" : "");
             corps.addView(ui.bandeau(resume, c[0], c[1]), ui.marges(0, 8));
+            View casse = bandeauCasse(l, false);
+            if (casse != null) corps.addView(casse, ui.marges(0, 8));
             for (FichierPartage.Bilan b : l.bilan) {
                 SpannableStringBuilder sb = new SpannableStringBuilder();
                 int debut = sb.length();
