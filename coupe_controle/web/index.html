@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V5.1 — Contrôle de coupe</title>
+<title>Sentinelle V5.2 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -143,6 +143,12 @@
   table.recap tr.total td.alerte, table.recap tr.total td.attention, table.recap tr.total td.ok, table.recap tr.total td.pale, table.recap tr.total td.gris { color: #fff; }
   table.recap td.ok { color: var(--ok-texte); font-weight: 700; }
   table.recap td.alerte { color: var(--alerte-texte); font-weight: 700; }
+  /* Bibliothèque des semaines */
+  .ligne-bibliotheque { margin: 10px 0 4px; font-size: 0.9rem; }
+  table.recap.bibliotheque td { vertical-align: top; }
+  table.recap .lancements-bibliotheque { font-size: 0.85em; line-height: 1.5; }
+  .alerte-texte { color: var(--alerte-texte); font-weight: 700; }
+  .ok-texte { color: var(--ok-texte); font-weight: 700; }
   table.recap td.attention { color: var(--attention-texte); font-weight: 700; }
   table.recap td.pale { color: #a9a8a6; }
   table.recap td.gris { color: var(--gris-texte); }
@@ -256,7 +262,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V5.1</div>
+        <div class="sous-titre">Contrôle de coupe · V5.2</div>
       </div>
     </div>
   </header>
@@ -265,6 +271,7 @@
       <button type="button" class="onglet-btn actif" data-onglet="paire">Semaine</button>
       <button type="button" class="onglet-btn" data-onglet="impaire">Semaine</button>
       <button type="button" class="onglet-btn" data-onglet="recherche">Recherche</button>
+      <button type="button" class="onglet-btn" data-onglet="bibliotheque">Bibliothèque</button>
     </div>
   </nav>
   <main>
@@ -286,10 +293,11 @@
       </div>
       <div id="resultatsRecherche"></div>
     </div>
+    <div id="pageBibliotheque" class="inactif"></div>
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V5.1 · Contrôle de coupe</span>
+    <span>Sentinelle V5.2 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -4309,6 +4317,546 @@ async function lignesDeLaCommande(commande, sources) {
   return [...parCle.values()];
 }
 
+// ---- Bibliothèque des semaines ----
+// Chaque semaine scannée (ou ajoutée depuis un dossier d'archives) est gardée : ses lancements, leurs pièces
+// (commande + ligne, article, dimensions, coloris…) et le bilan des contrôles. La casse s'en sert pour savoir si
+// une pièce était déjà lancée une semaine d'avant, même ancienne.
+//
+// Rangement : une copie dans le navigateur (IndexedDB) et, si un dossier Drive est choisi, un fichier par semaine
+// dans ce dossier (« sentinelle_semaine_2026-46.json.gz » : JSON compressé gzip). Tous les postes (PC, appli) qui
+// pointent sur le même dossier Drive partagent la même bibliothèque : à chaque synchronisation, chaque semaine est
+// fusionnée lancement par lancement (le plus récent gagne) ; une semaine retirée garde la date du retrait.
+
+const FORMAT_BIBLIOTHEQUE = "sentinelle-bibliotheque-1";
+// Une pièce = un tableau dans cet ordre (le fichier redonne l'ordre dans « colonnesPieces »).
+const COLONNES_PIECES_BIBLIOTHEQUE = ["cle", "commande", "ligne", "article", "pieces", "longueur", "largeur", "epaisseur", "coloris", "coloris_inf", "matiere", "livraison"];
+const DB_BIBLIOTHEQUE = "sentinelle-bibliotheque";
+const MAGASIN_SEMAINES = "semaines";
+const MOTIF_FICHIER_SEMAINE = /^sentinelle_semaine_(\d{4})-(\d{2})\.json\.gz$/;
+const nomFichierSemaine = (id) => `sentinelle_semaine_${id}.json.gz`;
+const idSemaine = (annee, semaine) => `${annee}-${String(semaine).padStart(2, "0")}`;
+const ordreSemaine = (annee, semaine) => annee * 100 + Number(semaine);
+// « LAN264601START_corrige » remplace « LAN264601START » : même lancement.
+const cleNomLancement = (nom) => String(nom).replace(/\.[^.]*$/, "").replace(/_corrige$/i, "").toUpperCase();
+
+const bibliotheque = {
+  semaines: new Map(), // id « 2026-46 » → fiche de la semaine
+  generation: 0, // change à chaque modification (les calculs de casse se refont)
+  index: null, // clé de pièce → [{ ordre, annee, semaine, lancement, casse }]
+  dossier: null, // poignée du dossier Drive partagé
+  synchro: null, // synchronisation en cours (promesse)
+  etat: null, // dernier compte rendu { lignes, erreur }
+  enCours: false, // ajout de semaines en cours
+};
+
+let baseBibliotheque = null;
+function ouvrirBaseBibliotheque() {
+  if (!baseBibliotheque) {
+    baseBibliotheque = new Promise((resolve, reject) => {
+      if (!window.indexedDB) {
+        reject(new Error("IndexedDB indisponible"));
+        return;
+      }
+      const requete = indexedDB.open(DB_BIBLIOTHEQUE, 1);
+      const delai = setTimeout(() => reject(new Error("bibliothèque bloquée par un autre onglet")), 5000);
+      requete.onupgradeneeded = () => requete.result.createObjectStore(MAGASIN_SEMAINES, { keyPath: "id" });
+      requete.onsuccess = () => {
+        clearTimeout(delai);
+        const db = requete.result;
+        db.onversionchange = () => {
+          db.close();
+          baseBibliotheque = null;
+        };
+        resolve(db);
+      };
+      requete.onerror = () => {
+        clearTimeout(delai);
+        reject(requete.error);
+      };
+    });
+    baseBibliotheque.catch(() => (baseBibliotheque = null));
+  }
+  return baseBibliotheque;
+}
+
+async function enregistrerSemaineLocale(s) {
+  bibliotheque.semaines.set(s.id, s);
+  try {
+    const db = await ouvrirBaseBibliotheque();
+    const tx = db.transaction(MAGASIN_SEMAINES, "readwrite");
+    tx.objectStore(MAGASIN_SEMAINES).put(s);
+    await finTransaction(tx);
+  } catch (_erreur) {
+    // sans IndexedDB : la bibliothèque vit le temps de la page (et sur le Drive)
+  }
+}
+
+function changementBibliotheque() {
+  bibliotheque.generation++;
+  bibliotheque.index = null;
+}
+
+// Au démarrage : la copie du navigateur, puis le dossier Drive s'il est déjà autorisé.
+async function chargerBibliotheque() {
+  try {
+    const db = await ouvrirBaseBibliotheque();
+    const fiches = await new Promise((resolve) => {
+      const requete = db.transaction(MAGASIN_SEMAINES, "readonly").objectStore(MAGASIN_SEMAINES).getAll();
+      requete.onsuccess = () => resolve(requete.result || []);
+      requete.onerror = () => resolve([]);
+    });
+    for (const s of fiches) bibliotheque.semaines.set(s.id, s);
+  } catch (_erreur) {
+    // pas de copie locale
+  }
+  changementBibliotheque();
+  if (typeof window.showDirectoryPicker === "function") {
+    bibliotheque.dossier = await chargerPoigneeDossierPartage("bibliotheque");
+    if (bibliotheque.dossier) synchroniserBibliotheque(false).then(apresSynchro);
+  }
+}
+
+// Semaines visibles (pas retirées, avec au moins un lancement), la plus récente d'abord.
+const semainesBibliotheque = () =>
+  [...bibliotheque.semaines.values()].filter((s) => s.lancements.length).sort((a, b) => ordreSemaine(b.annee, b.semaine) - ordreSemaine(a.annee, a.semaine));
+
+function indexBibliotheque() {
+  if (bibliotheque.index) return bibliotheque.index;
+  const index = new Map();
+  for (const s of bibliotheque.semaines.values()) {
+    const ordre = ordreSemaine(s.annee, s.semaine);
+    const iCle = Math.max(0, (s.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE).indexOf("cle"));
+    for (const l of s.lancements) {
+      const vu = { ordre, annee: s.annee, semaine: String(s.semaine).padStart(2, "0"), lancement: l.fichier || l.nom, casse: Boolean(l.casse) };
+      for (const piece of l.pieces) {
+        const cle = piece[iCle];
+        if (!index.has(cle)) index.set(cle, []);
+        index.get(cle).push(vu);
+      }
+    }
+  }
+  bibliotheque.index = index;
+  return index;
+}
+
+// Dernière semaine (strictement avant « avant ») où la pièce était lancée, d'après la bibliothèque ; null sinon.
+function derniereFoisLancee(cle, avant) {
+  let meilleure = null;
+  for (const v of indexBibliotheque().get(cle) || []) if (v.ordre < avant && (!meilleure || v.ordre > meilleure.ordre)) meilleure = v;
+  return meilleure;
+}
+
+// Semaines de la bibliothèque avant « avant » (numéros sur deux chiffres, de la plus ancienne à la plus récente).
+const semainesConnuesAvant = (avant) =>
+  semainesBibliotheque()
+    .filter((s) => ordreSemaine(s.annee, s.semaine) < avant)
+    .reverse()
+    .map((s) => String(s.semaine).padStart(2, "0"));
+
+// Semaine d'un lancement, comme l'onglet l'affiche : celle du code de la colonne lancement (sinon du nom du
+// fichier, sinon du dossier « Semaine 46 ») ; la casse se fabrique la semaine d'après.
+function semaineDuLancement(lignes, casse, nomFichier, semaineDossier = null) {
+  let code = String((lignes.find((l) => l.lancement) || {}).lancement || "");
+  let semaine = extraireSemaine(code);
+  if (!semaine) {
+    code = trouverCodeLancement(nomFichier || "") || "";
+    semaine = extraireSemaine(code);
+  }
+  const chiffres = code.replace(/\D/g, "");
+  let annee = chiffres.length >= 4 ? 2000 + parseInt(chiffres.slice(0, 2), 10) : new Date().getFullYear();
+  if (!semaine) semaine = semaineDossier;
+  let n = parseInt(semaine, 10);
+  if (Number.isNaN(n) || n < 1 || n > 53) return null;
+  if (casse) {
+    if (n >= 52) {
+      n = 1;
+      annee++;
+    } else n++;
+  }
+  return { annee, semaine: n };
+}
+
+// Ce que la bibliothèque garde d'un lancement.
+function ficheLancementBibliotheque(nomFichier, strat, infos) {
+  const livraison = new Map();
+  for (const s of strat.semaines || []) for (const cle of s.cles || []) livraison.set(cle, s.annee ? `${s.annee}-${s.semaine}` : String(s.semaine));
+  const texte = (v) => (v === null || v === undefined ? "" : String(v));
+  const pieces = strat.lignes.map((l) => {
+    const d = l.toutesDonnees || {};
+    return [l.cle, texte(l.commande), texte(l.ligne), texte(l.article), l.pieces, l.longueurFinie ?? "", l.largeurFinie ?? "", l.epaisseurFinie ?? "",
+      texte(d.coloris), texte(d.coloris_inf), texte(d[COL_AGGLO]), livraison.get(l.cle) || ""];
+  });
+  return {
+    nom: nomFichier.replace(/\.[^.]*$/, ""),
+    fichier: nomFichier,
+    poste: infos.poste || null,
+    dossier: infos.dossier || null,
+    casse: Boolean(infos.casse),
+    fichiers: infos.fichiers || {},
+    controle: infos.controle || null,
+    nbPieces: strat.lignes.reduce((t, l) => t + (l.pieces || 0), 0),
+    pieces,
+  };
+}
+
+const nouvelleSemaineBibliotheque = (annee, semaine) => ({
+  id: idSemaine(annee, semaine), annee, semaine, maj: "", supprimeeLe: null, colonnesPieces: COLONNES_PIECES_BIBLIOTHEQUE, lancements: [],
+});
+
+// Range des lancements dans leurs semaines (un lancement du même nom remplace l'ancien), puis envoie au Drive.
+async function archiverLancements(items) {
+  const maj = new Date().toISOString();
+  const touchees = new Map();
+  for (const { annee, semaine, lancement } of items) {
+    const id = idSemaine(annee, semaine);
+    if (!touchees.has(id)) {
+      const existante = bibliotheque.semaines.get(id);
+      touchees.set(id, existante ? { ...existante, lancements: [...existante.lancements] } : nouvelleSemaineBibliotheque(annee, semaine));
+    }
+    const s = touchees.get(id);
+    const k = cleNomLancement(lancement.nom);
+    s.lancements = s.lancements.filter((l) => cleNomLancement(l.nom) !== k);
+    s.lancements.push({ ...lancement, maj });
+    s.lancements.sort((a, b) => a.nom.localeCompare(b.nom));
+    s.maj = maj;
+  }
+  for (const s of touchees.values()) await enregistrerSemaineLocale(s);
+  changementBibliotheque();
+  let drive = null;
+  if (bibliotheque.dossier) drive = await synchroniserBibliotheque(false);
+  rafraichirBibliotheque();
+  return { semaines: [...touchees.values()], drive };
+}
+
+// Après un scan ou « Lancer le(s) contrôle(s) » : les lancements de l'onglet, avec le bilan de leurs contrôles.
+async function archiverOnglet(parite, lancementsRapport) {
+  const controles = new Map((lancementsRapport || []).filter((l) => !l.erreur).map((l) => [l.p, l]));
+  const items = [];
+  for (const p of pairesDeLaSemaine(parite)) {
+    if (!p.strat) continue;
+    try {
+      const strat = await stratEnCache(p.strat);
+      const casse = p.poste === "Casse";
+      const sem = semaineDuLancement(strat.lignes, casse, p.strat.name);
+      if (!sem) continue;
+      const c = controles.get(p);
+      const fichiers = {};
+      for (const role of ["coupe", "bkp", "sommaire", "diakonos"]) if (p[role]) fichiers[role] = p[role].name;
+      items.push({
+        ...sem,
+        lancement: ficheLancementBibliotheque(p.strat.name, strat, {
+          poste: estChantier(p) ? POSTE_CHANTIERS : p.poste,
+          dossier: p.dossier,
+          casse,
+          fichiers,
+          controle: c ? { nbCorriger: c.nbCorriger, nbVerifier: c.nbVerifier, bilan: c.bilan.map(({ statut, controle, texte }) => ({ statut, controle, texte })) } : null,
+        }),
+      });
+    } catch (_erreur) {
+      // lancement illisible : pas dans la bibliothèque
+    }
+  }
+  if (!items.length) return null;
+  const r = await archiverLancements(items);
+  return { ...r, nbLancements: items.length };
+}
+
+// Une ligne pour le compte rendu du scan.
+function texteArchivage(a) {
+  if (!a) return null;
+  const semaines = [...new Set(a.semaines.map((s) => String(s.semaine).padStart(2, "0")))].join(", ");
+  const ou = !bibliotheque.dossier ? "" : a.drive && a.drive.ok ? " et sur le Drive" : " (pas encore sur le Drive : onglet Bibliothèque, Synchroniser)";
+  return `📚 ${a.nbLancements} lancement(s) gardé(s) dans la bibliothèque (semaine ${semaines})${ou}`;
+}
+
+// ---- Partage par le dossier Drive ----
+
+const signatureSemaine = (s) => (s ? JSON.stringify([s.supprimeeLe || "", ...s.lancements.map((l) => `${cleNomLancement(l.nom)}@${l.maj}`).sort()]) : "");
+
+// Deux versions d'une semaine : lancement par lancement, le plus récent ; un retrait efface ce qui est plus ancien.
+function fusionnerSemaines(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const supprimeeLe = [a.supprimeeLe, b.supprimeeLe].filter(Boolean).sort().pop() || null;
+  const parNom = new Map();
+  for (const l of [...a.lancements, ...b.lancements]) {
+    const k = cleNomLancement(l.nom);
+    const x = parNom.get(k);
+    if (!x || l.maj > x.maj) parNom.set(k, l);
+  }
+  const lancements = [...parNom.values()].filter((l) => !supprimeeLe || l.maj > supprimeeLe).sort((x, y) => x.nom.localeCompare(y.nom));
+  return { ...a, colonnesPieces: a.colonnesPieces || b.colonnesPieces, maj: a.maj > b.maj ? a.maj : b.maj, supprimeeLe, lancements };
+}
+
+async function compresserJson(objet) {
+  const flux = new Blob([JSON.stringify(objet)]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(flux).arrayBuffer());
+}
+
+async function lireJsonCompresse(fichier) {
+  const flux = fichier.stream().pipeThrough(new DecompressionStream("gzip"));
+  return JSON.parse(await new Response(flux).text());
+}
+
+async function ecrireSemaineDrive(s) {
+  const { drive: _drive, ...contenu } = s;
+  const octets = await compresserJson({ format: FORMAT_BIBLIOTHEQUE, par: "Sentinelle (page web)", ...contenu });
+  const fh = await bibliotheque.dossier.getFileHandle(nomFichierSemaine(s.id), { create: true });
+  const w = await fh.createWritable();
+  await w.write(octets);
+  await w.close();
+  const f = await fh.getFile();
+  s.drive = { lastModified: f.lastModified, size: f.size, signature: signatureSemaine(s) };
+}
+
+async function autorisationBibliotheque(interactif) {
+  const d = bibliotheque.dossier;
+  if (!d || !d.queryPermission) return Boolean(d);
+  const options = { mode: "readwrite" };
+  if ((await d.queryPermission(options)) === "granted") return true;
+  if (!interactif) return false;
+  try {
+    return (await d.requestPermission(options)) === "granted";
+  } catch (_erreur) {
+    return false; // la demande doit venir d'un clic : le bouton « Synchroniser » le refera
+  }
+}
+
+// Échange avec le dossier Drive : ce qui manque ou a changé d'un côté passe de l'autre. Renvoie { ok, recues, envoyees }.
+function synchroniserBibliotheque(interactif) {
+  if (!bibliotheque.dossier) return Promise.resolve(null);
+  if (bibliotheque.synchro) return bibliotheque.synchro;
+  bibliotheque.synchro = (async () => {
+    const r = { ok: false, recues: 0, envoyees: 0 };
+    try {
+      if (!(await autorisationBibliotheque(interactif))) {
+        bibliotheque.etat = { lignes: ["Dossier Drive pas encore autorisé : cliquez sur « Synchroniser »."], erreur: true };
+        return r;
+      }
+      const vus = new Set();
+      for await (const [nom, entree] of bibliotheque.dossier.entries()) {
+        const m = MOTIF_FICHIER_SEMAINE.exec(nom);
+        if (!m || entree.kind !== "file") continue;
+        const id = `${m[1]}-${m[2]}`;
+        vus.add(id);
+        const f = await entree.getFile();
+        const locale = bibliotheque.semaines.get(id) || null;
+        const dejaVu = locale && locale.drive && locale.drive.lastModified === f.lastModified && locale.drive.size === f.size;
+        let fusion = locale;
+        let signatureDrive = dejaVu ? locale.drive.signature : null;
+        if (!dejaVu) {
+          let distante;
+          try {
+            distante = await lireJsonCompresse(f);
+          } catch (_erreur) {
+            continue; // fichier abîmé ou en cours d'écriture : à la prochaine fois
+          }
+          if (!distante || !Array.isArray(distante.lancements)) continue;
+          const { format: _f, par: _p, ...semaine } = distante;
+          signatureDrive = signatureSemaine(semaine);
+          fusion = fusionnerSemaines(locale ? { ...locale } : null, { ...semaine, id });
+          if (!locale || signatureSemaine(fusion) !== signatureSemaine(locale)) r.recues++;
+          fusion.drive = { lastModified: f.lastModified, size: f.size, signature: signatureDrive };
+        }
+        let ecrite = false;
+        if (signatureSemaine(fusion) !== signatureDrive) {
+          await ecrireSemaineDrive(fusion);
+          r.envoyees++;
+          ecrite = true;
+        }
+        if (ecrite || !dejaVu) await enregistrerSemaineLocale(fusion);
+      }
+      for (const s of [...bibliotheque.semaines.values()]) {
+        if (vus.has(s.id)) continue;
+        await ecrireSemaineDrive(s);
+        await enregistrerSemaineLocale(s);
+        r.envoyees++;
+      }
+      r.ok = true;
+      const heure = new Date().toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      bibliotheque.etat = { lignes: [`Synchronisée avec le Drive à ${heure} : ${r.recues} semaine(s) reçue(s), ${r.envoyees} envoyée(s).`], erreur: false };
+      if (r.recues) changementBibliotheque();
+    } catch (erreur) {
+      bibliotheque.etat = { lignes: [`Synchronisation impossible : ${erreur && erreur.message ? erreur.message : erreur}`], erreur: true };
+    } finally {
+      bibliotheque.synchro = null;
+    }
+    return r;
+  })();
+  return bibliotheque.synchro;
+}
+
+// Des semaines reçues : l'écran (casse comprise) se recalcule.
+function apresSynchro(r) {
+  rafraichirBibliotheque();
+  if (r && r.recues && estOngletSemaine()) afficher();
+}
+
+async function choisirDossierBibliotheque() {
+  try {
+    const handle = await window.showDirectoryPicker({ id: "bibliotheque", mode: "readwrite" });
+    bibliotheque.dossier = handle;
+    await sauvegarderPoigneeDossierPartage(handle, "bibliotheque");
+  } catch (_annulation) {
+    return;
+  }
+  rafraichirBibliotheque();
+  apresSynchro(await synchroniserBibliotheque(true));
+}
+
+// Avant un scan (clic de l'utilisateur) : l'autorisation d'écrire sur le Drive, si elle manque.
+async function autoriserBibliothequeAuClic() {
+  if (!bibliotheque.dossier) return;
+  try {
+    await autorisationBibliotheque(true);
+  } catch (_erreur) {
+    // la bibliothèque restera dans le navigateur jusqu'à la prochaine synchronisation
+  }
+}
+
+// ---- Ajouter les semaines d'avant : un dossier d'archives (« 2026 » avec ses mois et ses semaines) ----
+
+// Fichier de lancement d'archive : un classeur « LAN… » (pas un Diakonos, une liste de coupe, une analyse ni un rapport).
+const estLancementArchive = (nom) =>
+  /^LAN/i.test(nom) && estFichierDeLancement(nom) && !estFichierDiakonos(nom) && !/COUPE|CUTRITE|ANALYSE|_problemes|rapport/i.test(nom);
+
+async function importerSemainesBibliotheque() {
+  if (bibliotheque.enCours) return;
+  let handle;
+  try {
+    handle = await window.showDirectoryPicker({ id: "archives" });
+  } catch (_annulation) {
+    return;
+  }
+  bibliotheque.enCours = true;
+  const etat = (lignes, erreur = false) => {
+    bibliotheque.etat = { lignes, erreur };
+    rafraichirBibliotheque();
+  };
+  etat(["Lecture du dossier…"]);
+  try {
+    const fichiers = [];
+    await listerDossier(handle, [], fichiers, 6);
+    // Un lancement et sa version corrigée : la plus récente.
+    const parNom = new Map();
+    for (const f of fichiers.filter((x) => estLancementArchive(x.nom))) {
+      const k = cleNomLancement(f.nom);
+      if (!parNom.has(k) || f.date > parNom.get(k).date) parNom.set(k, f);
+    }
+    const aLire = [...parNom.values()].sort((a, b) => a.nom.localeCompare(b.nom));
+    const items = [];
+    const ignores = [];
+    for (let i = 0; i < aLire.length; i++) {
+      const f = aLire[i];
+      if (i % 3 === 0) {
+        etat([`Lecture des lancements : ${i + 1} / ${aLire.length} (${f.nom})`]);
+        await tick();
+      }
+      try {
+        const fichier = await f.entree.getFile();
+        const strat = lireStrat(await chargerClasseur(fichier));
+        if (!strat.lignes.length) throw new Error("vide");
+        const info = decoderNomFichierPartage(f.nom);
+        const { semaine: semaineDossier, dossier } = placeDuFichier(f, handle.name);
+        const poste = (info && info.poste) || posteDuDossier(dossier) || POSTE_CHANTIERS;
+        const casse = poste === "Casse";
+        const sem = semaineDuLancement(strat.lignes, casse, f.nom, semaineDossier);
+        if (!sem) throw new Error("semaine introuvable");
+        items.push({ ...sem, lancement: ficheLancementBibliotheque(f.nom, strat, { poste, dossier, casse }) });
+      } catch (_erreur) {
+        ignores.push(f.nom);
+      }
+    }
+    if (!items.length) {
+      etat([`Aucun fichier de lancement lisible dans « ${handle.name} ».`], true);
+      return;
+    }
+    const a = await archiverLancements(items);
+    const numeros = a.semaines.map((s) => ordreSemaine(s.annee, s.semaine)).sort((x, y) => x - y);
+    const libelle = (o) => String(o % 100).padStart(2, "0");
+    const lignes = [`✔ ${items.length} lancement(s) ajouté(s) : ${a.semaines.length} semaine(s), de la semaine ${libelle(numeros[0])} à la semaine ${libelle(numeros[numeros.length - 1])}.`];
+    if (ignores.length) lignes.push(`Pas lus (pas un fichier de lancement) : ${ignores.join(", ")}`);
+    if (bibliotheque.etat && bibliotheque.dossier) lignes.push(...bibliotheque.etat.lignes);
+    etat(lignes);
+    if (estOngletSemaine()) afficher();
+  } catch (erreur) {
+    etat([`Ajout impossible : ${erreur && erreur.message ? erreur.message : erreur}`], true);
+  } finally {
+    bibliotheque.enCours = false;
+    rafraichirBibliotheque();
+  }
+}
+
+// Retirer une semaine (partout : la date du retrait part aussi sur le Drive).
+async function retirerSemaineBibliotheque(id) {
+  const s = bibliotheque.semaines.get(id);
+  if (!s) return;
+  if (!(await demanderConfirmation(`Retirer la semaine ${String(s.semaine).padStart(2, "0")} de la bibliothèque ?`, "Ses lancements ne serviront plus à contrôler la casse.", "Retirer"))) return;
+  const maintenant = new Date().toISOString();
+  await enregistrerSemaineLocale({ ...s, lancements: [], supprimeeLe: maintenant, maj: maintenant });
+  changementBibliotheque();
+  if (bibliotheque.dossier) await synchroniserBibliotheque(false);
+  rafraichirBibliotheque();
+}
+
+// ---- Onglet Bibliothèque ----
+
+function rafraichirBibliotheque() {
+  if (typeof onglet !== "undefined" && onglet === "bibliotheque") afficherBibliotheque();
+}
+
+function afficherBibliotheque() {
+  const page = $("pageBibliotheque");
+  if (!page) return;
+  const partage = typeof window.showDirectoryPicker === "function";
+  const d = bibliotheque.dossier;
+  const semaines = semainesBibliotheque();
+  const etat = bibliotheque.etat;
+  const date = (iso) => (iso ? new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
+  const resumeControle = (l) => {
+    if (!l.controle) return "";
+    const n = l.controle.nbCorriger + l.controle.nbVerifier;
+    return n ? ` <span class="alerte-texte">⚠ ${n}</span>` : ' <span class="ok-texte">✔</span>';
+  };
+  let html = `<div class="carte">
+    <div class="carte-titre">Bibliothèque des semaines</div>
+    <div class="note">Chaque semaine scannée est gardée ici (lancements, pièces, bilan des contrôles). La casse s'en sert pour savoir si une pièce était déjà lancée, même plusieurs semaines avant.</div>
+    ${partage
+      ? `<div class="ligne-bibliotheque">Dossier partagé (Drive) : <strong>${d ? echapper(d.name) : "aucun"}</strong></div>
+    <div class="boutons-carte">
+      <button type="button" class="contour" id="btnDossierBibliotheque">${d ? "Changer de dossier" : "Choisir le dossier Drive"}</button>
+      <button type="button" id="btnSynchroniser" ${d && !bibliotheque.synchro ? "" : "disabled"}>Synchroniser</button>
+    </div>
+    <button type="button" class="contour pleine" id="btnImporterSemaines" ${bibliotheque.enCours ? "disabled" : ""}>+ Ajouter les semaines d'avant (choisir le dossier des archives)</button>`
+      : '<div class="note">Partage par le Drive et ajout des semaines d\'avant : ouvrez la page dans Chrome ou Edge sur PC.</div>'}
+    ${etat ? `<div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes.map(echapper).join("<br>")}</div>` : ""}
+  </div>`;
+  html += `<div class="carte"><div class="carte-titre">Semaines gardées (${semaines.length})</div>`;
+  if (!semaines.length) html += '<div class="note">Aucune semaine pour l\'instant : scannez une semaine, ou ajoutez les semaines d\'avant.</div>';
+  else {
+    html += `<table class="recap bibliotheque"><thead><tr><th>Semaine</th><th>Lancements</th><th class="droite">Pièces</th><th>Mise à jour</th><th></th></tr></thead><tbody>`;
+    semaines.forEach((s, i) => {
+      const pieces = s.lancements.reduce((t, l) => t + (l.nbPieces || 0), 0);
+      const lancements = s.lancements.map((l) => `${echapper(l.nom)}${l.casse ? " (casse)" : ""}${resumeControle(l)}`).join("<br>");
+      html += `<tr class="${i % 2 ? "impaire" : ""}"><td><strong>Semaine ${String(s.semaine).padStart(2, "0")}</strong><br><span class="lancement">${s.annee}</span></td>
+        <td class="lancements-bibliotheque">${lancements}</td><td class="droite">${fmtNombre(Math.trunc(pieces))}</td><td>${date(s.maj)}</td>
+        <td class="centre"><button type="button" class="texte alerte" data-retirer="${echapper(s.id)}" title="Retirer cette semaine">✕</button></td></tr>`;
+    });
+    html += "</tbody></table>";
+  }
+  html += "</div>";
+  page.innerHTML = html;
+  if (partage) {
+    $("btnDossierBibliotheque").addEventListener("click", choisirDossierBibliotheque);
+    $("btnSynchroniser").addEventListener("click", async () => {
+      afficherBibliotheque();
+      apresSynchro(await synchroniserBibliotheque(true));
+    });
+    $("btnImporterSemaines").addEventListener("click", importerSemainesBibliotheque);
+  }
+  page.querySelectorAll("[data-retirer]").forEach((b) => b.addEventListener("click", () => retirerSemaineBibliotheque(b.dataset.retirer)));
+}
+
 
 // ============================================================
 // Écran (même organisation que l'appli Android V3.4) : deux onglets
@@ -4365,6 +4913,8 @@ let prochainId = 1;
 let prochainNumeroChantier = 1;
 const paires = [];
 let onglet = "paire";
+// Onglet d'une semaine (et non Recherche ou Bibliothèque).
+const estOngletSemaine = (o = onglet) => o === "paire" || o === "impaire";
 
 function nouvellePaire(poste, label, parite) {
   const p = {
@@ -4893,15 +5443,17 @@ const zonesRecap = { generation: 0 };
 function afficher() {
   majOnglets();
   document.querySelectorAll(".onglet-btn").forEach((b) => b.classList.toggle("actif", b.dataset.onglet === onglet));
-  $("pageSemaine").classList.toggle("inactif", onglet === "recherche");
+  $("pageSemaine").classList.toggle("inactif", !estOngletSemaine());
   $("pageRecherche").classList.toggle("inactif", onglet !== "recherche");
-  if (onglet !== "recherche") construireSemaine(onglet);
+  $("pageBibliotheque").classList.toggle("inactif", onglet !== "bibliotheque");
+  if (estOngletSemaine()) construireSemaine(onglet);
+  else if (onglet === "bibliotheque") afficherBibliotheque();
 }
 
 function majOnglets() {
   let change = false;
   document.querySelectorAll(".onglet-btn").forEach((b) => {
-    if (b.dataset.onglet === "recherche") return;
+    if (!estOngletSemaine(b.dataset.onglet)) return;
     const libelle = libelleOnglet(b.dataset.onglet);
     if (b.textContent !== libelle) {
       b.textContent = libelle;
@@ -5054,11 +5606,11 @@ function remplirCarte(carte, p) {
   if (retirer) retirer.addEventListener("click", () => retirerChantier(p));
   if (p.rapport) afficherRapport(carte.querySelector(".zone-rapport"), p);
   if (p.ecartsScies || p.erreurScies) afficherScies(carte.querySelector(".zone-scies"), p);
-  if (p.poste === "Casse" && p.strat && onglet !== "recherche") remplirCasse(carte.querySelector(".zone-casse"), p);
+  if (p.poste === "Casse" && p.strat && estOngletSemaine()) remplirCasse(carte.querySelector(".zone-casse"), p);
 }
 
-// ---- Casse : les pièces déjà lancées la semaine d'avant, retrouvées dans les
-// fichiers de lancement Excel de cette semaine-là (l'autre onglet) ----
+// ---- Casse : les pièces déjà lancées une semaine d'avant, retrouvées dans les fichiers de lancement de
+// l'autre onglet (la semaine d'avant) et dans la bibliothèque (toutes les semaines gardées) ----
 
 const resultatsCasse = new Map(); // id de la case → dernier résultat
 const casseEnCours = new Set();
@@ -5071,17 +5623,29 @@ function semaineAvantCasse(p) {
 }
 
 const cleCasse = (p, autreSemaine, numeroAutre) =>
-  [idFichier(p.strat), p.semaine, numeroAutre, ...autreSemaine.filter((o) => o.strat).map((o) => idFichier(o.strat))].join("|");
+  [idFichier(p.strat), p.semaine, numeroAutre, bibliotheque.generation, ...autreSemaine.filter((o) => o.strat).map((o) => idFichier(o.strat))].join("|");
+
+// « en semaine 44 », « en semaines 43 et 44 ».
+function libelleSemaines(numeros) {
+  const u = [...new Set(numeros.map((n) => String(n).padStart(2, "0")))].sort();
+  if (u.length <= 1) return `en semaine ${u[0] || "?"}`;
+  return `en semaines ${u.slice(0, -1).join(", ")} et ${u[u.length - 1]}`;
+}
+
+// Semaines où l'on a cherché : « en semaine 44 », ou « dans les semaines 38 à 45 ».
+function periodeCasse(semaines) {
+  const u = [...new Set(semaines)];
+  if (u.length <= 1) return `en semaine ${u[0] || "?"}`;
+  if (u.length === 2) return `en semaines ${u[0]} et ${u[1]}`;
+  return `dans les semaines ${u[0]} à ${u[u.length - 1]}`;
+}
 
 async function calculerCasse(p, autreSemaine, numeroAutre) {
-  // dejaLancees : pièces relancées (déjà lancées la semaine d'avant) ; rajouts : les autres.
-  const r = { cle: cleCasse(p, autreSemaine, numeroAutre), semaineAvant: semaineAvantCasse(p), autreSemaineChargee: null, nbPieces: 0, dejaLancees: [], rajouts: [], nbAutres: 0, lancements: [], erreur: null };
-  const autre = String(numeroAutre).padStart(2, "0");
-  // Rien de chargé dans l'onglet de la semaine d'avant : impossible de séparer relancées et rajouts.
-  if (!r.semaineAvant || r.semaineAvant !== autre || !autreSemaine.some((o) => o.strat)) {
-    r.autreSemaineChargee = autre;
-    return r;
-  }
+  // dejaLancees : pièces relancées ({ ligne, lancement, semaine }) ; rajouts : les autres.
+  const r = {
+    cle: cleCasse(p, autreSemaine, numeroAutre), semaineAvant: semaineAvantCasse(p), autreSemaineChargee: null, nbPieces: 0,
+    dejaLancees: [], rajouts: [], nbAutres: 0, lancements: [], semainesCherchees: [], periode: "", erreur: null,
+  };
   let lignes;
   try {
     lignes = (await stratEnCache(p.strat)).lignes;
@@ -5089,17 +5653,37 @@ async function calculerCasse(p, autreSemaine, numeroAutre) {
     r.erreur = erreur && erreur.message ? erreur.message : String(erreur);
     return r;
   }
+  const autre = String(numeroAutre).padStart(2, "0");
+  const autreUtile = Boolean(r.semaineAvant && r.semaineAvant === autre && autreSemaine.some((o) => o.strat));
+  // Rang de la semaine de fabrication (année comprise) : on cherche dans les semaines d'avant.
+  const code = semaineDuLancement(lignes, false, p.strat.name);
+  const fabrication = parseInt(p.semaine, 10);
+  const avant = code && !Number.isNaN(fabrication) ? ordreSemaine(code.annee + (fabrication < code.semaine ? 1 : 0), fabrication) : null;
+  const connues = avant ? semainesConnuesAvant(avant) : [];
+  // Rien de chargé dans l'onglet de la semaine d'avant ni dans la bibliothèque : impossible de séparer relancées et rajouts.
+  if (!autreUtile && !connues.length) {
+    r.autreSemaineChargee = autre;
+    return r;
+  }
+  r.semainesCherchees = [...new Set([...connues, ...(autreUtile ? [r.semaineAvant] : [])])].sort();
+  r.periode = periodeCasse(r.semainesCherchees);
   r.nbPieces = lignes.length;
-  r.lancements = autreSemaine.filter((o) => o.strat).map((o) => o.strat.name);
+  if (autreUtile) r.lancements = autreSemaine.filter((o) => o.strat).map((o) => o.strat.name);
+  if (connues.length) r.lancements.push(`bibliothèque (${r.semainesCherchees.length > 1 ? `semaines ${connues[0]} à ${connues[connues.length - 1]}` : `semaine ${connues[0]}`})`);
   for (const l of lignes) {
     let origine = null;
-    for (const o of autreSemaine) {
-      if (o.strat && (await resume(o.strat, o.bkp)).cles.has(l.cle)) {
-        origine = o.strat.name;
-        break;
+    if (autreUtile)
+      for (const o of autreSemaine) {
+        if (o.strat && (await resume(o.strat, o.bkp)).cles.has(l.cle)) {
+          origine = { lancement: o.strat.name, semaine: r.semaineAvant };
+          break;
+        }
       }
+    if (!origine && avant) {
+      const vu = derniereFoisLancee(l.cle, avant);
+      if (vu) origine = { lancement: vu.lancement, semaine: vu.semaine };
     }
-    if (origine) r.dejaLancees.push({ ligne: l, lancement: origine });
+    if (origine) r.dejaLancees.push({ ligne: l, ...origine });
     else {
       r.rajouts.push(l);
       r.nbAutres++;
@@ -5110,6 +5694,7 @@ async function calculerCasse(p, autreSemaine, numeroAutre) {
 
 const dimensionsCasse = (l) => (l.longueurFinie != null && l.largeurFinie != null ? `${fmtDim(l.longueurFinie)} × ${fmtDim(l.largeurFinie)}` : "");
 const colorisCasse = (l) => (l.toutesDonnees && l.toutesDonnees.coloris) || "";
+const messageChargerCasse = (r) => `chargez la semaine ${r.semaineAvant || "d'avant"} dans l'autre onglet, ou ajoutez les semaines d'avant à la bibliothèque`;
 
 // Pages du rapport du lancement de la casse : pièces relancées, puis rajouts.
 function partiesCasse(r, base) {
@@ -5120,18 +5705,18 @@ function partiesCasse(r, base) {
     return [relancees];
   }
   if (r.autreSemaineChargee) {
-    [relancees.statut, relancees.couleurStatut] = [`Chargez la semaine ${r.semaineAvant || "d'avant"} dans l'autre onglet pour séparer les pièces relancées et les rajouts`, STATUT.ATTENTION];
+    [relancees.statut, relancees.couleurStatut] = [`Pour séparer les pièces relancées et les rajouts, ${messageChargerCasse(r)}`, STATUT.ATTENTION];
     return [relancees];
   }
-  if (!r.dejaLancees.length) [relancees.statut, relancees.couleurStatut] = [`Aucune pièce de la casse n'était lancée en semaine ${r.semaineAvant}`, STATUT.OK];
-  else [relancees.statut, relancees.couleurStatut] = [`${r.dejaLancees.length} pièce(s) relancée(s) : déjà lancée(s) en semaine ${r.semaineAvant}`, STATUT.ATTENTION];
-  for (const t of r.dejaLancees) relancees.rangees.push([t.ligne.cle, t.ligne.article || "", dimensionsCasse(t.ligne), colorisCasse(t.ligne), t.lancement, String(t.ligne.pieces)]);
+  if (!r.dejaLancees.length) [relancees.statut, relancees.couleurStatut] = [`Aucune pièce de la casse n'était lancée ${r.periode}`, STATUT.OK];
+  else [relancees.statut, relancees.couleurStatut] = [`${r.dejaLancees.length} pièce(s) relancée(s) : déjà lancée(s) ${libelleSemaines(r.dejaLancees.map((t) => t.semaine))}`, STATUT.ATTENTION];
+  for (const t of r.dejaLancees) relancees.rangees.push([t.ligne.cle, t.ligne.article || "", dimensionsCasse(t.ligne), colorisCasse(t.ligne), `${t.lancement} (sem. ${t.semaine})`, String(t.ligne.pieces)]);
   if (r.lancements.length) relancees.notes.push(["Comparé à : ", r.lancements.join(", ")]);
   const rajouts = partieRapport("Rajouts", `${base} — Casse : rajouts`, ["Commande + ligne", "Article", "Dimensions", "Coloris", "Qté"], [40, 52, 36, 36, 18], 4);
   rajouts.total = false;
   rajouts.statut = r.rajouts.length
-    ? `${r.rajouts.length} rajout(s) : pièce(s) pas lancée(s) en semaine ${r.semaineAvant}`
-    : `Aucun rajout : toutes les pièces étaient lancées en semaine ${r.semaineAvant}`;
+    ? `${r.rajouts.length} rajout(s) : pièce(s) pas lancée(s) ${r.periode}`
+    : `Aucun rajout : toutes les pièces étaient déjà lancées ${r.periode}`;
   for (const l of r.rajouts) rajouts.rangees.push([l.cle, l.article || "", dimensionsCasse(l), colorisCasse(l), String(l.pieces)]);
   return [relancees, rajouts];
 }
@@ -5157,11 +5742,11 @@ function remplirCasse(zone, p) {
   }
   let html = '<div class="separateur"></div>';
   if (r.erreur) html += `<div class="etat erreur">Casse illisible : ${echapper(r.erreur)}</div>`;
-  else if (r.autreSemaineChargee) html += `<div class="note">Pour retrouver les pièces déjà lancées, chargez la semaine ${echapper(r.semaineAvant || "d'avant")} dans l'autre onglet.</div>`;
-  else if (!r.dejaLancees.length) html += bandeau(`Casse : aucune pièce n'était lancée en semaine ${echapper(r.semaineAvant)}`, "ok");
+  else if (r.autreSemaineChargee) html += `<div class="note">Pour retrouver les pièces déjà lancées, ${echapper(messageChargerCasse(r))}.</div>`;
+  else if (!r.dejaLancees.length) html += bandeau(`Casse : aucune pièce n'était lancée ${echapper(r.periode)}`, "ok");
   else {
-    html += bandeau(`🔁 ${r.dejaLancees.length} pièce(s) de la casse déjà lancée(s) en semaine ${echapper(r.semaineAvant)}`, "attention");
-    if (r.nbAutres) html += `<div class="note">${r.nbAutres} autre(s) pièce(s) pas lancée(s) en semaine ${echapper(r.semaineAvant)}</div>`;
+    html += bandeau(`🔁 ${r.dejaLancees.length} pièce(s) de la casse déjà lancée(s) ${echapper(libelleSemaines(r.dejaLancees.map((t) => t.semaine)))}`, "attention");
+    if (r.nbAutres) html += `<div class="note">${r.nbAutres} autre(s) pièce(s) pas lancée(s) ${echapper(r.periode)}</div>`;
   }
   zone.innerHTML = html;
 }
@@ -5342,7 +5927,7 @@ const zonesDiakonos = { generation: 0 };
 
 // Recalcule les pièces Diakonos manquantes : Diakonos de chaque dossier de lancement et Diakonos des tours.
 function majDiakonos() {
-  if (onglet === "recherche") return;
+  if (!estOngletSemaine()) return;
   const parite = onglet;
   remplirDiakonos();
   const autre = parite === "paire" ? "impaire" : "paire";
@@ -5615,7 +6200,7 @@ async function exporterSemaine(parite) {
 // ---- Compteur ----
 
 async function majCompteur() {
-  if (onglet === "recherche") return;
+  if (!estOngletSemaine()) return;
   const parite = onglet;
   let total = 0;
   for (const p of pairesDeLaSemaine(parite)) {
@@ -5655,7 +6240,7 @@ function lignesRecap(pairesSemaine) {
 
 function majRecap() {
   const zone = $("zoneRecap");
-  if (!zone || onglet === "recherche") return;
+  if (!zone || !estOngletSemaine()) return;
   const parite = onglet;
   const numero = ++zonesRecap.generation;
   const autre = parite === "paire" ? "impaire" : "paire";
@@ -5926,7 +6511,8 @@ async function lancerUnePaire(p, fin) {
 }
 
 async function lancerTousLesControles() {
-  const visibles = pairesDeLaSemaine(onglet);
+  const parite = onglet;
+  const visibles = pairesDeLaSemaine(parite);
   const erreurs = [];
   let auMoinsUnResultat = visibles.some((p) => p.rapport);
   for (const p of visibles) {
@@ -5935,7 +6521,9 @@ async function lancerTousLesControles() {
       if (resultat) auMoinsUnResultat = true;
     });
   }
-  if (await rapportSemaineAutomatique(onglet)) for (const p of visibles) rafraichir(p);
+  const rapport = await rapportSemaineAutomatique(parite);
+  if (rapport.nbProblemes) for (const p of visibles) rafraichir(p);
+  await archiverOnglet(parite, rapport.lancements);
   if (erreurs.length) alert("Certaines cases n'ont pas pu être traitées :\n\n" + erreurs.join("\n"));
   else if (!auMoinsUnResultat) alert("Sélectionnez au moins un fichier de lancement (avec, si possible, une liste de coupe ou un .bkp).");
 }
@@ -6092,6 +6680,7 @@ async function scannerDossier(parite) {
     if (handle.queryPermission && (await handle.queryPermission({ mode: "read" })) !== "granted") {
       if ((await handle.requestPermission({ mode: "read" })) !== "granted") throw new Error("accès refusé");
     }
+    await autoriserBibliothequeAuClic();
     await listerDossier(handle, [], fichiers);
   } catch (erreur) {
     scansEnCours.delete(parite);
@@ -6123,11 +6712,11 @@ function dossiersLus(fichiers) {
 
 // Fichiers du dossier et de ses sous-dossiers (un par lancement : « 1ER TOUR AGGLO », « FENO »…),
 // chacun avec son chemin ; les fichiers de verrou d'Excel (« ~$… ») et les fichiers cachés sont ignorés.
-async function listerDossier(handle, chemin, fichiers) {
+async function listerDossier(handle, chemin, fichiers, profondeur = 3) {
   for await (const [nom, entree] of handle.entries()) {
     if (nom.startsWith("~$") || nom.startsWith(".")) continue;
     if (entree.kind === "directory") {
-      if (chemin.length < 3) await listerDossier(entree, [...chemin, nom], fichiers);
+      if (chemin.length < profondeur) await listerDossier(entree, [...chemin, nom], fichiers, profondeur);
       continue;
     }
     if (entree.kind !== "file") continue;
@@ -6285,10 +6874,13 @@ async function placerFichiersScannes(parite, r) {
   }
   // Un seul fichier pour toute la semaine (un onglet par lancement), s'il y a un problème.
   const rapport = await rapportSemaineAutomatique(parite);
-  if (rapport) {
+  if (rapport.nbProblemes) {
     compte.push(`📊 ${rapport.nbProblemes} problème(s) : rapport ${rapport.nom} créé (un onglet par lancement)`);
     for (const a of affectations) rafraichir(a.paire);
   }
+  // La semaine part dans la bibliothèque (et sur le Drive partagé).
+  const archive = texteArchivage(await archiverOnglet(parite, rapport.lancements));
+  if (archive) compte.push(archive);
   await Promise.all(stockage);
   scansEnCours.delete(parite);
   if (parite === onglet) afficher();
@@ -6608,6 +7200,7 @@ document.querySelectorAll("img[data-logo]").forEach((img) => (img.src = img.data
 (async () => {
   await initialiserPaires();
   await restaurerDossiersPartages();
+  await chargerBibliotheque();
   afficher();
 })();
 
@@ -6646,8 +7239,8 @@ const PROBLEMES = [
     "vérifier que c'est voulu."],
   ["Autre semaine de livraison", "Pièce à livrer une autre semaine que le reste du lancement.", "vérifier qu'elle doit bien être fabriquée maintenant."],
   ["Déjà lancée la semaine d'avant", "La pièce était déjà dans un lancement de l'autre semaine chargée.", "vérifier qu'il faut bien la refaire."],
-  ["Casse : relancée", "Pièce de la casse déjà lancée la semaine d'avant : c'est une pièce refaite.", ""],
-  ["Casse : rajout", "Pièce de la casse qui n'était pas lancée la semaine d'avant : c'est un rajout.", ""],
+  ["Casse : relancée", "Pièce de la casse déjà lancée une semaine d'avant (autre onglet ou bibliothèque) : c'est une pièce refaite.", ""],
+  ["Casse : rajout", "Pièce de la casse lancée dans aucune des semaines d'avant connues : c'est un rajout.", ""],
 ];
 const RANG_PROBLEME = new Map(PROBLEMES.map(([type], i) => [type, i]));
 const SENS_PROBLEME = new Map(PROBLEMES.map(([type, sens, queFaire]) => [type, { sens, queFaire }]));
@@ -6791,12 +7384,14 @@ async function problemesDuLancement(p) {
     const r = await calculerCasse(p, pairesDeLaSemaine(autre), numeroSemaine(autre));
     if (r.erreur) bilan.push({ statut: "alerte", controle: "Casse", texte: `Casse illisible : ${r.erreur}` });
     else if (r.autreSemaineChargee)
-      bilan.push({ statut: "info", controle: "Casse", texte: `Pour séparer les pièces relancées des rajouts, chargez la semaine ${r.semaineAvant || "d'avant"} dans l'autre onglet.` });
+      bilan.push({ statut: "info", controle: "Casse", texte: `Pour séparer les pièces relancées des rajouts, chargez la semaine ${r.semaineAvant || "d'avant"} dans l'autre onglet, ou ajoutez les semaines d'avant à la bibliothèque.` });
     else {
       bilan.push({ statut: r.dejaLancees.length ? "attention" : "ok", controle: "Casse",
-        texte: `${r.dejaLancees.length} pièce(s) relancée(s) (déjà lancées en semaine ${r.semaineAvant}) et ${r.rajouts.length} rajout(s).` });
-      for (const t of r.dejaLancees) ajouter(t.ligne.cle, GRAVITE.VERIFIER, "Casse : relancée", `Déjà lancée en semaine ${r.semaineAvant} dans ${t.lancement}`);
-      for (const l of r.rajouts) ajouter(l.cle, GRAVITE.INFO, "Casse : rajout", `Pas lancée en semaine ${r.semaineAvant}`);
+        texte: r.dejaLancees.length
+          ? `${r.dejaLancees.length} pièce(s) relancée(s) (déjà lancées ${libelleSemaines(r.dejaLancees.map((t) => t.semaine))}) et ${r.rajouts.length} rajout(s).`
+          : `Aucune pièce relancée (rien ${r.periode}) : ${r.rajouts.length} rajout(s).` });
+      for (const t of r.dejaLancees) ajouter(t.ligne.cle, GRAVITE.VERIFIER, "Casse : relancée", `Déjà lancée en semaine ${t.semaine} dans ${t.lancement}`);
+      for (const l of r.rajouts) ajouter(l.cle, GRAVITE.INFO, "Casse : rajout", `Pas lancée ${r.periode}`);
     }
   } else if (!autresLancements.length)
     bilan.push({ statut: "info", controle: `Déjà lancée en ${libelleOnglet(autre)}`, texte: `Aucun lancement chargé en ${libelleOnglet(autre)} : pas de comparaison.` });
@@ -7270,6 +7865,7 @@ async function problemesAutomatiques(p) {
 }
 
 // Après le scan d'une semaine : un seul fichier, le rapport de la semaine, s'il y a un problème.
+// Renvoie { nom, nbProblemes, lancements } (le bilan de chaque lancement part aussi dans la bibliothèque).
 async function rapportSemaineAutomatique(parite) {
   try {
     const { nom, octets, nbProblemes, lancements } = await rapportSemaineXlsx(parite, { seulementSiProbleme: true });
@@ -7283,9 +7879,9 @@ async function rapportSemaineAutomatique(parite) {
       }
     }
     if (nbProblemes) telecharger(nom, octets, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    return nbProblemes ? { nom, nbProblemes } : null;
+    return { nom, nbProblemes, lancements };
   } catch (_erreur) {
-    return null; // le bouton « Exporter le rapport de la semaine » reste là pour réessayer
+    return { nom: null, nbProblemes: 0, lancements: [] }; // le bouton « Exporter le rapport de la semaine » reste là pour réessayer
   }
 }
 
