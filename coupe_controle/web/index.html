@@ -203,6 +203,11 @@
   .ligne-recherche input:focus { outline: none; border-color: var(--bordeaux); box-shadow: 0 0 0 2px var(--saumon-pale); }
   .message-alerte { color: var(--alerte-texte); margin: 6px 0; }
   .bilan-recherche { font-weight: 700; margin: 6px 0 4px; color: var(--noir); }
+  .ligne-cotes { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 12px; margin-top: 8px; }
+  .ligne-cotes label { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; font-weight: 700; color: #4a403d; flex: 1 1 130px; min-width: 0; }
+  .ligne-cotes input { padding: 9px 12px; font-family: var(--texte); font-size: 1rem; border: 1px solid #cfccc6; border-radius: 3px; min-width: 0; }
+  .ligne-cotes input:focus { outline: none; border-color: var(--bordeaux); box-shadow: 0 0 0 2px var(--saumon-pale); }
+  .ligne-cotes button { flex: 0 0 auto; }
   .titre-fiche { flex: 1; font-size: 1.1rem; color: var(--bordeaux); }
   .legende-schema { font-weight: 700; font-size: 0.86rem; color: var(--gris); margin: 8px 0 4px; }
   .ligne-piece { border-bottom: 1px solid var(--gris-filet); }
@@ -388,6 +393,7 @@
   }
   .marque.jaune { background: #ffff00; color: var(--noir); }
   .marque.orange { background: #ffc000; color: var(--noir); }
+  .marque.rouge { background: #ff0000; color: #fff; }
   .marque.neutre { background: var(--gris-clair); color: #5f5754; }
   .texte-correction { flex: 1 1 auto; }
   .nombre-correction { flex: 0 0 auto; font-weight: 700; font-variant-numeric: tabular-nums; }
@@ -483,6 +489,18 @@
         </div>
       </div>
       <div id="resultatsRecherche"></div>
+      <div class="carte">
+        <div class="carte-titre">Pièce sans étiquette</div>
+        <div class="note">Cote finie mesurée sur la pièce : la première mesure est le sens du fil. À 2 mm près.</div>
+        <div class="ligne-cotes">
+          <label>Longueur (sens du fil)<input type="number" id="champCoteLongueur" min="1" step="1" inputmode="numeric" placeholder="mm"></label>
+          <label>Largeur<input type="number" id="champCoteLargeur" min="1" step="1" inputmode="numeric" placeholder="mm"></label>
+          <label>Couleur<input type="text" id="champCoteCouleur" autocomplete="off" placeholder="facultatif"></label>
+          <label>Semaine<input type="number" id="champCoteSemaine" min="1" max="53" step="1" inputmode="numeric" placeholder="n°"></label>
+          <button type="button" id="btnChercherCotes">Chercher</button>
+        </div>
+      </div>
+      <div id="resultatsCotes"></div>
     </div>
     <div id="pageBibliotheque" class="inactif"></div>
     <div id="pageReecriture" class="inactif"></div>
@@ -4582,6 +4600,43 @@ async function lignesDeLaCommande(commande, sources) {
   return [...parCle.values()];
 }
 
+// ---- Pièce sans étiquette ----
+// On mesure la pièce : cote finie, la première mesure est toujours le sens du fil (longueur), puis la
+// largeur ; à 2 mm près. La couleur est facultative, la semaine obligatoire.
+const TOLERANCE_COTES_RECHERCHE = 2; // mm
+
+const normaliserCouleurRecherche = (c) => String(c ?? "").toUpperCase().replace(/[\s_.-]/g, "");
+
+// criteres : { longueur, largeur, couleur } (chacun facultatif, au moins un) ;
+// lancements : [{ annee, semaine, nom, poste, pieces }] avec les pièces au format de la bibliothèque
+// (cle, commande, ligne, article, pieces, longueur, largeur, epaisseur, coloris, coloris_inf, matiere, livraison).
+function chercherPiecesSansEtiquette(criteres, lancements) {
+  const ecart = (valeur, cible) => {
+    if (cible == null) return 0;
+    const v = valeur === "" || valeur == null ? NaN : Number(valeur);
+    return Number.isFinite(v) ? Math.abs(v - cible) : Infinity;
+  };
+  const couleur = normaliserCouleurRecherche(criteres.couleur);
+  const trouvees = [];
+  const vues = new Set();
+  for (const l of lancements) {
+    for (const p of l.pieces) {
+      const eL = ecart(p[5], criteres.longueur);
+      const el = ecart(p[6], criteres.largeur);
+      if (eL > TOLERANCE_COTES_RECHERCHE || el > TOLERANCE_COTES_RECHERCHE) continue;
+      if (couleur && !normaliserCouleurRecherche(p[8]).includes(couleur) && !normaliserCouleurRecherche(p[9]).includes(couleur)) continue;
+      const cle = `${l.nom}|${p[0]}`;
+      if (vues.has(cle)) continue;
+      vues.add(cle);
+      trouvees.push({
+        annee: l.annee, semaine: l.semaine, lancement: l.nom, poste: l.poste || "", cle: p[0], article: p[3], quantite: p[4],
+        longueur: p[5], largeur: p[6], epaisseur: p[7], coloris: p[8], colorisInf: p[9], matiere: p[10], ecart: eL + el,
+      });
+    }
+  }
+  return trouvees.sort((a, b) => a.ecart - b.ecart || a.lancement.localeCompare(b.lancement) || String(a.cle).localeCompare(String(b.cle)));
+}
+
 // ---- Bibliothèque des semaines ----
 // Chaque semaine scannée (ou ajoutée depuis un dossier d'archives) est gardée : ses lancements, leurs pièces
 // (commande + ligne, article, dimensions, coloris…) et le bilan des contrôles. La casse s'en sert pour savoir si
@@ -4795,6 +4850,10 @@ function semaineDuLancement(lignes, casse, nomFichier, semaineDossier = null) {
   return { annee, semaine: n };
 }
 
+// Couleur de la belle face d'une pièce : la première trouvée dans ses lignes (le bois d'une pièce Feno n'en a pas,
+// le FENO la porte).
+const colorisDeLaPiece = (l) => ((l.lignesBrutes || []).map((d) => d.coloris).find((c) => c && String(c).trim()) ?? (l.toutesDonnees || {}).coloris);
+
 // Ce que la bibliothèque garde d'un lancement.
 function ficheLancementBibliotheque(nomFichier, strat, infos) {
   const livraison = new Map();
@@ -4803,7 +4862,7 @@ function ficheLancementBibliotheque(nomFichier, strat, infos) {
   const pieces = strat.lignes.map((l) => {
     const d = l.toutesDonnees || {};
     return [l.cle, texte(l.commande), texte(l.ligne), texte(l.article), l.pieces, l.longueurFinie ?? "", l.largeurFinie ?? "", l.epaisseurFinie ?? "",
-      texte(d.coloris), texte(d.coloris_inf), texte(d[COL_AGGLO]), livraison.get(l.cle) || ""];
+      texte(colorisDeLaPiece(l)), texte(d.coloris_inf), texte(d[COL_AGGLO]), livraison.get(l.cle) || ""];
   });
   return {
     nom: nomFichier.replace(/\.[^.]*$/, ""),
@@ -5318,6 +5377,10 @@ const ECART_BANDE = 60; // mm : pas plus de 6 cm entre deux pièces d'une même 
 const COULEUR_PLUS_10 = "FFFFFF00"; // jaune
 const COULEUR_PLUS_20 = "FFFFC000"; // orange
 const couleurMarque = (retours) => (retours >= 2 ? COULEUR_PLUS_20 : COULEUR_PLUS_10);
+// Erreurs trouvées dans le fichier final : la ligne passe en rouge, avant toutes les autres couleurs.
+const COULEUR_ERREUR = "FFFF0000"; // rouge
+const SURCOTE_MAX = 61; // mm : au-delà (débit moins cote finie, en longueur ou en largeur), c'est une aberration
+const COLONNE_LARGEUR_FINIE = "conf_largeur"; // largeur finie (la longueur finie est conf_longueur)
 
 const TYPE_CLASSEUR = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml";
 const TYPE_CLASSEUR_MACROS = "application/vnd.ms-excel.sheet.macroEnabled.main+xml";
@@ -5520,9 +5583,10 @@ function nombreBandes(longueurs) {
 //  - une quantité 2 compte comme 2 pièces (2 fois la longueur) ;
 //  - on cherche le moins de bandes possibles (3 pièces et 4060 mm au plus par bande), puis le moins de pièces
 //    modifiées, puis le moins de mm ajoutés.
-// pieces : [{ largeur, longueur, qte }] → largeur de débit de chaque pièce (même ordre).
+//  - une pièce ne monte jamais au-delà de sa largeur finie + 61 mm (max) : pas de surcote aberrante.
+// pieces : [{ largeur, longueur, qte, max }] → largeur de débit de chaque pièce (même ordre).
 function harmoniserLargeurs(pieces) {
-  const ordre = pieces.map((p, i) => ({ largeur: p.largeur, longueur: p.longueur, qte: Math.max(1, Math.round(p.qte || 1)), i }));
+  const ordre = pieces.map((p, i) => ({ largeur: p.largeur, longueur: p.longueur, qte: Math.max(1, Math.round(p.qte || 1)), max: p.max ?? null, i }));
   ordre.sort((a, b) => a.largeur - b.largeur || a.i - b.i);
   const n = ordre.length;
   const unites = (p) => Array(p.qte).fill(p.longueur);
@@ -5539,6 +5603,7 @@ function harmoniserLargeurs(pieces) {
     let choix = null;
     for (const w of new Set(membres.map((p) => p.largeur))) {
       if (w < max - TOLERANCE_SURCOTE || w - min > ECART_BANDE) continue;
+      if (membres.some((p) => p.max != null && w > p.max && w !== p.largeur)) continue;
       const modifiees = membres.filter((p) => p.largeur !== w).length;
       const ajout = membres.reduce((t, p) => t + Math.max(0, w - p.largeur) * p.qte, 0);
       if (!choix || modifiees < choix.modifiees || (modifiees === choix.modifiees && ajout < choix.ajout)) choix = { w, modifiees, ajout };
@@ -5605,7 +5670,8 @@ function corrigerAgglo(analyse, changements, pieces, marques) {
       if (!m || Number(m[1]) < 28 || cellule(l, A.idPlan).toLowerCase() !== "ban" || largeur == null) continue;
       const k = [agglo, cellule(l, A.coloris), cellule(l, C.sousFace)].join("|");
       if (!groupes.has(k)) groupes.set(k, []);
-      groupes.get(k).push({ l, largeur, agglo, longueur: nombreCellule(cellule(l, C.debit)), qte: nombreCellule(cellule(l, A.quantite)) });
+      const finie = nombreCellule(cellule(l, COLONNE_LARGEUR_FINIE));
+      groupes.get(k).push({ l, largeur, agglo, longueur: nombreCellule(cellule(l, C.debit)), qte: nombreCellule(cellule(l, A.quantite)), max: finie == null ? null : finie + SURCOTE_MAX });
     }
     for (const pieces_ of groupes.values()) {
       const cible = harmoniserLargeurs(pieces_);
@@ -5677,6 +5743,52 @@ function orangePortes(pieces, marques) {
   for (const ligne of pieces.lignesPortes) marques.set(ligne, COULEUR_PLUS_20);
 }
 
+// Contrôle du fichier final (valeurs corrigées comprises) : surcote de plus de 61 mm en longueur ou en
+// largeur, belle face (coloris) vide. Pas de couleur à demander pour la protection, ni pour le bois d'une
+// pièce Feno (la couleur est portée par le FENO), ni quand « BRUT » vient d'être retiré.
+function controlerErreurs(analyse, type, changements, pieces) {
+  const { colonnes, donnees } = analyse;
+  const C = COLONNES_REECRITURE;
+  const A = COLONNES_AGGLO;
+  const apres = new Map(changements.map((ch) => [`${ch.ligne}:${ch.col}`, ch.apres]));
+  const valeur = (l, nom) => {
+    const col = colonnes[nom];
+    if (!col) return null;
+    if (apres.has(`${l.numero}:${col}`)) return apres.get(`${l.numero}:${col}`);
+    const c = l.cellules.find((x) => x.col === col);
+    return c ? c.valeur : null;
+  };
+  const texte = (l, nom) => String(valeur(l, nom) ?? "").trim();
+  const clesFeno = new Set(donnees.filter((l) => texte(l, C.agglo).toUpperCase().startsWith("FENO")).map((l) => texte(l, C.cle)));
+  const erreurs = [];
+  for (const l of donnees) {
+    const cle = texte(l, C.cle);
+    if (!cle) continue;
+    const agglo = texte(l, C.agglo).toUpperCase();
+    const surcotes = [];
+    for (const [debit, fini, cote] of [[C.debit, C.fini, "longueur"], [A.largeur, COLONNE_LARGEUR_FINIE, "largeur"]]) {
+      const d = nombreCellule(valeur(l, debit));
+      const f = nombreCellule(valeur(l, fini));
+      if (d != null && f != null && d - f > SURCOTE_MAX) surcotes.push(`${cote} +${formatNombre(d - f)} mm`);
+    }
+    if (surcotes.length) erreurs.push({ ligne: l.numero, cle, agglo, quoi: "surcote", detail: surcotes.join(", ") });
+    const feno = agglo.startsWith("FENO");
+    const sansCouleurNormal =
+      !agglo || agglo.startsWith("PROTECTION") || pieces.brut.has(`${cle}|${l.numero}`) || (!feno && ((type && type.feno) || clesFeno.has(cle)));
+    if (colonnes[A.coloris] && !sansCouleurNormal && texte(l, A.coloris) === "") erreurs.push({ ligne: l.numero, cle, agglo, quoi: "couleur", detail: "belle face sans couleur" });
+  }
+  return erreurs;
+}
+
+// Fin du plan : orange des portes, puis rouge des erreurs (avant tout le reste).
+function finirPlan(analyse, type, plan) {
+  orangePortes(plan.pieces, plan.marques);
+  plan.marquesCorrections = new Map(plan.marques);
+  plan.erreurs = controlerErreurs(analyse, type, plan.changements, plan.pieces);
+  for (const e of plan.erreurs) plan.marques.set(e.ligne, COULEUR_ERREUR);
+  return plan;
+}
+
 // Les cellules à changer, et ce qu'il faut dire à l'écran (rien de tout ça ne va dans le fichier).
 function planifierCorrections(analyse, type) {
   const { colonnes, donnees } = analyse;
@@ -5693,10 +5805,7 @@ function planifierCorrections(analyse, type) {
   pieces.lignesPortes = new Set();
   if (type && (type.agglo || type.feno)) remplacerSousFace(analyse, changements, pieces, marques);
   if (type && type.agglo) corrigerAgglo(analyse, changements, pieces, marques);
-  if (!type || !type.feno) {
-    orangePortes(pieces, marques);
-    return { changements, pieces, avertissements, marques };
-  }
+  if (!type || !type.feno) return finirPlan(analyse, type, { changements, pieces, avertissements, marques });
   const val = (l, nom) => {
     const c = l.cellules.find((x) => x.col === colonnes[COLONNES_REECRITURE[nom]]);
     return c ? c.valeur : null;
@@ -5736,8 +5845,7 @@ function planifierCorrections(analyse, type) {
   for (const [cle, couches] of couchesParCle) {
     if (couches.every((a) => a.startsWith("PROTECTION"))) avertissements.push(`${cle} : seulement la protection dans le fichier (pas de décor ni de support).`);
   }
-  orangePortes(pieces, marques);
-  return { changements, pieces, avertissements, marques };
+  return finirPlan(analyse, type, { changements, pieces, avertissements, marques });
 }
 
 // ---- Écriture : seules les cellules prévues changent ----
@@ -6182,7 +6290,22 @@ async function lancerReecriture() {
   }
 }
 
+const lignesErreur = (plan, quoi) => new Set(plan.erreurs.filter((e) => e.quoi === quoi).map((e) => e.ligne)).size;
+
+function resumeErreurs(plan) {
+  const m = [];
+  const surcotes = lignesErreur(plan, "surcote");
+  const couleurs = lignesErreur(plan, "couleur");
+  if (surcotes) m.push(`${surcotes} ligne(s) avec une surcote de plus de ${SURCOTE_MAX} mm`);
+  if (couleurs) m.push(`${couleurs} ligne(s) sans couleur en belle face`);
+  return m.length ? ` Erreurs à vérifier (lignes en rouge) : ${m.join(" ; ")}.` : "";
+}
+
 function resumeCorrections(plan, type) {
+  return resumeCorrectionsSeules(plan, type) + resumeErreurs(plan);
+}
+
+function resumeCorrectionsSeules(plan, type) {
   if (type.agglo) {
     const m = [];
     if (plan.pieces.bandes.size) m.push(`${plan.pieces.bandes.size} pièce(s) mise(s) à la largeur d'une autre pour partager une bande (lignes en jaune)`);
@@ -6198,8 +6321,8 @@ function resumeCorrections(plan, type) {
   if (plan.pieces.retours.size) morceaux.push(`${plan.pieces.retours.size} pièce(s) avec retour LG / LD`);
   if (plan.pieces.rcb.size) morceaux.push(`RCB en sous-face sur ${plan.pieces.rcb.size} support(s) 10 brut`);
   if (plan.pieces.portes.size) morceaux.push(`RCB_B999_PORTES remplacé par RCB_0003_PORTES sur ${plan.pieces.portes.size} ligne(s) (lignes en orange)`);
-  const jaunes = [...plan.marques].filter(([ligne, c]) => c === COULEUR_PLUS_10 && !plan.pieces.lignesPortes.has(ligne)).length;
-  const oranges = [...plan.marques].filter(([ligne, c]) => c === COULEUR_PLUS_20 && !plan.pieces.lignesPortes.has(ligne)).length;
+  const jaunes = [...plan.marquesCorrections].filter(([ligne, c]) => c === COULEUR_PLUS_10 && !plan.pieces.lignesPortes.has(ligne)).length;
+  const oranges = [...plan.marquesCorrections].filter(([ligne, c]) => c === COULEUR_PLUS_20 && !plan.pieces.lignesPortes.has(ligne)).length;
   const couleurs = [jaunes ? `${jaunes} en jaune (+10)` : "", oranges ? `${oranges} en orange (+20)` : ""].filter(Boolean).join(", ");
   if (!morceaux.length) return "Aucune correction à faire dans ce fichier.";
   return `Corrections : ${morceaux.join(" ; ")}.${couleurs ? ` Lignes surlignées : ${couleurs}.` : ""}`;
@@ -6213,10 +6336,12 @@ function lignesCorrections(plan, type) {
     if (n) lignes.push({ marque, genre, texte, nombre: `${n} ${unite}${n > 1 ? "s" : ""}` });
   };
   const changements = (quoi) => plan.changements.filter((c) => c.quoi === quoi).length;
+  ajouter(lignesErreur(plan, "surcote"), `+${SURCOTE_MAX}`, "rouge", `Erreur : surcote de plus de ${SURCOTE_MAX} mm (longueur ou largeur)`, "ligne");
+  ajouter(lignesErreur(plan, "couleur"), "couleur", "rouge", "Erreur : belle face sans couleur", "ligne");
   if (type.feno) {
-    const jaunes = [...plan.marques].filter(([ligne, c]) => c === COULEUR_PLUS_10 && !plan.pieces.lignesPortes.has(ligne)).length;
+    const jaunes = [...plan.marquesCorrections].filter(([ligne, c]) => c === COULEUR_PLUS_10 && !plan.pieces.lignesPortes.has(ligne)).length;
     ajouter(jaunes, "+10", "jaune", "Retour LG / LD : cote finie +10", "ligne");
-    ajouter([...plan.marques].filter(([ligne, c]) => c === COULEUR_PLUS_20 && !plan.pieces.lignesPortes.has(ligne)).length, "+20", "orange", "Deux retours : cote finie +20", "ligne");
+    ajouter([...plan.marquesCorrections].filter(([ligne, c]) => c === COULEUR_PLUS_20 && !plan.pieces.lignesPortes.has(ligne)).length, "+20", "orange", "Deux retours : cote finie +20", "ligne");
     ajouter(changements("débit"), "débit", "neutre", "Débit refait : cote finie +55 (FENO) ou +50", "ligne");
     ajouter(changements("sous-face") - plan.pieces.portes.size, "RCB", "neutre", "RCB en sous-face sous le 10 brut", "ligne");
     ajouter(plan.pieces.portes.size, "PORTES", "orange", "RCB_B999_PORTES remplacé par RCB_0003_PORTES", "ligne");
@@ -6262,6 +6387,11 @@ function apercuReecriture() {
       .map((l) => `<div class="ligne-correction"><span class="marque ${l.genre}">${echapper(l.marque)}</span><span class="texte-correction">${echapper(l.texte)}</span><span class="nombre-correction">${echapper(l.nombre)}</span></div>`)
       .join("")}</div>`;
   else html += `<div class="note">${type.agglo || type.feno ? "Aucune correction à faire dans ce fichier." : "Aucune correction pour ce type : le fichier est rangé tel quel, sous son vrai nom."}</div>`;
+  if (plan.erreurs.length) {
+    html += `<details class="donnees"><summary>Voir les lignes en rouge (${new Set(plan.erreurs.map((e) => e.ligne)).size})</summary><div class="defile"><table class="recap"><thead><tr><th>Pièce</th><th>Matière</th><th>Ligne</th><th>Erreur</th></tr></thead><tbody>${plan.erreurs
+      .map((e, i) => `<tr class="${i % 2 ? "impaire" : ""}"><td>${echapper(e.cle)}</td><td>${echapper(e.agglo)}</td><td>${e.ligne}</td><td>${echapper(e.quoi === "surcote" ? `Surcote : ${e.detail}` : "Belle face sans couleur")}</td></tr>`)
+      .join("")}</tbody></table></div></details>`;
+  }
   if (plan.avertissements.length) html += `<div class="avertissement-reecriture">${plan.avertissements.map((t) => `<div>⚠ ${echapper(t)}</div>`).join("")}</div>`;
   if (plan.changements.length) {
     html += `<details class="donnees"><summary>Voir les cellules corrigées (${plan.changements.length})</summary><div class="defile"><table class="recap"><thead><tr><th>Pièce</th><th>Matière</th><th>Cellule</th><th class="droite">Avant</th><th class="droite">Après</th></tr></thead><tbody>${plan.changements
@@ -8809,6 +8939,83 @@ function remplirDetails(zone, f, l) {
   zone.innerHTML = html;
 }
 
+// ---- Pièce sans étiquette : cote finie (sens du fil puis largeur), couleur facultative, semaine obligatoire ----
+// Cherche dans la bibliothèque (toutes les années de ce numéro de semaine) et dans les lancements chargés.
+
+async function lancementsDeLaSemaineRecherche(numero) {
+  const lancements = [];
+  for (const s of bibliotheque.semaines.values()) {
+    if (s.semaine !== numero) continue;
+    for (const l of s.lancements) lancements.push({ annee: s.annee, semaine: s.semaine, nom: l.nom, poste: l.poste, pieces: l.pieces || [] });
+  }
+  for (const parite of ["paire", "impaire"]) {
+    if (Number(numeroSemaine(parite)) !== numero) continue;
+    for (const p of pairesDeLaSemaine(parite)) {
+      if (!p.strat || estDiakonos(p)) continue;
+      try {
+        const fiche = ficheLancementBibliotheque(p.strat.name, await stratEnCache(p.strat), { poste: estChantier(p) ? POSTE_CHANTIERS : p.poste });
+        lancements.push({ annee: anneeDeSemaine(numero), semaine: numero, nom: fiche.nom, poste: fiche.poste, pieces: fiche.pieces });
+      } catch (_e) {
+        // lancement illisible : la bibliothèque reste cherchée
+      }
+    }
+  }
+  return lancements;
+}
+
+async function chercherParCotes() {
+  const zone = $("resultatsCotes");
+  const nombre = (id) => {
+    const v = $(id).value.trim().replace(",", ".");
+    return v === "" ? null : Number(v);
+  };
+  const criteres = { longueur: nombre("champCoteLongueur"), largeur: nombre("champCoteLargeur"), couleur: $("champCoteCouleur").value.trim() };
+  const semaine = nombre("champCoteSemaine");
+  if (!Number.isInteger(semaine) || semaine < 1 || semaine > 53) {
+    zone.innerHTML = '<div class="message-alerte">Tapez la semaine (obligatoire).</div>';
+    return;
+  }
+  if ([criteres.longueur, criteres.largeur].some((v) => v !== null && !(v > 0))) {
+    zone.innerHTML = '<div class="message-alerte">Longueur et largeur : des mm (nombres).</div>';
+    return;
+  }
+  if (criteres.longueur === null && criteres.largeur === null && !criteres.couleur) {
+    zone.innerHTML = '<div class="message-alerte">Tapez au moins une cote ou la couleur.</div>';
+    return;
+  }
+  $("btnChercherCotes").disabled = true;
+  zone.innerHTML = '<div class="note">Recherche en cours…</div>';
+  try {
+    const lancements = await lancementsDeLaSemaineRecherche(semaine);
+    const quoi = [
+      criteres.longueur !== null ? `longueur ${fmtNombre(criteres.longueur)}` : "",
+      criteres.largeur !== null ? `largeur ${fmtNombre(criteres.largeur)}` : "",
+      criteres.couleur ? `couleur ${criteres.couleur}` : "",
+    ].filter(Boolean).join(" · ");
+    if (!lancements.length) {
+      zone.innerHTML = `<div class="message-alerte">Semaine ${semaine} : rien dans la bibliothèque ni dans Contrôler la coupe. Ajoutez la semaine à la bibliothèque ou ouvrez-la dans Contrôler la coupe.</div>`;
+      return;
+    }
+    const trouvees = chercherPiecesSansEtiquette(criteres, lancements);
+    const noms = [...new Set(lancements.map((l) => l.nom))];
+    let html = `<div class="bilan-recherche">${trouvees.length} pièce(s) — ${echapper(quoi)} (± ${TOLERANCE_COTES_RECHERCHE} mm), semaine ${semaine}</div>`;
+    html += `<div class="note">Cherché dans ${noms.length} lancement(s) : ${echapper(noms.join(", "))}</div>`;
+    if (trouvees.length) {
+      const dim = (v) => (v === "" || v == null ? "?" : fmtNombre(Number(v)));
+      html += `<div class="defile"><table class="recap"><thead><tr><th>Pièce</th><th>Article</th><th class="droite">Cote finie</th><th>Couleur</th><th>Sous-face</th><th>Matière</th><th class="droite">Qté</th><th>Lancement</th><th>Semaine</th></tr></thead><tbody>${trouvees
+        .map(
+          (t, i) => `<tr class="${i % 2 ? "impaire" : ""}"><td><strong>${echapper(t.cle)}</strong></td><td>${echapper(t.article)}</td><td class="droite">${dim(t.longueur)} × ${dim(t.largeur)} × ${dim(t.epaisseur)}</td><td>${echapper(t.coloris)}</td><td>${echapper(t.colorisInf)}</td><td>${echapper(t.matiere)}</td><td class="droite">${echapper(t.quantite == null ? "" : fmtNombre(t.quantite))}</td><td>${echapper(t.lancement)}</td><td>${t.semaine}${t.annee ? ` · ${t.annee}` : ""}</td></tr>`
+        )
+        .join("")}</tbody></table></div>`;
+    }
+    zone.innerHTML = html;
+  } catch (erreur) {
+    zone.innerHTML = `<div class="message-alerte">Recherche impossible : ${echapper(erreur && erreur.message ? erreur.message : String(erreur))}</div>`;
+  } finally {
+    $("btnChercherCotes").disabled = false;
+  }
+}
+
 // ---- Démarrage ----
 
 document.querySelectorAll(".onglet-btn").forEach((b) =>
@@ -8822,6 +9029,11 @@ $("champRecherche").addEventListener("keydown", (e) => {
   if (e.key === "Enter") rechercher();
 });
 $("choixFichier").addEventListener("change", fichierChoisi);
+$("btnChercherCotes").addEventListener("click", chercherParCotes);
+for (const id of ["champCoteLongueur", "champCoteLargeur", "champCoteCouleur", "champCoteSemaine"])
+  $(id).addEventListener("keydown", (e) => {
+    if (e.key === "Enter") chercherParCotes();
+  });
 
 // Logo Laisné Industrie (version blanche sur le bandeau bordeaux).
 document.querySelectorAll("img[data-logo]").forEach((img) => (img.src = img.dataset.logo === "blanc" ? LOGO_BLANC_PNG : LOGO_COULEUR_PNG));
