@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V5.9 — Contrôle de coupe</title>
+<title>Sentinelle V5.9.1 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -269,7 +269,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V5.9</div>
+        <div class="sous-titre">Contrôle de coupe · V5.9.1</div>
       </div>
     </div>
   </header>
@@ -306,7 +306,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V5.9 · Contrôle de coupe</span>
+    <span>Sentinelle V5.9.1 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -4969,6 +4969,7 @@ function afficherBibliotheque() {
 //    Le moins de bandes possible, puis le moins de pièces modifiées : une pièce n'est élargie que si cela
 //    économise une bande. Lignes élargies surlignées en jaune.
 //  - « BRUT » dans la couleur (colonne coloris) : retiré, ligne surlignée en jaune.
+//  - Chant brut (« BRUT » dans Type chant, ou commentaire « CHANTS BRUTS ») : ligne seulement surlignée en jaune.
 //  - Crédences (articles CRED12, CRED14) en 10 brut et 12 brut : RCB-CRED14 en sous-face si elle est vide
 //    ou « RCB » (pas les CBD, pas les CRED…G…, pas les supports de compacts).
 //  - Commentaire vide et usinage indiqué (info 3 atelier ou un des 4 usinages d'angle) : BAZ.
@@ -5000,6 +5001,7 @@ const COLONNES_AGGLO = {
   idPlan: "idPlan",
   cbd: "CBD",
   info3: "info 3 atelier",
+  typeChant: "Type chant",
   angles: ["Usinage angle avant gauche", "Usinage angle avant droit", "Usinage angle arrière gauche", "Usinage angle arrière droit"],
 };
 const ECART_BANDE = 60; // mm : pas plus de 6 cm entre deux pièces d'une même bande
@@ -5260,6 +5262,11 @@ function corrigerAgglo(analyse, changements, pieces, marques) {
       marques.set(l.numero, COULEUR_PLUS_10);
       pieces.brut.add(`${cle}|${l.numero}`);
     }
+    // Chant brut : la ligne est seulement surlignée (aucune valeur ne change).
+    if (cellule(l, A.typeChant).toUpperCase() === "BRUT" || /CHANTS?\s+BRUTS?/i.test(cellule(l, C.commentaire))) {
+      marques.set(l.numero, COULEUR_PLUS_10);
+      pieces.chantBrut.add(`${cle}|${l.numero}`);
+    }
     // Crédences (CRED12, CRED14) en 10 brut et 12 brut : RCB-CRED14 (sauf double face CBD).
     const sousFace = cellule(l, C.sousFace);
     const credence = /^CRED\d+$/i.test(cellule(l, "conf_article"));
@@ -5287,6 +5294,7 @@ function planifierCorrections(analyse, type) {
   pieces.cred14 = new Set();
   pieces.baz = new Set();
   pieces.brut = new Set();
+  pieces.chantBrut = new Set();
   if (type && type.agglo) corrigerAgglo(analyse, changements, pieces, marques);
   if (!type || !type.feno) return { changements, pieces, avertissements, marques };
   const val = (l, nom) => {
@@ -5757,6 +5765,7 @@ function resumeCorrections(plan, type) {
     if (plan.pieces.cred14.size) m.push(`RCB-CRED14 en sous-face sur ${plan.pieces.cred14.size} crédence(s) en 10 / 12 brut`);
     if (plan.pieces.baz.size) m.push(`BAZ en commentaire sur ${plan.pieces.baz.size} ligne(s) avec usinage`);
     if (plan.pieces.brut.size) m.push(`« BRUT » retiré de la couleur sur ${plan.pieces.brut.size} ligne(s) (lignes en jaune)`);
+    if (plan.pieces.chantBrut.size) m.push(`${plan.pieces.chantBrut.size} ligne(s) à chant brut surlignée(s) en jaune`);
     return m.length ? `Corrections : ${m.join(" ; ")}.` : "Aucune correction à faire dans ce fichier.";
   }
   if (!type.feno) return "Aucune correction automatique pour ce type de lancement : le fichier est enregistré tel quel, sous son vrai nom.";
@@ -5817,7 +5826,7 @@ function afficherReecriture() {
   const a = reecriture.analyse;
   let html = `<div class="carte">
     <div class="carte-titre">Réécriture du fichier de lancement</div>
-    <div class="note">Le fichier d'extraction du logiciel de gestion devient le LAN du lancement : vrai nom, corrections automatiques, rangé dans le dossier de la semaine. Rien n'est ajouté au fichier : seules les cellules corrigées changent, et les lignes dont les dimensions sont corrigées sont surlignées (Feno : jaune +10, orange +20 ; agglo : jaune pour les bandes et « BRUT » retiré).</div>
+    <div class="note">Le fichier d'extraction du logiciel de gestion devient le LAN du lancement : vrai nom, corrections automatiques, rangé dans le dossier de la semaine. Rien n'est ajouté au fichier : seules les cellules corrigées changent, et les lignes dont les dimensions sont corrigées sont surlignées (Feno : jaune +10, orange +20 ; agglo : jaune pour les bandes, « BRUT » retiré et chants bruts).</div>
     <div class="ligne-bibliotheque">Dossier des semaines : <strong>${reecriture.racine ? echapper(reecriture.racine.name) : "aucun dossier choisi"}</strong></div>
     <button type="button" class="contour pleine" id="btnRacineReecriture">${reecriture.racine ? "Changer le dossier des semaines" : "Choisir le dossier des semaines"}</button>
   </div>`;
