@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.0.7 — Contrôle de coupe</title>
+<title>Sentinelle V6.0.8 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -429,7 +429,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.7</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.8</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -507,7 +507,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.0.7 · Contrôle de coupe</span>
+    <span>Sentinelle V6.0.8 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -10063,10 +10063,13 @@ function nomChantierCompteRendu(base) {
   return s ? s.replace(/([A-Z])(BIS|TER)$/, "$1 $2") : base.toUpperCase();
 }
 
-// Semaine écrite dans le nom de la casse (« LAN264301CASSE », « LAN2646CASSE » → 43, 46).
-function semaineNomCasse(base) {
-  const m = /^LAN\d\d(\d\d)/i.exec(base);
-  return m ? m[1] : null;
+// La casse lancée en semaine N est la casse de la semaine d'avant (N − 1, l'année d'avant pour la semaine 1),
+// quel que soit le nom du fichier (« LAN264301CASSE » ou « LAN2646CASSE » lancés en 44 / 46 → 43 / 45).
+function semaineAvantCompteRendu(numero) {
+  const n = Number(numero);
+  const lundi = lundiSemaineIso(anneeDeSemaine(n), n);
+  lundi.setDate(lundi.getDate() - 7);
+  return String(semaineIso(lundi)).padStart(2, "0");
 }
 
 async function donneesCompteRendu(parite) {
@@ -10086,14 +10089,12 @@ async function donneesCompteRendu(parite) {
   lancements.sort((a, b) => a.rang - b.rang);
   // Casse : déjà lancées avant / rajouts, en pièces.
   const lignesCasse = [];
-  let semaineCasse = null;
   const autre = parite === "paire" ? "impaire" : "paire";
   for (const c of casses.sort((a, b) => (a.p.poste === "Casse" ? 0 : 1) - (b.p.poste === "Casse" ? 0 : 1))) {
     if (c.p.poste !== "Casse") {
       lignesCasse.push({ libelle: /RECYCLAGE/i.test(c.base) ? "Recyclage casse" : "Casse", base: c.base, pieces: c.pieces, remarque: "" });
       continue;
     }
-    semaineCasse = semaineCasse || semaineNomCasse(c.base);
     const rc = await calculerCasse(c.p, pairesDeLaSemaine(autre), numeroSemaine(autre));
     if (rc.erreur || rc.autreSemaineChargee) {
       lignesCasse.push({ libelle: "Casse", base: c.base, pieces: c.pieces, remarque: "déjà lancées / rajouts pas séparés : semaines d'avant absentes" });
@@ -10103,7 +10104,8 @@ async function donneesCompteRendu(parite) {
     lignesCasse.push({ libelle: "Casse", base: c.base, pieces: somme(rc.dejaLancees.map((d) => d.ligne)), remarque: "" });
     lignesCasse.push({ libelle: "RAJOUT", base: c.base, pieces: somme(rc.rajouts), remarque: "" });
   }
-  return { numero: numeroSemaine(parite), lancements, lignesCasse, semaineCasse };
+  const numero = numeroSemaine(parite);
+  return { numero, lancements, lignesCasse, semaineCasse: semaineAvantCompteRendu(numero) };
 }
 
 // ---- Le PDF (charte Laisné : bandeau, logo, chiffres clés, tableaux) ----
@@ -10175,7 +10177,7 @@ async function compteRenduSemainePdf(parite) {
   else y = encadrePdf(pdf, y, "Aucun lancement chargé pour cette semaine.", true);
 
   if (d.lignesCasse.length) {
-    y = titrePartieCompteRenduPdf(pdf, y + 10, 2, `Casse — SEMAINE ${d.semaineCasse || d.numero}`);
+    y = titrePartieCompteRenduPdf(pdf, y + 10, 2, `Casse — SEMAINE ${d.semaineCasse}`);
     y = tableauCompteRenduPdf(pdf, y, d.lignesCasse, "Total casse");
     pdf.texte(RAPPORT_MARGE, y + 14, "Casse : pièces déjà lancées une semaine d'avant. RAJOUT : les autres pièces de la casse.", 7.8, POLICE.ITALIQUE, CHARTE.GRIS);
   }

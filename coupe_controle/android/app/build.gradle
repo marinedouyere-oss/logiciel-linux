@@ -10,8 +10,8 @@ android {
         applicationId "com.marinedouyere.sentinelle"
         minSdk 24
         targetSdk 34
-        versionCode 30
-        versionName "6.0.7"
+        versionCode 31
+        versionName "6.0.8"
     }
 
     // Clé de signature gardée dans le projet : chaque nouvelle version
