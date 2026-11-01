@@ -189,7 +189,7 @@ public class PartageTest {
         for (int i = 0; i < attendus.length; i++) assertEquals(attendus[i], String.valueOf(onglets.getTabAt(i).getText()));
         String texte = ecran(a);
         assertTrue(texte, texte.contains("Contrôle de coupe · V"));
-        assertTrue("sans fichier : on demande de le choisir", texte.contains("Choisissez le fichier"));
+        assertTrue("sans données : relier au PC (code), ou choisir le fichier du Drive", texte.contains("Relier au PC") && texte.contains("choisissez le fichier"));
         for (String tag : new String[] {MainActivity.ONGLET_CONTROLE, MainActivity.ONGLET_RECHERCHE, MainActivity.ONGLET_BIBLIOTHEQUE}) {
             onglet(a, tag);
             String t = ecran(a);
@@ -352,5 +352,51 @@ public class PartageTest {
         capturerSiDemande(a, "appli_bibliotheque.png");
         // Le choix est gardé : un nouvel écran relit le même fichier.
         assertNotNull(a.partage().uri());
+    }
+
+    /** Paquet chiffré par le PC (WebCrypto : PBKDF2 + AES-GCM) avec le code TEST-TEST-TEST-TEST, sur un petit fichier d'essai. */
+    private static final String PAQUET_PC = "U05UMZzoTZBkl4QqOJMG8pusOC8NJwam7CwHmLOurc3KlPpSR0D9P7TdDyqrPivJF2vd6jxODYSu/0j7ztpgB1+vQfvNDrs2dUx2Yd9Za3rzk1EKwZw3GefPUIjSplxcibDm3yM7B5MMLa+TOCprmihBWG4kJXLOi+j32EQCT1oNIzx9FBp3KJeuML7LK0bv6ZLE4Y5V9dzXArTorzdbafcNQTShbes9px7kEKm/k42F/pSeJkDH1LU5fL8jscIW8QAeauCe/0OnB3HbBPDlDZOrPrblaPJK0EARO4EMEsx67Qs7DS1FgagWn7vtAPDegb/ZJ0nu9uxUyz86dIzrCHllva8mJ2mej4N95uDsnT4cfS6OC9eL3pIBM4p1X9n5eZW47chpRPbeOPMh1SCUug7raB2gVUTg58ydxkbdMqlcw1ilVHVjAXlJnyKo1kCIDVLqTmDp0hPQvTzUsDO9g5MxjUqG00wEFPHNeoSR4iQ7LdQ=";
+
+    /** Lien avec le PC : même canal et même clé que le PC ; le paquet du PC se déchiffre ; un autre code est refusé. */
+    @Test
+    public void lienDechiffreLePaquetDuPc() throws Exception {
+        assertEquals("TESTTESTTESTTEST", LienPc.normaliser("test-test test-test"));
+        assertTrue(LienPc.codeValide("TEST-TEST-TEST-TEST"));
+        assertFalse(LienPc.codeValide("TEST-TEST"));
+        assertEquals("ABCD-EFGH-JKLM-NPQR", LienPc.formater("abcdefghjklmnpqr"));
+        assertEquals("b6f360a2db7496fba521876907f782da", LienPc.canal("TEST-TEST-TEST-TEST"));
+        byte[] paquet = java.util.Base64.getDecoder().decode(PAQUET_PC);
+        byte[] clair = LienPc.dechiffrer(paquet, LienPc.cle("TEST-TEST-TEST-TEST"));
+        FichierPartage f = FichierPartage.lire(new ByteArrayInputStream(clair));
+        assertEquals(1, f.semaines.size());
+        assertEquals(46, f.semaines.get(0).semaine);
+        assertEquals("LAN264601START", f.semaines.get(0).lancements.get(0).nom);
+        try {
+            LienPc.dechiffrer(paquet, LienPc.cle("AAAA-AAAA-AAAA-AAAA"));
+            throw new AssertionError("un autre code ne doit pas déchiffrer");
+        } catch (LienPc.CodeFaux attendu) {
+            // bien refusé
+        }
+    }
+
+    /** Sur le vrai site : l'appli reliée avec le code affiché par le PC reçoit ses semaines. */
+    @Test
+    public void lienSurLeVraiSite() throws Exception {
+        String code = System.getProperty("sentinelle.lien_code", "");
+        assumeTrue(!code.isEmpty());
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
+        ShadowLooper.idleMainLooper();
+        onglet(a, MainActivity.ONGLET_BIBLIOTHEQUE);
+        assertTrue(ecran(a).contains("Relier au PC"));
+        a.partage().relier(code);
+        attendre(() -> !ecran(a).contains("Lecture des données du PC"));
+        String texte = ecran(a);
+        assertTrue(texte, texte.contains("Relié au PC"));
+        assertTrue(texte, texte.contains("semaine(s)"));
+        assertFalse(texte, texte.contains("❌"));
+        assertNotNull(((SentinelleApp) a.getApplication()).partage);
+        capturerSiDemande(a, "appli_lien.png");
+        // Sans réseau, la dernière version reçue reste lisible (gardée chiffrée sur le téléphone).
+        assertTrue(new File(a.getFilesDir(), "lien_partage.bin").exists());
     }
 }

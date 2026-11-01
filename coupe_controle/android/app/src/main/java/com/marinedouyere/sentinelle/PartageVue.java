@@ -48,6 +48,10 @@ final class PartageVue {
 
     private static final String PREFERENCES = "sentinelle_partage";
     private static final String CLE_URI = "uri";
+    /** Code de liaison avec le PC (lien sans Drive) et dernier envoi reçu (gardé pour lire sans réseau). */
+    private static final String CLE_CODE = "code_lien";
+    private static final String CLE_RECU = "recu_lien";
+    private static final String CACHE_LIEN = "lien_partage.bin";
     private static final int MAX_PAR_TYPE = 40;
     private static final int MAX_RESULTATS = 60;
 
@@ -70,6 +74,11 @@ final class PartageVue {
     /** Lancement à montrer dans Contrôler la coupe (bouton « Voir le contrôle »). */
     private String lancementAMontrer;
     private boolean pdfEnCours;
+    /** Message sans gravité (pas de réseau : dernière version reçue). */
+    private String avertissement;
+    /** Clé tirée du code (calcul un peu long : gardée). */
+    private String codeDeLaCle;
+    private byte[] cleDuCode;
 
     PartageVue(MainActivity activite, Ui ui, SentinelleApp app) {
         this.activite = activite;
@@ -108,39 +117,127 @@ final class PartageVue {
         actualiser();
     }
 
-    /** Relit le fichier (en arrière-plan). */
+    /** Code de liaison avec le PC (null : pas relié). */
+    String codeLien() {
+        String c = preferences().getString(CLE_CODE, null);
+        return c == null || c.isEmpty() ? null : c;
+    }
+
+    /** Relie l'appli au PC avec le code affiché par Sentinelle (Bibliothèque des semaines), puis lit les données. */
+    void relier(String code) {
+        if (!LienPc.codeValide(code)) {
+            erreur = "Le code a 16 lettres et chiffres (ABCD-EFGH-JKLM-NPQR) : vérifiez-le sur le PC.";
+            construire();
+            return;
+        }
+        preferences().edit().putString(CLE_CODE, LienPc.formater(code)).remove(CLE_RECU).apply();
+        //noinspection ResultOfMethodCallIgnored
+        new java.io.File(activite.getFilesDir(), CACHE_LIEN).delete();
+        donnees = null;
+        semaineChoisie = null;
+        actualiser();
+    }
+
+    private void delier() {
+        new MaterialAlertDialogBuilder(activite)
+                .setTitle("Délier du PC ?")
+                .setMessage("L'appli ne recevra plus les données du PC. Il faudra retaper le code pour la relier.")
+                .setNegativeButton("Annuler", null)
+                .setPositiveButton("Délier", (d, k) -> {
+                    preferences().edit().remove(CLE_CODE).remove(CLE_RECU).apply();
+                    //noinspection ResultOfMethodCallIgnored
+                    new java.io.File(activite.getFilesDir(), CACHE_LIEN).delete();
+                    donnees = null;
+                    app.partage = null;
+                    avertissement = null;
+                    erreur = null;
+                    if (uri() != null) actualiser();
+                    else construire();
+                })
+                .show();
+    }
+
+    private synchronized byte[] cleDe(String code) throws java.security.GeneralSecurityException {
+        if (cleDuCode == null || !code.equals(codeDeLaCle)) {
+            cleDuCode = LienPc.cle(code);
+            codeDeLaCle = code;
+        }
+        return cleDuCode;
+    }
+
+    private static byte[] toutLire(java.io.File f) throws java.io.IOException {
+        return java.nio.file.Files.readAllBytes(f.toPath());
+    }
+
+    /** Relit les données (en arrière-plan) : sur le site si l'appli est reliée au PC, sinon dans le fichier choisi. */
     void actualiser() {
+        final String code = codeLien();
         final Uri uri = uri();
-        if (uri == null) {
+        if (code == null && uri == null) {
             construire();
             return;
         }
         final int numero = ++generation;
         enLecture = true;
         erreur = null;
+        avertissement = null;
         construire();
         app.annexe.execute(() -> {
             FichierPartage lu = null;
             String nom = null;
             String probleme = null;
-            try {
-                nom = nomAffiche(uri);
-                try (InputStream entree = activite.getContentResolver().openInputStream(uri)) {
-                    if (entree == null) throw new java.io.FileNotFoundException("fichier introuvable");
-                    lu = FichierPartage.lire(entree);
+            String note = null;
+            if (code != null) {
+                java.io.File cache = new java.io.File(activite.getFilesDir(), CACHE_LIEN);
+                try {
+                    byte[] cle = cleDe(code);
+                    LienPc.Recu r = LienPc.telecharger(code);
+                    lu = FichierPartage.lire(new java.io.ByteArrayInputStream(LienPc.dechiffrer(r.paquet, cle)));
+                    try (java.io.FileOutputStream sortie = new java.io.FileOutputStream(cache)) {
+                        sortie.write(r.paquet);
+                    }
+                    preferences().edit().putString(CLE_RECU, new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.ROOT).format(new Date()) + "Z").apply();
+                    nom = "Relié au PC";
+                } catch (LienPc.CodeFaux e) {
+                    probleme = "Code faux : vérifiez le code affiché sur le PC (Bibliothèque des semaines).";
+                } catch (LienPc.RienPourCeCode e) {
+                    probleme = "Rien sur le site pour ce code : sur le PC, activez l'envoi au téléphone et vérifiez le code.";
+                } catch (Exception e) {
+                    // Pas de réseau (ou site injoignable) : la dernière version reçue.
+                    try {
+                        if (cache.exists()) {
+                            lu = FichierPartage.lire(new java.io.ByteArrayInputStream(LienPc.dechiffrer(toutLire(cache), cleDe(code))));
+                            nom = "Relié au PC";
+                            note = "Pas de connexion au site de Sentinelle : dernière version reçue.";
+                        } else {
+                            probleme = "Pas de connexion au site de Sentinelle (" + (e.getMessage() != null ? e.getMessage() : e.toString()) + ").";
+                        }
+                    } catch (Exception e2) {
+                        probleme = "Données illisibles : " + (e2.getMessage() != null ? e2.getMessage() : e2.toString());
+                    }
                 }
-            } catch (SecurityException | java.io.FileNotFoundException e) {
-                probleme = "Fichier introuvable ou plus autorisé : choisissez-le à nouveau.";
-            } catch (Exception e) {
-                probleme = "Fichier illisible : " + (e.getMessage() != null ? e.getMessage() : e.toString());
+            } else {
+                try {
+                    nom = nomAffiche(uri);
+                    try (InputStream entree = activite.getContentResolver().openInputStream(uri)) {
+                        if (entree == null) throw new java.io.FileNotFoundException("fichier introuvable");
+                        lu = FichierPartage.lire(entree);
+                    }
+                } catch (SecurityException | java.io.FileNotFoundException e) {
+                    probleme = "Fichier introuvable ou plus autorisé : choisissez-le à nouveau.";
+                } catch (Exception e) {
+                    probleme = "Fichier illisible : " + (e.getMessage() != null ? e.getMessage() : e.toString());
+                }
             }
             final FichierPartage resultat = lu;
             final String nomLu = nom;
             final String erreurLue = probleme;
+            final String noteLue = note;
             principal.post(() -> {
                 if (numero != generation) return;
                 enLecture = false;
                 erreur = erreurLue;
+                avertissement = noteLue;
                 if (resultat != null) {
                     donnees = resultat;
                     nomFichier = nomLu;
@@ -610,12 +707,48 @@ final class PartageVue {
     private MaterialCardView carteFichier() {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
-        corps.addView(ui.titre("Fichier partagé", 17, Ui.BORDEAUX));
+        corps.addView(ui.titre("Lien avec le PC", 17, Ui.BORDEAUX));
         corps.addView(ui.filetSaumon());
+        String code = codeLien();
+        if (code != null) {
+            corps.addView(ui.texte("✔ Relié au PC", 15, true, ui.couleur(R.color.ok_texte)));
+            corps.addView(ui.texte("Code " + code, 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 2));
+            if (donnees != null) {
+                String quand = dateLisible(donnees.genere);
+                corps.addView(ui.texte("Données du PC du " + (quand.isEmpty() ? "?" : quand) + (donnees.par.isEmpty() ? "" : " · " + donnees.par)
+                        + " · " + donnees.semaines.size() + " semaine(s)", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 4));
+            }
+            if (enLecture) corps.addView(ui.texte("Lecture des données du PC…", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 4));
+            if (avertissement != null) corps.addView(ui.bandeau("⚠ " + avertissement, ui.couleur(R.color.attention_fond), ui.couleur(R.color.attention_texte)), ui.marges(4, 6));
+            if (erreur != null) corps.addView(ui.bandeau("❌ " + erreur, ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)), ui.marges(4, 6));
+            LinearLayout boutons = ui.rangee();
+            MaterialButton actualiser = ui.bouton("Actualiser");
+            actualiser.setEnabled(!enLecture);
+            actualiser.setOnClickListener(v -> actualiser());
+            boutons.addView(actualiser, ui.poids(1));
+            boutons.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
+            MaterialButton delier = ui.boutonContour("Délier");
+            delier.setOnClickListener(v -> delier());
+            boutons.addView(delier, ui.poids(1));
+            corps.addView(boutons, ui.marges(6, 0));
+            return carte;
+        }
+        corps.addView(ui.texte("Sur le PC : Bibliothèque des semaines → « Activer l'envoi au téléphone », puis tapez ici le code affiché (une seule fois). "
+                + "Les données arrivent ensuite toutes seules, chiffrées.", 14, false, Ui.NOIR), ui.marges(0, 6));
+        EditText champCode = champ("ABCD-EFGH-JKLM-NPQR", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, "");
+        champCode.setTypeface(android.graphics.Typeface.MONOSPACE);
+        corps.addView(champCode, ui.pleineLargeur());
+        MaterialButton relier = ui.bouton("Relier au PC");
+        relier.setOnClickListener(v -> relier(champCode.getText().toString()));
+        corps.addView(relier, ui.marges(4, 0));
+        if (erreur != null && uri() == null) corps.addView(ui.bandeau("❌ " + erreur, ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)), ui.marges(6, 6));
+
+        // Sinon : le fichier partagé mis sur le Drive.
+        corps.addView(ui.separateur());
         Uri uri = uri();
         if (uri == null) {
-            corps.addView(ui.texte("Choisissez le fichier « " + FichierPartage.NOM + " » que Sentinelle écrit sur le PC, dans le Drive. "
-                    + "L'appli le relit à chaque retour dans l'appli.", 14, false, Ui.NOIR), ui.marges(0, 8));
+            corps.addView(ui.texte("Ou avec le Drive : choisissez le fichier « " + FichierPartage.NOM + " » que Sentinelle écrit sur le PC. "
+                    + "L'appli le relit à chaque retour dans l'appli.", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 6));
         } else {
             corps.addView(ui.texte(nomFichier != null ? nomFichier : FichierPartage.NOM, 15, true, Ui.NOIR));
             if (donnees != null) {
@@ -623,11 +756,11 @@ final class PartageVue {
                 corps.addView(ui.texte("Généré " + (quand.isEmpty() ? "" : "le " + quand + " ") + (donnees.par.isEmpty() ? "" : "par " + donnees.par)
                         + " · " + donnees.semaines.size() + " semaine(s)", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 4));
             }
+            if (enLecture) corps.addView(ui.texte("Lecture du fichier…", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 4));
+            if (erreur != null) corps.addView(ui.bandeau("❌ " + erreur, ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)), ui.marges(4, 6));
         }
-        if (enLecture) corps.addView(ui.texte("Lecture du fichier…", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 4));
-        if (erreur != null) corps.addView(ui.bandeau("❌ " + erreur, ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)), ui.marges(4, 6));
         LinearLayout boutons = ui.rangee();
-        MaterialButton choisir = uri == null ? ui.bouton("Choisir le fichier") : ui.boutonContour("Changer de fichier");
+        MaterialButton choisir = ui.boutonContour(uri == null ? "Choisir le fichier" : "Changer de fichier");
         choisir.setOnClickListener(v -> activite.choisirFichierPartage());
         boutons.addView(choisir, ui.poids(1));
         if (uri != null) {

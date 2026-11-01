@@ -133,7 +133,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onResume() {
         super.onResume();
         // Retour dans l'appli : le fichier partagé a pu changer sur le PC.
-        if (partage().uri() != null) partage().actualiser();
+        if (partage().uri() != null || partage().codeLien() != null) partage().actualiser();
     }
 
     /** Les écrans, tous lus dans le fichier partagé. */
