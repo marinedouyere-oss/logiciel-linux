@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.0 — Contrôle de coupe</title>
+<title>Sentinelle V6.0.1 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -73,6 +73,8 @@
   .menu-dossier .petit { font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--saumon); }
   .menu-dossier .nom { font-weight: 700; word-break: break-word; }
   .menu-dossier .etat-dossier { font-size: 0.8rem; color: var(--saumon); }
+  .bouton-menu { margin-top: 4px; min-height: 40px; padding: 0 12px; border-radius: 10px; background: #fff; color: var(--bordeaux); border: 1px solid #fff; font-size: 0.85rem; }
+  .bouton-menu:hover:not(:disabled) { background: var(--saumon-pale); border-color: var(--saumon-pale); }
   .contenu { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
   main { width: 100%; max-width: 1180px; margin: 0 auto; padding: 28px 32px 30px; flex: 1 0 auto; }
   .inactif { display: none; }
@@ -416,7 +418,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.1</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -482,7 +484,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.0 · Contrôle de coupe</span>
+    <span>Sentinelle V6.0.1 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -5797,14 +5799,21 @@ function nomLancementReecrit(reglage) {
 const nomDossierSemaine = (ss) => `Semaine ${String(ss).padStart(2, "0")}`;
 const memeNomDossier = (a, b) => a.trim().toLocaleUpperCase("fr") === b.trim().toLocaleUpperCase("fr");
 
-// Les dossiers « Semaine NN » sous le dossier choisi (jusqu'à 3 niveaux : année / mois / semaine).
-async function chercherDossiersSemaine(racine, semaine, profondeur = 3, chemin = []) {
+// Numéro de semaine d'un nom de dossier : « Semaine 46 », « SEMAINE 46 - 2026 », « Sem 46 », « S46 » → 46 ; sinon null.
+function numeroDossierSemaine(nom) {
+  const m = /^(?:semaine|sem\.?|s)\s*0*(\d{1,2})(?!\d)/i.exec(String(nom).trim());
+  return m ? Number(m[1]) : null;
+}
+
+// Les dossiers de la semaine sous le dossier choisi (jusqu'à 4 niveaux : année / mois / semaine…).
+// On ne descend pas dans les dossiers des autres semaines.
+async function chercherDossiersSemaine(racine, semaine, profondeur = 4, chemin = []) {
   const trouves = [];
-  const re = new RegExp(`^semaine\\s*0*${Number(semaine)}$`, "i");
   for await (const [nom, entree] of racine.entries()) {
     if (entree.kind !== "directory") continue;
-    if (re.test(nom.trim())) trouves.push({ dossier: entree, chemin: [...chemin, nom] });
-    else if (profondeur > 1 && !/^semaine/i.test(nom.trim())) trouves.push(...(await chercherDossiersSemaine(entree, semaine, profondeur - 1, [...chemin, nom])));
+    const n = numeroDossierSemaine(nom);
+    if (n === Number(semaine)) trouves.push({ dossier: entree, chemin: [...chemin, nom] });
+    else if (n === null && profondeur > 1) trouves.push(...(await chercherDossiersSemaine(entree, semaine, profondeur - 1, [...chemin, nom])));
   }
   return trouves;
 }
@@ -5814,9 +5823,10 @@ async function sousDossier(parent, nom) {
   return { dossier: await parent.getDirectoryHandle(nom, { create: true }), nom, cree: true };
 }
 
-async function fichierExiste(dossier, nom) {
-  for await (const [n, entree] of dossier.entries()) if (entree.kind === "file" && n.toLocaleUpperCase("fr") === nom.toLocaleUpperCase("fr")) return true;
-  return false;
+// Le vrai nom du fichier s'il existe déjà dans le dossier (majuscules ou non), sinon null.
+async function fichierExistant(dossier, nom) {
+  for await (const [n, entree] of dossier.entries()) if (entree.kind === "file" && n.toLocaleUpperCase("fr") === nom.toLocaleUpperCase("fr")) return n;
+  return null;
 }
 
 // ---- L'onglet ----
@@ -5852,7 +5862,9 @@ async function choisirRacineReecriture() {
   } catch (_annulation) {
     return;
   }
+  reecriture.etat = null;
   afficherReecriture();
+  majMenuDossier();
 }
 
 async function fichierExtractionChoisi(fichier) {
@@ -5892,7 +5904,17 @@ async function lancerReecriture() {
       if ((await racine.requestPermission({ mode: "readwrite" })) !== "granted") throw new Error("accès au dossier refusé");
     }
     const ss = String(r.semaine).padStart(2, "0");
-    const semaines = await chercherDossiersSemaine(racine, ss);
+    // Le dossier choisi peut être directement celui de la semaine : on range dedans.
+    const numeroRacine = numeroDossierSemaine(racine.name);
+    if (numeroRacine !== null && numeroRacine !== Number(ss)) {
+      await afficherBlocage(
+        "Le dossier choisi est une autre semaine",
+        `Le dossier des semaines choisi est « ${racine.name} ».\n\nPour ranger un lancement de la semaine ${Number(ss)}, choisissez le dossier qui contient toutes les semaines (bouton « Changer »). Rien n'a été enregistré.`
+      );
+      etat(["Rien n'a été enregistré : le dossier choisi est une autre semaine."], true);
+      return;
+    }
+    const semaines = numeroRacine === Number(ss) ? [{ dossier: racine, chemin: [] }] : await chercherDossiersSemaine(racine, ss);
     let dossierSemaine;
     let cheminSemaine;
     if (semaines.length > 1) {
@@ -5900,22 +5922,24 @@ async function lancerReecriture() {
       etat(["Rien n'a été enregistré."], true);
       return;
     }
-    if (semaines.length === 1) {
-      dossierSemaine = semaines[0].dossier;
-      cheminSemaine = [racine.name, ...semaines[0].chemin];
-    } else {
-      if (!(await demanderConfirmation(`Créer le dossier « ${nomDossierSemaine(ss)} » ?`, `Il n'existe pas encore dans « ${racine.name} ». Sentinelle va le créer pour y ranger le lancement.`, "Créer"))) {
-        etat(["Rien n'a été enregistré."], true);
-        return;
-      }
-      dossierSemaine = await racine.getDirectoryHandle(nomDossierSemaine(ss), { create: true });
-      cheminSemaine = [racine.name, nomDossierSemaine(ss)];
+    // Les dossiers des semaines existent déjà : Sentinelle n'en crée jamais.
+    if (semaines.length === 0) {
+      await afficherBlocage(
+        "Dossier de la semaine introuvable",
+        `Aucun dossier de la semaine ${Number(ss)} dans « ${racine.name} » ni dans ses sous-dossiers.\n\nSentinelle ne crée pas les dossiers des semaines. Changez le dossier des semaines (bouton « Changer ») : choisissez le dossier de la semaine ${Number(ss)}, ou celui qui contient les semaines. Rien n'a été enregistré.`
+      );
+      etat([`Rien n'a été enregistré : dossier de la semaine ${Number(ss)} introuvable dans « ${racine.name} ».`], true);
+      return;
     }
+    dossierSemaine = semaines[0].dossier;
+    cheminSemaine = [racine.name, ...semaines[0].chemin];
+    // Dans la semaine, le dossier du lancement (1ER TOUR AGGLO, FENO…) est créé s'il n'y est pas encore.
     const sous = await sousDossier(dossierSemaine, type.dossier);
     const chemin = [...cheminSemaine, sous.nom].join(" / ");
-    if (await fichierExiste(sous.dossier, nom)) {
-      await afficherBlocage("Le fichier existe déjà", `« ${nom} » existe déjà dans :\n${chemin}\n\nSentinelle ne l'écrase pas. Rien n'a été enregistré.`);
-      etat([`⚠ « ${nom} » existe déjà dans ${chemin} : rien n'a été enregistré.`], true);
+    // Le lancement existe déjà : on prévient, et on n'écrase que si c'est validé.
+    const existant = await fichierExistant(sous.dossier, nom);
+    if (existant && !(await demanderConfirmation("Le fichier existe déjà", `« ${existant} » existe déjà dans :\n${chemin}\n\nÉcraser ce lancement ? L'ancien fichier sera remplacé par le nouveau.`, "Écraser"))) {
+      etat([`⚠ « ${existant} » existe déjà dans ${chemin} : rien n'a été enregistré.`], true);
       return;
     }
     // Les corrections sont refaites sur une copie neuve de l'extraction (l'analyse affichée reste intacte).
@@ -5923,12 +5947,12 @@ async function lancerReecriture() {
     const plan = planifierCorrections(analyse, type);
     const octets = await ecrireLanCorrige(analyse, plan);
     await verifierLanCorrige(reecriture.fichier.octets, octets, plan);
-    const fh = await sous.dossier.getFileHandle(nom, { create: true });
+    const fh = await sous.dossier.getFileHandle(existant || nom, { create: true });
     const w = await fh.createWritable();
     await w.write(octets);
     await w.close();
-    ajouterAuJournal(nom, chemin);
-    etat([`✔ Enregistré : ${chemin} / ${nom}`, resumeCorrections(plan, type)]);
+    ajouterAuJournal(existant || nom, chemin);
+    etat([`✔ Enregistré${existant ? " (ancien fichier remplacé)" : ""} : ${chemin} / ${existant || nom}`, resumeCorrections(plan, type)]);
   } catch (erreur) {
     etat([`Réécriture impossible : ${erreur && erreur.message ? erreur.message : erreur}. Rien n'a été enregistré.`], true);
   } finally {
@@ -5993,7 +6017,10 @@ function apercuReecriture() {
   const a = reecriture.analyse;
   const plan = a && type ? planifierCorrections(a, type) : null;
   const fleche = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>';
-  const morceaux = [reecriture.racine ? reecriture.racine.name : "Dossier des semaines", r.semaine ? nomDossierSemaine(r.semaine) : "Semaine ?", type ? type.dossier : "?"];
+  const racine = reecriture.racine;
+  // Dossier choisi = directement la semaine : pas de « Semaine NN » en plus dans le chemin.
+  const racineEstSemaine = racine && numeroDossierSemaine(racine.name) !== null;
+  const morceaux = [racine ? racine.name : "Dossier des semaines", ...(racineEstSemaine ? [] : [r.semaine ? nomDossierSemaine(r.semaine) : "Semaine ?"]), type ? type.dossier : "?"];
   let html = `<div class="fichier-cree">
     <div class="petit">Nom</div>
     <div class="nom-fichier" id="reecNom">${nom ? echapper(nom) : "—"}</div>
@@ -6081,9 +6108,9 @@ function afficherReecriture() {
       <div id="reecApercu">${apercuReecriture()}</div>
       <div class="ligne-dossier-semaines">
         <span>Dossier des semaines : <strong>${reecriture.racine ? echapper(reecriture.racine.name) : "aucun dossier choisi"}</strong></span>
-        <button type="button" class="texte" id="btnRacineReecriture">${reecriture.racine ? "Changer" : "Choisir le dossier des semaines"}</button>
+        <button type="button" class="contour" id="btnRacineReecriture">${reecriture.racine ? "Changer" : "Choisir le dossier des semaines"}</button>
       </div>
-      <div class="note note-cadenas">Rien n'est ajouté au fichier : seules les cases corrigées changent. Si le fichier existe déjà, message bloquant, rien n'est écrasé.</div>
+      <div class="note note-cadenas">Rien n'est ajouté au fichier : seules les cases corrigées changent. Si le fichier existe déjà, Sentinelle demande avant de l'écraser.</div>
       <button type="button" class="bouton-creer" id="btnReecrire" ${peutReecrire() ? "" : "disabled"}>${reecriture.enCours ? "Enregistrement…" : "Créer le fichier"}</button>
       ${!reecriture.racine && a ? '<div class="note">Choisissez d\'abord le dossier des semaines.</div>' : ""}
       ${reecriture.etat ? `<div id="reecEtat" class="compte-rendu ${reecriture.etat.erreur ? "erreur" : "reussi"}">${reecriture.etat.lignes.map(echapper).join("<br>")}</div>` : ""}
@@ -9367,9 +9394,13 @@ function majMenuDossier() {
   const zone = $("menuDossier");
   if (!zone) return;
   const r = typeof reecriture !== "undefined" ? reecriture.racine : null;
-  zone.innerHTML = `<span class="petit">Dossier des lancements</span>
+  const pc = typeof window.showDirectoryPicker === "function";
+  zone.innerHTML = `<span class="petit">Dossier des semaines</span>
     <span class="nom">${r ? echapper(r.name) : "Aucun dossier choisi"}</span>
-    <span class="etat-dossier">${r ? "Relié · rangement automatique" : "À choisir dans « Préparer un lancement »"}</span>`;
+    <span class="etat-dossier">${r ? "Les lancements préparés y sont rangés tout seuls." : "C'est là que les lancements préparés seront rangés."}</span>
+    ${pc ? `<button type="button" class="bouton-menu" id="btnMenuDossier">${r ? "Changer de dossier" : "Choisir le dossier"}</button>` : ""}`;
+  const bouton = $("btnMenuDossier");
+  if (bouton) bouton.addEventListener("click", choisirRacineReecriture);
 }
 
 // ---- Accueil : la semaine d'un coup d'œil ----
