@@ -141,6 +141,46 @@ public class PartageTest {
         }
     }
 
+    private static com.google.android.material.button.MaterialButton bouton(View v, String debut) {
+        if (v instanceof com.google.android.material.button.MaterialButton && ((TextView) v).getText().toString().startsWith(debut))
+            return (com.google.android.material.button.MaterialButton) v;
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) {
+                com.google.android.material.button.MaterialButton t = bouton(g.getChildAt(i), debut);
+                if (t != null) return t;
+            }
+        }
+        return null;
+    }
+
+    /** Choix de la semaine : « Semaine 46 · 2026 ▾ » au milieu, ‹ semaine d'avant, › semaine d'après. */
+    @Test
+    public void choixDeLaSemaine() throws Exception {
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
+        ShadowLooper.idleMainLooper();
+        TabLayout onglets = chercherVue(a.getWindow().getDecorView(), TabLayout.class);
+        for (int i = 0; i < onglets.getTabCount(); i++) if (MainActivity.ONGLET_PARTAGE.equals(onglets.getTabAt(i).getTag())) onglets.getTabAt(i).select();
+        ShadowLooper.idleMainLooper();
+        File copie = new File(a.getCacheDir(), FichierPartage.NOM);
+        try (OutputStream out = new FileOutputStream(copie)) {
+            out.write(gzip(EXEMPLE));
+        }
+        a.partage().fichierChoisi(Uri.fromFile(copie));
+        View racine = a.getWindow().getDecorView();
+        attendre(() -> bouton(racine, "Semaine 46 · 2026") != null);
+        assertTrue("‹ actif sur la semaine la plus récente", bouton(racine, "‹").isEnabled());
+        assertFalse("› inactif sur la semaine la plus récente", bouton(racine, "›").isEnabled());
+        bouton(racine, "‹").performClick();
+        ShadowLooper.idleMainLooper();
+        assertNotNull("semaine 45 choisie", bouton(racine, "Semaine 45 · 2026"));
+        StringBuilder ecran = new StringBuilder();
+        textes(racine, ecran);
+        assertTrue(ecran.toString().contains("Semaine 45 — lancements"));
+        assertTrue("› actif sur la semaine 45", bouton(racine, "›").isEnabled());
+        assertFalse("‹ inactif sur la plus ancienne", bouton(racine, "‹").isEnabled());
+    }
+
     /** Le vrai fichier écrit par la page web (semaines 44 à 46) : l'onglet Partagé l'affiche. */
     @Test
     public void ongletPartageSurLeVraiFichier() throws Exception {

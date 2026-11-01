@@ -19,12 +19,12 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
 import android.widget.EditText;
-import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
@@ -324,23 +324,50 @@ final class PartageVue {
         return s;
     }
 
+    /** Choix de la semaine : ‹ semaine d'avant, « Semaine 46 · 2026 ▾ » (liste de toutes les semaines), semaine d'après ›. */
     private View choixSemaines(FichierPartage.Semaine choisie) {
+        List<FichierPartage.Semaine> liste = donnees.semaines; // la plus récente d'abord
+        int i = liste.indexOf(choisie);
         LinearLayout rangee = ui.rangee();
-        for (FichierPartage.Semaine s : donnees.semaines) {
-            MaterialButton b = s == choisie ? ui.bouton(s.libelle()) : ui.boutonContour(s.libelle());
-            b.setContentDescription(s.libelle() + " " + s.annee);
-            b.setOnClickListener(v -> {
-                semaineChoisie = s.id;
-                construire();
-            });
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-            lp.setMargins(0, 0, ui.dp(8), 0);
-            rangee.addView(b, lp);
+        rangee.setGravity(Gravity.CENTER_VERTICAL);
+        MaterialButton avant = ui.boutonContour("‹");
+        avant.setContentDescription("Semaine d'avant");
+        avant.setEnabled(i >= 0 && i < liste.size() - 1);
+        avant.setOnClickListener(v -> choisirSemaine(liste.get(i + 1)));
+        MaterialButton choix = ui.bouton(choisie.libelle() + " · " + choisie.annee + "  ▾");
+        choix.setContentDescription("Choisir la semaine (" + choisie.libelle() + " " + choisie.annee + ")");
+        choix.setOnClickListener(v -> listeDesSemaines());
+        MaterialButton apres = ui.boutonContour("›");
+        apres.setContentDescription("Semaine d'après");
+        apres.setEnabled(i > 0);
+        apres.setOnClickListener(v -> choisirSemaine(liste.get(i - 1)));
+        LinearLayout.LayoutParams lpBord = new LinearLayout.LayoutParams(ui.dp(56), ViewGroup.LayoutParams.WRAP_CONTENT);
+        LinearLayout.LayoutParams lpMilieu = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        lpMilieu.setMargins(ui.dp(8), 0, ui.dp(8), 0);
+        rangee.addView(avant, lpBord);
+        rangee.addView(choix, lpMilieu);
+        rangee.addView(apres, new LinearLayout.LayoutParams(ui.dp(56), ViewGroup.LayoutParams.WRAP_CONTENT));
+        return rangee;
+    }
+
+    private void choisirSemaine(FichierPartage.Semaine s) {
+        semaineChoisie = s.id;
+        construire();
+    }
+
+    /** Toutes les semaines du fichier partagé, la plus récente d'abord, avec leur nombre de lancements. */
+    private void listeDesSemaines() {
+        List<FichierPartage.Semaine> liste = donnees.semaines;
+        String[] noms = new String[liste.size()];
+        for (int k = 0; k < liste.size(); k++) {
+            FichierPartage.Semaine s = liste.get(k);
+            noms[k] = s.libelle() + " · " + s.annee + " — " + s.lancements.size() + " lancement(s)";
         }
-        HorizontalScrollView defilement = new HorizontalScrollView(activite);
-        defilement.setHorizontalScrollBarEnabled(false);
-        defilement.addView(rangee);
-        return defilement;
+        new MaterialAlertDialogBuilder(activite)
+                .setTitle("Choisir la semaine")
+                .setItems(noms, (d, k) -> choisirSemaine(liste.get(k)))
+                .setNegativeButton("Annuler", null)
+                .show();
     }
 
     private static String nombre(String v) {

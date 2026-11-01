@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.0.3 — Contrôle de coupe</title>
+<title>Sentinelle V6.0.4 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -343,6 +343,11 @@
   .colonne-postes > button { min-height: 44px; border-radius: 10px; }
   .carte-paire { scroll-margin-top: 16px; transition: box-shadow 0.3s; }
   .carte-paire.choisie { box-shadow: 0 0 0 3px var(--bordeaux); }
+  .ouvrir-semaine { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px; margin: 4px 0 12px; }
+  .ouvrir-semaine label { display: flex; flex-direction: column; gap: 4px; font-size: 0.85rem; font-weight: 700; color: #4a403d; }
+  .ouvrir-semaine input { width: 100px; min-height: 44px; padding: 0 10px; border: 1px solid #cfccc6; border-radius: 10px; font-family: var(--texte); font-size: 1rem; font-weight: 700; }
+  .ouvrir-semaine button { min-height: 44px; border-radius: 10px; }
+  .ouvrir-semaine .note { flex: 1 1 260px; margin: 0; }
   /* ---- V6.0 : préparer un lancement ---- */
   .reec-colonnes { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
   .reec-gauche { flex: 3 1 460px; min-width: 0; }
@@ -418,7 +423,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.3</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.4</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -484,7 +489,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.0.3 · Contrôle de coupe</span>
+    <span>Sentinelle V6.0.4 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -1371,8 +1376,69 @@ async function exporterRapport(rapport, nomFichier) {
 async function chargerClasseur(file) {
   const buffer = await file.arrayBuffer();
   const workbook = new ExcelJS.Workbook();
-  await workbook.xlsx.load(buffer);
-  return workbook;
+  let erreur = null;
+  try {
+    await workbook.xlsx.load(buffer);
+    if (workbook.worksheets.length) return workbook;
+  } catch (e) {
+    erreur = e;
+  }
+  // Export brut du logiciel de gestion (balises « x:… », liens « /xl/… ») : relu après remise en forme,
+  // en mémoire seulement (le fichier sur le disque ne change pas).
+  let remis = null;
+  try {
+    remis = await classeurRemisEnForme(new Uint8Array(buffer));
+  } catch (_e) {
+    remis = null;
+  }
+  if (!remis) {
+    if (erreur) throw erreur;
+    return workbook;
+  }
+  const relu = new ExcelJS.Workbook();
+  await relu.xlsx.load(remis);
+  return relu;
+}
+
+// Parties XML écrites avec un préfixe (« <x:workbook xmlns:x=…> », « <ap:Properties> ») : le préfixe de la
+// balise principale devient l'espace de noms par défaut ; liens absolus des .rels (« /xl/… ») rendus relatifs.
+// Renvoie le classeur remis en forme (octets zip), ou null s'il n'y avait rien à changer.
+async function classeurRemisEnForme(octets) {
+  const parties = await partiesClasseur(octets);
+  const lecteur = new TextDecoder("utf-8");
+  const encodeur = new TextEncoder();
+  let change = false;
+  const nouvelles = parties.map(([nom, contenu]) => {
+    if (!/\.(xml|rels)$/i.test(nom)) return [nom, contenu];
+    const avant = lecteur.decode(contenu).replace(/^\uFEFF/, "");
+    let t = avant;
+    const racine = /^\s*(?:<\?xml[^>]*\?>)?\s*<([\w.-]+):[\w.-]+/.exec(t);
+    if (racine) {
+      const p = racine[1];
+      const decl = new RegExp(`xmlns:${p}="([^"]*)"`).exec(t);
+      const debut = t.slice(0, t.indexOf(">", racine[0].length) + 1);
+      if (decl && !/\sxmlns="/.test(debut)) {
+        t = t.replace(new RegExp(`<(/?)${p}:`, "g"), "<$1").replace(decl[0], `xmlns="${decl[1]}" ${decl[0]}`);
+      }
+    }
+    if (/\.rels$/i.test(nom)) {
+      const base = nom.replace(/(^|\/)_rels\/[^/]*$/, "");
+      t = t.replace(/Target="\/([^"]*)"/g, (_m, cible) => `Target="${cheminRelatif(base, cible)}"`);
+    }
+    if (t === avant) return [nom, contenu];
+    change = true;
+    return [nom, encodeur.encode(t)];
+  });
+  return change ? ecrireZip(nouvelles) : null;
+}
+
+// « xl » + « xl/worksheets/sheet1.xml » → « worksheets/sheet1.xml » ; « » + « xl/workbook.xml » → « xl/workbook.xml ».
+function cheminRelatif(base, cible) {
+  const b = base ? base.split("/") : [];
+  const c = cible.split("/");
+  let i = 0;
+  while (i < b.length && i < c.length - 1 && b[i] === c[i]) i++;
+  return [...Array(b.length - i).fill(".."), ...c.slice(i)].join("/");
 }
 
 
@@ -2972,10 +3038,10 @@ function roleRattache(nom) {
   return null;
 }
 
-// Dossier de semaine (« Semaine 46 », « S46 », « SEM 46 ») : son numéro sur deux chiffres, sinon null.
+// Dossier de semaine (« Semaine 46 », « S46 », « SEM 46 », « SEMAINE 46 - 2026 ») : son numéro sur deux chiffres, sinon null.
 function semaineDuDossier(nom) {
-  const m = /^\s*S(?:EM(?:AINE)?)?\s*\.?\s*(\d{1,2})\s*$/i.exec(nom || "");
-  return m ? m[1].padStart(2, "0") : null;
+  const m = /^\s*S(?:EM(?:AINE)?)?\s*\.?\s*0*(\d{1,2})(?!\d)/i.exec(nom || "");
+  return m && Number(m[1]) >= 1 && Number(m[1]) <= 53 ? m[1].padStart(2, "0") : null;
 }
 
 // Case d'un dossier de lancement (« 1ER TOUR AGGLO », « FENO », « CASSE »…) ; null pour un chantier.
@@ -3098,6 +3164,7 @@ function repartirFichiersDossier(fichiersDossier, pariteScan, racine = "") {
       continue;
     }
     if (!dossier) {
+      f.semaineDossier = semaine;
       aPlat.push(f);
       continue;
     }
@@ -3107,6 +3174,8 @@ function repartirFichiersDossier(fichiersDossier, pariteScan, racine = "") {
   }
   const fichiersDiakonos = [];
   const listeGroupes = groupesAPlat(aPlat, res, fichiersDiakonos);
+  // Une casse posée directement dans un dossier « Semaine NN » est la casse de cette semaine (sinon : semaine de son nom + 1).
+  for (const g of listeGroupes) if (g.poste === "Casse" && g.strat && g.strat.semaineDossier) g.parite = pariteDuNumeroSemaine(g.strat.semaineDossier);
   for (const d of [...parDossier.values()].sort((a, b) => a.dossier.localeCompare(b.dossier))) {
     listeGroupes.push(...groupesDuDossier(d.dossier, d.semaine, d.fichiers, res, fichiersDiakonos));
   }
@@ -4649,8 +4718,18 @@ const semainesConnuesAvant = (avant) =>
     .map((s) => String(s.semaine).padStart(2, "0"));
 
 // Semaine d'un lancement, comme l'onglet l'affiche : celle du code de la colonne lancement (sinon du nom du
-// fichier, sinon du dossier « Semaine 46 ») ; la casse se fabrique la semaine d'après.
+// fichier, sinon du dossier « Semaine 46 ») ; la casse se fabrique la semaine d'après, sauf si elle est rangée
+// dans un dossier « Semaine NN » : c'est alors la casse de cette semaine-là.
 function semaineDuLancement(lignes, casse, nomFichier, semaineDossier = null) {
+  if (casse && semaineDossier) {
+    const base = semaineDuLancement(lignes, false, nomFichier, semaineDossier);
+    const n = parseInt(semaineDossier, 10);
+    if (base && n >= 1 && n <= 53) {
+      // Année : celle du lancement, corrigée au passage d'une année à l'autre (casse 52 rangée en semaine 01).
+      const annee = n < base.semaine - 26 ? base.annee + 1 : n > base.semaine + 26 ? base.annee - 1 : base.annee;
+      return { annee, semaine: n };
+    }
+  }
   let code = String((lignes.find((l) => l.lancement) || {}).lancement || "");
   let semaine = extraireSemaine(code);
   if (!semaine) {
@@ -4734,7 +4813,8 @@ async function archiverOnglet(parite, lancementsRapport) {
     try {
       const strat = await stratEnCache(p.strat);
       const casse = p.poste === "Casse";
-      const sem = semaineDuLancement(strat.lignes, casse, p.strat.name);
+      // La casse est dans l'onglet de la semaine où le scan l'a rangée.
+      const sem = semaineDuLancement(strat.lignes, casse, p.strat.name, casse ? String(numeroSemaine(parite)) : null);
       if (!sem) continue;
       const c = controles.get(p);
       const fichiers = {};
@@ -8016,17 +8096,83 @@ function remplirCarteDossier(parite) {
   if (!carte) return;
   const handle = dossierPartageHandles[parite];
   const etat = etatsScan[parite];
+  const racine = typeof reecriture !== "undefined" ? reecriture.racine : null;
   carte.innerHTML = `
-    <div class="carte-titre">Dossier partagé</div>
-    ${handle ? `<div class="note">${echapper(handle.name)}</div>` : ""}
+    <div class="carte-titre">Dossier de la semaine</div>
+    ${
+      typeof window.showDirectoryPicker === "function"
+        ? `<div class="ouvrir-semaine">
+      <label>Semaine<input type="number" id="champSemaineControle" min="1" max="53" value="${numeroSemaine(parite)}"></label>
+      <button type="button" id="btnOuvrirSemaine" ${scansEnCours.size ? "disabled" : ""}>Ouvrir et contrôler</button>
+      <span class="note">Cherchée dans « ${racine ? echapper(racine.name) : "le dossier des semaines"} »${racine ? "" : " (à choisir dans le menu à gauche)"}, sous-dossiers compris.</span>
+    </div>`
+        : ""
+    }
+    ${handle ? `<div class="note">Dossier ouvert : <strong>${echapper(handle.name)}</strong></div>` : ""}
     <div class="boutons-carte">
-      <button type="button" class="contour" id="btnChoisirDossier">${handle ? "Changer" : "Choisir le dossier"}</button>
+      <button type="button" class="contour" id="btnChoisirDossier">${handle ? "Choisir un autre dossier" : "Choisir le dossier à la main"}</button>
       <button type="button" id="btnScanner" ${handle && !scansEnCours.has(parite) ? "" : "disabled"}>Scanner</button>
     </div>
     ${etat ? `<div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes.map(echapper).join("<br>")}</div>` : ""}
   `;
   $("btnChoisirDossier").addEventListener("click", () => choisirDossier(parite));
   $("btnScanner").addEventListener("click", () => scannerDossier(parite));
+  const ouvrir = $("btnOuvrirSemaine");
+  if (ouvrir) {
+    ouvrir.addEventListener("click", () => ouvrirSemaine(parite, $("champSemaineControle").value));
+    $("champSemaineControle").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") ouvrirSemaine(parite, e.target.value);
+    });
+  }
+}
+
+// « Ouvrir et contrôler » : le dossier « Semaine NN » est cherché dans le dossier des semaines (« Lancement »,
+// année / mois compris), devient le dossier de l'onglet de cette semaine, puis il est scanné.
+async function ouvrirSemaine(pariteActuelle, valeur) {
+  const n = parseInt(valeur, 10);
+  if (Number.isNaN(n) || n < 1 || n > 53) {
+    compteRendu(pariteActuelle, ["Tapez un numéro de semaine entre 1 et 53."], true);
+    return;
+  }
+  const parite = n % 2 === 0 ? "paire" : "impaire";
+  const libelle = `Semaine ${String(n).padStart(2, "0")}`;
+  let racine = typeof reecriture !== "undefined" ? reecriture.racine : null;
+  if (!racine) {
+    await choisirRacineReecriture();
+    racine = reecriture.racine;
+    if (!racine) return;
+  }
+  try {
+    if (racine.queryPermission && (await racine.queryPermission({ mode: "read" })) !== "granted") {
+      if ((await racine.requestPermission({ mode: "read" })) !== "granted") throw new Error("accès refusé");
+    }
+    let trouves = numeroDossierSemaine(racine.name) === n ? [{ dossier: racine, chemin: [] }] : await chercherDossiersSemaine(racine, n);
+    // Plusieurs années : celle qui correspond au calendrier.
+    if (trouves.length > 1) {
+      const annee = String(anneeDeSemaine(n));
+      const memeAnnee = trouves.filter((t) => t.chemin.some((c) => c.includes(annee)));
+      if (memeAnnee.length === 1) trouves = memeAnnee;
+    }
+    if (!trouves.length) {
+      compteRendu(pariteActuelle, [`Aucun dossier « ${libelle} » dans « ${racine.name} ».`], true);
+      return;
+    }
+    if (trouves.length > 1) {
+      compteRendu(pariteActuelle, [`Plusieurs dossiers « ${libelle} » dans « ${racine.name} » : ${trouves.map((t) => t.chemin.join(" / ")).join(" ; ")}. Choisissez le bon à la main.`], true);
+      return;
+    }
+    const dossier = trouves[0].dossier;
+    dossierPartageHandles[parite] = dossier;
+    sauvegarderPoigneeDossierPartage(dossier, parite);
+    etatsScan[parite] = null;
+    if (onglet !== parite) {
+      onglet = parite;
+      afficher();
+    } else remplirCarteDossier(parite);
+    await scannerDossier(parite);
+  } catch (erreur) {
+    compteRendu(pariteActuelle, [`Ouverture impossible : ${erreur && erreur.message ? erreur.message : erreur}`], true);
+  }
 }
 
 function compteRendu(parite, lignes, erreur) {
