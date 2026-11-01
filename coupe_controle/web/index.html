@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.0.5 — Contrôle de coupe</title>
+<title>Sentinelle V6.0.6 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -423,7 +423,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.5</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.6</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -489,7 +489,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.0.5 · Contrôle de coupe</span>
+    <span>Sentinelle V6.0.6 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -3887,6 +3887,9 @@ function largeursPdf(p) {
   return p.largeursMm.map((v) => (v * RAPPORT_UTILE) / somme);
 }
 
+// Colonne alignée à droite : à partir de nbColonnesTexte (nombre) ou dans la liste donnée.
+const aDroitePdf = (nbColonnesTexte, j) => (Array.isArray(nbColonnesTexte) ? nbColonnesTexte.includes(j) : j >= nbColonnesTexte);
+
 // En-tête de tableau : fond bordeaux, texte blanc en capitales espacées.
 function enteteTableauPdf(pdf, y, entete, l, nbColonnesTexte) {
   const capitales = entete.map((e) => e.toLocaleUpperCase("fr"));
@@ -3898,7 +3901,7 @@ function enteteTableauPdf(pdf, y, entete, l, nbColonnesTexte) {
     const haut = y + (h - m.length * 10) / 2 + 7.5;
     m.forEach((t, k) => {
       const lt = largeurTextePdf(t, RAPPORT_TAILLE_ENTETE, POLICE.GRAS, 0.6);
-      const xt = j >= nbColonnesTexte ? x + l[j] - RAPPORT_REMPLISSAGE - lt : x + RAPPORT_REMPLISSAGE;
+      const xt = aDroitePdf(nbColonnesTexte, j) ? x + l[j] - RAPPORT_REMPLISSAGE - lt : x + RAPPORT_REMPLISSAGE;
       pdf.texte(xt, haut + k * 10, t, RAPPORT_TAILLE_ENTETE, POLICE.GRAS, CHARTE.BLANC, 0.6);
     });
     x += l[j];
@@ -3924,7 +3927,7 @@ function rangeePdf(pdf, y, cellules, l, nbColonnesTexte, fond, police, rgb, file
     const morceaux = couperTextePdf(c, l[j] - 2 * RAPPORT_REMPLISSAGE, RAPPORT_TAILLE, pj);
     const haut = y + (h - morceaux.length * RAPPORT_INTERLIGNE) / 2 + RAPPORT_INTERLIGNE - 2.5;
     morceaux.forEach((t, k) => {
-      const xt = j >= nbColonnesTexte ? x + l[j] - RAPPORT_REMPLISSAGE - largeurTextePdf(t, RAPPORT_TAILLE, pj) : x + RAPPORT_REMPLISSAGE;
+      const xt = aDroitePdf(nbColonnesTexte, j) ? x + l[j] - RAPPORT_REMPLISSAGE - largeurTextePdf(t, RAPPORT_TAILLE, pj) : x + RAPPORT_REMPLISSAGE;
       pdf.texte(xt, haut + k * RAPPORT_INTERLIGNE, t, RAPPORT_TAILLE, pj, rgb);
     });
     x += l[j];
@@ -7006,7 +7009,8 @@ function construireSemaine(parite) {
       `Semaine ${numero} · ${anneeDeSemaine(numero)}`,
       "Contrôler la coupe",
       "Les fichiers de la semaine sont trouvés tout seuls dans son dossier.",
-      `<button type="button" class="contour export-semaine" id="btnExporterSemaine">Exporter le rapport de la semaine (.xlsx)</button>
+      `<button type="button" class="contour export-semaine" id="btnCompteRendu">Compte rendu de la semaine (.pdf)</button>
+       <button type="button" class="contour export-semaine" id="btnExporterSemaine">Exporter le rapport de la semaine (.xlsx)</button>
        <button type="button" id="btnLancerTout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>Lancer tous les contrôles</button>`
     )}
     <div class="carte" id="carteDossier"></div>
@@ -7035,6 +7039,16 @@ function construireSemaine(parite) {
       await exporterSemaine(parite);
     } catch (erreur) {
       alert("Impossible d'enregistrer le rapport :\n" + (erreur && erreur.message ? erreur.message : erreur));
+    } finally {
+      e.target.disabled = false;
+    }
+  });
+  $("btnCompteRendu").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    try {
+      await exporterCompteRendu(parite);
+    } catch (erreur) {
+      alert("Impossible de faire le compte rendu :\n" + (erreur && erreur.message ? erreur.message : erreur));
     } finally {
       e.target.disabled = false;
     }
@@ -9822,6 +9836,144 @@ function afficherAccueil() {
       if (p) preparerLancementPour(p);
     })
   );
+}
+
+// ---- Compte rendu de la semaine : le modèle de l'atelier (« rapport_lancements_semaine_NN.pdf ») ----
+// Une ligne par lancement (TOURS, Lancement, Pièces, Remarque), le total hors casse, puis la casse :
+// « Casse » (pièces déjà lancées avant) et « RAJOUT » (les autres), et son total.
+
+const ORDRE_COMPTE_RENDU = ["Agglo 1er tour", "Recyclage", "Feno", "Agglo 2ème tour"];
+const LIBELLES_COMPTE_RENDU = { Recyclage: "Recyclage Agglo 1er tour" };
+
+// « LAN2644TRIGANObis » → « TRIGANO BIS » ; « LAN264301COMMANDE TARDIVE » → « COMMANDE TARDIVE ».
+function nomChantierCompteRendu(base) {
+  const s = base.replace(/^LAN\d{4,6}/i, "").trim().toUpperCase();
+  return s ? s.replace(/([A-Z])(BIS|TER)$/, "$1 $2") : base.toUpperCase();
+}
+
+// Semaine écrite dans le nom de la casse (« LAN264301CASSE », « LAN2646CASSE » → 43, 46).
+function semaineNomCasse(base) {
+  const m = /^LAN\d\d(\d\d)/i.exec(base);
+  return m ? m[1] : null;
+}
+
+async function donneesCompteRendu(parite) {
+  const lancements = [];
+  const casses = [];
+  for (const p of pairesDeLaSemaine(parite)) {
+    if (!p.strat) continue;
+    const base = p.strat.name.replace(/\.[^.]*$/, "");
+    const r = await resume(p.strat, p.bkp);
+    const pieces = r.prevues === null || Number.isNaN(r.prevues) ? null : r.prevues;
+    if (p.poste === "Casse" || /CASSE/i.test(base)) casses.push({ p, base, pieces });
+    else {
+      const rang = estChantier(p) ? ORDRE_COMPTE_RENDU.length : Math.max(0, ORDRE_COMPTE_RENDU.indexOf(p.poste));
+      lancements.push({ libelle: estChantier(p) ? nomChantierCompteRendu(base) : LIBELLES_COMPTE_RENDU[p.poste] || p.poste, base, pieces, rang });
+    }
+  }
+  lancements.sort((a, b) => a.rang - b.rang);
+  // Casse : déjà lancées avant / rajouts, en pièces.
+  const lignesCasse = [];
+  let semaineCasse = null;
+  const autre = parite === "paire" ? "impaire" : "paire";
+  for (const c of casses.sort((a, b) => (a.p.poste === "Casse" ? 0 : 1) - (b.p.poste === "Casse" ? 0 : 1))) {
+    if (c.p.poste !== "Casse") {
+      lignesCasse.push({ libelle: /RECYCLAGE/i.test(c.base) ? "Recyclage casse" : "Casse", base: c.base, pieces: c.pieces, remarque: "" });
+      continue;
+    }
+    semaineCasse = semaineCasse || semaineNomCasse(c.base);
+    const rc = await calculerCasse(c.p, pairesDeLaSemaine(autre), numeroSemaine(autre));
+    if (rc.erreur || rc.autreSemaineChargee) {
+      lignesCasse.push({ libelle: "Casse", base: c.base, pieces: c.pieces, remarque: "déjà lancées / rajouts pas séparés : semaines d'avant absentes" });
+      continue;
+    }
+    const somme = (ls) => ls.reduce((t, l) => t + (Number(l.pieces) || 0), 0);
+    lignesCasse.push({ libelle: "Casse", base: c.base, pieces: somme(rc.dejaLancees.map((d) => d.ligne)), remarque: "" });
+    lignesCasse.push({ libelle: "RAJOUT", base: c.base, pieces: somme(rc.rajouts), remarque: "" });
+  }
+  return { numero: numeroSemaine(parite), lancements, lignesCasse, semaineCasse };
+}
+
+// ---- Le PDF (charte Laisné : bandeau, logo, chiffres clés, tableaux) ----
+
+const COLONNES_COMPTE_RENDU = ["Tours", "Lancement", "Pièces", "Remarque"];
+const LARGEURS_COMPTE_RENDU = [44, 62, 22, 46];
+const fmtPiecesCompteRendu = (n) => (n === null || n === undefined ? "—" : fmtNombre(n));
+
+// Un tableau du compte rendu (lignes puis total en bordeaux) ; renvoie le bas du tableau.
+function tableauCompteRenduPdf(pdf, y, lignes, libelleTotal) {
+  const l = largeursPdf({ largeursMm: LARGEURS_COMPTE_RENDU });
+  const droite = [2];
+  y = enteteTableauPdf(pdf, y, COLONNES_COMPTE_RENDU, l, droite);
+  const total = lignes.reduce((t, x) => t + (x.pieces || 0), 0);
+  const rangees = [...lignes.map((x) => [x.libelle, x.base, fmtPiecesCompteRendu(x.pieces), x.remarque || ""]), [libelleTotal, "", fmtNombre(total), ""]];
+  rangees.forEach((r, i) => {
+    const estTotal = i === rangees.length - 1;
+    const police = estTotal ? POLICE.GRAS : POLICE.TEXTE;
+    if (y + hauteurRangeePdf(r, l, police) > RAPPORT_BAS) {
+      pdf.nouvellePage();
+      bandeauPdf(pdf);
+      y = enteteTableauPdf(pdf, RAPPORT_BANDEAU + 12 * PDF_MM, COLONNES_COMPTE_RENDU, l, droite);
+    }
+    const fond = estTotal ? CHARTE.BORDEAUX : i % 2 === 1 ? CHARTE.GRIS_CLAIR : null;
+    y = rangeePdf(pdf, y, r, l, droite, fond, police, estTotal ? CHARTE.BLANC : CHARTE.NOIR, !estTotal);
+  });
+  return y;
+}
+
+// Titre de partie : pastille numérotée et titre bordeaux ; renvoie le haut du tableau.
+function titrePartieCompteRenduPdf(pdf, y, numero, titre) {
+  if (y + 80 > RAPPORT_BAS) {
+    pdf.nouvellePage();
+    bandeauPdf(pdf);
+    y = RAPPORT_BANDEAU + 12 * PDF_MM;
+  }
+  y += 14;
+  pdf.texte(pastillePdf(pdf, RAPPORT_MARGE, y, numero) + 8, y, titre, 11.5, POLICE.TITRE, CHARTE.BORDEAUX);
+  return y + 10;
+}
+
+async function compteRenduSemainePdf(parite) {
+  const d = await donneesCompteRendu(parite);
+  const titre = `Rapport des lancements — Semaine ${d.numero}`;
+  const pdf = new PdfSimple(titre);
+  bandeauPdf(pdf);
+  const hLogo = pdf.logo(PDF_LARGEUR - RAPPORT_MARGE - RAPPORT_LOGO, RAPPORT_BANDEAU + 7 * PDF_MM, RAPPORT_LOGO);
+  const largeurTitres = RAPPORT_UTILE - RAPPORT_LOGO - 8 * PDF_MM;
+  let y = RAPPORT_BANDEAU + 7 * PDF_MM - 8;
+  for (const ligne of couperTextePdf("Rapport des lancements", largeurTitres, 26, POLICE.TITRE)) {
+    y += 30;
+    pdf.texte(RAPPORT_MARGE, y, ligne, 26, POLICE.TITRE, CHARTE.GRIS);
+  }
+  y += 16;
+  pdf.texte(RAPPORT_MARGE, y, `Semaine ${d.numero} · ${datesSemaine(Number(d.numero))} ${anneeDeSemaine(Number(d.numero))}`, 11.5, POLICE.TITRE, CHARTE.BORDEAUX);
+  y = Math.max(y + 10, RAPPORT_BANDEAU + 7 * PDF_MM + hLogo + 8);
+  pdf.filet(RAPPORT_MARGE, PDF_LARGEUR - RAPPORT_MARGE, y, CHARTE.SAUMON, 1);
+  y += 12;
+
+  const totalPieces = d.lancements.reduce((t, l) => t + (l.pieces || 0), 0);
+  const totalCasse = d.lignesCasse.reduce((t, l) => t + (l.pieces || 0), 0);
+  let x = chiffreClePdf(pdf, RAPPORT_MARGE, y, String(d.numero), "Semaine", null);
+  x = chiffreClePdf(pdf, x, y, fmtNombre(totalPieces), "Pièces (hors casse)", null);
+  if (d.lignesCasse.length) chiffreClePdf(pdf, x, y, fmtNombre(totalCasse), "Pièces de casse", null);
+  y += 15 * PDF_MM + 14;
+
+  y = titrePartieCompteRenduPdf(pdf, y, 1, `Lancements de la semaine ${d.numero}`);
+  if (d.lancements.length) y = tableauCompteRenduPdf(pdf, y, d.lancements, "Total pièces (hors casse)");
+  else y = encadrePdf(pdf, y, "Aucun lancement chargé pour cette semaine.", true);
+
+  if (d.lignesCasse.length) {
+    y = titrePartieCompteRenduPdf(pdf, y + 10, 2, `Casse — SEMAINE ${d.semaineCasse || d.numero}`);
+    y = tableauCompteRenduPdf(pdf, y, d.lignesCasse, "Total casse");
+    pdf.texte(RAPPORT_MARGE, y + 14, "Casse : pièces déjà lancées une semaine d'avant. RAJOUT : les autres pièces de la casse.", 7.8, POLICE.ITALIQUE, CHARTE.GRIS);
+  }
+  piedsDePagePdf(pdf, titre);
+  return { nom: `rapport_lancements_semaine_${d.numero}.pdf`, octets: pdf.octets(), donnees: d };
+}
+
+async function exporterCompteRendu(parite) {
+  const { nom, octets } = await compteRenduSemainePdf(parite);
+  telecharger(nom, octets, "application/pdf");
 }
 
 </script>
