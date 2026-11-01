@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.0.2 — Contrôle de coupe</title>
+<title>Sentinelle V6.0.3 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -418,7 +418,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.2</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.3</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -484,7 +484,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.0.2 · Contrôle de coupe</span>
+    <span>Sentinelle V6.0.3 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -5522,6 +5522,34 @@ function corrigerAgglo(analyse, changements, pieces, marques) {
   }
 }
 
+// Codes de sous-face à remplacer (demande de l'atelier) : la ligne passe en orange, en priorité sur les
+// autres couleurs (posé en dernier, voir orangePortes).
+const REMPLACEMENTS_SOUS_FACE = { RCB_B999_PORTES: "RCB_0003_PORTES" };
+
+function remplacerSousFace(analyse, changements, pieces, marques) {
+  const { colonnes, donnees } = analyse;
+  const C = COLONNES_REECRITURE;
+  if (!colonnes[C.sousFace]) return;
+  const texte = (l, nom) => {
+    const c = colonnes[nom] && l.cellules.find((x) => x.col === colonnes[nom]);
+    return c ? String(c.valeur ?? "").trim() : "";
+  };
+  for (const l of donnees) {
+    const avant = texte(l, C.sousFace);
+    const apres = REMPLACEMENTS_SOUS_FACE[avant.toUpperCase()];
+    if (!apres) continue;
+    const cle = texte(l, C.cle);
+    changements.push({ ligne: l.numero, col: colonnes[C.sousFace], avant, apres, nombre: false, cle, agglo: texte(l, C.agglo).toUpperCase(), quoi: "sous-face" });
+    pieces.portes.add(`${cle}|${l.numero}`);
+    pieces.lignesPortes.add(l.numero);
+  }
+}
+
+// L'orange des portes passe avant toutes les autres couleurs de la ligne.
+function orangePortes(pieces, marques) {
+  for (const ligne of pieces.lignesPortes) marques.set(ligne, COULEUR_PLUS_20);
+}
+
 // Les cellules à changer, et ce qu'il faut dire à l'écran (rien de tout ça ne va dans le fichier).
 function planifierCorrections(analyse, type) {
   const { colonnes, donnees } = analyse;
@@ -5534,8 +5562,14 @@ function planifierCorrections(analyse, type) {
   pieces.baz = new Set();
   pieces.brut = new Set();
   pieces.chantBrut = new Set();
+  pieces.portes = new Set();
+  pieces.lignesPortes = new Set();
+  if (type && (type.agglo || type.feno)) remplacerSousFace(analyse, changements, pieces, marques);
   if (type && type.agglo) corrigerAgglo(analyse, changements, pieces, marques);
-  if (!type || !type.feno) return { changements, pieces, avertissements, marques };
+  if (!type || !type.feno) {
+    orangePortes(pieces, marques);
+    return { changements, pieces, avertissements, marques };
+  }
   const val = (l, nom) => {
     const c = l.cellules.find((x) => x.col === colonnes[COLONNES_REECRITURE[nom]]);
     return c ? c.valeur : null;
@@ -5575,6 +5609,7 @@ function planifierCorrections(analyse, type) {
   for (const [cle, couches] of couchesParCle) {
     if (couches.every((a) => a.startsWith("PROTECTION"))) avertissements.push(`${cle} : seulement la protection dans le fichier (pas de décor ni de support).`);
   }
+  orangePortes(pieces, marques);
   return { changements, pieces, avertissements, marques };
 }
 
@@ -6025,6 +6060,7 @@ function resumeCorrections(plan, type) {
     const m = [];
     if (plan.pieces.bandes.size) m.push(`${plan.pieces.bandes.size} pièce(s) mise(s) à la largeur d'une autre pour partager une bande (lignes en jaune)`);
     if (plan.pieces.cred14.size) m.push(`RCB-CRED14 en sous-face sur ${plan.pieces.cred14.size} crédence(s) en 10 / 12 brut`);
+    if (plan.pieces.portes.size) m.push(`RCB_B999_PORTES remplacé par RCB_0003_PORTES sur ${plan.pieces.portes.size} ligne(s) (lignes en orange)`);
     if (plan.pieces.baz.size) m.push(`BAZ en commentaire sur ${plan.pieces.baz.size} ligne(s) avec usinage`);
     if (plan.pieces.brut.size) m.push(`« BRUT » retiré de la couleur sur ${plan.pieces.brut.size} ligne(s) (lignes en jaune)`);
     if (plan.pieces.chantBrut.size) m.push(`${plan.pieces.chantBrut.size} ligne(s) à chant brut surlignée(s) en jaune`);
@@ -6034,8 +6070,9 @@ function resumeCorrections(plan, type) {
   const morceaux = [];
   if (plan.pieces.retours.size) morceaux.push(`${plan.pieces.retours.size} pièce(s) avec retour LG / LD`);
   if (plan.pieces.rcb.size) morceaux.push(`RCB en sous-face sur ${plan.pieces.rcb.size} support(s) 10 brut`);
-  const jaunes = [...plan.marques.values()].filter((c) => c === COULEUR_PLUS_10).length;
-  const oranges = plan.marques.size - jaunes;
+  if (plan.pieces.portes.size) morceaux.push(`RCB_B999_PORTES remplacé par RCB_0003_PORTES sur ${plan.pieces.portes.size} ligne(s) (lignes en orange)`);
+  const jaunes = [...plan.marques].filter(([ligne, c]) => c === COULEUR_PLUS_10 && !plan.pieces.lignesPortes.has(ligne)).length;
+  const oranges = [...plan.marques].filter(([ligne, c]) => c === COULEUR_PLUS_20 && !plan.pieces.lignesPortes.has(ligne)).length;
   const couleurs = [jaunes ? `${jaunes} en jaune (+10)` : "", oranges ? `${oranges} en orange (+20)` : ""].filter(Boolean).join(", ");
   if (!morceaux.length) return "Aucune correction à faire dans ce fichier.";
   return `Corrections : ${morceaux.join(" ; ")}.${couleurs ? ` Lignes surlignées : ${couleurs}.` : ""}`;
@@ -6050,17 +6087,19 @@ function lignesCorrections(plan, type) {
   };
   const changements = (quoi) => plan.changements.filter((c) => c.quoi === quoi).length;
   if (type.feno) {
-    const jaunes = [...plan.marques.values()].filter((c) => c === COULEUR_PLUS_10).length;
+    const jaunes = [...plan.marques].filter(([ligne, c]) => c === COULEUR_PLUS_10 && !plan.pieces.lignesPortes.has(ligne)).length;
     ajouter(jaunes, "+10", "jaune", "Retour LG / LD : cote finie +10", "ligne");
-    ajouter(plan.marques.size - jaunes, "+20", "orange", "Deux retours : cote finie +20", "ligne");
+    ajouter([...plan.marques].filter(([ligne, c]) => c === COULEUR_PLUS_20 && !plan.pieces.lignesPortes.has(ligne)).length, "+20", "orange", "Deux retours : cote finie +20", "ligne");
     ajouter(changements("débit"), "débit", "neutre", "Débit refait : cote finie +55 (FENO) ou +50", "ligne");
-    ajouter(changements("sous-face"), "RCB", "neutre", "RCB en sous-face sous le 10 brut", "ligne");
+    ajouter(changements("sous-face") - plan.pieces.portes.size, "RCB", "neutre", "RCB en sous-face sous le 10 brut", "ligne");
+    ajouter(plan.pieces.portes.size, "PORTES", "orange", "RCB_B999_PORTES remplacé par RCB_0003_PORTES", "ligne");
   } else if (type.agglo) {
     ajouter(plan.pieces.bandes.size, "bande", "jaune", "Largeur harmonisée pour coupler des pièces en bande (6 cm et 4060 mm max)", "pièce");
     ajouter(plan.pieces.brut.size, "BRUT", "jaune", "« BRUT » retiré de la couleur", "ligne");
     ajouter(plan.pieces.chantBrut.size, "chant", "jaune", "Chant brut : ligne surlignée", "ligne");
     ajouter(plan.pieces.cred14.size, "CRED", "neutre", "RCB-CRED14 sous les crédences 10 / 12 brut", "crédence");
     ajouter(plan.pieces.baz.size, "BAZ", "neutre", "BAZ ajouté (usinage sans commentaire)", "ligne");
+    ajouter(plan.pieces.portes.size, "PORTES", "orange", "RCB_B999_PORTES remplacé par RCB_0003_PORTES", "ligne");
   }
   return lignes;
 }
