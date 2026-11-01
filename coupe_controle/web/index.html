@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V5.8 — Contrôle de coupe</title>
+<title>Sentinelle V5.8.1 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -269,7 +269,7 @@
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
       <div class="barre-titres">
         <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V5.8</div>
+        <div class="sous-titre">Contrôle de coupe · V5.8.1</div>
       </div>
     </div>
   </header>
@@ -306,7 +306,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V5.8 · Contrôle de coupe</span>
+    <span>Sentinelle V5.8.1 · Contrôle de coupe</span>
   </footer>
   <input type="file" id="choixFichier" hidden>
 
@@ -5023,13 +5023,16 @@ function texteXml(t) {
     .replace(/&amp;/g, "&");
 }
 
+// Préfixe d'espace de noms de l'élément racine d'une partie (« x: » ou rien).
+const prefixeXml = (xml, racine) => ((xml || "").match(new RegExp(`<([\\w.-]+:)?${racine}\\b`)) || [])[1] || "";
+
 const xmlEchapper = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
-const textesDesT = (xml) => [...xml.matchAll(/<t\b[^>]*?(?:\/>|>([\s\S]*?)<\/t>)/g)].map((m) => texteXml(m[1] || "")).join("");
+const textesDesT = (xml) => [...xml.matchAll(/<(?:[\w.-]+:)?t\b[^>]*?(?:\/>|>([\s\S]*?)<\/(?:[\w.-]+:)?t>)/g)].map((m) => texteXml(m[1] || "")).join("");
 
 function chaineesPartagees(xml) {
   if (!xml) return [];
-  return [...xml.matchAll(/<si\b[^>]*?(?:\/>|>([\s\S]*?)<\/si>)/g)].map((m) => textesDesT((m[1] || "").replace(/<rPh\b[\s\S]*?<\/rPh>/g, "")));
+  return [...xml.matchAll(/<(?:[\w.-]+:)?si\b[^>]*?(?:\/>|>([\s\S]*?)<\/(?:[\w.-]+:)?si>)/g)].map((m) => textesDesT((m[1] || "").replace(/<(?:[\w.-]+:)?rPh\b[\s\S]*?<\/(?:[\w.-]+:)?rPh>/g, "")));
 }
 
 function indexColonne(lettres) {
@@ -5056,7 +5059,7 @@ const attribut = (attrs, nom) => {
 // Cellules d'une ligne : position dans le contenu de la ligne, colonne, valeur lue.
 function cellulesDeLigne(contenu, sst) {
   const cellules = [];
-  for (const m of contenu.matchAll(/<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g)) {
+  for (const m of contenu.matchAll(/<(?:[\w.-]+:)?c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[\w.-]+:)?c>)/g)) {
     const attrs = m[1];
     const ref = attribut(attrs, "r");
     if (!ref) throw new Error("cellule sans référence (format de classeur non pris en charge)");
@@ -5064,30 +5067,31 @@ function cellulesDeLigne(contenu, sst) {
     if (!mr) throw new Error(`référence de cellule illisible : ${ref}`);
     const interieur = m[2] || "";
     const type = attribut(attrs, "t");
-    const v = interieur.match(/<v\b[^>]*>([\s\S]*?)<\/v>/);
+    const v = interieur.match(/<(?:[\w.-]+:)?v\b[^>]*>([\s\S]*?)<\/(?:[\w.-]+:)?v>/);
     let valeur = null;
     if (type === "s") valeur = v ? sst[Number(v[1])] ?? null : null;
     else if (type === "inlineStr") valeur = textesDesT(interieur);
     else if (v) valeur = texteXml(v[1]);
-    cellules.push({ debut: m.index, fin: m.index + m[0].length, xml: m[0], attrs, ref, col: indexColonne(mr[1]), valeur, formule: /<f\b/.test(interieur) });
+    cellules.push({ debut: m.index, fin: m.index + m[0].length, xml: m[0], attrs, ref, col: indexColonne(mr[1]), valeur, formule: /<(?:[\w.-]+:)?f\b/.test(interieur) });
   }
   return cellules;
 }
 
 // Les lignes de la feuille : position dans le XML, numéro, cellules.
 function lignesDeFeuille(xml, sst) {
-  const debutDonnees = xml.indexOf("<sheetData");
+  const debutDonnees = xml.search(/<(?:[\w.-]+:)?sheetData\b/);
   if (debutDonnees < 0) throw new Error("feuille sans données");
   const lignes = [];
-  const re = /<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g;
+  const re = /<(?:[\w.-]+:)?row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/(?:[\w.-]+:)?row>)/g;
   re.lastIndex = debutDonnees;
   let m;
   while ((m = re.exec(xml))) {
     const numero = Number(attribut(m[1], "r"));
     if (!numero) throw new Error("ligne sans numéro (format de classeur non pris en charge)");
     const contenu = m[2] || "";
-    const ouverture = m[0].length - contenu.length - (m[2] === undefined ? 0 : "</row>".length);
-    lignes.push({ debut: m.index, fin: m.index + m[0].length, numero, xml: m[0], ouverture: m[0].slice(0, ouverture), debutContenu: m.index + ouverture, contenu, cellules: cellulesDeLigne(contenu, sst) });
+    const fermeture = m[2] === undefined ? "" : m[0].slice(m[0].lastIndexOf("</"));
+    const ouverture = m[0].length - contenu.length - fermeture.length;
+    lignes.push({ debut: m.index, fin: m.index + m[0].length, numero, xml: m[0], ouverture: m[0].slice(0, ouverture), fermeture, debutContenu: m.index + ouverture, contenu, cellules: cellulesDeLigne(contenu, sst) });
   }
   return lignes;
 }
@@ -5129,11 +5133,11 @@ async function analyserExtraction(octets) {
   const classeur = lire("xl/workbook.xml");
   const liens = lire("xl/_rels/workbook.xml.rels");
   if (!classeur || !liens) throw new Error("ce n'est pas un classeur Excel");
-  const feuille = classeur.match(/<sheet\b([^>]*?)\/?>/);
+  const feuille = classeur.match(/<(?:[\w.-]+:)?sheet\b([^>]*?)\/?>/);
   if (!feuille) throw new Error("classeur sans feuille");
   const nomFeuille = texteXml(attribut(feuille[1], "name") || "");
   const idFeuille = attribut(feuille[1], "r:id");
-  const relations = [...liens.matchAll(/<Relationship\b([^>]*?)\/?>/g)].map((m) => ({ id: attribut(m[1], "Id"), type: attribut(m[1], "Type") || "", cible: attribut(m[1], "Target") || "" }));
+  const relations = [...liens.matchAll(/<(?:[\w.-]+:)?Relationship\b([^>]*?)\/?>/g)].map((m) => ({ id: attribut(m[1], "Id"), type: attribut(m[1], "Type") || "", cible: attribut(m[1], "Target") || "" }));
   const relFeuille = relations.find((r) => r.id === idFeuille);
   if (!relFeuille) throw new Error("feuille introuvable dans le classeur");
   const cheminFeuille = cheminCible("xl/workbook.xml", relFeuille.cible);
@@ -5155,7 +5159,9 @@ async function analyserExtraction(octets) {
   if (manquantes.length) throw new Error(`colonnes introuvables : ${manquantes.join(", ")}`);
   const donnees = lignes.filter((l) => l.numero > 1 && l.cellules.some((c) => c.valeur != null && String(c.valeur).trim() !== ""));
   const nbColonnes = Math.max(...entete.cellules.map((c) => c.col));
-  return { parties, nomFeuille, cheminFeuille, cheminChaines, cheminStyles, xmlFeuille, xmlChaines, xmlStyles, sst, lignes, colonnes, nbColonnes, donnees };
+  // Préfixe d'espace de noms de chaque partie (« x: » dans les extractions du logiciel de gestion).
+  const prefixes = { feuille: prefixeXml(xmlFeuille, "worksheet"), chaines: prefixeXml(xmlChaines, "sst"), styles: prefixeXml(xmlStyles, "styleSheet") };
+  return { parties, nomFeuille, cheminFeuille, cheminChaines, cheminStyles, xmlFeuille, xmlChaines, xmlStyles, sst, lignes, colonnes, nbColonnes, donnees, prefixes };
 }
 
 // ---- Corrections ----
@@ -5308,41 +5314,41 @@ function planifierCorrections(analyse, type) {
 
 const formatNombre = (n) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 1000) / 1000));
 
-function celluleXml(ref, style, ch, indexChaine) {
+function celluleXml(ref, style, ch, indexChaine, px = "") {
   const s = style != null ? ` s="${style}"` : "";
-  if (ch.nombre) return `<c r="${ref}"${s}><v>${formatNombre(ch.apres)}</v></c>`;
-  if (indexChaine != null) return `<c r="${ref}"${s} t="s"><v>${indexChaine}</v></c>`;
-  return `<c r="${ref}"${s} t="inlineStr"><is><t>${xmlEchapper(ch.apres)}</t></is></c>`;
+  if (ch.nombre) return `<${px}c r="${ref}"${s}><${px}v>${formatNombre(ch.apres)}</${px}v></${px}c>`;
+  if (indexChaine != null) return `<${px}c r="${ref}"${s} t="s"><${px}v>${indexChaine}</${px}v></${px}c>`;
+  return `<${px}c r="${ref}"${s} t="inlineStr"><${px}is><${px}t>${xmlEchapper(ch.apres)}</${px}t></${px}is></${px}c>`;
 }
 
 // Les styles du classeur : remplissages et styles de cellule, et le reste du fichier de styles.
 function lireStyles(xml) {
-  const fills = xml && xml.match(/<fills\b([^>]*)>([\s\S]*?)<\/fills>/);
-  const xfs = xml && xml.match(/<cellXfs\b([^>]*)>([\s\S]*?)<\/cellXfs>/);
+  const fills = xml && xml.match(/<(?:[\w.-]+:)?fills\b([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?fills>/);
+  const xfs = xml && xml.match(/<(?:[\w.-]+:)?cellXfs\b([^>]*)>([\s\S]*?)<\/(?:[\w.-]+:)?cellXfs>/);
   if (!fills || !xfs) throw new Error("styles du classeur illisibles");
   return {
-    fills: [...fills[2].matchAll(/<fill\b[^>]*?(?:\/>|>[\s\S]*?<\/fill>)/g)].map((m) => m[0]),
-    xfs: [...xfs[2].matchAll(/<xf\b[^>]*?(?:\/>|>[\s\S]*?<\/xf>)/g)].map((m) => m[0]),
+    fills: [...fills[2].matchAll(/<(?:[\w.-]+:)?fill\b[^>]*?(?:\/>|>[\s\S]*?<\/(?:[\w.-]+:)?fill>)/g)].map((m) => m[0]),
+    xfs: [...xfs[2].matchAll(/<(?:[\w.-]+:)?xf\b[^>]*?(?:\/>|>[\s\S]*?<\/(?:[\w.-]+:)?xf>)/g)].map((m) => m[0]),
     reste: xml.replace(fills[0], "<fills/>").replace(xfs[0], "<cellXfs/>"),
   };
 }
 
 const avecAttribut = (balise, nom, valeur) => {
   const re = new RegExp(`\\s${nom}="[^"]*"`);
-  return re.test(balise) ? balise.replace(re, ` ${nom}="${valeur}"`) : balise.replace(/^<(\w+)/, `<$1 ${nom}="${valeur}"`);
+  return re.test(balise) ? balise.replace(re, ` ${nom}="${valeur}"`) : balise.replace(/^<([\w:.-]+)/, `<$1 ${nom}="${valeur}"`);
 };
 const sansRemplissage = (xf) => xf.replace(/\sfillId="[^"]*"/, "").replace(/\sapplyFill="[^"]*"/, "");
-const couleurRemplissage = (fill) => ((fill || "").match(/<fgColor\b[^>]*\brgb="([0-9A-Fa-f]{8})"/) || [])[1] || null;
+const couleurRemplissage = (fill) => ((fill || "").match(/<(?:[\w.-]+:)?fgColor\b[^>]*\brgb="([0-9A-Fa-f]{8})"/) || [])[1] || null;
 
 // Ajoute les remplissages jaune / orange et, pour chaque style de cellule des lignes marquées, sa copie
 // avec ce remplissage. Renvoie le nouveau XML et la table « style|couleur » -> numéro du nouveau style.
-function stylesAvecMarques(xml, besoins) {
+function stylesAvecMarques(xml, besoins, px = "") {
   const st = lireStyles(xml);
   const nouveauxFills = [];
   const idFill = new Map();
   for (const couleur of new Set([...besoins].map((b) => b.split("|")[1]))) {
     idFill.set(couleur, st.fills.length + nouveauxFills.length);
-    nouveauxFills.push(`<fill><patternFill patternType="solid"><fgColor rgb="${couleur}"/><bgColor indexed="64"/></patternFill></fill>`);
+    nouveauxFills.push(`<${px}fill><${px}patternFill patternType="solid"><${px}fgColor rgb="${couleur}"/><${px}bgColor indexed="64"/></${px}patternFill></${px}fill>`);
   }
   const nouveauxXfs = [];
   const table = new Map();
@@ -5356,8 +5362,8 @@ function stylesAvecMarques(xml, besoins) {
     nouveauxXfs.push(xf);
   }
   const compter = (ouverture, ajout) => ouverture.replace(/\bcount="(\d+)"/, (_m, n) => `count="${Number(n) + ajout}"`);
-  let x = xml.replace(/(<fills\b[^>]*>)([\s\S]*?)(<\/fills>)/, (_m, o, c, f) => `${compter(o, nouveauxFills.length)}${c}${nouveauxFills.join("")}${f}`);
-  x = x.replace(/(<cellXfs\b[^>]*>)([\s\S]*?)(<\/cellXfs>)/, (_m, o, c, f) => `${compter(o, nouveauxXfs.length)}${c}${nouveauxXfs.join("")}${f}`);
+  let x = xml.replace(/(<(?:[\w.-]+:)?fills\b[^>]*>)([\s\S]*?)(<\/(?:[\w.-]+:)?fills>)/, (_m, o, c, f) => `${compter(o, nouveauxFills.length)}${c}${nouveauxFills.join("")}${f}`);
+  x = x.replace(/(<(?:[\w.-]+:)?cellXfs\b[^>]*>)([\s\S]*?)(<\/(?:[\w.-]+:)?cellXfs>)/, (_m, o, c, f) => `${compter(o, nouveauxXfs.length)}${c}${nouveauxXfs.join("")}${f}`);
   return { xml: x, table };
 }
 
@@ -5365,6 +5371,8 @@ async function ecrireLanCorrige(analyse, plan) {
   const changements = plan.changements;
   const marques = plan.marques || new Map();
   const { lignes, cheminFeuille, cheminChaines } = analyse;
+  const px = analyse.prefixes.feuille;
+  const pxs = analyse.prefixes.chaines;
   const encodeur = new TextEncoder();
   const parties = analyse.parties.map(([n, o]) => [n, o]);
   const remplacer = (nom, texte) => {
@@ -5410,7 +5418,7 @@ async function ecrireLanCorrige(analyse, plan) {
       }
     }
     if (!analyse.cheminStyles || !analyse.xmlStyles) throw new Error("classeur sans styles : surlignage impossible");
-    const r = stylesAvecMarques(analyse.xmlStyles, besoins);
+    const r = stylesAvecMarques(analyse.xmlStyles, besoins, analyse.prefixes.styles);
     tableStyles = r.table;
     remplacer(analyse.cheminStyles, r.xml);
   }
@@ -5430,11 +5438,11 @@ async function ecrireLanCorrige(analyse, plan) {
       if (existante) {
         const s = attribut(existante.attrs, "s");
         if (!ch.nombre && existante.valeur != null && String(existante.valeur).trim() !== "" && String(existante.valeur).trim() !== String(ch.avant ?? "")) throw new Error(`cellule ${ref} déjà remplie`);
-        operations.push({ debut: existante.debut, fin: existante.fin, col: ch.col, xml: celluleXml(ref, couleur ? styleFinal(s || "0") : s, ch, idx) });
+        operations.push({ debut: existante.debut, fin: existante.fin, col: ch.col, xml: celluleXml(ref, couleur ? styleFinal(s || "0") : s, ch, idx, px) });
       } else {
         const suivante = l.cellules.find((c) => c.col > ch.col);
         const pos = suivante ? suivante.debut : contenu.length;
-        operations.push({ debut: pos, fin: pos, col: ch.col, xml: celluleXml(ref, styleFinal(styleLigne), ch, idx) });
+        operations.push({ debut: pos, fin: pos, col: ch.col, xml: celluleXml(ref, styleFinal(styleLigne), ch, idx, px) });
       }
     }
     if (couleur) {
@@ -5442,32 +5450,32 @@ async function ecrireLanCorrige(analyse, plan) {
         if (changees.has(col)) continue;
         const existante = l.cellules.find((c) => c.col === col);
         if (existante) {
-          const xml = existante.xml.replace(/^<c\b[^>]*?(?=\/?>)/, (ouverture) => avecAttribut(ouverture, "s", styleFinal(attribut(existante.attrs, "s") || "0")));
+          const xml = existante.xml.replace(/^<(?:[\w.-]+:)?c\b[^>]*?(?=\/?>)/, (ouverture) => avecAttribut(ouverture, "s", styleFinal(attribut(existante.attrs, "s") || "0")));
           operations.push({ debut: existante.debut, fin: existante.fin, col, xml });
         } else {
           const suivante = l.cellules.find((c) => c.col > col);
           const pos = suivante ? suivante.debut : contenu.length;
-          operations.push({ debut: pos, fin: pos, col, xml: `<c r="${lettresColonne(col)}${l.numero}" s="${styleFinal(styleLigne)}"/>` });
+          operations.push({ debut: pos, fin: pos, col, xml: `<${px}c r="${lettresColonne(col)}${l.numero}" s="${styleFinal(styleLigne)}"/>` });
         }
       }
     }
     operations.sort((a, b) => b.debut - a.debut || b.fin - a.fin || b.col - a.col);
     for (const o of operations) contenu = contenu.slice(0, o.debut) + o.xml + contenu.slice(o.fin);
     const ouverture = l.xml.endsWith("/>") ? `${l.xml.slice(0, -2)}>` : l.ouverture;
-    xmlFeuille = xmlFeuille.slice(0, l.debut) + ouverture + contenu + "</row>" + xmlFeuille.slice(l.fin);
+    xmlFeuille = xmlFeuille.slice(0, l.debut) + ouverture + contenu + (l.fermeture || `</${px}row>`) + xmlFeuille.slice(l.fin);
   }
   remplacer(cheminFeuille, xmlFeuille);
   if (xmlChaines != null && referencesChaines) {
-    const ajout = sst.slice(sst.length - ajoutsChaines).map((t) => `<si><t>${xmlEchapper(t)}</t></si>`).join("");
-    xmlChaines = xmlChaines.replace(/<sst\b([^>]*)>/, (m, attrs) => {
+    const ajout = sst.slice(sst.length - ajoutsChaines).map((t) => `<${pxs}si><${pxs}t>${xmlEchapper(t)}</${pxs}t></${pxs}si>`).join("");
+    xmlChaines = xmlChaines.replace(/<((?:[\w.-]+:)?)sst\b([^>]*)>/, (m, prefixe, attrs) => {
       let a = attrs;
       const compte = attribut(a, "count");
       const uniques = attribut(a, "uniqueCount");
       if (compte != null) a = a.replace(/\bcount="\d+"/, `count="${Number(compte) + referencesChaines}"`);
       if (uniques != null) a = a.replace(/\buniqueCount="\d+"/, `uniqueCount="${Number(uniques) + ajoutsChaines}"`);
-      return `<sst${a}>`;
+      return `<${prefixe}sst${a}>`;
     });
-    if (ajoutsChaines) xmlChaines = xmlChaines.replace(/<\/sst>\s*$/, `${ajout}</sst>`);
+    if (ajoutsChaines) xmlChaines = xmlChaines.replace(/<\/((?:[\w.-]+:)?)sst>\s*$/, (_m, prefixe) => `${ajout}</${prefixe}sst>`);
     remplacer(cheminChaines, xmlChaines);
   }
   // Un .xlsx ne peut pas être déclaré « classeur à macros » (l'extraction arrive en .xlsm, sans macro).
@@ -5513,7 +5521,7 @@ async function verifierLanCorrige(octetsOrigine, octetsCorriges, plan) {
   const ouvertures = (an) => an.lignes.map((l) => l.ouverture.replace(/\/>$/, ">")).join("\n");
   if (ouvertures(a) !== ouvertures(b)) erreurs.push("lignes");
   // Le reste de la feuille (colonnes, mise en page…) identique.
-  const horsDonnees = (x) => x.slice(0, x.indexOf("<sheetData")) + x.slice(x.indexOf("</sheetData>"));
+  const horsDonnees = (x) => x.slice(0, x.search(/<(?:[\w.-]+:)?sheetData\b/)) + x.slice(x.search(/<\/(?:[\w.-]+:)?sheetData>/));
   if (horsDonnees(a.xmlFeuille) !== horsDonnees(b.xmlFeuille)) erreurs.push("mise en forme de la feuille");
   const couleurDe = (k) => marques.get(Number(k.split(":")[0]));
   for (const [k, ch] of prevus) {
@@ -5556,7 +5564,9 @@ async function verifierLanCorrige(octetsOrigine, octetsCorriges, plan) {
     let xa = octetsA;
     const xb = pb[1];
     if (n === "[Content_Types].xml") {
-      xa = new TextEncoder().encode(new TextDecoder().decode(xa).split(TYPE_CLASSEUR_MACROS).join(TYPE_CLASSEUR));
+      // Seul changement permis : le type « classeur à macros » devient « classeur » (sinon : octets identiques).
+      const texte = new TextDecoder().decode(xa);
+      if (texte.includes(TYPE_CLASSEUR_MACROS)) xa = new TextEncoder().encode(texte.split(TYPE_CLASSEUR_MACROS).join(TYPE_CLASSEUR));
     }
     if (xa.length !== xb.length || xa.some((o, i) => o !== xb[i])) erreurs.push(`partie ${n} changée`);
   }
