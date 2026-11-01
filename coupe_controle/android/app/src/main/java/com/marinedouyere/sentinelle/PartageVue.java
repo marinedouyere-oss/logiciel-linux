@@ -37,13 +37,14 @@ import java.util.Map;
 import java.util.TimeZone;
 
 /**
- * Onglet « Partagé » : l'appli se branche sur le fichier partagé que Sentinelle (la page web, sur le PC)
- * écrit dans un dossier du Drive. Le fichier est choisi une fois avec le sélecteur d'Android (le Drive du
- * compte connecté sur l'appareil y apparaît) ; il est relu à chaque ouverture de l'onglet et sur « Actualiser ».
- * L'appli ne fait que lire : semaines, tableau des lancements, bilan des contrôles, problèmes pièce par pièce,
- * et recherche d'une pièce dans toutes les semaines.
+ * Les écrans de Sentinelle sur le téléphone, comme sur le PC : La semaine, Contrôler la coupe, Rechercher une
+ * pièce, Bibliothèque des semaines. Tout vient du fichier partagé que Sentinelle (sur le PC) écrit dans un
+ * dossier du Drive : il est choisi une fois avec le sélecteur d'Android (le Drive du compte connecté sur
+ * l'appareil y apparaît) et relu à chaque retour dans l'appli et sur « Actualiser ». L'appli ne fait que lire.
  */
 final class PartageVue {
+
+    enum Ecran { SEMAINE, CONTROLE, RECHERCHE, BIBLIOTHEQUE }
 
     private static final String PREFERENCES = "sentinelle_partage";
     private static final String CLE_URI = "uri";
@@ -63,6 +64,12 @@ final class PartageVue {
     private int generation;
     private String semaineChoisie;
     private String requete = "";
+    private Ecran ecran = Ecran.SEMAINE;
+    /** Pièce sans étiquette : longueur (sens du fil), largeur, couleur, semaine ; null : pas encore cherché. */
+    private String[] sansEtiquette;
+    /** Lancement à montrer dans Contrôler la coupe (bouton « Voir le contrôle »). */
+    private String lancementAMontrer;
+    private boolean pdfEnCours;
 
     PartageVue(MainActivity activite, Ui ui, SentinelleApp app) {
         this.activite = activite;
@@ -71,7 +78,8 @@ final class PartageVue {
         racine = ui.colonne();
     }
 
-    View vue() {
+    View vue(Ecran e) {
+        ecran = e;
         if (racine.getParent() != null) ((ViewGroup) racine.getParent()).removeView(racine);
         construire();
         return racine;
@@ -167,22 +175,416 @@ final class PartageVue {
 
     private void construire() {
         racine.removeAllViews();
-        racine.addView(carteFichier());
-        if (donnees == null) return;
-        if (donnees.semaines.isEmpty()) {
-            racine.addView(ui.texte("Le fichier ne contient encore aucune semaine.", 14, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 6));
-            return;
+        switch (ecran) {
+            case CONTROLE:
+                ecranControle();
+                break;
+            case RECHERCHE:
+                ecranRecherche();
+                break;
+            case BIBLIOTHEQUE:
+                ecranBibliotheque();
+                break;
+            default:
+                ecranSemaine();
         }
-        racine.addView(carteRecherche());
-        if (!requete.isEmpty()) {
-            racine.addView(carteResultats());
+    }
+
+    /** En-tête de page comme sur le PC : surtitre, titre, chapeau. */
+    private void entete(String surtitre, String titre, String chapeau) {
+        LinearLayout e = ui.colonne();
+        e.setPadding(ui.dp(2), ui.dp(4), ui.dp(2), ui.dp(8));
+        TextView sur = ui.texte(surtitre.toUpperCase(Locale.FRANCE), 11, true, Ui.GRIS);
+        sur.setLetterSpacing(0.12f);
+        e.addView(sur);
+        e.addView(ui.titre(titre, 24, Ui.BORDEAUX), ui.marges(2, 2));
+        if (chapeau != null && !chapeau.isEmpty()) e.addView(ui.texte(chapeau, 14, false, ui.couleur(R.color.gris_texte)));
+        racine.addView(e, ui.pleineLargeur());
+    }
+
+    /** Sans fichier lu : la carte du fichier partagé (et rien d'autre à montrer). */
+    private boolean sansDonnees() {
+        if (donnees != null && !donnees.semaines.isEmpty()) return false;
+        racine.addView(carteFichier());
+        if (donnees != null) racine.addView(ui.texte("Le fichier ne contient encore aucune semaine.", 14, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 6));
+        return true;
+    }
+
+    private String titreSemaine(FichierPartage.Semaine s) {
+        return "Semaine " + s.semaine + " · " + s.annee;
+    }
+
+    private static boolean semaineEnCours(FichierPartage.Semaine s) {
+        java.util.Calendar maintenant = java.util.Calendar.getInstance(TimeZone.getTimeZone("UTC"), Locale.ROOT);
+        return s.semaine == CompteRendu.semaineIso(maintenant) && Math.abs(s.annee - maintenant.get(java.util.Calendar.YEAR)) <= 1;
+    }
+
+    // ---- La semaine ----
+
+    /** Ce qu'il faut regarder dans un lancement (comme la page web : contrôle, doublons, Scies, couleurs). */
+    private static List<String> aRegarder(FichierPartage.Lancement l) {
+        List<String> res = new ArrayList<>();
+        if (l.controle != null && l.controle > 0)
+            res.add(l.controle + " pièce(s) à vérifier dans " + ("bkp".equals(l.source) ? "le .bkp" : "la liste de coupe"));
+        for (FichierPartage.Bilan b : l.bilan)
+            if ("Lignes en double".equals(b.controle) && "alerte".equals(b.statut)) res.add("pièce(s) en double dans le lancement");
+        if (l.scies != null && l.scies < 0) res.add("Scies : contrôle impossible");
+        else if (l.scies != null && l.scies > 0) res.add("Scies : " + l.scies + " pièce(s) différente(s)");
+        if (l.couleursAbsentes != null && l.couleursAbsentes > 0) res.add("Couleurs : " + l.couleursAbsentes + " couleur(s) absente(s) du .bkp");
+        if (l.couleursPf != null && l.couleursPf > 0) res.add("Couleurs : " + l.couleursPf + " en version PF, à vérifier");
+        return res;
+    }
+
+    private static boolean controle(FichierPartage.Lancement l) {
+        return l.controle != null || l.scies != null || l.controleFait;
+    }
+
+    /** { texte, genre } : bon, souci, vide. */
+    private static String[] etatControle(FichierPartage.Lancement l) {
+        int n = aRegarder(l).size();
+        if (n > 0) return new String[] {n + " à regarder", "souci"};
+        if (!controle(l)) return new String[] {"Pas contrôlé", "vide"};
+        return new String[] {"OK", "bon"};
+    }
+
+    private static String[] etatCoupe(FichierPartage.Lancement l) {
+        boolean coupe = l.fichiers.containsKey("coupe");
+        boolean bkp = l.fichiers.containsKey("bkp");
+        if (coupe && bkp) return new String[] {"Liste + .bkp", "bon"};
+        if (bkp) return new String[] {".bkp seul", "bon"};
+        if (coupe) return new String[] {"Liste seule", "bon"};
+        return new String[] {"—", "vide"};
+    }
+
+    private TextView etiquette(String[] e) {
+        int fond;
+        int texte;
+        if ("bon".equals(e[1])) {
+            fond = ui.couleur(R.color.ok_fond);
+            texte = ui.couleur(R.color.ok_texte);
+        } else if ("souci".equals(e[1])) {
+            fond = ui.couleur(R.color.alerte_fond);
+            texte = ui.couleur(R.color.alerte_texte);
+        } else {
+            fond = Ui.GRIS_CLAIR;
+            texte = ui.couleur(R.color.gris_texte);
+        }
+        TextView v = ui.texte(e[0], 12, true, texte);
+        v.setPadding(ui.dp(8), ui.dp(3), ui.dp(8), ui.dp(3));
+        android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+        g.setColor(fond);
+        g.setCornerRadius(ui.dp(10));
+        v.setBackground(g);
+        return v;
+    }
+
+    private View tuile(String valeur, String legende, boolean souci) {
+        MaterialCardView carte = ui.carte();
+        LinearLayout corps = ui.colonne();
+        corps.setPadding(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(10));
+        carte.addView(corps);
+        corps.addView(ui.texte(legende, 11, false, ui.couleur(R.color.gris_texte)));
+        corps.addView(ui.titre(valeur, 20, souci ? ui.couleur(R.color.alerte_texte) : Ui.BORDEAUX));
+        return carte;
+    }
+
+    private void ecranSemaine() {
+        if (donnees == null || donnees.semaines.isEmpty()) {
+            entete("La semaine", "Sentinelle", "Les résultats de Sentinelle sur le PC, lus dans le fichier partagé.");
+            sansDonnees();
             return;
         }
         FichierPartage.Semaine s = semaine();
-        racine.addView(choixSemaines(s));
+        entete(semaineEnCours(s) ? "Semaine en cours" : "Semaine", titreSemaine(s), CompteRendu.datesSemaine(s.annee, s.semaine));
+        racine.addView(choixSemaines(s), ui.marges(0, 6));
+        int controles = 0;
+        int nbProblemes = 0;
+        for (FichierPartage.Lancement l : s.lancements) {
+            if (controle(l)) controles++;
+            nbProblemes += aRegarder(l).size();
+        }
+        LinearLayout tuiles = ui.rangee();
+        tuiles.addView(tuile(String.valueOf(s.lancements.size()), "Lancements", false), ui.poids(1));
+        tuiles.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
+        tuiles.addView(tuile(controles + " sur " + s.lancements.size(), "Contrôles faits", false), ui.poids(1));
+        tuiles.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
+        tuiles.addView(tuile(String.valueOf(nbProblemes), "À regarder", nbProblemes > 0), ui.poids(1));
+        racine.addView(tuiles, ui.pleineLargeur());
+
+        racine.addView(ui.titre("Les lancements de la semaine", 17, Ui.NOIR), ui.marges(10, 4));
+        int numero = 1;
+        for (FichierPartage.Lancement l : s.lancements) {
+            MaterialCardView carte = ui.carte();
+            LinearLayout corps = corpsDe(carte);
+            LinearLayout tete = ui.rangee();
+            tete.addView(ui.pastille(numero++));
+            TextView titre = ui.titre(titrePoste(l), 16, Ui.NOIR);
+            titre.setPadding(ui.dp(10), 0, 0, 0);
+            tete.addView(titre, ui.poids(1));
+            corps.addView(tete);
+            corps.addView(ui.texte(l.fichier.isEmpty() ? l.nom : l.fichier, 13, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 6));
+            String[][] etats = {{"Lancement", "Chargé", "bon"}, {"Coupe", etatCoupe(l)[0], etatCoupe(l)[1]}, {"Contrôle", etatControle(l)[0], etatControle(l)[1]}};
+            for (String[] e : etats) {
+                LinearLayout r = ui.rangee();
+                r.addView(ui.texte(e[0], 13, false, ui.couleur(R.color.gris_texte)), ui.poids(1));
+                r.addView(etiquette(new String[] {e[1], e[2]}));
+                corps.addView(r, ui.marges(2, 2));
+            }
+            MaterialButton voir = ui.boutonContour("Voir le contrôle");
+            voir.setOnClickListener(v -> voirControle(l));
+            corps.addView(voir, ui.marges(6, 0));
+            racine.addView(carte);
+        }
+
+        MaterialCardView carte = ui.carte();
+        LinearLayout corps = corpsDe(carte);
+        corps.addView(ui.titre("À regarder", 16, Ui.BORDEAUX));
+        corps.addView(ui.filetSaumon());
+        boolean rien = true;
+        for (FichierPartage.Lancement l : s.lancements)
+            for (String t : aRegarder(l)) {
+                rien = false;
+                TextView ligne = ui.texte("●  " + titrePoste(l) + " — " + t, 14, false, Ui.NOIR);
+                ligne.setPadding(0, ui.dp(5), 0, ui.dp(5));
+                ligne.setOnClickListener(v -> voirControle(l));
+                corps.addView(ligne);
+            }
+        if (rien) corps.addView(ui.texte("Rien à signaler pour l'instant.", 14, false, ui.couleur(R.color.gris_texte)));
+        racine.addView(carte);
+    }
+
+    private void voirControle(FichierPartage.Lancement l) {
+        lancementAMontrer = l.nom;
+        activite.allerA(MainActivity.ONGLET_CONTROLE);
+    }
+
+    // ---- Contrôler la coupe ----
+
+    private void ecranControle() {
+        if (donnees == null || donnees.semaines.isEmpty()) {
+            entete("Contrôler la coupe", "Contrôler la coupe", "Les contrôles faits par Sentinelle sur le PC.");
+            sansDonnees();
+            return;
+        }
+        FichierPartage.Semaine s = semaine();
+        String quand = dateLisible(s.maj);
+        entete("Contrôler la coupe", titreSemaine(s), "Les contrôles faits par Sentinelle sur le PC" + (quand.isEmpty() ? "." : ", mis à jour le " + quand + "."));
+        racine.addView(choixSemaines(s), ui.marges(0, 6));
+        MaterialButton compteRendu = ui.bouton(pdfEnCours ? "Compte rendu en cours…" : "Compte rendu de la semaine (.pdf)");
+        compteRendu.setEnabled(!pdfEnCours);
+        compteRendu.setOnClickListener(v -> compteRendu(s));
+        racine.addView(compteRendu, ui.marges(0, 4));
         racine.addView(carteTableau(s));
         int numero = 1;
-        for (FichierPartage.Lancement l : s.lancements) racine.addView(carteLancement(l, numero++));
+        View aMontrer = null;
+        for (FichierPartage.Lancement l : s.lancements) {
+            View carte = carteLancement(l, numero++);
+            if (l.nom.equals(lancementAMontrer)) aMontrer = carte;
+            racine.addView(carte);
+        }
+        lancementAMontrer = null;
+        if (aMontrer != null) activite.montrer(aMontrer);
+    }
+
+    /** Compte rendu de la semaine (.pdf), fait en arrière-plan, puis enregistré où l'on veut. */
+    private void compteRendu(FichierPartage.Semaine s) {
+        if (pdfEnCours) return;
+        pdfEnCours = true;
+        construire();
+        final FichierPartage f = donnees;
+        app.annexe.execute(() -> {
+            CompteRendu c = CompteRendu.de(f, s);
+            byte[] octets = null;
+            String probleme = null;
+            try {
+                octets = c.pdf(activite, ui);
+            } catch (Exception e) {
+                probleme = e.getMessage() != null ? e.getMessage() : e.toString();
+            }
+            final byte[] pdf = octets;
+            final String erreurPdf = probleme;
+            principal.post(() -> {
+                pdfEnCours = false;
+                construire();
+                if (pdf != null) activite.enregistrerPdf(c.nomFichier(), pdf);
+                else new MaterialAlertDialogBuilder(activite).setTitle("Compte rendu").setMessage("Impossible de faire le compte rendu : " + erreurPdf)
+                        .setPositiveButton("OK", null).show();
+            });
+        });
+    }
+
+    // ---- Rechercher une pièce ----
+
+    private void ecranRecherche() {
+        entete("Outils", "Rechercher une pièce", "Dans toutes les semaines du fichier partagé.");
+        if (sansDonnees()) return;
+        racine.addView(carteRecherche());
+        if (!requete.isEmpty()) racine.addView(carteResultats());
+        racine.addView(carteSansEtiquette());
+        if (sansEtiquette != null) racine.addView(carteResultatsSansEtiquette());
+    }
+
+    private EditText champ(String indice, int type, String valeur) {
+        EditText e = new EditText(activite);
+        e.setHint(indice);
+        e.setSingleLine(true);
+        e.setInputType(type);
+        e.setText(valeur);
+        e.setTypeface(ui.lato());
+        return e;
+    }
+
+    private LinearLayout libelle(String texte, View champ) {
+        LinearLayout c = ui.colonne();
+        c.addView(ui.texte(texte, 12, true, 0xFF4A403D));
+        c.addView(champ, ui.pleineLargeur());
+        return c;
+    }
+
+    private MaterialCardView carteSansEtiquette() {
+        MaterialCardView carte = ui.carte();
+        LinearLayout corps = corpsDe(carte);
+        corps.addView(ui.titre("Pièce sans étiquette", 17, Ui.BORDEAUX));
+        corps.addView(ui.filetSaumon());
+        corps.addView(ui.texte("Cote finie mesurée sur la pièce : la première mesure est le sens du fil. À 2 mm près.", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 6));
+        String[] v = sansEtiquette != null ? sansEtiquette : new String[] {"", "", "", ""};
+        int nombre = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL;
+        EditText longueur = champ("mm", nombre, v[0]);
+        EditText largeur = champ("mm", nombre, v[1]);
+        EditText couleur = champ("facultatif", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, v[2]);
+        EditText semaine = champ("n°", InputType.TYPE_CLASS_NUMBER, v[3]);
+        LinearLayout cotes = ui.rangee();
+        cotes.addView(libelle("Longueur (sens du fil)", longueur), ui.poids(1));
+        cotes.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(10), 1));
+        cotes.addView(libelle("Largeur", largeur), ui.poids(1));
+        corps.addView(cotes, ui.pleineLargeur());
+        LinearLayout autres = ui.rangee();
+        autres.addView(libelle("Couleur", couleur), ui.poids(1));
+        autres.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(10), 1));
+        autres.addView(libelle("Semaine", semaine), ui.poids(1));
+        corps.addView(autres, ui.marges(6, 0));
+        MaterialButton chercher = ui.bouton("Chercher");
+        chercher.setOnClickListener(x -> {
+            sansEtiquette = new String[] {longueur.getText().toString().trim(), largeur.getText().toString().trim(),
+                    couleur.getText().toString().trim(), semaine.getText().toString().trim()};
+            construire();
+        });
+        semaine.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
+        semaine.setOnEditorActionListener((x, action, ev) -> {
+            if (action == EditorInfo.IME_ACTION_SEARCH) {
+                chercher.performClick();
+                return true;
+            }
+            return false;
+        });
+        corps.addView(chercher, ui.marges(8, 0));
+        return carte;
+    }
+
+    private static Double mm(String v) {
+        if (v == null || v.isEmpty()) return null;
+        try {
+            return Double.parseDouble(v.replace(',', '.'));
+        } catch (NumberFormatException e) {
+            return Double.NaN;
+        }
+    }
+
+    private MaterialCardView carteResultatsSansEtiquette() {
+        MaterialCardView carte = ui.carte();
+        LinearLayout corps = corpsDe(carte);
+        String[] v = sansEtiquette;
+        int semaine;
+        try {
+            semaine = Integer.parseInt(v[3]);
+        } catch (NumberFormatException e) {
+            semaine = 0;
+        }
+        Double longueur = mm(v[0]);
+        Double largeur = mm(v[1]);
+        String alerte = null;
+        if (semaine < 1 || semaine > 53) alerte = "Tapez la semaine (obligatoire).";
+        else if ((longueur != null && !(longueur > 0)) || (largeur != null && !(largeur > 0))) alerte = "Longueur et largeur : des mm (nombres).";
+        else if (longueur == null && largeur == null && v[2].isEmpty()) alerte = "Tapez au moins une cote ou la couleur.";
+        boolean semaineConnue = false;
+        for (FichierPartage.Semaine s : donnees.semaines) semaineConnue |= s.semaine == semaine;
+        if (alerte == null && !semaineConnue) alerte = "Semaine " + semaine + " : rien dans le fichier partagé. Ajoutez-la à la bibliothèque sur le PC.";
+        if (alerte != null) {
+            corps.addView(ui.texte(alerte, 14, true, ui.couleur(R.color.alerte_texte)));
+            return carte;
+        }
+        List<FichierPartage.Trouvaille> res = donnees.chercherSansEtiquette(longueur, largeur, v[2], semaine);
+        StringBuilder quoi = new StringBuilder();
+        if (longueur != null) quoi.append("longueur ").append(CompteRendu.fmt(longueur));
+        if (largeur != null) quoi.append(quoi.length() > 0 ? " · " : "").append("largeur ").append(CompteRendu.fmt(largeur));
+        if (!v[2].isEmpty()) quoi.append(quoi.length() > 0 ? " · " : "").append("couleur ").append(v[2]);
+        corps.addView(ui.titre(res.size() + " pièce(s) — " + quoi + " (± 2 mm), semaine " + semaine, 15, Ui.BORDEAUX));
+        corps.addView(ui.filetSaumon());
+        int n = 0;
+        for (FichierPartage.Trouvaille t : res) {
+            if (n++ >= MAX_RESULTATS) {
+                corps.addView(ui.texte("… et " + (res.size() - MAX_RESULTATS) + " autre(s) : précisez la recherche.", 13, false, ui.couleur(R.color.gris_texte)));
+                break;
+            }
+            ajouterPiece(corps, t);
+        }
+        return carte;
+    }
+
+    /** Une pièce trouvée : clé, article, cote finie, couleurs, matière ; semaine, lancement, quantité ; ses problèmes. */
+    private void ajouterPiece(LinearLayout corps, FichierPartage.Trouvaille t) {
+        String[] p = t.piece;
+        SpannableStringBuilder sb = new SpannableStringBuilder();
+        gras(sb, valeur(p, "cle"));
+        String dims = dimensions(valeur(p, "longueur"), valeur(p, "largeur"), valeur(p, "epaisseur"));
+        String sousFace = valeur(p, "coloris_inf");
+        sb.append(joindre(" · ", valeur(p, "article"), dims, valeur(p, "coloris"), sousFace.isEmpty() ? "" : "sous-face " + sousFace, valeur(p, "matiere")));
+        corps.addView(ui.texte(sb, 14, false, Ui.NOIR), ui.marges(6, 0));
+        String quantite = valeur(p, "pieces");
+        corps.addView(ui.texte(t.semaine.libelle() + " · " + t.semaine.annee + " · " + t.lancement.nom + (t.lancement.poste.isEmpty() ? "" : " (" + t.lancement.poste + ")")
+                + (quantite.isEmpty() ? "" : " · " + nombre(quantite) + " pièce(s)"), 13, false, ui.couleur(R.color.gris_texte)));
+        for (FichierPartage.Probleme pb : t.problemes) {
+            int[] c = couleursNiveau(pb.niveau);
+            corps.addView(ui.texte(symboleNiveau(pb.niveau) + " " + pb.type + " : " + pb.detail, 13, true, c[1]), ui.marges(2, 0));
+        }
+    }
+
+    // ---- Bibliothèque des semaines ----
+
+    private void ecranBibliotheque() {
+        entete("Outils", "Bibliothèque des semaines", "Les semaines gardées par Sentinelle sur le PC, dans le fichier partagé.");
+        racine.addView(carteFichier());
+        if (donnees == null || donnees.semaines.isEmpty()) {
+            if (donnees != null) racine.addView(ui.texte("Le fichier ne contient encore aucune semaine.", 14, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 6));
+            return;
+        }
+        MaterialCardView carte = ui.carte();
+        LinearLayout corps = corpsDe(carte);
+        corps.addView(ui.titre(donnees.semaines.size() + " semaine(s)", 17, Ui.BORDEAUX));
+        corps.addView(ui.filetSaumon());
+        int i = 0;
+        for (FichierPartage.Semaine s : donnees.semaines) {
+            LinearLayout r = ui.colonne();
+            r.setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8));
+            if (i++ % 2 == 1) r.setBackgroundColor(Ui.GRIS_CLAIR);
+            double pieces = 0;
+            List<String> noms = new ArrayList<>();
+            for (FichierPartage.Lancement l : s.lancements) {
+                pieces += Math.floor(l.nbPieces);
+                noms.add(l.nom);
+            }
+            r.addView(ui.texte(titreSemaine(s), 15, true, Ui.NOIR));
+            String quand = dateLisible(s.maj);
+            r.addView(ui.texte(s.lancements.size() + " lancement(s) · " + nombre(pieces) + " pièces" + (quand.isEmpty() ? "" : " · mis à jour le " + quand),
+                    13, false, ui.couleur(R.color.gris_texte)));
+            r.addView(ui.texte(String.join(", ", noms), 12, false, ui.couleur(R.color.gris_texte)));
+            r.setOnClickListener(v -> {
+                semaineChoisie = s.id;
+                activite.allerA(MainActivity.ONGLET_CONTROLE);
+            });
+            corps.addView(r, ui.pleineLargeur());
+        }
+        racine.addView(carte);
     }
 
     private LinearLayout corpsDe(MaterialCardView carte) {
@@ -200,7 +602,7 @@ final class PartageVue {
         Uri uri = uri();
         if (uri == null) {
             corps.addView(ui.texte("Choisissez le fichier « " + FichierPartage.NOM + " » que Sentinelle écrit sur le PC, dans le Drive. "
-                    + "L'appli le relit à chaque ouverture de cet onglet.", 14, false, Ui.NOIR), ui.marges(0, 8));
+                    + "L'appli le relit à chaque retour dans l'appli.", 14, false, Ui.NOIR), ui.marges(0, 8));
         } else {
             corps.addView(ui.texte(nomFichier != null ? nomFichier : FichierPartage.NOM, 15, true, Ui.NOIR));
             if (donnees != null) {
@@ -244,9 +646,11 @@ final class PartageVue {
     private MaterialCardView carteRecherche() {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
+        corps.addView(ui.titre("Recherche", 17, Ui.BORDEAUX));
+        corps.addView(ui.filetSaumon());
         LinearLayout ligne = ui.rangee();
         EditText champ = new EditText(activite);
-        champ.setHint("Pièce ou commande (CVC facultatif)");
+        champ.setHint("Pièce ou commande");
         champ.setSingleLine(true);
         champ.setText(requete);
         champ.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -277,7 +681,7 @@ final class PartageVue {
             ligne.addView(effacer);
         }
         corps.addView(ligne);
-        corps.addView(ui.texte("Cherche dans toutes les semaines du fichier partagé.", 12, false, ui.couleur(R.color.gris_texte)));
+        corps.addView(ui.texte("26090331003 ou 26090331 (CVC facultatif), dans toutes les semaines du fichier partagé.", 12, false, ui.couleur(R.color.gris_texte)));
         return carte;
     }
 
@@ -298,19 +702,7 @@ final class PartageVue {
                 corps.addView(ui.texte("… et " + (res.size() - MAX_RESULTATS) + " autre(s) : précisez la recherche.", 13, false, ui.couleur(R.color.gris_texte)));
                 break;
             }
-            String[] p = t.piece;
-            SpannableStringBuilder sb = new SpannableStringBuilder();
-            gras(sb, valeur(p, "cle"));
-            String dims = dimensions(valeur(p, "longueur"), valeur(p, "largeur"), valeur(p, "epaisseur"));
-            sb.append(joindre(" · ", valeur(p, "article"), dims, valeur(p, "coloris")));
-            corps.addView(ui.texte(sb, 14, false, Ui.NOIR), ui.marges(6, 0));
-            String quantite = valeur(p, "pieces");
-            corps.addView(ui.texte(t.semaine.libelle() + " · " + t.lancement.nom + (t.lancement.poste.isEmpty() ? "" : " (" + t.lancement.poste + ")")
-                    + (quantite.isEmpty() ? "" : " · " + nombre(quantite) + " pièce(s)"), 13, false, ui.couleur(R.color.gris_texte)));
-            for (FichierPartage.Probleme pb : t.problemes) {
-                int[] c = couleursNiveau(pb.niveau);
-                corps.addView(ui.texte(symboleNiveau(pb.niveau) + " " + pb.type + " : " + pb.detail, 13, true, c[1]), ui.marges(2, 0));
-            }
+            ajouterPiece(corps, t);
         }
         return carte;
     }
@@ -602,7 +994,7 @@ final class PartageVue {
             int n = 0;
             for (FichierPartage.Probleme p : liste) {
                 if (n++ >= max) {
-                    corps.addView(ui.texte("… et " + (liste.size() - max) + " autre(s) (voir le rapport Excel sur le PC).", 12, false, ui.couleur(R.color.gris_texte)));
+                    corps.addView(ui.texte("… et " + (liste.size() - max) + " autre(s) (voir sur le PC).", 12, false, ui.couleur(R.color.gris_texte)));
                     break;
                 }
                 SpannableStringBuilder sb = new SpannableStringBuilder();

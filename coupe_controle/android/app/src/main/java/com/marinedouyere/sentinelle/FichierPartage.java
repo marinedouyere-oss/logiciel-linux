@@ -357,6 +357,64 @@ final class FichierPartage {
         return res;
     }
 
+    // ---- pièce sans étiquette (comme la page web) ----
+
+    /** À 2 mm près. */
+    static final double TOLERANCE_COTES = 2;
+
+    static String normaliserCouleur(String c) {
+        return c == null ? "" : c.toUpperCase(Locale.ROOT).replaceAll("[\\s_.-]", "");
+    }
+
+    private static double ecart(String valeur, Double cible) {
+        if (cible == null) return 0;
+        try {
+            return valeur == null || valeur.isEmpty() ? Double.POSITIVE_INFINITY : Math.abs(Double.parseDouble(valeur) - cible);
+        } catch (NumberFormatException e) {
+            return Double.POSITIVE_INFINITY;
+        }
+    }
+
+    /**
+     * Pièce sans étiquette : cote finie mesurée (la première mesure est le sens du fil : longueur, puis largeur),
+     * à 2 mm près ; couleur facultative (belle face ou sous-face) ; dans les semaines de ce numéro. La plus proche d'abord.
+     */
+    List<Trouvaille> chercherSansEtiquette(Double longueur, Double largeur, String couleur, int semaine) {
+        List<Trouvaille> res = new ArrayList<>();
+        List<Double> ecarts = new ArrayList<>();
+        String c = normaliserCouleur(couleur);
+        int iCle = Math.max(0, colonne("cle"));
+        int iL = colonne("longueur");
+        int il = colonne("largeur");
+        int iC = colonne("coloris");
+        int iCi = colonne("coloris_inf");
+        for (Semaine s : semaines) {
+            if (s.semaine != semaine) continue;
+            for (Lancement l : s.lancements) {
+                java.util.Set<String> vues = new java.util.HashSet<>();
+                for (String[] piece : l.pieces) {
+                    double eL = ecart(iL >= 0 && iL < piece.length ? piece[iL] : "", longueur);
+                    double el = ecart(il >= 0 && il < piece.length ? piece[il] : "", largeur);
+                    if (eL > TOLERANCE_COTES || el > TOLERANCE_COTES) continue;
+                    if (!c.isEmpty() && !normaliserCouleur(iC >= 0 && iC < piece.length ? piece[iC] : "").contains(c)
+                            && !normaliserCouleur(iCi >= 0 && iCi < piece.length ? piece[iCi] : "").contains(c)) continue;
+                    String cle = iCle < piece.length ? piece[iCle] : "";
+                    if (!vues.add(cle)) continue;
+                    Trouvaille t = new Trouvaille();
+                    t.semaine = s;
+                    t.lancement = l;
+                    t.piece = piece;
+                    for (Probleme p : l.problemes) if (cle.equals(p.cle)) t.problemes.add(p);
+                    int k = 0;
+                    while (k < res.size() && ecarts.get(k) <= eL + el) k++;
+                    res.add(k, t);
+                    ecarts.add(k, eL + el);
+                }
+            }
+        }
+        return res;
+    }
+
     /** Le « CVC » est facultatif. */
     static boolean correspond(String cle, String requete) {
         String c = cle.toUpperCase(Locale.ROOT);

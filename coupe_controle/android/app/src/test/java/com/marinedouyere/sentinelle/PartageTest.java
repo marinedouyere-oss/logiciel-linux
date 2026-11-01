@@ -154,19 +154,55 @@ public class PartageTest {
         return null;
     }
 
-    /** Choix de la semaine : « Semaine 46 · 2026 ▾ » au milieu, ‹ semaine d'avant, › semaine d'après. */
-    @Test
-    public void choixDeLaSemaine() throws Exception {
-        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
-        ShadowLooper.idleMainLooper();
+    private static String ecran(MainActivity a) {
+        StringBuilder sb = new StringBuilder();
+        textes(a.getWindow().getDecorView(), sb);
+        return sb.toString();
+    }
+
+    private static void onglet(MainActivity a, String tag) {
         TabLayout onglets = chercherVue(a.getWindow().getDecorView(), TabLayout.class);
-        for (int i = 0; i < onglets.getTabCount(); i++) if (MainActivity.ONGLET_PARTAGE.equals(onglets.getTabAt(i).getTag())) onglets.getTabAt(i).select();
+        for (int i = 0; i < onglets.getTabCount(); i++) if (tag.equals(onglets.getTabAt(i).getTag())) onglets.getTabAt(i).select();
+        ShadowLooper.idleMainLooper();
+    }
+
+    private static MainActivity avecFichier(byte[] contenu) throws Exception {
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
         ShadowLooper.idleMainLooper();
         File copie = new File(a.getCacheDir(), FichierPartage.NOM);
         try (OutputStream out = new FileOutputStream(copie)) {
-            out.write(gzip(EXEMPLE));
+            out.write(contenu);
         }
         a.partage().fichierChoisi(Uri.fromFile(copie));
+        attendre(() -> ((SentinelleApp) a.getApplication()).partage != null && !ecran(a).contains("Lecture du fichier"));
+        return a;
+    }
+
+    /** Le même menu que Sentinelle sur le PC ; plus d'anciens onglets de contrôle ni de rapport Excel. */
+    @Test
+    public void menuCommeLePc() throws Exception {
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
+        ShadowLooper.idleMainLooper();
+        TabLayout onglets = chercherVue(a.getWindow().getDecorView(), TabLayout.class);
+        assertEquals(4, onglets.getTabCount());
+        String[] attendus = {"La semaine", "Contrôler la coupe", "Rechercher une pièce", "Bibliothèque des semaines"};
+        for (int i = 0; i < attendus.length; i++) assertEquals(attendus[i], String.valueOf(onglets.getTabAt(i).getText()));
+        String texte = ecran(a);
+        assertTrue(texte, texte.contains("Contrôle de coupe · V"));
+        assertTrue("sans fichier : on demande de le choisir", texte.contains("Choisissez le fichier"));
+        for (String tag : new String[] {MainActivity.ONGLET_CONTROLE, MainActivity.ONGLET_RECHERCHE, MainActivity.ONGLET_BIBLIOTHEQUE}) {
+            onglet(a, tag);
+            String t = ecran(a);
+            assertFalse(t, t.contains(".xlsx)"));
+            assertFalse(t, t.contains("Scanner"));
+        }
+    }
+
+    /** Choix de la semaine : « Semaine 46 · 2026 ▾ » au milieu, ‹ semaine d'avant, › semaine d'après. */
+    @Test
+    public void choixDeLaSemaine() throws Exception {
+        MainActivity a = avecFichier(gzip(EXEMPLE));
+        onglet(a, MainActivity.ONGLET_CONTROLE);
         View racine = a.getWindow().getDecorView();
         attendre(() -> bouton(racine, "Semaine 46 · 2026") != null);
         assertTrue("‹ actif sur la semaine la plus récente", bouton(racine, "‹").isEnabled());
@@ -174,153 +210,145 @@ public class PartageTest {
         bouton(racine, "‹").performClick();
         ShadowLooper.idleMainLooper();
         assertNotNull("semaine 45 choisie", bouton(racine, "Semaine 45 · 2026"));
-        StringBuilder ecran = new StringBuilder();
-        textes(racine, ecran);
-        assertTrue(ecran.toString().contains("Semaine 45 — lancements"));
+        assertTrue(ecran(a).contains("Semaine 45 — lancements"));
         assertTrue("› actif sur la semaine 45", bouton(racine, "›").isEnabled());
         assertFalse("‹ inactif sur la plus ancienne", bouton(racine, "‹").isEnabled());
+        // La semaine choisie est la même dans La semaine.
+        onglet(a, MainActivity.ONGLET_SEMAINE);
+        assertTrue(ecran(a).contains("Semaine 45 · 2026"));
     }
 
-    /** Le vrai fichier écrit par la page web (semaines 44 à 46) : l'onglet Partagé l'affiche. */
+    /** Le compte rendu de la semaine : mêmes lignes que sur le PC, casse de la semaine d'avant. */
     @Test
-    public void ongletPartageSurLeVraiFichier() throws Exception {
+    public void compteRenduDeLaSemaine() throws Exception {
+        FichierPartage f = FichierPartage.lire(new ByteArrayInputStream(gzip(EXEMPLE)));
+        CompteRendu c = CompteRendu.de(f, f.semaines.get(0));
+        assertEquals(46, c.numero);
+        assertEquals("45", c.semaineCasse);
+        assertEquals(1, c.lancements.size());
+        assertEquals("Agglo 2ème tour", c.lancements.get(0).libelle);
+        assertEquals("rapport_lancements_semaine_46.pdf", c.nomFichier());
+        assertEquals("TRIGANO BIS", CompteRendu.nomChantier("LAN2644TRIGANObis"));
+        assertEquals("COMMANDE TARDIVE", CompteRendu.nomChantier("LAN264301COMMANDE TARDIVE"));
+        assertEquals(53, CompteRendu.semaineAvant(2027, 1));
+        assertEquals(43, CompteRendu.semaineAvant(2026, 44));
+        assertEquals("Du lundi 9 au vendredi 13 novembre", CompteRendu.datesSemaine(2026, 46));
+        assertEquals("Du lundi 26 au vendredi 30 octobre", CompteRendu.datesSemaine(2026, 44));
+    }
+
+    /** Pièce sans étiquette : cote finie (sens du fil puis largeur) à 2 mm près, couleur facultative, semaine. */
+    @Test
+    public void pieceSansEtiquette() throws Exception {
+        FichierPartage f = FichierPartage.lire(new ByteArrayInputStream(gzip(EXEMPLE)));
+        assertEquals(1, f.chercherSansEtiquette(1201.0, 598.0, "", 46).size());
+        assertEquals("3 mm : rien", 0, f.chercherSansEtiquette(1203.0, 600.0, "", 46).size());
+        assertEquals("sens du fil inversé : rien", 0, f.chercherSansEtiquette(600.0, 1200.0, "", 46).size());
+        assertEquals(1, f.chercherSansEtiquette(1200.0, null, "1136", 46).size());
+        assertEquals(0, f.chercherSansEtiquette(1200.0, 600.0, "999", 46).size());
+        assertEquals("autre semaine", 1, f.chercherSansEtiquette(1200.0, 600.0, "", 45).size());
+    }
+
+    private static void capturerSiDemande(MainActivity a, String nom) throws Exception {
+        String captures = System.getProperty("sentinelle.captures", "");
+        if (captures.isEmpty()) return;
+        File dossier = new File(captures);
+        //noinspection ResultOfMethodCallIgnored
+        dossier.mkdirs();
+        capturer(a, new File(dossier, nom));
+    }
+
+    /** Le vrai fichier écrit par la page web (semaines 44 à 46) : les quatre écrans, comme sur le PC. */
+    @Test
+    public void ecransSurLeVraiFichier() throws Exception {
         String chemin = System.getProperty("sentinelle.partage", "");
         assumeTrue(!chemin.isEmpty());
         File source = new File(chemin);
-        FichierPartage f;
-        try (FileInputStream in = new FileInputStream(source)) {
-            f = FichierPartage.lire(in);
-        }
-        assertTrue(f.semaines.size() >= 3);
+        MainActivity a = avecFichier(java.nio.file.Files.readAllBytes(source.toPath()));
+        FichierPartage f = ((SentinelleApp) a.getApplication()).partage;
         assertEquals(46, f.semaines.get(0).semaine);
-        boolean avecProblemes = false;
-        for (FichierPartage.Lancement l : f.semaines.get(0).lancements) avecProblemes |= !l.problemes.isEmpty();
-        assertTrue(avecProblemes);
 
-        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
-        ShadowLooper.idleMainLooper();
-        // L'appli ne scanne plus de dossier : elle se branche sur le fichier partagé.
-        StringBuilder semaine = new StringBuilder();
-        textes(a.getWindow().getDecorView(), semaine);
-        assertFalse(semaine.toString().contains("Dossier partagé"));
-        assertFalse(semaine.toString().contains("Scanner"));
-        TabLayout onglets = chercherVue(a.getWindow().getDecorView(), TabLayout.class);
-        assertNotNull(onglets);
-        TabLayout.Tab partage = null;
-        for (int i = 0; i < onglets.getTabCount(); i++) if (MainActivity.ONGLET_PARTAGE.equals(onglets.getTabAt(i).getTag())) partage = onglets.getTabAt(i);
-        assertNotNull("onglet Partagé", partage);
-        partage.select();
-        ShadowLooper.idleMainLooper();
-        StringBuilder vide = new StringBuilder();
-        textes(a.getWindow().getDecorView(), vide);
-        assertTrue(vide.toString().contains("Choisissez le fichier"));
+        // La semaine.
+        String semaine = ecran(a);
+        assertTrue(semaine, semaine.contains("Semaine 46 · 2026"));
+        assertTrue(semaine.contains("Du lundi 9 au vendredi 13 novembre"));
+        assertTrue(semaine.contains("Contrôles faits"));
+        assertTrue(semaine.contains("Les lancements de la semaine"));
+        assertTrue(semaine.contains("À regarder"));
+        capturerSiDemande(a, "appli_semaine.png");
 
-        // Le fichier choisi dans le sélecteur d'Android (ici, une copie locale).
-        File copie = new File(a.getCacheDir(), FichierPartage.NOM);
-        java.nio.file.Files.copy(source.toPath(), copie.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        a.partage().fichierChoisi(Uri.fromFile(copie));
-        attendre(() -> {
-            StringBuilder sb = new StringBuilder();
-            textes(a.getWindow().getDecorView(), sb);
-            return sb.toString().contains("Semaine 46 — lancements");
-        });
-        StringBuilder ecran = new StringBuilder();
-        textes(a.getWindow().getDecorView(), ecran);
-        String texte = ecran.toString();
-        assertTrue(texte.contains("Agglo 2ème tour"));
-        assertTrue(texte.contains("à corriger"));
-        // Bilan de la semaine : total des pièces, casse (déjà lancées, rajouts).
-        assertTrue(texte.contains("Pièces : 951 prévues dans 6 lancement(s), 952 dans les .bkp."));
-        assertTrue(texte, texte.contains("Casse (LAN2646CASSE) : 75 pièce(s) — 15 déjà lancée(s) en semaines 44 et 45, 54 rajout(s)"));
-        assertFalse(texte.contains("illisible"));
+        // « Voir le contrôle » : Contrôler la coupe, sur ce lancement.
+        bouton(a.getWindow().getDecorView(), "Voir le contrôle").performClick();
+        ShadowLooper.idleMainLooper();
+        String controle = ecran(a);
+        assertTrue(controle, controle.contains("Semaine 46 — lancements"));
+        assertTrue(controle.contains("Compte rendu de la semaine (.pdf)"));
+        assertTrue(controle.contains("Pièces : 951 prévues dans 6 lancement(s), 952 dans les .bkp."));
+        assertTrue(controle.contains("à corriger"));
+        assertFalse(controle.contains("illisible"));
+        capturerSiDemande(a, "appli_controle.png");
+
+        // Compte rendu : mêmes chiffres que le PC (hors casse 876, casse 75 de la semaine 45).
+        CompteRendu c = CompteRendu.de(f, f.semaines.get(0));
+        assertEquals("45", c.semaineCasse);
+        assertEquals(876.0, CompteRendu.total(c.lancements), 0.001);
+        assertEquals(75.0, CompteRendu.total(c.casse), 0.001);
+        assertEquals("Casse", c.casse.get(0).libelle);
+        assertEquals("RAJOUT", c.casse.get(1).libelle);
+        assertEquals("Agglo 1er tour", c.lancements.get(0).libelle);
+        assertEquals("Recyclage Agglo 1er tour", c.lancements.get(1).libelle);
+        System.out.println("COMPTE RENDU casse " + c.casse.get(0).pieces + " rajout " + c.casse.get(1).pieces);
         String captures = System.getProperty("sentinelle.captures", "");
         if (!captures.isEmpty()) {
-            File dossier = new File(captures);
-            //noinspection ResultOfMethodCallIgnored
-            dossier.mkdirs();
-            capturer(a, new File(dossier, "appli_partage.png"));
-        }
-        // Le choix est gardé : un nouvel écran relit le même fichier.
-        assertEquals(Uri.fromFile(copie), a.partage().uri());
-    }
-
-    private static Uri copie(MainActivity a, File source) throws Exception {
-        File dossier = new File(a.getCacheDir(), "originaux");
-        //noinspection ResultOfMethodCallIgnored
-        dossier.mkdirs();
-        File cible = new File(dossier, source.getName());
-        java.nio.file.Files.copy(source.toPath(), cible.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
-        return Uri.fromFile(cible);
-    }
-
-    private static void choisir(MainActivity a, Paire p, String role, File source) throws Exception {
-        a.demanderFichier(p, role);
-        a.fichierChoisi(copie(a, source));
-        attendre(() -> p.fichier(role) != null && p.etat == null);
-    }
-
-    private static String texteCarte(MainActivity a, String titre) {
-        StringBuilder sb = new StringBuilder();
-        textes(a.getWindow().getDecorView(), sb);
-        String t = sb.toString();
-        // L'en-tête d'une case : son titre, puis tout de suite « Réinitialiser » (le tableau des lancements a aussi les postes).
-        int debut = -1;
-        for (int i = t.indexOf("\n" + titre + "\n"); i >= 0; i = t.indexOf("\n" + titre + "\n", i + 1)) {
-            int r = t.indexOf("Réinitialiser", i);
-            if (r >= 0 && r - i < 60) {
-                debut = i;
-                break;
+            // La page du compte rendu, dessinée comme dans le PDF (×2), pour la vérifier à l'œil.
+            Ui ui = new Ui(a);
+            Bitmap image = Bitmap.createBitmap(CompteRendu.LARGEUR * 2, CompteRendu.HAUTEUR * 2, Bitmap.Config.ARGB_8888);
+            Canvas toile = new Canvas(image);
+            toile.drawColor(0xFFFFFFFF);
+            toile.scale(2, 2);
+            c.dessiner(a, ui, () -> toile, 1);
+            try (OutputStream out = new FileOutputStream(new File(captures, "appli_compte_rendu.png"))) {
+                image.compress(Bitmap.CompressFormat.PNG, 100, out);
+            }
+            try {
+                byte[] pdf = c.pdf(a, ui);
+                try (OutputStream out = new FileOutputStream(new File(captures, "appli_compte_rendu.pdf"))) {
+                    out.write(pdf);
+                }
+            } catch (Throwable e) {
+                System.out.println("PDF pas fabriqué dans le test (Robolectric) : " + e);
             }
         }
-        if (debut < 0) return "";
-        int fin = t.indexOf("Réinitialiser", debut);
-        int suivante = t.indexOf("Réinitialiser", fin + 1);
-        return t.substring(debut, suivante < 0 ? t.length() : suivante);
-    }
 
-    /**
-     * Semaine 46 comme sur la capture : la case Casse n'affiche plus le Diakonos des tours ; le Diakonos du
-     * 2ème tour reconnaît LAN264602START comme lancement du 2ème tour ; la casse est comparée aux semaines
-     * du fichier partagé (44 et 45), comme la page web.
-     */
-    @Test
-    public void casseEtDiakonosAvecLeFichierPartage() throws Exception {
-        String chemin = System.getProperty("sentinelle.partage", "");
-        String s46 = System.getProperty("sentinelle.semaine46", "");
-        assumeTrue(!chemin.isEmpty() && !s46.isEmpty());
-        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
-        ShadowLooper.idleMainLooper();
-        SentinelleApp app = (SentinelleApp) a.getApplication();
-        try (FileInputStream in = new FileInputStream(chemin)) {
-            app.partage = FichierPartage.lire(in);
-        }
-        Paire casse = app.depot().paireFixe("Casse", Depot.PAIRE);
-        choisir(a, casse, Paire.STRAT, new File(s46, "CASSE/LAN2646CASSE.xlsx"));
-        Paire deuxieme = app.depot().paireFixe("Agglo 2ème tour", Depot.PAIRE);
-        choisir(a, deuxieme, Paire.STRAT, new File(s46, "2EME TOUR AGGLO/LAN264602START.xlsx"));
-        Paire diakonos = app.depot().paireDiakonos("2", Depot.PAIRE);
-        choisir(a, diakonos, Paire.STRAT, new File(s46, "2EME TOUR AGGLO/LAN264602STARTDIAKONOS.xlsx"));
-        a.afficher();
-        try {
-            attendre(() -> texteCarte(a, "Casse").contains("déjà lancée") && texteCarte(a, "Agglo 2ème tour").contains("Diakonos"));
-        } catch (AssertionError e) {
-            StringBuilder ecran = new StringBuilder();
-            textes(a.getWindow().getDecorView(), ecran);
-            throw new AssertionError("délai dépassé\n" + ecran, e);
-        }
-        Thread.sleep(500);
-        ShadowLooper.idleMainLooper();
-        String carteCasse = texteCarte(a, "Casse");
-        String carteDeuxieme = texteCarte(a, "Agglo 2ème tour");
-        System.out.println("CASSE\n" + carteCasse + "\n2EME TOUR\n" + carteDeuxieme);
-        assertFalse("pas de Diakonos dans la case Casse", carteCasse.contains("Diakonos"));
-        assertTrue(carteCasse, carteCasse.contains("15 pièce(s) de la casse déjà lancée(s) en semaines 44 et 45"));
-        assertTrue(carteCasse, carteCasse.contains("54 rajout(s) : pièce(s) pas lancée(s) en semaines 44 et 45"));
-        assertFalse(carteDeuxieme, carteDeuxieme.contains("320 pièce(s)"));
-        java.util.regex.Matcher m = java.util.regex.Pattern.compile("(\\d+) pièce\\(s\\) Diakonos absente").matcher(carteDeuxieme);
-        if (m.find()) assertTrue(carteDeuxieme, Integer.parseInt(m.group(1)) <= 5);
-        assertFalse("une pièce absente n'est pas « lancée dans » le 2ème tour lui-même", carteDeuxieme.contains("lancée dans LAN264602START.xlsx"));
-        assertTrue(carteDeuxieme, carteDeuxieme.contains("Comparé à : LAN264602START.xlsx"));
-        assertFalse("la casse n'est pas un lancement du 2ème tour", carteDeuxieme.contains("Comparé à : LAN2646CASSE"));
+        // Rechercher : une vraie pièce de la semaine 46, sans étiquette.
+        int iL = f.colonne("longueur");
+        int il = f.colonne("largeur");
+        String[] piece = null;
+        for (String[] p : f.semaines.get(0).lancements.get(0).pieces)
+            if (!p[iL].isEmpty() && !p[il].isEmpty() && !p[iL].equals(p[il])) {
+                piece = p;
+                break;
+            }
+        assertNotNull(piece);
+        double L = Double.parseDouble(piece[iL]);
+        double l = Double.parseDouble(piece[il]);
+        String cle = piece[f.colonne("cle")];
+        boolean trouvee = false;
+        for (FichierPartage.Trouvaille t : f.chercherSansEtiquette(L + 1, l - 2, "", 46)) trouvee |= cle.equals(t.piece[f.colonne("cle")]);
+        assertTrue(cle, trouvee);
+        onglet(a, MainActivity.ONGLET_RECHERCHE);
+        String recherche = ecran(a);
+        assertTrue(recherche.contains("Pièce sans étiquette"));
+        assertTrue(recherche.contains("Longueur (sens du fil)"));
+        capturerSiDemande(a, "appli_recherche.png");
+
+        // Bibliothèque : les semaines du fichier ; un clic ouvre la semaine dans Contrôler la coupe.
+        onglet(a, MainActivity.ONGLET_BIBLIOTHEQUE);
+        String bibliotheque = ecran(a);
+        assertTrue(bibliotheque, bibliotheque.contains(f.semaines.size() + " semaine(s)"));
+        assertTrue(bibliotheque.contains("Semaine 45 · 2026"));
+        assertTrue(bibliotheque.contains("Changer de fichier"));
+        capturerSiDemande(a, "appli_bibliotheque.png");
+        // Le choix est gardé : un nouvel écran relit le même fichier.
+        assertNotNull(a.partage().uri());
     }
 }

@@ -10,8 +10,8 @@ android {
         applicationId "com.marinedouyere.sentinelle"
         minSdk 24
         targetSdk 34
-        versionCode 31
-        versionName "6.0.8"
+        versionCode 32
+        versionName "6.0.9"
     }
 
     // Clé de signature gardée dans le projet : chaque nouvelle version
@@ -73,12 +73,9 @@ android {
 }
 
 dependencies {
-    implementation project(":moteur")
     implementation "com.google.android.material:material:1.12.0"
     implementation "androidx.appcompat:appcompat:1.7.0"
     implementation "androidx.documentfile:documentfile:1.0.1"
-    // Lecture des listes de coupe PDF (portage Android de PDFBox).
-    implementation "com.tom-roush:pdfbox-android:2.0.27.0"
 
     testImplementation "junit:junit:4.13.2"
     testImplementation "org.robolectric:robolectric:4.13"
