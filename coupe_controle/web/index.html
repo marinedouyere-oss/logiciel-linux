@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.0.4 — Contrôle de coupe</title>
+<title>Sentinelle V6.0.5 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -423,7 +423,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.4</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.5</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -489,7 +489,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.0.4 · Contrôle de coupe</span>
+    <span>Sentinelle V6.0.5 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -3175,7 +3175,10 @@ function repartirFichiersDossier(fichiersDossier, pariteScan, racine = "") {
   const fichiersDiakonos = [];
   const listeGroupes = groupesAPlat(aPlat, res, fichiersDiakonos);
   // Une casse posée directement dans un dossier « Semaine NN » est la casse de cette semaine (sinon : semaine de son nom + 1).
-  for (const g of listeGroupes) if (g.poste === "Casse" && g.strat && g.strat.semaineDossier) g.parite = pariteDuNumeroSemaine(g.strat.semaineDossier);
+  for (const g of listeGroupes) {
+    g.semaineDossier = (g.strat && g.strat.semaineDossier) || null;
+    if (g.poste === "Casse" && g.semaineDossier) g.parite = pariteDuNumeroSemaine(g.semaineDossier);
+  }
   for (const d of [...parDossier.values()].sort((a, b) => a.dossier.localeCompare(b.dossier))) {
     listeGroupes.push(...groupesDuDossier(d.dossier, d.semaine, d.fichiers, res, fichiersDiakonos));
   }
@@ -3398,6 +3401,7 @@ function groupesDuDossier(dossier, semaine, fichiers, res, fichiersDiakonos) {
   for (const g of liste) if (g !== principal && g.info.poste === "Recyclage") g.poste = "Recyclage";
   // Le dossier de la semaine décide de l'onglet (la casse rangée dans « Semaine 46 » y reste).
   for (const g of liste) {
+    g.semaineDossier = semaine || null;
     if (semaine) g.parite = pariteDuNumeroSemaine(semaine);
     else if (g.poste === "Casse") g.parite = pariteCasse(g.code);
   }
@@ -4674,10 +4678,48 @@ async function chargerBibliotheque() {
     // pas de copie locale
   }
   changementBibliotheque();
+  // Casses gardées sans analyse (semaines ajoutées avant cette version) : analysées tout de suite.
+  try {
+    await analyserCassesBibliotheque();
+  } catch (_erreur) {
+    // analyse impossible : la casse reste « pas comptée »
+  }
   if (typeof window.showDirectoryPicker === "function") {
     bibliotheque.dossier = await chargerPoigneeDossierPartage("bibliotheque");
     if (bibliotheque.dossier) synchroniserBibliotheque(false).then(apresSynchro);
   }
+}
+
+// Casse des semaines gardées sans contrôle (« Ajouter les semaines d'avant ») : pièces déjà lancées et rajouts,
+// d'après les semaines d'avant de la bibliothèque, comme au contrôle sur le PC ; c'est ce que lit le téléphone.
+// Une casse déjà analysée au contrôle n'est pas touchée. Renvoie le nombre de semaines mises à jour.
+async function analyserCassesBibliotheque() {
+  const maj = new Date().toISOString();
+  const touchees = [];
+  for (const s of bibliotheque.semaines.values()) {
+    if (!s.lancements.some((l) => l.casse && !(l.recap && l.recap.casse))) continue;
+    const avant = ordreSemaine(s.annee, s.semaine);
+    const connues = semainesConnuesAvant(avant);
+    if (!connues.length) continue;
+    const iCle = Math.max(0, (s.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE).indexOf("cle"));
+    const lancements = s.lancements.map((l) => {
+      if (!l.casse || (l.recap && l.recap.casse)) return l;
+      const deja = [];
+      let rajouts = 0;
+      for (const piece of l.pieces) {
+        const vu = derniereFoisLancee(piece[iCle], avant);
+        if (vu) deja.push(vu.semaine);
+        else rajouts++;
+      }
+      const base = { prevues: l.nbPieces ?? null, bkp: null, source: null, controle: null, scies: null, couleursAbsentes: null, couleursPf: null };
+      const recap = { ...base, ...(l.recap || {}), casse: { dejaLancees: deja.length, rajouts, ou: deja.length ? libelleSemaines(deja) : "", periode: periodeCasse(connues) } };
+      return { ...l, recap, maj };
+    });
+    touchees.push({ ...s, lancements, maj });
+  }
+  for (const s of touchees) await enregistrerSemaineLocale(s);
+  if (touchees.length) changementBibliotheque();
+  return touchees.length;
 }
 
 // Semaines visibles (pas retirées, avec au moins un lancement), la plus récente d'abord.
@@ -5125,7 +5167,9 @@ async function importerSemainesBibliotheque() {
       etat([`Aucun fichier de lancement lisible dans « ${handle.name} ».`], true);
       return;
     }
-    const a = await archiverLancements(items);
+    let a = await archiverLancements(items);
+    // Les casses ajoutées sont analysées avec les semaines d'avant (pour le téléphone), puis le fichier partagé suit.
+    if ((await analyserCassesBibliotheque()) && bibliotheque.dossier) await synchroniserBibliotheque(false);
     const numeros = a.semaines.map((s) => ordreSemaine(s.annee, s.semaine)).sort((x, y) => x - y);
     const libelle = (o) => String(o % 100).padStart(2, "0");
     const lignes = [`✔ ${items.length} lancement(s) ajouté(s) : ${a.semaines.length} semaine(s), de la semaine ${libelle(numeros[0])} à la semaine ${libelle(numeros[numeros.length - 1])}.`];
@@ -6409,6 +6453,8 @@ function nouvellePaire(poste, label, parite) {
     // Diakonos du lancement (« LAN264601STARTDIAKONOS.xlsx ») et dossier du lancement (« 1ER TOUR AGGLO »).
     diakonos: null,
     dossier: null,
+    // Numéro du dossier « Semaine NN » d'où vient le lancement (scan) : la semaine d'une casse.
+    semaineDossier: null,
     rapport: null,
     doublons: [],
     semainesLivraison: [],
@@ -6670,6 +6716,7 @@ function resultatsAMemoriser(p) {
     semaineParite: p.parite,
     codeLancement: p.codeLancement,
     dossier: p.dossier,
+    semaineDossier: p.semaineDossier || null,
     semaine: p.semaine,
     rapport: p.rapport,
     doublons: p.doublons,
@@ -6698,6 +6745,7 @@ function restaurer(p, rec) {
   p.sommaire = fichierDepuisMemoire(rec.fichierSommaire);
   p.diakonos = fichierDepuisMemoire(rec.fichierDiakonos);
   p.dossier = rec.dossier || null;
+  p.semaineDossier = rec.semaineDossier || null;
   p.semaine = rec.semaine || null;
   p.rapport = rec.rapport || null;
   if (p.rapport) {
@@ -6755,6 +6803,7 @@ function viderPaire(p) {
   p.sommaire = null;
   p.diakonos = null;
   p.dossier = null;
+  p.semaineDossier = null;
   p.semaine = null;
   viderResultats(p);
   p.etat = null;
@@ -6835,8 +6884,10 @@ async function detecterSemaine(p) {
     const { lignes } = await stratEnCache(p.strat);
     const l = lignes.find((x) => x.lancement);
     if (!l) return null;
+    // Une casse rangée dans un dossier « Semaine NN » est la casse de cette semaine.
+    if (p.poste === "Casse" && p.semaineDossier) return String(p.semaineDossier).padStart(2, "0");
     let semaine = extraireSemaine(l.lancement);
-    // La casse a toujours une semaine de décalage : la casse 43 se fabrique en semaine 44.
+    // Sinon la casse a une semaine de décalage : la casse 43 se fabrique en semaine 44.
     if (semaine && p.poste === "Casse") {
       const n = parseInt(semaine, 10);
       semaine = String(n >= 52 ? 1 : n + 1).padStart(2, "0");
@@ -7913,6 +7964,8 @@ async function fichierChoisi() {
   if (estDiakonos(p)) {
     p.semaine = decoderNomDiakonos(fichier.name).semaine;
   } else if (role === "strat") {
+    // Fichier choisi à la main : pas de dossier de semaine.
+    p.semaineDossier = null;
     p.semaine = await detecterSemaine(p);
     deplace = ranger(p);
   }
@@ -8347,6 +8400,7 @@ async function placerFichiersScannes(parite, r) {
         for (const role of ["coupe", "bkp", "sommaire"]) if (!g[role] && p[role]) await oublierFichier(p, role);
         if (!g.dossier && !g.diakonos && p.diakonos) await oublierFichier(p, "diakonos");
       }
+      p.semaineDossier = g.semaineDossier || null;
       p.semaine = await detecterSemaine(p);
       const deplace = ranger(p);
       let suffixe = "";
