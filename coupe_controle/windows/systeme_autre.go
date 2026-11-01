@@ -16,3 +16,6 @@ func message(titre, texte string) {
 func ouvrirParDefaut(url string) error {
 	return exec.Command("xdg-open", url).Start()
 }
+
+// Hors Windows : pas de barre des tâches à habiller.
+func habillerFenetres() {}

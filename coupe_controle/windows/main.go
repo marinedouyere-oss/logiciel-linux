@@ -82,6 +82,8 @@ func main() {
 	if os.Getenv("SENTINELLE_SANS_FENETRE") == "" {
 		ouvrirFenetre(url)
 	}
+	// Icône Laisné et identité Sentinelle dans la barre des tâches (aussi pour les fenêtres rouvertes ensuite).
+	go habillerFenetres()
 	surveiller()
 	serveur.Close()
 }
