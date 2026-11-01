@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V5.9.1 — Contrôle de coupe</title>
+<title>Sentinelle V6.0 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -44,43 +44,67 @@
   body {
     font-family: var(--texte);
     margin: 0;
-    background: var(--gris-clair);
+    background: var(--saumon-pale);
     color: var(--noir);
     font-size: 15px;
   }
   h1, h2, h3, .carte-titre, .titre-carte, .titre-poste, .titre-fiche { font-family: var(--titres); font-weight: 700; }
-  .barre { background: var(--bordeaux); color: #fff; }
-  .barre-contenu { max-width: 980px; margin: 0 auto; padding: 12px 14px; display: flex; align-items: center; gap: 18px; }
-  .barre .logo { height: 46px; width: auto; display: block; }
-  .barre-titres { border-left: 1px solid rgba(255, 255, 255, 0.35); padding-left: 18px; }
-  .barre h1 { font-size: 1.45rem; margin: 0; letter-spacing: 0.01em; }
-  .barre .sous-titre { opacity: 0.85; font-size: 0.9rem; margin-top: 1px; }
-  .onglets { display: flex; background: #fff; border-bottom: 1px solid var(--gris-filet); position: sticky; top: 0; z-index: 10; }
-  .onglets-contenu { display: flex; width: 100%; max-width: 980px; margin: 0 auto; }
-  .onglet-btn {
-    flex: 1; background: none; border: none; border-bottom: 3px solid transparent; border-radius: 0;
-    padding: 14px 10px 12px; font-family: var(--texte); font-size: 0.82rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-    color: var(--gris); cursor: pointer;
+  /* V6.0 : menu bordeaux à gauche, contenu sur fond saumon pâle. */
+  .appli { display: flex; min-height: 100vh; }
+  .menu {
+    flex: 0 0 256px; width: 256px; background: var(--bordeaux); color: #fff; padding: 24px 14px 18px;
+    display: flex; flex-direction: column; gap: 22px; position: sticky; top: 0; height: 100vh; overflow-y: auto; z-index: 10;
   }
-  .onglet-btn:hover:not(:disabled) { background: var(--gris-clair); color: var(--bordeaux); }
-  .onglet-btn.actif { color: var(--bordeaux); border-bottom-color: var(--bordeaux); }
-  main { max-width: 980px; margin: 0 auto; padding: 18px 14px 30px; }
+  .menu-tete { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
+  .menu .logo { width: 150px; height: auto; display: block; margin-bottom: 12px; }
+  .menu-nom { font-family: var(--titres); font-weight: 700; font-size: 1.55rem; letter-spacing: 0.02em; }
+  .menu-sous-titre { font-size: 0.85rem; color: var(--saumon); }
+  .badge-version { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: #fff; color: var(--bordeaux); font-family: var(--texte); font-size: 0.8rem; font-weight: 700; letter-spacing: 0; vertical-align: middle; }
+  .onglets { display: flex; flex-direction: column; gap: 3px; }
+  .menu-groupe { margin: 12px 12px 4px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--saumon); }
+  .onglet-btn {
+    display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 0 12px; border: none; border-radius: 10px;
+    background: none; color: #fff; font-family: var(--texte); font-size: 0.95rem; font-weight: 400; letter-spacing: 0; text-align: left; cursor: pointer;
+  }
+  .onglet-btn svg { flex: 0 0 auto; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .onglet-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); border-color: transparent; }
+  .onglet-btn.actif, .onglet-btn.actif:hover:not(:disabled) { background: #fff; color: var(--bordeaux); font-weight: 700; }
+  .menu-dossier { margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.1); }
+  .menu-dossier .petit { font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--saumon); }
+  .menu-dossier .nom { font-weight: 700; word-break: break-word; }
+  .menu-dossier .etat-dossier { font-size: 0.8rem; color: var(--saumon); }
+  .contenu { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+  main { width: 100%; max-width: 1180px; margin: 0 auto; padding: 28px 32px 30px; flex: 1 0 auto; }
   .inactif { display: none; }
   .carte {
-    background: #fff; border: 1px solid var(--gris-filet); border-radius: 4px;
-    padding: 14px 18px; margin-bottom: 14px;
+    background: #fff; border: 1px solid var(--gris-filet); border-radius: 12px;
+    padding: 16px 20px; margin-bottom: 16px;
   }
-  /* Chiffre clé : valeur en Raleway bordeaux, légende en Lato gris, fond saumon pâle et barre bordeaux à gauche. */
+  /* Haut de page : surtitre gris, titre Raleway bordeaux, phrase d'explication ; boutons à droite. */
+  .entete-page { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+  .entete-textes { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .surtitre { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #6b605d; }
+  .entete-page h1 { margin: 0; font-size: 2.1rem; font-weight: 700; color: var(--bordeaux); line-height: 1.15; }
+  .chapeau { font-size: 0.95rem; color: #6b605d; }
+  .entete-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .entete-actions button { min-height: 44px; border-radius: 10px; }
+  /* Pastilles d'état (bleu = bon, orange = à regarder, gris = pas fait). */
+  .etiquette { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; white-space: nowrap; }
+  .etiquette.bon { background: #e3ecf7; color: #1d4f91; }
+  .etiquette.souci { background: #fde6cf; color: #8a4300; }
+  .etiquette.vide { background: #f1efec; color: #5f5754; }
+  .etiquette.encours { background: var(--saumon-pale); color: var(--bordeaux); }
+  /* Chiffre clé : valeur en Raleway bordeaux, légende en Lato gris. */
   .carte.compteur {
-    background: var(--saumon-pale); border: none; border-left: 4px solid var(--bordeaux); border-radius: 0;
-    padding: 12px 18px; display: flex; align-items: baseline; gap: 10px;
+    background: #fff; border: 1px solid var(--gris-filet); border-radius: 12px;
+    padding: 12px 20px; display: flex; align-items: baseline; gap: 10px;
   }
   .compteur .valeur { font-family: var(--titres); font-weight: 700; font-size: 1.7rem; color: var(--bordeaux); }
   .compteur .legende { color: var(--gris); font-size: 0.92rem; }
   .carte-titre { font-size: 1.08rem; color: var(--bordeaux); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--saumon); }
   .titre-poste { font-size: 1.5rem; margin: 26px 2px 12px; color: var(--gris); padding-bottom: 6px; border-bottom: 1px solid var(--saumon); }
   button {
-    font-family: var(--texte); background: var(--bordeaux); color: #fff; border: 1px solid var(--bordeaux); border-radius: 3px;
+    font-family: var(--texte); background: var(--bordeaux); color: #fff; border: 1px solid var(--bordeaux); border-radius: 8px;
     padding: 9px 18px; font-size: 0.9rem; font-weight: 700; cursor: pointer; letter-spacing: 0.01em;
   }
   button:hover:not(:disabled) { background: #5f0f09; border-color: #5f0f09; }
@@ -122,7 +146,6 @@
   .bandeau.alerte { background: var(--alerte-fond); color: var(--alerte-texte); }
   .bandeau.attention { background: var(--attention-fond); color: var(--attention-texte); }
   .note { color: var(--gris-texte); font-size: 0.85rem; margin-top: 4px; }
-  button.export-semaine { width: 100%; margin: 0 0 14px; padding: 12px 18px; font-size: 0.95rem; }
   .compte-rendu { margin-top: 8px; font-size: 0.86rem; color: var(--noir); line-height: 1.5; }
   .compte-rendu.erreur { color: var(--alerte-texte); }
   /* Tableaux : en-tête bordeaux en capitales espacées, lignes alternées gris clair, pas de filets verticaux, total en aplat bordeaux. */
@@ -164,8 +187,8 @@
   .titre-alerte.alerte { color: var(--alerte-texte); }
   .titre-alerte.attention { color: var(--attention-texte); }
   .pied {
-    max-width: 980px; margin: 0 auto; padding: 14px 14px 26px; display: flex; justify-content: space-between; gap: 10px;
-    color: var(--gris); font-size: 0.75rem; border-top: 1px solid var(--gris-filet);
+    width: 100%; max-width: 1180px; margin: 0 auto; padding: 14px 32px 26px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px;
+    color: #6b605d; font-size: 0.75rem; border-top: 1px solid var(--gris-filet);
   }
   /* Recherche */
   .ligne-recherche { display: flex; gap: 8px; }
@@ -251,40 +274,193 @@
   .modale-boite h3 { margin: 0 0 10px; color: var(--bordeaux); font-family: var(--titres); padding-bottom: 8px; border-bottom: 1px solid var(--saumon); }
   .modale-boite p { white-space: pre-line; line-height: 1.5; }
   .modale-boutons { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+
+  /* ---- V6.0 : accueil de la semaine ---- */
+  .entete-actions button { display: inline-flex; align-items: center; gap: 8px; }
+  .entete-actions button svg, .bouton-creer svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
+  .choix-semaine { display: inline-flex; border: 1px solid #d9d4cf; border-radius: 10px; background: #fff; overflow: hidden; }
+  .choix-semaine button { min-width: 64px; min-height: 44px; border: none; border-radius: 0; background: #fff; color: var(--noir); font-weight: 700; }
+  .choix-semaine button + button { border-left: 1px solid var(--gris-filet); }
+  .choix-semaine button:hover:not(:disabled) { background: var(--saumon-pale); border-color: var(--gris-filet); }
+  .choix-semaine button.actif, .choix-semaine button.actif:hover:not(:disabled) { background: var(--bordeaux); color: #fff; }
+  .tuiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 26px; }
+  .tuile { display: flex; flex-direction: column; gap: 2px; padding: 16px 20px; background: #fff; border: 1px solid var(--gris-filet); border-radius: 12px; }
+  .tuile-legende { font-size: 0.88rem; color: #6b605d; }
+  .tuile-valeur { font-family: var(--titres); font-weight: 700; font-size: 1.7rem; color: var(--noir); }
+  .tuile.souci { background: #fff6ec; border-color: #f6d7b5; }
+  .tuile.souci .tuile-valeur { color: #8a4300; }
+  .titre-section { font-size: 1.2rem; margin: 0 0 12px; color: var(--noir); }
+  .grille-lancements { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-bottom: 26px; }
+  .carte-lancement { display: flex; flex-direction: column; gap: 12px; padding: 16px; background: #fff; border: 1px solid var(--gris-filet); border-radius: 12px; }
+  .carte-lancement-tete { display: flex; align-items: center; gap: 10px; }
+  .carte-lancement-tete h3 { margin: 0; font-size: 1rem; color: var(--bordeaux); text-transform: uppercase; letter-spacing: 0.04em; }
+  .carte-lancement-fichier { display: flex; align-items: center; gap: 8px; min-height: 22px; font-size: 0.88rem; word-break: break-all; }
+  .carte-lancement-fichier svg { flex: 0 0 auto; width: 16px; height: 16px; fill: none; stroke: var(--bordeaux); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .carte-lancement-fichier .vide { color: #6b605d; font-style: italic; }
+  .carte-lancement-etats { margin: 0; padding-top: 10px; border-top: 1px solid var(--gris-filet); display: flex; flex-direction: column; gap: 7px; }
+  .carte-lancement-etats div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .carte-lancement-etats dt { font-size: 0.82rem; color: #6b605d; }
+  .carte-lancement-etats dd { margin: 0; }
+  .carte-lancement button { margin-top: auto; min-height: 40px; border-radius: 10px; }
+  .deux-colonnes { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
+  .ligne-regarder {
+    display: flex; align-items: flex-start; gap: 10px; width: 100%; margin: 0 0 8px; padding: 10px 12px; border: none; border-radius: 10px;
+    background: #fff6ec; color: var(--noir); font-weight: 700; font-size: 0.9rem; text-align: left;
+  }
+  .ligne-regarder:hover:not(:disabled) { background: #fdebd6; border-color: transparent; }
+  .ligne-regarder.vide { background: var(--gris-clair); font-weight: 400; }
+  .ligne-regarder.vide:hover:not(:disabled) { background: var(--gris-filet); }
+  .ligne-regarder .point { flex: 0 0 auto; width: 9px; height: 9px; margin-top: 5px; border-radius: 50%; background: #c26100; }
+  .ligne-regarder.vide .point { background: var(--gris); }
+  .ligne-journal { display: flex; gap: 14px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--gris-filet); font-size: 0.9rem; }
+  .ligne-journal .heure { flex: 0 0 46px; color: #6b605d; font-size: 0.82rem; font-variant-numeric: tabular-nums; }
+  .journal-textes { display: flex; flex-direction: column; min-width: 0; word-break: break-all; }
+  .journal-textes .note { margin: 0; }
+  .ligne-telephone { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding-top: 12px; }
+  .ligne-telephone .note { flex: 1 1 220px; margin: 0; }
+  /* ---- V6.0 : contrôle de la coupe (liste des postes à gauche, cases à droite) ---- */
+  .colonnes-controle { display: flex; flex-direction: column; gap: 20px; }
+  .colonne-postes { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+  .colonne-postes .carte.compteur { margin-bottom: 4px; }
+  .colonne-cases { min-width: 0; }
+  /* Écran large : la liste des postes reste à gauche, les cases défilent à droite. */
+  @media (min-width: 1000px) {
+    .colonnes-controle { display: grid; grid-template-columns: 270px minmax(0, 1fr); align-items: start; }
+    .colonne-postes { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; padding: 2px; }
+  }
+  .colonne-cases .titre-poste { margin-top: 10px; }
+  .liste-postes { display: flex; flex-direction: column; gap: 8px; }
+  .poste-item {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 56px; padding: 8px 12px;
+    background: #fff; color: var(--noir); border: 2px solid var(--gris-filet); border-radius: 12px; text-align: left; font-weight: 400;
+  }
+  .poste-item:hover:not(:disabled) { background: #fff; border-color: var(--bordeaux); }
+  .poste-textes { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .poste-nom { font-weight: 700; font-size: 0.95rem; }
+  .poste-fichier { font-size: 0.75rem; color: #6b605d; word-break: break-all; }
+  .colonne-postes > button { min-height: 44px; border-radius: 10px; }
+  .carte-paire { scroll-margin-top: 16px; transition: box-shadow 0.3s; }
+  .carte-paire.choisie { box-shadow: 0 0 0 3px var(--bordeaux); }
+  /* ---- V6.0 : préparer un lancement ---- */
+  .reec-colonnes { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+  .reec-gauche { flex: 3 1 460px; min-width: 0; }
+  .reec-droite { flex: 2 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 12px; }
+  .titre-etape { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; font-size: 1.1rem; color: var(--noir); }
+  .numero-etape { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 50%; background: var(--bordeaux); color: #fff; font-size: 0.85rem; }
+  .reec-droite .titre-etape { margin-bottom: 2px; }
+  .zone-depot { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 18px; border: 2px dashed var(--saumon); border-radius: 12px; background: #fffaf8; }
+  .zone-depot.survol { border-color: var(--bordeaux); background: var(--saumon-pale); }
+  .icone-depot { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 12px; background: var(--saumon-pale); color: var(--bordeaux); }
+  .icone-depot svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .textes-depot { flex: 1 1 200px; min-width: 0; }
+  .nom-depot { font-weight: 700; font-size: 1rem; word-break: break-all; }
+  .zone-depot button { min-height: 44px; border-radius: 10px; }
+  .petit-titre { font-size: 0.85rem; font-weight: 700; color: #4a403d; margin: 6px 0 8px; }
+  .formulaire-reecriture label.large { flex: 1 1 260px; }
+  .formulaire-reecriture input { min-height: 44px; border-radius: 10px; font-size: 1rem; }
+  .formulaire-reecriture input[type="number"] { width: 100px; font-weight: 700; }
+  .choix-types { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin-bottom: 8px; }
+  .type-btn {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-height: 60px; padding: 10px 14px;
+    background: #fff; color: var(--noir); border: 2px solid var(--gris-filet); border-radius: 12px; text-align: left;
+  }
+  .type-btn:hover:not(:disabled) { background: #fff; border-color: var(--bordeaux); }
+  .type-btn.choisi, .type-btn.choisi:hover:not(:disabled) { background: var(--bordeaux); color: #fff; border-color: var(--bordeaux); }
+  .type-libelle { font-size: 0.95rem; font-weight: 700; }
+  .type-dossier { font-size: 0.72rem; font-weight: 400; opacity: 0.85; }
+  .fichier-cree { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-radius: 12px; background: var(--saumon-pale); }
+  .fichier-cree .petit { font-size: 0.78rem; color: #6b605d; }
+  .nom-fichier { font-family: var(--titres); font-weight: 700; font-size: 1.35rem; color: var(--bordeaux); word-break: break-all; margin-bottom: 6px; }
+  .chemin-fichier { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-weight: 700; font-size: 0.88rem; }
+  .chemin-fichier svg { width: 14px; height: 14px; fill: none; stroke: #6b605d; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .titre-corrections { font-size: 0.88rem; font-weight: 700; color: #4a403d; margin: 14px 0 4px; }
+  .ligne-correction { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--gris-filet); font-size: 0.88rem; }
+  .marque {
+    flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; min-width: 48px; height: 24px; padding: 0 6px;
+    border-radius: 6px; font-size: 0.75rem; font-weight: 700; border: 1px solid rgba(0, 0, 0, 0.12);
+  }
+  .marque.jaune { background: #ffff00; color: var(--noir); }
+  .marque.orange { background: #ffc000; color: var(--noir); }
+  .marque.neutre { background: var(--gris-clair); color: #5f5754; }
+  .texte-correction { flex: 1 1 auto; }
+  .nombre-correction { flex: 0 0 auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .avertissement-reecriture { margin-top: 10px; padding: 10px 12px; border-radius: 10px; background: #fff6ec; color: #6e3600; font-size: 0.86rem; line-height: 1.45; }
+  .defile { overflow-x: auto; }
+  .ligne-dossier-semaines { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; padding-top: 10px; border-top: 1px solid var(--gris-filet); font-size: 0.88rem; }
+  .ligne-dossier-semaines button.texte { color: var(--bordeaux); }
+  .note-cadenas { margin: 0; }
+  .bouton-creer { min-height: 52px; border-radius: 12px; font-size: 1.05rem; }
+  .compte-rendu.reussi { padding: 10px 12px; border-radius: 10px; background: #e3ecf7; color: #1d4f91; }
+  .compte-rendu.erreur { padding: 10px 12px; border-radius: 10px; background: var(--saumon-pale); }
+  /* Écran étroit : le menu passe en haut, ses boutons s'enroulent. */
+  @media (max-width: 900px) {
+    .appli { flex-direction: column; }
+    .menu { position: static; width: auto; height: auto; flex: 0 0 auto; padding: 14px 12px; gap: 12px; }
+    .menu-tete { flex-direction: row; align-items: center; gap: 12px; }
+    .menu .logo { width: 96px; margin: 0; }
+    .menu-sous-titre, .menu-groupe, .menu-dossier { display: none; }
+    .onglets { flex-direction: row; flex-wrap: wrap; }
+    .onglet-btn { width: auto; min-height: 40px; font-size: 0.85rem; }
+    main { padding: 18px 16px 24px; }
+    .pied { padding: 14px 16px 24px; }
+  }
   @media (max-width: 560px) {
-    main { padding: 12px 8px 24px; }
     .carte { padding: 12px 12px; }
     table.recap { font-size: 0.8rem; }
-    .barre .logo { height: 36px; }
-    .barre-titres { padding-left: 12px; }
-    .barre h1 { font-size: 1.2rem; }
-    .onglet-btn { letter-spacing: 0.03em; font-size: 0.76rem; }
+    .entete-page h1 { font-size: 1.6rem; }
   }
 </style>
 </head>
 <body>
-
-  <header class="barre">
-    <div class="barre-contenu">
+  <div class="appli">
+  <aside class="menu">
+    <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="barre-titres">
-        <h1>Sentinelle</h1>
-        <div class="sous-titre">Contrôle de coupe · V5.9.1</div>
-      </div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0</span></div>
+      <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
-  </header>
-  <nav class="onglets">
-    <div class="onglets-contenu">
-      <button type="button" class="onglet-btn actif" data-onglet="paire">Semaine</button>
-      <button type="button" class="onglet-btn" data-onglet="impaire">Semaine</button>
-      <button type="button" class="onglet-btn" data-onglet="recherche">Recherche</button>
-      <button type="button" class="onglet-btn" data-onglet="bibliotheque">Bibliothèque</button>
-      <button type="button" class="onglet-btn" data-onglet="reecriture">Réécriture</button>
-    </div>
-  </nav>
+    <nav class="onglets" aria-label="Menu principal">
+      <button type="button" class="onglet-btn" data-onglet="accueil">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
+        <span class="libelle-onglet">La semaine</span>
+      </button>
+      <button type="button" class="onglet-btn" data-onglet="reecriture">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 14l2 2 4-4"/></svg>
+        <span class="libelle-onglet">Préparer un lancement</span>
+      </button>
+      <div class="menu-groupe">Contrôler la coupe</div>
+      <button type="button" class="onglet-btn actif" data-onglet="paire">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+        <span class="libelle-onglet">Semaine</span>
+      </button>
+      <button type="button" class="onglet-btn" data-onglet="impaire">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+        <span class="libelle-onglet">Semaine</span>
+      </button>
+      <div class="menu-groupe">Outils</div>
+      <button type="button" class="onglet-btn" data-onglet="recherche">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <span class="libelle-onglet">Rechercher une pièce</span>
+      </button>
+      <button type="button" class="onglet-btn" data-onglet="bibliotheque">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z"/><path d="M8 7h6M8 11h6"/></svg>
+        <span class="libelle-onglet">Bibliothèque des semaines</span>
+      </button>
+    </nav>
+    <div class="menu-dossier" id="menuDossier"></div>
+  </aside>
+  <div class="contenu">
   <main>
+    <div id="pageAccueil" class="inactif"></div>
     <div id="pageSemaine"></div>
     <div id="pageRecherche" class="inactif">
+      <header class="entete-page">
+        <div class="entete-textes">
+          <div class="surtitre">Outils</div>
+          <h1>Rechercher une pièce</h1>
+          <div class="chapeau">Dans les lancements chargés, les listes de coupe, les .bkp et Diakonos.</div>
+        </div>
+      </header>
       <div class="carte">
         <div class="carte-titre">Recherche</div>
         <div class="ligne-recherche">
@@ -306,8 +482,10 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V5.9.1 · Contrôle de coupe</span>
+    <span>Sentinelle V6.0 · Contrôle de coupe</span>
   </footer>
+  </div>
+  </div>
   <input type="file" id="choixFichier" hidden>
 
   <div class="modale-fond masquee" id="modaleConfirmation">
@@ -4912,7 +5090,7 @@ function afficherBibliotheque() {
     const n = l.controle.nbCorriger + l.controle.nbVerifier;
     return n ? ` <span class="alerte-texte">⚠ ${n}</span>` : ' <span class="ok-texte">✔</span>';
   };
-  let html = `<div class="carte">
+  let html = `${entetePage("Outils", "Bibliothèque des semaines", "Toutes les semaines scannées, et le fichier partagé lu par le téléphone.")}<div class="carte">
     <div class="carte-titre">Bibliothèque des semaines</div>
     <div class="note">Chaque semaine scannée est gardée ici (lancements, pièces, bilan des contrôles). La casse s'en sert pour savoir si une pièce était déjà lancée, même plusieurs semaines avant.</div>
     ${partage
@@ -5749,6 +5927,7 @@ async function lancerReecriture() {
     const w = await fh.createWritable();
     await w.write(octets);
     await w.close();
+    ajouterAuJournal(nom, chemin);
     etat([`✔ Enregistré : ${chemin} / ${nom}`, resumeCorrections(plan, type)]);
   } catch (erreur) {
     etat([`Réécriture impossible : ${erreur && erreur.message ? erreur.message : erreur}. Rien n'a été enregistré.`], true);
@@ -5779,6 +5958,30 @@ function resumeCorrections(plan, type) {
   return `Corrections : ${morceaux.join(" ; ")}.${couleurs ? ` Lignes surlignées : ${couleurs}.` : ""}`;
 }
 
+
+// Les corrections du plan, une ligne par sorte : marque (couleur de la ligne dans le LAN), texte, nombre.
+function lignesCorrections(plan, type) {
+  const lignes = [];
+  const ajouter = (n, marque, genre, texte, unite) => {
+    if (n) lignes.push({ marque, genre, texte, nombre: `${n} ${unite}${n > 1 ? "s" : ""}` });
+  };
+  const changements = (quoi) => plan.changements.filter((c) => c.quoi === quoi).length;
+  if (type.feno) {
+    const jaunes = [...plan.marques.values()].filter((c) => c === COULEUR_PLUS_10).length;
+    ajouter(jaunes, "+10", "jaune", "Retour LG / LD : cote finie +10", "ligne");
+    ajouter(plan.marques.size - jaunes, "+20", "orange", "Deux retours : cote finie +20", "ligne");
+    ajouter(changements("débit"), "débit", "neutre", "Débit refait : cote finie +55 (FENO) ou +50", "ligne");
+    ajouter(changements("sous-face"), "RCB", "neutre", "RCB en sous-face sous le 10 brut", "ligne");
+  } else if (type.agglo) {
+    ajouter(plan.pieces.bandes.size, "bande", "jaune", "Largeur harmonisée pour faire des bandes (6 cm max, 1 à 3 pièces)", "pièce");
+    ajouter(plan.pieces.brut.size, "BRUT", "jaune", "« BRUT » retiré de la couleur", "ligne");
+    ajouter(plan.pieces.chantBrut.size, "chant", "jaune", "Chant brut : ligne surlignée", "ligne");
+    ajouter(plan.pieces.cred14.size, "CRED", "neutre", "RCB-CRED14 sous les crédences 10 / 12 brut", "crédence");
+    ajouter(plan.pieces.baz.size, "BAZ", "neutre", "BAZ ajouté (usinage sans commentaire)", "ligne");
+  }
+  return lignes;
+}
+
 function peutReecrire() {
   return Boolean(reecriture.analyse && nomLancementReecrit(reecriture.reglage) && reecriture.racine && !reecriture.enCours);
 }
@@ -5789,15 +5992,29 @@ function apercuReecriture() {
   const nom = nomLancementReecrit(r);
   const a = reecriture.analyse;
   const plan = a && type ? planifierCorrections(a, type) : null;
-  let html = "";
-  if (nom && type) html += `<div class="ligne-bibliotheque">Nom : <strong>${echapper(nom)}</strong> — rangé dans <strong>${echapper(nomDossierSemaine(r.semaine))} / ${echapper(type.dossier)}</strong></div>`;
-  if (!plan) return html;
-  html += `<div class="compte-rendu">${echapper(resumeCorrections(plan, type))}</div>`;
-  if (plan.avertissements.length) html += `<div class="compte-rendu erreur">${plan.avertissements.map((t) => `⚠ ${echapper(t)}`).join("<br>")}</div>`;
+  const fleche = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>';
+  const morceaux = [reecriture.racine ? reecriture.racine.name : "Dossier des semaines", r.semaine ? nomDossierSemaine(r.semaine) : "Semaine ?", type ? type.dossier : "?"];
+  let html = `<div class="fichier-cree">
+    <div class="petit">Nom</div>
+    <div class="nom-fichier" id="reecNom">${nom ? echapper(nom) : "—"}</div>
+    <div class="petit">Rangé dans</div>
+    <div class="chemin-fichier" id="reecChemin">${morceaux.map((m) => `<span>${echapper(m)}</span>`).join(fleche)}</div>
+  </div>`;
+  if (!type) return html + '<div class="note">Choisissez le type de lancement.</div>';
+  if (type.id === "chantier" && !nom) html += '<div class="note">Tapez le nom du chantier.</div>';
+  html += '<div class="titre-corrections">Ce que Sentinelle corrige</div>';
+  if (!plan) return html + `<div class="note">${a ? "" : "Déposez d'abord le fichier d'extraction."}</div>`;
+  const lignes = lignesCorrections(plan, type);
+  if (lignes.length)
+    html += `<div class="liste-corrections">${lignes
+      .map((l) => `<div class="ligne-correction"><span class="marque ${l.genre}">${echapper(l.marque)}</span><span class="texte-correction">${echapper(l.texte)}</span><span class="nombre-correction">${echapper(l.nombre)}</span></div>`)
+      .join("")}</div>`;
+  else html += `<div class="note">${type.agglo || type.feno ? "Aucune correction à faire dans ce fichier." : "Aucune correction pour ce type : le fichier est rangé tel quel, sous son vrai nom."}</div>`;
+  if (plan.avertissements.length) html += `<div class="avertissement-reecriture">${plan.avertissements.map((t) => `<div>⚠ ${echapper(t)}</div>`).join("")}</div>`;
   if (plan.changements.length) {
-    html += `<details class="donnees"><summary>Voir les cellules corrigées (${plan.changements.length})</summary><table class="recap"><thead><tr><th>Pièce</th><th>Matière</th><th>Cellule</th><th class="droite">Avant</th><th class="droite">Après</th></tr></thead><tbody>${plan.changements
+    html += `<details class="donnees"><summary>Voir les cellules corrigées (${plan.changements.length})</summary><div class="defile"><table class="recap"><thead><tr><th>Pièce</th><th>Matière</th><th>Cellule</th><th class="droite">Avant</th><th class="droite">Après</th></tr></thead><tbody>${plan.changements
       .map((ch, i) => `<tr class="${i % 2 ? "impaire" : ""}"><td>${echapper(ch.cle)}</td><td>${echapper(ch.agglo)}</td><td>${echapper(ch.quoi)} (${lettresColonne(ch.col)}${ch.ligne})</td><td class="droite">${ch.avant == null ? "vide" : echapper(formatNombre(ch.avant))}</td><td class="droite"><strong>${echapper(ch.nombre ? formatNombre(ch.apres) : ch.apres)}</strong></td></tr>`)
-      .join("")}</tbody></table></details>`;
+      .join("")}</tbody></table></div></details>`;
   }
   return html;
 }
@@ -5818,58 +6035,98 @@ function afficherReecriture() {
     chargerReecriture().then(afficherReecriture);
     return;
   }
+  const entete = entetePage("Réécriture", "Préparer un lancement", "L'extraction du logiciel de gestion devient le fichier LAN, corrigé et rangé dans la bonne semaine.");
   if (typeof window.showDirectoryPicker !== "function") {
-    page.innerHTML = `<div class="carte"><div class="carte-titre">Réécriture</div><div class="note">La réécriture des fichiers de lancement se fait sur le PC : ouvrez la page dans Chrome ou Edge.</div></div>`;
+    page.innerHTML = `${entete}<div class="carte"><div class="note">La préparation des lancements se fait sur le PC : ouvrez la page dans Chrome ou Edge.</div></div>`;
     return;
   }
   const r = reecriture.reglage;
   const a = reecriture.analyse;
-  let html = `<div class="carte">
-    <div class="carte-titre">Réécriture du fichier de lancement</div>
-    <div class="note">Le fichier d'extraction du logiciel de gestion devient le LAN du lancement : vrai nom, corrections automatiques, rangé dans le dossier de la semaine. Rien n'est ajouté au fichier : seules les cellules corrigées changent, et les lignes dont les dimensions sont corrigées sont surlignées (Feno : jaune +10, orange +20 ; agglo : jaune pour les bandes, « BRUT » retiré et chants bruts).</div>
-    <div class="ligne-bibliotheque">Dossier des semaines : <strong>${reecriture.racine ? echapper(reecriture.racine.name) : "aucun dossier choisi"}</strong></div>
-    <button type="button" class="contour pleine" id="btnRacineReecriture">${reecriture.racine ? "Changer le dossier des semaines" : "Choisir le dossier des semaines"}</button>
-  </div>`;
-  html += `<div class="carte">
-    <div class="carte-titre">1. Fichier d'extraction</div>
-    <button type="button" class="contour pleine" id="btnExtraction">${reecriture.fichier ? "Changer de fichier" : "Choisir le fichier d'extraction (.xlsm, .xlsx)"}</button>
-    <input type="file" id="choixExtraction" accept=".xlsx,.xlsm" hidden>
-    ${reecriture.fichier ? `<div class="ligne-bibliotheque">Fichier : <strong>${echapper(reecriture.fichier.nom)}</strong>${a ? ` — onglet ${echapper(a.nomFeuille)}, ${a.donnees.length} ligne(s)` : ""}</div>` : ""}
-    ${reecriture.erreur ? `<div class="compte-rendu erreur">Fichier illisible : ${echapper(reecriture.erreur)}</div>` : ""}
-  </div>`;
-  html += `<div class="carte">
-    <div class="carte-titre">2. Le lancement</div>
-    <div class="formulaire-reecriture">
-      <label>Semaine<input type="number" id="reecSemaine" min="1" max="53" value="${echapper(r.semaine)}"></label>
-      <label>Année<input type="number" id="reecAnnee" min="0" max="99" value="${echapper(r.annee)}"></label>
-      <label>Type<select id="reecType"><option value="">— choisir —</option>${TYPES_REECRITURE.map((t) => `<option value="${t.id}" ${t.id === r.type ? "selected" : ""}>${t.libelle}</option>`).join("")}</select></label>
-      ${r.type === "chantier" ? `<label>Nom du chantier<input type="text" id="reecChantier" value="${echapper(r.chantier)}" placeholder="AIRDESIGN"></label>` : ""}
+  const numero = (n) => `<span class="numero-etape">${n}</span>`;
+  const icone = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>';
+  page.innerHTML = `${entete}
+  <div class="reec-colonnes">
+    <div class="reec-gauche">
+      <section class="carte">
+        <h2 class="titre-etape">${numero(1)}L'extraction</h2>
+        <div class="zone-depot ${reecriture.fichier ? "pleine" : ""}" id="zoneExtraction">
+          <span class="icone-depot">${icone}</span>
+          <div class="textes-depot">
+            ${
+              reecriture.fichier
+                ? `<div class="nom-depot">${echapper(reecriture.fichier.nom)}</div><div class="note">${a ? `Onglet ${echapper(a.nomFeuille)} · ${a.donnees.length} ligne(s)` : ""}</div>`
+                : '<div class="nom-depot">Glissez le fichier d\'extraction ici</div><div class="note">ou cliquez sur « Choisir le fichier » (.xlsm, .xlsx)</div>'
+            }
+          </div>
+          <button type="button" class="contour" id="btnExtraction">${reecriture.fichier ? "Changer de fichier" : "Choisir le fichier"}</button>
+        </div>
+        <input type="file" id="choixExtraction" accept=".xlsx,.xlsm" hidden>
+        ${reecriture.erreur ? `<div class="compte-rendu erreur">Fichier illisible : ${echapper(reecriture.erreur)}</div>` : ""}
+      </section>
+      <section class="carte">
+        <h2 class="titre-etape">${numero(2)}Le lancement</h2>
+        <div class="formulaire-reecriture">
+          <label>Semaine<input type="number" id="reecSemaine" min="1" max="53" value="${echapper(r.semaine)}"></label>
+          <label>Année<input type="number" id="reecAnnee" min="0" max="99" value="${echapper(r.annee)}"></label>
+        </div>
+        <div class="petit-titre" id="libelleTypes">Type de lancement</div>
+        <div class="choix-types" role="group" aria-labelledby="libelleTypes">
+          ${TYPES_REECRITURE.map((t) => `<button type="button" class="type-btn ${t.id === r.type ? "choisi" : ""}" data-type="${t.id}" aria-pressed="${t.id === r.type}"><span class="type-libelle">${t.libelle}</span><span class="type-dossier">${t.dossier}</span></button>`).join("")}
+        </div>
+        ${r.type === "chantier" ? `<div class="formulaire-reecriture"><label class="large">Nom du chantier<input type="text" id="reecChantier" value="${echapper(r.chantier)}" placeholder="Nom du chantier"></label></div>` : ""}
+      </section>
     </div>
-    <div id="reecApercu">${apercuReecriture()}</div>
-    <button type="button" class="pleine" id="btnReecrire" ${peutReecrire() ? "" : "disabled"}>${reecriture.enCours ? "Enregistrement…" : "Réécrire et enregistrer"}</button>
-    ${!reecriture.racine && a ? '<div class="note">Choisissez d\'abord le dossier des semaines.</div>' : ""}
-    ${reecriture.etat ? `<div id="reecEtat" class="compte-rendu ${reecriture.etat.erreur ? "erreur" : ""}">${reecriture.etat.lignes.map(echapper).join("<br>")}</div>` : ""}
+    <aside class="reec-droite carte" aria-label="Le fichier créé">
+      <h2 class="titre-etape">${numero(3)}Le fichier créé</h2>
+      <div id="reecApercu">${apercuReecriture()}</div>
+      <div class="ligne-dossier-semaines">
+        <span>Dossier des semaines : <strong>${reecriture.racine ? echapper(reecriture.racine.name) : "aucun dossier choisi"}</strong></span>
+        <button type="button" class="texte" id="btnRacineReecriture">${reecriture.racine ? "Changer" : "Choisir le dossier des semaines"}</button>
+      </div>
+      <div class="note note-cadenas">Rien n'est ajouté au fichier : seules les cases corrigées changent. Si le fichier existe déjà, message bloquant, rien n'est écrasé.</div>
+      <button type="button" class="bouton-creer" id="btnReecrire" ${peutReecrire() ? "" : "disabled"}>${reecriture.enCours ? "Enregistrement…" : "Créer le fichier"}</button>
+      ${!reecriture.racine && a ? '<div class="note">Choisissez d\'abord le dossier des semaines.</div>' : ""}
+      ${reecriture.etat ? `<div id="reecEtat" class="compte-rendu ${reecriture.etat.erreur ? "erreur" : "reussi"}">${reecriture.etat.lignes.map(echapper).join("<br>")}</div>` : ""}
+    </aside>
   </div>`;
-  page.innerHTML = html;
   $("btnRacineReecriture").addEventListener("click", choisirRacineReecriture);
   $("btnExtraction").addEventListener("click", () => $("choixExtraction").click());
   $("choixExtraction").addEventListener("change", (e) => fichierExtractionChoisi(e.target.files && e.target.files[0]));
-  // Semaine, année, chantier : l'aperçu suit la frappe ; le type reconstruit la carte (champ du chantier).
+  // Le fichier peut aussi être glissé sur la zone.
+  const zone = $("zoneExtraction");
+  zone.addEventListener("dragover", (e) => {
+    e.preventDefault();
+    zone.classList.add("survol");
+  });
+  zone.addEventListener("dragleave", () => zone.classList.remove("survol"));
+  zone.addEventListener("drop", (e) => {
+    e.preventDefault();
+    zone.classList.remove("survol");
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) fichierExtractionChoisi(f);
+  });
+  // Semaine, année, chantier : l'aperçu suit la frappe ; le type redessine l'écran (champ du chantier).
   const maj = (champ, cle) => {
     const el = $(champ);
     if (!el) return;
-    const surSaisie = () => {
+    el.addEventListener("input", () => {
       reecriture.reglage[cle] = el.value.trim();
       reecriture.etat = null;
-      if (el.tagName === "SELECT") afficherReecriture();
-      else majApercuReecriture();
-    };
-    el.addEventListener(el.tagName === "SELECT" ? "change" : "input", surSaisie);
+      majApercuReecriture();
+    });
   };
   maj("reecSemaine", "semaine");
   maj("reecAnnee", "annee");
-  maj("reecType", "type");
   maj("reecChantier", "chantier");
+  page.querySelectorAll(".type-btn").forEach((b) =>
+    b.addEventListener("click", () => {
+      reecriture.reglage.type = b.dataset.type;
+      reecriture.etat = null;
+      afficherReecriture();
+      const champ = $("reecChantier");
+      if (champ && !champ.value) champ.focus();
+    })
+  );
   $("btnReecrire").addEventListener("click", lancerReecriture);
 }
 
@@ -5928,8 +6185,8 @@ function tick() {
 let prochainId = 1;
 let prochainNumeroChantier = 1;
 const paires = [];
-let onglet = "paire";
-// Onglet d'une semaine (et non Recherche, Bibliothèque ou Réécriture).
+let onglet = "accueil";
+// Onglet d'une semaine (et non Accueil, Recherche, Bibliothèque ou Réécriture).
 const estOngletSemaine = (o = onglet) => o === "paire" || o === "impaire";
 
 function nouvellePaire(poste, label, parite) {
@@ -6459,11 +6716,14 @@ const zonesRecap = { generation: 0 };
 function afficher() {
   majOnglets();
   document.querySelectorAll(".onglet-btn").forEach((b) => b.classList.toggle("actif", b.dataset.onglet === onglet));
+  $("pageAccueil").classList.toggle("inactif", onglet !== "accueil");
   $("pageSemaine").classList.toggle("inactif", !estOngletSemaine());
   $("pageRecherche").classList.toggle("inactif", onglet !== "recherche");
   $("pageBibliotheque").classList.toggle("inactif", onglet !== "bibliotheque");
   $("pageReecriture").classList.toggle("inactif", onglet !== "reecriture");
+  majMenuDossier();
   if (estOngletSemaine()) construireSemaine(onglet);
+  else if (onglet === "accueil") afficherAccueil();
   else if (onglet === "bibliotheque") afficherBibliotheque();
   else if (onglet === "reecriture") afficherReecriture();
 }
@@ -6473,8 +6733,9 @@ function majOnglets() {
   document.querySelectorAll(".onglet-btn").forEach((b) => {
     if (!estOngletSemaine(b.dataset.onglet)) return;
     const libelle = libelleOnglet(b.dataset.onglet);
-    if (b.textContent !== libelle) {
-      b.textContent = libelle;
+    const zone = b.querySelector(".libelle-onglet") || b;
+    if (zone.textContent !== libelle) {
+      zone.textContent = libelle;
       if (b.dataset.onglet === onglet) change = true;
     }
   });
@@ -6483,19 +6744,30 @@ function majOnglets() {
 
 function construireSemaine(parite) {
   const page = $("pageSemaine");
+  const numero = numeroSemaine(parite);
   page.innerHTML = `
-    <div class="carte compteur" id="texteCompteur"><span class="valeur">…</span></div>
-    <button type="button" class="export-semaine" id="btnExporterSemaine">Exporter le rapport de la semaine (.xlsx)</button>
-    <div class="carte"><div class="carte-titre">Lancements</div><div id="zoneRecap"></div></div>
+    ${entetePage(
+      `Semaine ${numero} · ${anneeDeSemaine(numero)}`,
+      "Contrôler la coupe",
+      "Les fichiers de la semaine sont trouvés tout seuls dans son dossier.",
+      `<button type="button" class="contour export-semaine" id="btnExporterSemaine">Exporter le rapport de la semaine (.xlsx)</button>
+       <button type="button" id="btnLancerTout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>Lancer tous les contrôles</button>`
+    )}
     <div class="carte" id="carteDossier"></div>
-    <div class="actions">
-      <button type="button" id="btnLancerTout">Lancer le(s) contrôle(s)</button>
-      <button type="button" class="contour" id="btnReinitialiserSemaine">↺ Réinitialiser la semaine</button>
+    <div class="colonnes-controle">
+      <div class="colonne-postes">
+        <div class="carte compteur" id="texteCompteur"><span class="valeur">…</span></div>
+        <nav class="liste-postes" id="listePostes" aria-label="Les postes de la semaine"></nav>
+        <button type="button" class="contour" id="btnAjouterChantier">+ Ajouter un chantier</button>
+        <button type="button" class="texte" id="btnReinitialiserSemaine">↺ Réinitialiser la semaine</button>
+      </div>
+      <div class="colonne-cases">
+        <div id="cartesPostes"></div>
+        <h2 class="titre-poste">Chantiers</h2>
+        <div id="cartesChantiers"></div>
+      </div>
     </div>
-    <div id="cartesPostes"></div>
-    <h2 class="titre-poste">Chantiers</h2>
-    <div id="cartesChantiers"></div>
-    <button type="button" class="contour" id="btnAjouterChantier">+ Ajouter un chantier</button>
+    <div class="carte"><div class="carte-titre">Lancements</div><div id="zoneRecap"></div></div>
   `;
   majCompteur();
   majRecap();
@@ -7257,6 +7529,11 @@ function lignesRecap(pairesSemaine) {
 }
 
 function majRecap() {
+  if (onglet === "accueil") {
+    afficherAccueil();
+    return;
+  }
+  majListePostes();
   const zone = $("zoneRecap");
   if (!zone || !estOngletSemaine()) return;
   const parite = onglet;
@@ -7265,12 +7542,7 @@ function majRecap() {
   const lignes = lignesRecap(pairesDeLaSemaine(parite));
   const autres = lignesRecap(pairesDeLaSemaine(autre));
   zone.innerHTML = htmlRecap(lignes, autres, libelleOnglet(autre));
-  zone.querySelectorAll("[data-case]").forEach((el) =>
-    el.addEventListener("click", () => {
-      const carte = document.querySelector(`.carte-paire[data-id="${el.dataset.case}"]`);
-      if (carte) carte.scrollIntoView({ behavior: "smooth", block: "start" });
-    })
-  );
+  zone.querySelectorAll("[data-case]").forEach((el) => el.addEventListener("click", () => montrerCase(Number(el.dataset.case))));
   const incomplet = (ls) => ls.some((l) => l.cles === null);
   if (!incomplet(lignes) && !incomplet(autres)) return;
   // Lecture des fichiers pour les totaux manquants, puis nouvel affichage.
@@ -8219,6 +8491,7 @@ document.querySelectorAll("img[data-logo]").forEach((img) => (img.src = img.data
   await initialiserPaires();
   await restaurerDossiersPartages();
   await chargerBibliotheque();
+  await chargerReecriture().catch(() => {});
   afficher();
 })();
 
@@ -8969,6 +9242,257 @@ async function exporterProblemesLancement(p) {
   }
   const { nom, octets } = await problemesLancementXlsx(p);
   telecharger(nom, octets, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+}
+
+// ---- V6.0 : accueil de la semaine, liste des postes du contrôle, menu ----
+
+// Haut de page commun : surtitre, titre, phrase d'explication, boutons à droite.
+function entetePage(surtitre, titre, chapeau, actions = "") {
+  return `<header class="entete-page">
+    <div class="entete-textes">
+      <div class="surtitre">${echapper(surtitre)}</div>
+      <h1>${echapper(titre)}</h1>
+      ${chapeau ? `<div class="chapeau">${echapper(chapeau)}</div>` : ""}
+    </div>
+    ${actions ? `<div class="entete-actions">${actions}</div>` : ""}
+  </header>`;
+}
+
+// Lundi de la semaine ISO « semaine » de l'année « annee ».
+function lundiSemaineIso(annee, semaine) {
+  const jan4 = new Date(annee, 0, 4);
+  const lundi = new Date(annee, 0, 4 - ((jan4.getDay() + 6) % 7));
+  lundi.setDate(lundi.getDate() + (semaine - 1) * 7);
+  return lundi;
+}
+
+// Année d'un numéro de semaine : celle où cette semaine tombe le plus près d'aujourd'hui.
+function anneeDeSemaine(semaine, aujourdHui = new Date()) {
+  const a = aujourdHui.getFullYear();
+  return [a - 1, a, a + 1].reduce((m, c) => (Math.abs(lundiSemaineIso(c, semaine) - aujourdHui) < Math.abs(lundiSemaineIso(m, semaine) - aujourdHui) ? c : m), a);
+}
+
+function datesSemaine(semaine) {
+  const lundi = lundiSemaineIso(anneeDeSemaine(semaine), semaine);
+  const vendredi = new Date(lundi);
+  vendredi.setDate(lundi.getDate() + 4);
+  const jour = (d) => d.toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
+  const debut = lundi.getMonth() === vendredi.getMonth() ? String(lundi.getDate()) : jour(lundi);
+  return `Du lundi ${debut} au vendredi ${jour(vendredi)}`;
+}
+
+// ---- État d'une case : ce qui est à regarder ----
+
+function problemesDeLaCase(p) {
+  const l = [];
+  if (p.rapport && p.rapport.nbAnomalies) l.push(`${p.rapport.nbAnomalies} pièce(s) à vérifier dans ${sourceControle(p)}`);
+  if (p.doublons.length) l.push(`${p.doublons.length} doublon(s) dans le lancement`);
+  if (p.erreurScies) l.push("Scies : contrôle impossible");
+  else if (p.ecartsScies && p.ecartsScies.length) l.push(`Scies : ${p.ecartsScies.length} pièce(s) différente(s)`);
+  if (p.couleurs && p.couleurs.absentes.length) l.push(`Couleurs : ${p.couleurs.absentes.length} couleur(s) absente(s) du .bkp`);
+  if (p.couleurs && (p.couleurs.variantes || []).length) l.push(`Couleurs : ${p.couleurs.variantes.length} en version PF, à vérifier`);
+  if (p.etatErreur && p.etat) l.push(p.etat.replace(/^❌\s*/, ""));
+  return l;
+}
+
+function etatCase(p) {
+  if (p.enCours) return { texte: "En cours…", genre: "encours" };
+  if (!p.strat) return { texte: "Pas de lancement", genre: "vide" };
+  const n = problemesDeLaCase(p).length;
+  if (n) return { texte: `${n} à regarder`, genre: "souci" };
+  if (!p.rapport) return { texte: "Pas contrôlé", genre: "vide" };
+  return { texte: "OK", genre: "bon" };
+}
+
+function etatCoupe(p) {
+  if (p.coupe && p.bkp) return { texte: "Liste + .bkp", genre: "bon" };
+  if (p.bkp) return { texte: ".bkp seul", genre: "bon" };
+  if (p.coupe) return { texte: "Liste seule", genre: "bon" };
+  return { texte: "—", genre: "vide" };
+}
+
+const etiquette = (e) => `<span class="etiquette ${e.genre}">${echapper(e.texte)}</span>`;
+
+// ---- Contrôle : la liste des postes à gauche, un clic amène à la case ----
+
+function majListePostes() {
+  const zone = $("listePostes");
+  if (!zone || !estOngletSemaine()) return;
+  zone.innerHTML = pairesDeLaSemaine(onglet)
+    .map(
+      (p) => `<button type="button" class="poste-item" data-case="${p.id}">
+        <span class="poste-textes"><span class="poste-nom">${echapper(titreCase(p))}</span><span class="poste-fichier">${p.strat ? echapper(p.strat.name) : "Aucun lancement"}</span></span>
+        ${etiquette(etatCase(p))}
+      </button>`
+    )
+    .join("");
+  zone.querySelectorAll(".poste-item").forEach((b) => b.addEventListener("click", () => montrerCase(Number(b.dataset.case))));
+}
+
+// Fait défiler jusqu'à la case et la met en avant un instant.
+function montrerCase(id) {
+  const carte = document.querySelector(`.carte-paire[data-id="${id}"]`);
+  if (!carte) return;
+  document.querySelectorAll(".carte-paire.choisie").forEach((c) => c.classList.remove("choisie"));
+  carte.classList.add("choisie");
+  carte.scrollIntoView({ behavior: "smooth", block: "start" });
+  setTimeout(() => carte.classList.remove("choisie"), 2500);
+}
+
+// ---- Journal des fichiers créés par « Préparer un lancement » (gardé dans ce navigateur) ----
+
+const CLE_JOURNAL = "sentinelle-fichiers-crees";
+
+function lireJournal() {
+  try {
+    const j = JSON.parse(localStorage.getItem(CLE_JOURNAL) || "[]");
+    return Array.isArray(j) ? j : [];
+  } catch (_e) {
+    return [];
+  }
+}
+
+function ajouterAuJournal(nom, chemin) {
+  try {
+    const j = [{ quand: new Date().toISOString(), nom, chemin }, ...lireJournal()].slice(0, 20);
+    localStorage.setItem(CLE_JOURNAL, JSON.stringify(j));
+  } catch (_e) {
+    // Sans stockage (navigation privée…), pas de journal : rien de grave.
+  }
+}
+
+// ---- Menu : le dossier où les lancements préparés sont rangés ----
+
+function majMenuDossier() {
+  const zone = $("menuDossier");
+  if (!zone) return;
+  const r = typeof reecriture !== "undefined" ? reecriture.racine : null;
+  zone.innerHTML = `<span class="petit">Dossier des lancements</span>
+    <span class="nom">${r ? echapper(r.name) : "Aucun dossier choisi"}</span>
+    <span class="etat-dossier">${r ? "Relié · rangement automatique" : "À choisir dans « Préparer un lancement »"}</span>`;
+}
+
+// ---- Accueil : la semaine d'un coup d'œil ----
+
+let pariteAccueil = null;
+
+const TYPE_DU_POSTE = { "Agglo 1er tour": "agglo1", "Agglo 2ème tour": "agglo2", Recyclage: "recyclage", Feno: "feno", Casse: "casse" };
+
+function preparerLancementPour(p) {
+  if (typeof reecriture !== "undefined") {
+    const semaine = numeroSemaine(p.parite);
+    reecriture.reglage.type = estChantier(p) ? "chantier" : TYPE_DU_POSTE[p.poste] || "";
+    reecriture.reglage.semaine = String(semaine).padStart(2, "0");
+    if (!reecriture.reglage.annee) reecriture.reglage.annee = String(anneeDeSemaine(semaine) % 100).padStart(2, "0");
+    reecriture.etat = null;
+  }
+  onglet = "reecriture";
+  afficher();
+}
+
+function afficherAccueil() {
+  const page = $("pageAccueil");
+  if (!page) return;
+  if (!pariteAccueil) pariteAccueil = pariteDuNumero(semaineIso(new Date())) || "paire";
+  const parite = pariteAccueil;
+  const numero = numeroSemaine(parite);
+  const enCours = numero === semaineIso(new Date());
+  const cases = pairesDeLaSemaine(parite);
+  const avecLancement = cases.filter((p) => p.strat);
+  const controlees = avecLancement.filter((p) => p.rapport);
+  const aRegarder = [];
+  for (const p of cases) for (const t of problemesDeLaCase(p)) aRegarder.push({ p, titre: `${titreCase(p)} — ${t}`, genre: "souci" });
+  for (const p of cases) if (!p.strat && !estChantier(p)) aRegarder.push({ p, titre: `${titreCase(p)} — pas encore de lancement`, genre: "vide" });
+  const nbProblemes = aRegarder.filter((a) => a.genre === "souci").length;
+
+  const semaines = ["paire", "impaire"].map((x) => ({ parite: x, numero: numeroSemaine(x) })).sort((a, b) => a.numero - b.numero);
+  const actions = `<div class="choix-semaine" role="group" aria-label="Choisir la semaine">${semaines
+    .map((s) => `<button type="button" data-parite="${s.parite}" aria-pressed="${s.parite === parite}" class="${s.parite === parite ? "actif" : ""}">S${s.numero}</button>`)
+    .join("")}</div>
+    <button type="button" id="btnAccueilPreparer">+ Préparer un lancement</button>`;
+
+  const tuile = (valeur, legende, genre = "") => `<div class="tuile ${genre}"><span class="tuile-legende">${legende}</span><span class="tuile-valeur">${valeur}</span></div>`;
+  let html = entetePage(enCours ? "Semaine en cours" : "Semaine", `Semaine ${numero} · ${anneeDeSemaine(numero)}`, datesSemaine(numero), actions);
+  html += `<section class="tuiles" aria-label="Avancement de la semaine">
+    ${tuile(`${avecLancement.length} sur ${cases.length}`, "Lancements chargés")}
+    ${tuile(`${controlees.length} sur ${avecLancement.length}`, "Contrôles faits")}
+    ${tuile(String(nbProblemes), "À regarder", nbProblemes ? "souci" : "")}
+  </section>`;
+
+  html += `<h2 class="titre-section">Les lancements de la semaine</h2><div class="grille-lancements">`;
+  cases.forEach((p, i) => {
+    html += `<article class="carte-lancement">
+      <div class="carte-lancement-tete"><span class="pastille">${String(i + 1).padStart(2, "0")}</span><h3>${echapper(titreCase(p))}</h3></div>
+      <div class="carte-lancement-fichier">${p.strat ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>${echapper(p.strat.name)}</span>` : '<span class="vide">Pas encore de lancement</span>'}</div>
+      <dl class="carte-lancement-etats">
+        <div><dt>Lancement</dt><dd>${etiquette(p.strat ? { texte: "Chargé", genre: "bon" } : { texte: "À préparer", genre: "vide" })}</dd></div>
+        <div><dt>Coupe</dt><dd>${etiquette(etatCoupe(p))}</dd></div>
+        <div><dt>Contrôle</dt><dd>${etiquette(etatCase(p))}</dd></div>
+      </dl>
+      ${p.strat ? `<button type="button" class="contour" data-voir="${p.id}">Voir le contrôle</button>` : `<button type="button" class="contour" data-preparer="${p.id}">Préparer</button>`}
+    </article>`;
+  });
+  html += "</div>";
+
+  const journal = lireJournal().slice(0, 6);
+  const quand = (iso) => {
+    const d = new Date(iso);
+    const memeJour = d.toDateString() === new Date().toDateString();
+    return memeJour ? d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+  };
+  html += `<div class="deux-colonnes">
+    <section class="carte">
+      <div class="carte-titre">À regarder</div>
+      ${
+        aRegarder.length
+          ? aRegarder.map((a) => `<button type="button" class="ligne-regarder ${a.genre}" data-voir="${a.p.id}"><span class="point"></span><span>${echapper(a.titre)}</span></button>`).join("")
+          : '<div class="note">Rien à signaler pour l\'instant.</div>'
+      }
+    </section>
+    <section class="carte">
+      <div class="carte-titre">Derniers fichiers créés</div>
+      ${
+        journal.length
+          ? journal.map((j) => `<div class="ligne-journal"><span class="heure">${echapper(quand(j.quand))}</span><span class="journal-textes"><strong>${echapper(j.nom)}</strong><span class="note">${echapper(j.chemin)}</span></span></div>`).join("")
+          : '<div class="note">Aucun fichier créé depuis ce PC pour l\'instant.</div>'
+      }
+      <div class="ligne-telephone">
+        <span class="note">Téléphone : le fichier partagé se fait dans la Bibliothèque, puis il est mis sur le Drive à la main.</span>
+        <button type="button" class="contour" id="btnAccueilTelephone">Fichier du téléphone</button>
+      </div>
+    </section>
+  </div>`;
+  page.innerHTML = html;
+
+  page.querySelectorAll(".choix-semaine button").forEach((b) =>
+    b.addEventListener("click", () => {
+      pariteAccueil = b.dataset.parite;
+      afficherAccueil();
+    })
+  );
+  $("btnAccueilPreparer").addEventListener("click", () => {
+    onglet = "reecriture";
+    afficher();
+  });
+  $("btnAccueilTelephone").addEventListener("click", () => {
+    onglet = "bibliotheque";
+    afficher();
+  });
+  page.querySelectorAll("[data-voir]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const p = paires.find((x) => x.id === Number(b.dataset.voir));
+      if (!p) return;
+      onglet = p.parite;
+      afficher();
+      requestAnimationFrame(() => montrerCase(p.id));
+    })
+  );
+  page.querySelectorAll("[data-preparer]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const p = paires.find((x) => x.id === Number(b.dataset.preparer));
+      if (p) preparerLancementPour(p);
+    })
+  );
 }
 
 </script>
