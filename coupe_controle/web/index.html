@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.0.9 — Contrôle de coupe</title>
+<title>Sentinelle V6.0.10 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -308,6 +308,7 @@
   .carte-lancement-etats div { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .carte-lancement-etats dt { font-size: 0.82rem; color: #6b605d; }
   .carte-lancement-etats dd { margin: 0; }
+  .carte-lancement-etats .pieces-lancement { font-weight: 700; font-variant-numeric: tabular-nums; }
   .carte-lancement button { margin-top: auto; min-height: 40px; border-radius: 10px; }
   .deux-colonnes { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; align-items: start; }
   .ligne-regarder {
@@ -429,7 +430,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.9</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.10</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -507,7 +508,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.0.9 · Contrôle de coupe</span>
+    <span>Sentinelle V6.0.10 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -9945,6 +9946,21 @@ function preparerLancementPour(p) {
   afficher();
 }
 
+// Nombre de pièces de chaque lancement et de la semaine (lu dans les fichiers de lancement, sans bloquer l'écran).
+async function remplirPiecesAccueil(page, cases) {
+  let total = 0;
+  for (const p of cases) {
+    if (!p.strat) continue;
+    const r = await resume(p.strat, p.bkp);
+    const zone = page.querySelector(`[data-pieces="${p.id}"]`);
+    if (!zone || !zone.isConnected) return; // l'écran a changé entre-temps
+    zone.textContent = Number.isNaN(r.prevues) ? "?" : fmtNombre(r.prevues);
+    if (!Number.isNaN(r.prevues)) total += r.prevues;
+  }
+  const tuile = page.querySelector("#tuilePiecesAccueil");
+  if (tuile && tuile.isConnected) tuile.textContent = fmtNombre(total);
+}
+
 function afficherAccueil() {
   const page = $("pageAccueil");
   if (!page) return;
@@ -9970,6 +9986,7 @@ function afficherAccueil() {
   let html = entetePage(enCours ? "Semaine en cours" : "Semaine", `Semaine ${numero} · ${anneeDeSemaine(numero)}`, datesSemaine(numero), actions);
   html += `<section class="tuiles" aria-label="Avancement de la semaine">
     ${tuile(`${avecLancement.length} sur ${cases.length}`, "Lancements chargés")}
+    ${tuile('<span id="tuilePiecesAccueil">…</span>', "Pièces")}
     ${tuile(`${controlees.length} sur ${avecLancement.length}`, "Contrôles faits")}
     ${tuile(String(nbProblemes), "À regarder", nbProblemes ? "souci" : "")}
   </section>`;
@@ -9981,6 +9998,7 @@ function afficherAccueil() {
       <div class="carte-lancement-fichier">${p.strat ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>${echapper(p.strat.name)}</span>` : '<span class="vide">Pas encore de lancement</span>'}</div>
       <dl class="carte-lancement-etats">
         <div><dt>Lancement</dt><dd>${etiquette(p.strat ? { texte: "Chargé", genre: "bon" } : { texte: "À préparer", genre: "vide" })}</dd></div>
+        <div><dt>Pièces</dt><dd class="pieces-lancement" data-pieces="${p.id}">${p.strat ? "…" : "—"}</dd></div>
         <div><dt>Coupe</dt><dd>${etiquette(etatCoupe(p))}</dd></div>
         <div><dt>Contrôle</dt><dd>${etiquette(etatCase(p))}</dd></div>
       </dl>
@@ -10018,6 +10036,7 @@ function afficherAccueil() {
     </section>
   </div>`;
   page.innerHTML = html;
+  remplirPiecesAccueil(page, cases);
 
   page.querySelectorAll(".choix-semaine button").forEach((b) =>
     b.addEventListener("click", () => {

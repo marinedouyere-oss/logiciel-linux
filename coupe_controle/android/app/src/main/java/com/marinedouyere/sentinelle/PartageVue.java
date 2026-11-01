@@ -235,6 +235,11 @@ final class PartageVue {
         return res;
     }
 
+    /** Pièces prévues d'un lancement (comme le tableau des lancements). */
+    private static double piecesDe(FichierPartage.Lancement l) {
+        return l.prevues != null ? Math.floor(l.prevues) : Math.floor(l.nbPieces);
+    }
+
     private static boolean controle(FichierPartage.Lancement l) {
         return l.controle != null || l.scies != null || l.controleFait;
     }
@@ -303,13 +308,19 @@ final class PartageVue {
             if (controle(l)) controles++;
             nbProblemes += aRegarder(l).size();
         }
-        LinearLayout tuiles = ui.rangee();
-        tuiles.addView(tuile(String.valueOf(s.lancements.size()), "Lancements", false), ui.poids(1));
-        tuiles.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
-        tuiles.addView(tuile(controles + " sur " + s.lancements.size(), "Contrôles faits", false), ui.poids(1));
-        tuiles.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
-        tuiles.addView(tuile(String.valueOf(nbProblemes), "À regarder", nbProblemes > 0), ui.poids(1));
-        racine.addView(tuiles, ui.pleineLargeur());
+        double pieces = 0;
+        for (FichierPartage.Lancement l : s.lancements) pieces += piecesDe(l);
+        // Comme sur le PC : lancements, pièces, contrôles faits, à regarder (deux par ligne).
+        LinearLayout haut = ui.rangee();
+        haut.addView(tuile(String.valueOf(s.lancements.size()), "Lancements", false), ui.poids(1));
+        haut.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
+        haut.addView(tuile(nombre(pieces), "Pièces", false), ui.poids(1));
+        racine.addView(haut, ui.pleineLargeur());
+        LinearLayout bas = ui.rangee();
+        bas.addView(tuile(controles + " sur " + s.lancements.size(), "Contrôles faits", false), ui.poids(1));
+        bas.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
+        bas.addView(tuile(String.valueOf(nbProblemes), "À regarder", nbProblemes > 0), ui.poids(1));
+        racine.addView(bas, ui.pleineLargeur());
 
         racine.addView(ui.titre("Les lancements de la semaine", 17, Ui.NOIR), ui.marges(10, 4));
         int numero = 1;
@@ -323,11 +334,13 @@ final class PartageVue {
             tete.addView(titre, ui.poids(1));
             corps.addView(tete);
             corps.addView(ui.texte(l.fichier.isEmpty() ? l.nom : l.fichier, 13, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 6));
-            String[][] etats = {{"Lancement", "Chargé", "bon"}, {"Coupe", etatCoupe(l)[0], etatCoupe(l)[1]}, {"Contrôle", etatControle(l)[0], etatControle(l)[1]}};
+            String[][] etats = {{"Lancement", "Chargé", "bon"}, {"Pièces", nombre(piecesDe(l)), null}, {"Coupe", etatCoupe(l)[0], etatCoupe(l)[1]},
+                    {"Contrôle", etatControle(l)[0], etatControle(l)[1]}};
             for (String[] e : etats) {
                 LinearLayout r = ui.rangee();
                 r.addView(ui.texte(e[0], 13, false, ui.couleur(R.color.gris_texte)), ui.poids(1));
-                r.addView(etiquette(new String[] {e[1], e[2]}));
+                if (e[2] == null) r.addView(ui.texte(e[1], 14, true, Ui.NOIR));
+                else r.addView(etiquette(new String[] {e[1], e[2]}));
                 corps.addView(r, ui.marges(2, 2));
             }
             MaterialButton voir = ui.boutonContour("Voir le contrôle");

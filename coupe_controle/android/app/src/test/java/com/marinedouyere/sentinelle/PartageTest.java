@@ -272,6 +272,8 @@ public class PartageTest {
         assertTrue(semaine, semaine.contains("Semaine 46 · 2026"));
         assertTrue(semaine.contains("Du lundi 9 au vendredi 13 novembre"));
         assertTrue(semaine.contains("Contrôles faits"));
+        assertTrue("nombre de pièces de la semaine", semaine.contains("Pièces\n951"));
+        assertTrue("nombre de pièces du lancement", semaine.contains("Pièces\n340"));
         assertTrue(semaine.contains("Les lancements de la semaine"));
         assertTrue(semaine.contains("À regarder"));
         capturerSiDemande(a, "appli_semaine.png");
