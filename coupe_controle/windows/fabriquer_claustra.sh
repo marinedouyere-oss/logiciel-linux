@@ -6,7 +6,7 @@
 # Usage : sh fabriquer_claustra.sh [dossier de sortie]
 # Il faut Go (1.21 ou plus) et Python 3 avec Pillow (pour l'icône).
 set -e
-version=1.0
+version=1.1
 ici=$(cd "$(dirname "$0")" && pwd)
 sortie=${1:-$ici}
 claustra="$ici/../claustra"

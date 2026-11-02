@@ -28,6 +28,6 @@ Prépare le fichier de lancement des claustras (LAN…CLAUSTRA.xlsx, les 37 colo
 à partir de la confirmation de commande : lisses, lames (hauteur − 60), protection ; surcote 25, idPlan C ;
 montage inclus → « A MONTER », non inclus → « ENKIT ».
 
-- Sources : `coupe_controle/claustra/src/` ; page : `python3 -I coupe_controle/claustra/assembler.py 1.0 coupe_controle/claustra/index.html`.
+- Sources : `coupe_controle/claustra/src/` ; page : `python3 -I coupe_controle/claustra/assembler.py 1.1 coupe_controle/claustra/index.html`.
 - `.exe` : `cd coupe_controle/windows && sh fabriquer_claustra.sh <dossier>` (même lanceur que Sentinelle, port 47816).
 - Test : `node sources/outils/test_claustra.js claustra/index.html web/index.html <sortie.xlsx> <capture.png>`.

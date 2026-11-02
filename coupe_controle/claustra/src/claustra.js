@@ -4,7 +4,7 @@
 //  - lames (droites, obliques) : hauteur − 60 (2 lisses de 30) × largeur des lames, chants avant et arrière ;
 //  - surcote 25 (débit = fini + 25), idPlan C, agglo SAG28HYBR (29 mm), double face (CBD), chants PVC ;
 //  - commentaire « A MONTER » (montage inclus) ou « ENKIT » (montage non inclus) ;
-//  - emballage : 2 panneaux (H+50)×(L+50), 2 bandes (H+50)×85, 2 bandes (L−38)×85 en PROTECTION-PF (19 mm).
+//  - emballage : 2 panneaux (H+50)×(L+50), 2 bandes (H+50)×85, 2 bandes (L−38)×85 en PROTECTION (19 mm).
 
 const COLONNES_LAN = [
   "conf_commande", "conf_ligne", "conf_article", "conf_epaisseur", "conf_longueur", "conf_largeur", "longueur", "largeur", "surepaisseur",
@@ -27,7 +27,7 @@ const nombre = (v) => {
 
 const nouveauClaustra = (ligne) => ({
   ligne, coloris: "", epaisseur: "29", longueur: "", hauteur: "", droites: "", largeurDroites: "", obliques: "", largeurObliques: "",
-  profondeurLisses: "", montage: true, protection: true, pf: true, agglo: "SAG28HYBR",
+  profondeurLisses: "", montage: true, protection: true, agglo: "SAG28HYBR",
 });
 
 let etat = { commande: { numero: "", client: "", representant: "", reference: "", semaine: "", annee: String(new Date().getFullYear()) }, claustras: [nouveauClaustra(1)], nomFichier: "" };
@@ -89,7 +89,7 @@ const texteNombre = (v) => (Number.isInteger(v) ? String(v) : String(Math.round(
 // Une ligne du fichier de lancement (dans l'ordre des 37 colonnes).
 function ligneLancement(p, c, cmd) {
   const code = codeCouleur(c.coloris);
-  const couleur = c.pf ? `${code}-PF` : code;
+  const couleur = code;
   const chant = /^\d+$/.test(code) ? Number(code) : code;
   const surcote = p.protection ? 0 : SURCOTE_CLAUSTRA;
   const v = {
@@ -102,7 +102,7 @@ function ligneLancement(p, c, cmd) {
     longueur: p.L + surcote,
     largeur: p.l + surcote,
     surepaisseur: surcote,
-    agglo: p.protection ? "PROTECTION-PF" : c.agglo || "SAG28HYBR",
+    agglo: p.protection ? "PROTECTION" : c.agglo || "SAG28HYBR",
     comdet_qte: p.qte,
     com_livsem: nombre(cmd.semaine),
     com_livan: nombre(cmd.annee),
@@ -276,7 +276,6 @@ function afficher() {
         <label><input type="radio" name="c${i}montage" value="1" ${c.montage ? "checked" : ""}> inclus (A MONTER)</label>
         <label><input type="radio" name="c${i}montage" value="0" ${c.montage ? "" : "checked"}> non inclus (ENKIT)</label>
         <label class="separe"><input type="checkbox" id="c${i}protection" ${c.protection ? "checked" : ""}> Protection (emballage)</label>
-        <label><input type="checkbox" id="c${i}pf" ${c.pf ? "checked" : ""}> Couleur « -PF »</label>
       </div>
       ${r.erreurs.length ? `<div class="manque">À remplir : ${echapper(r.erreurs.join(", "))}</div>` : ""}
     </section>`;
@@ -319,7 +318,6 @@ function lireFormulaire() {
     if (montage !== c.montage && $(`c${i}protection`).checked === c.montage) $(`c${i}protection`).checked = montage;
     c.montage = montage;
     c.protection = $(`c${i}protection`).checked;
-    c.pf = $(`c${i}pf`).checked;
   });
   if ($("nomFichier")) {
     const n = $("nomFichier").value.trim();

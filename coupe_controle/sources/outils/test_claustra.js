@@ -23,6 +23,8 @@ let echecs = 0; const verifier = (ok, t) => { console.log(`${ok ? "OK  " : "ÉCH
   await page.waitForFunction(() => window.__octets, null, { timeout: 10000 });
   fs.writeFileSync(sortie, Buffer.from(await page.evaluate(() => window.__octets)));
   verifier(/Enregistré : LAN2645CLAUSTRA\.xlsx \(6 ligne/.test(await page.textContent("#compteRendu")), await page.textContent("#compteRendu"));
+  const apercu = await page.textContent("table.apercu");
+  verifier(!/-PF/.test(apercu) && apercu.includes("PROTECTION") && apercu.includes("1047"), "pas de -PF : couleur 1047, protection PROTECTION");
   // Montage non inclus : ENKIT et plus de protection (cochée selon le montage).
   await page.check('input[name="c0montage"][value="0"]');
   await page.waitForTimeout(300);
