@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,9 +31,16 @@ var page embed.FS
 // Numéro de version, donné à la fabrication (-ldflags "-X main.version=6.0.1").
 var version = "dev"
 
+// Le même lanceur sert à Sentinelle et à Claustra (logiciel à part) : nom et port donnés à la fabrication
+// (-X main.nomLogiciel=Claustra -X main.portTexte=47816). Par défaut : Sentinelle.
+var (
+	nomLogiciel = "Sentinelle"
+	portTexte   = "47815"
+	port, _     = strconv.Atoi(portTexte)
+	adresse     = "127.0.0.1:" + portTexte
+)
+
 const (
-	port         = 47815
-	adresse      = "127.0.0.1:47815"
 	silenceMax   = 3 * time.Minute // plus de signe de la fenêtre depuis ce temps : arrêt
 	premierSigne = 2 * time.Minute // délai pour que la fenêtre s'ouvre et donne signe de vie
 	signeVie     = "/sentinelle/vivant"
@@ -68,11 +76,11 @@ func main() {
 				ecoute, err = net.Listen("tcp", adresse)
 			}
 			if err != nil {
-				message("Sentinelle", fmt.Sprintf("Sentinelle %s est déjà ouverte.\n\nFermez-la, attendez quelques minutes, puis relancez Sentinelle %s.", autre, version))
+				message(nomLogiciel, fmt.Sprintf("%s %s est déjà ouvert.\n\nFermez-le, attendez quelques minutes, puis relancez %s %s.", nomLogiciel, autre, nomLogiciel, version))
 				return
 			}
 		default:
-			message("Sentinelle", fmt.Sprintf("Sentinelle ne peut pas démarrer : le port %d de cet ordinateur est déjà utilisé par un autre programme.", port))
+			message(nomLogiciel, fmt.Sprintf("%s ne peut pas démarrer : le port %d de cet ordinateur est déjà utilisé par un autre programme.", nomLogiciel, port))
 			return
 		}
 	}
@@ -197,7 +205,7 @@ func demanderArret() {
 // Ouvre Sentinelle dans sa propre fenêtre : Edge (sinon Chrome) en mode application,
 // avec un profil à part ; à défaut, le navigateur par défaut.
 func ouvrirFenetre(url string) {
-	profil := filepath.Join(os.Getenv("LOCALAPPDATA"), "Sentinelle", "Navigateur")
+	profil := filepath.Join(os.Getenv("LOCALAPPDATA"), nomLogiciel, "Navigateur")
 	for _, nav := range navigateurs() {
 		if _, err := os.Stat(nav); err != nil {
 			continue
@@ -209,7 +217,7 @@ func ouvrirFenetre(url string) {
 		}
 	}
 	if err := ouvrirParDefaut(url); err != nil {
-		message("Sentinelle", "Impossible d'ouvrir la fenêtre de Sentinelle.\n\nOuvrez Edge ou Chrome à cette adresse :\n"+url)
+		message(nomLogiciel, "Impossible d'ouvrir la fenêtre de "+nomLogiciel+".\n\nOuvrez Edge ou Chrome à cette adresse :\n"+url)
 	}
 }
 

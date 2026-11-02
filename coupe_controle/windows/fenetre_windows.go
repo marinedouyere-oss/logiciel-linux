@@ -15,7 +15,8 @@ import (
 // propre identité (« LaisneIndustrie.Sentinelle »), pas celles d'Edge. Épinglée, elle relance ce .exe
 // avec l'icône Laisné. Edge peut remettre son icône : elle est reposée toutes les 2 secondes si besoin.
 
-const idApplication = "LaisneIndustrie.Sentinelle"
+// « LaisneIndustrie.Sentinelle », « LaisneIndustrie.Claustra ».
+func idApplication() string { return "LaisneIndustrie." + nomLogiciel }
 
 var (
 	kernel32                    = syscall.NewLazyDLL("kernel32.dll")
@@ -85,7 +86,7 @@ var rappelFenetre = syscall.NewCallback(func(hwnd, _ uintptr) uintptr {
 	var titre [256]uint16
 	getWindowTextW.Call(hwnd, uintptr(unsafe.Pointer(&titre[0])), uintptr(len(titre)))
 	t := syscall.UTF16ToString(titre[:])
-	if strings.HasPrefix(t, "Sentinelle V") && !strings.Contains(t, "Edge") && !strings.Contains(t, "Chrome") {
+	if strings.HasPrefix(t, nomLogiciel+" V") && !strings.Contains(t, "Edge") && !strings.Contains(t, "Chrome") {
 		fenetresTrouvees = append(fenetresTrouvees, hwnd)
 	}
 	return 1
@@ -123,9 +124,9 @@ func identiteFenetre(hwnd uintptr, exe string) bool {
 		valeur string
 	}{
 		{2, `"` + exe + `"`}, // RelaunchCommand
-		{4, "Sentinelle"},    // RelaunchDisplayNameResource
+		{4, nomLogiciel},     // RelaunchDisplayNameResource
 		{3, exe + ",0"},      // RelaunchIconResource
-		{5, idApplication},   // ID
+		{5, idApplication()}, // ID
 	} {
 		s, err := syscall.UTF16PtrFromString(p.valeur)
 		if err != nil {

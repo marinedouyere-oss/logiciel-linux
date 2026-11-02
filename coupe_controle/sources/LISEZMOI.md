@@ -21,3 +21,13 @@ Ce dossier garde ce qui sert à fabriquer Sentinelle (aucune donnée client).
 - `.exe` : `cd coupe_controle/windows && sh fabriquer.sh <dossier>`.
 - APK : `cd coupe_controle/android && gradle :app:assembleRelease`.
 - Lien téléphone : `coupe_controle/lien_telephone` (site Netlify, fichier partagé chiffré).
+
+## Claustra (logiciel à part)
+
+Prépare le fichier de lancement des claustras (LAN…CLAUSTRA.xlsx, les 37 colonnes d'un lancement normal)
+à partir de la confirmation de commande : lisses, lames (hauteur − 60), protection ; surcote 25, idPlan C ;
+montage inclus → « A MONTER », non inclus → « ENKIT ».
+
+- Sources : `coupe_controle/claustra/src/` ; page : `python3 -I coupe_controle/claustra/assembler.py 1.0 coupe_controle/claustra/index.html`.
+- `.exe` : `cd coupe_controle/windows && sh fabriquer_claustra.sh <dossier>` (même lanceur que Sentinelle, port 47816).
+- Test : `node sources/outils/test_claustra.js claustra/index.html web/index.html <sortie.xlsx> <capture.png>`.

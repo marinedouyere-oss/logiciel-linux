@@ -166,23 +166,26 @@ def coff(section, relocations):
 
 def main():
     icone, version, sortie = sys.argv[1:4]
+    # Nom du logiciel et ce qu'il fait (Sentinelle par défaut ; « Claustra » pour le logiciel à part).
+    nom = sys.argv[4] if len(sys.argv) > 4 else "Sentinelle"
+    role = sys.argv[5] if len(sys.argv) > 5 else "Contrôle de coupe"
     v4 = ".".join((version.split(".") + ["0", "0", "0"])[:4])
     images, groupe = icones(icone)
     textes = {
         "CompanyName": "LAISNÉ INDUSTRIE",
-        "FileDescription": f"Sentinelle V{version} — Contrôle de coupe",
+        "FileDescription": f"{nom} V{version} — {role}",
         "FileVersion": version,
-        "InternalName": "Sentinelle",
+        "InternalName": nom,
         "LegalCopyright": "LAISNÉ INDUSTRIE",
-        "OriginalFilename": f"Sentinelle V{version}.exe",
-        "ProductName": "Sentinelle",
+        "OriginalFilename": f"{nom} V{version}.exe",
+        "ProductName": nom,
         "ProductVersion": version,
     }
     ressources = {
         RT_ICON: {n: octets for n, octets in enumerate(images, 1)},
         RT_GROUP_ICON: {1: groupe},
         RT_VERSION: {1: fiche_version(version, textes)},
-        RT_MANIFEST: {1: MANIFESTE.format(v4=v4).encode("utf-8")},
+        RT_MANIFEST: {1: MANIFESTE.format(v4=v4).replace("LaisneIndustrie.Sentinelle", f"LaisneIndustrie.{nom}").encode("utf-8")},
     }
     section, relocations = section_rsrc(ressources)
     with open(sortie, "wb") as f:
