@@ -222,12 +222,13 @@ async function problemesDuLancement(p) {
       const lanceesAilleurs = rd.manquantes.filter((m) => rd.ailleurs.has(m.cle));
       const ou = [...new Set(lanceesAilleurs.map((m) => rd.ailleurs.get(m.cle)))].join(", ");
       const nulle = rd.manquantes.length - lanceesAilleurs.length;
-      bilan.push({
-        statut: nulle ? "alerte" : "attention",
-        controle: "Diakonos",
-        texte: `${rd.manquantes.length} pièce(s) commandée(s) absente(s) ${portee.de} (sur ${rd.nbPieces})` +
-          (lanceesAilleurs.length ? ` : ${lanceesAilleurs.length} lancée(s) ailleurs (${ou})${nulle ? `, ${nulle} dans aucun lancement chargé` : ""}.` : " : aucune n'est dans un autre lancement chargé."),
-      });
+      // Lancée dans un autre lancement de la semaine (chantier extrait du lancement) : bonne, juste précisée.
+      const precision = lanceesAilleurs.length ? ` (dont ${lanceesAilleurs.length} dans ${ou})` : "";
+      bilan.push(
+        nulle
+          ? { statut: "alerte", controle: "Diakonos", texte: `${nulle} pièce(s) commandée(s) dans aucun lancement chargé (sur ${rd.nbPieces})${precision}.` }
+          : { statut: "ok", controle: "Diakonos", texte: `Les ${rd.nbPieces} pièces commandées sont lancées${precision}.` }
+      );
     }
     for (const m of rd.manquantes) {
       const ailleurs = rd.ailleurs.get(m.cle);
@@ -282,9 +283,9 @@ function diagnostiquerHors(hors) {
           ? `Dans ${ou}, et commandée (Diakonos), mais absente du fichier de lancement : le lancement est incomplet`
           : `Dans ${ou}, mais pas dans le fichier de lancement`,
       });
-    } else if (diakonos && diakonos.ailleurs)
-      resultat.push({ ...piece, gravite: GRAVITE.VERIFIER, type: "Commandée ici, lancée ailleurs (Diakonos)", detail: `Pas ${diakonos.porteeDans}, mais lancée dans ${diakonos.ailleurs}` });
-    else if (diakonos) resultat.push({ ...piece, gravite: GRAVITE.CORRIGER, type: "Commandée, pas lancée (Diakonos)", detail: `Absente ${diakonos.porteeDe} et des autres lancements chargés` });
+    } else if (diakonos && diakonos.ailleurs) {
+      // Commandée ici, lancée dans un autre lancement de la semaine : bonne (chantier extrait du lancement).
+    } else if (diakonos) resultat.push({ ...piece, gravite: GRAVITE.CORRIGER, type: "Commandée, pas lancée (Diakonos)", detail: `Absente ${diakonos.porteeDe} et des autres lancements chargés` });
     else resultat.push(...liste);
   }
   return resultat;

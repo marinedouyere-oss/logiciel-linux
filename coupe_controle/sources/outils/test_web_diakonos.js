@@ -91,7 +91,7 @@ async function attendreFin(page, maxMs = 600000) {
   const diak = await page.innerText(".zone-diakonos");
   console.log(diak);
   verifier(texte.includes("✔ Diakonos 1er tour : diakonos46t1.xlsx"), "Diakonos rangé par le scan");
-  verifier(diak.includes("⚠ 3 pièce(s) Diakonos absente(s) des lancements du 1er tour"), "3 pièces manquantes");
+  verifier(diak.includes("⚠ 3 pièce(s) Diakonos dans aucun lancement chargé"), "3 pièces manquantes");
   verifier(!diak.includes("CVC26100810001"), "pièces manquantes : pas de détail à l'écran (fichier des problèmes)");
   verifier(!diak.includes("CVC26100557001"), "pièce du recyclage non signalée");
   verifier(diak.includes("LAN264601START.xlsx") && diak.includes("LAN264601RECYCLAGE.xlsx"), "comparé au STRAT et au recyclage");
@@ -120,7 +120,7 @@ async function attendreFin(page, maxMs = 600000) {
     const pages = require("child_process").execFileSync("pdfinfo", [chemin]).toString();
     verifier(/Pages:\s+5/.test(pages), "rapport du lancement : 5 pages");
     for (const attendu of ["Agglo : panneaux et restes", "Strats : panneaux et restes", "Couleurs de la feuille", "Diakonos 1er tour",
-      "3 pièce(s) Diakonos absente(s) des lancements du 1er tour", "CVC26100810001", "SAG38HYBLLINEX", "Nombre de pièces", "340", "Couleurs semaine", "ROSE", "Document interne — LAISNÉ INDUSTRIE", "LAN264601 — Rapport du lancement", "Semaine", "46"]) {
+      "3 pièce(s) Diakonos dans aucun lancement", "CVC26100810001", "SAG38HYBLLINEX", "Nombre de pièces", "340", "Couleurs semaine", "ROSE", "Document interne — LAISNÉ INDUSTRIE", "LAN264601 — Rapport du lancement", "Semaine", "46"]) {
       verifier(texte.includes(attendu), `rapport du lancement : « ${attendu} »`);
     }
   }
@@ -159,7 +159,7 @@ async function attendreFin(page, maxMs = 600000) {
   await page.click('.onglet-btn[data-onglet="paire"]');
   await page.waitForSelector("#btnChoisirDossier");
   await page.waitForFunction(() => (document.querySelector(".zone-diakonos") || { innerText: "" }).innerText.includes("Comparé à"), null, { timeout: 60000 });
-  verifier((await page.innerText(".zone-diakonos")).includes("3 pièce(s) Diakonos absente(s)"), "retrouvé après rechargement");
+  verifier((await page.innerText(".zone-diakonos")).includes("3 pièce(s) Diakonos dans aucun lancement"), "retrouvé après rechargement");
 
   await navigateur.close();
   console.log(echecs.length ? `\n${echecs.length} ÉCHEC(S)` : "\nTOUT EST OK");

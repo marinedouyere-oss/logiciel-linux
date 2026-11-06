@@ -102,12 +102,12 @@ function lister(dossier, chemin = []) {
 
   const carte = async (texte) => page.locator(".carte-paire", { hasText: texte }).first().innerText();
   const agglo = await carte("✓ LAN264601START.xlsx");
-  verifier(agglo.includes("✓ LAN264601STARTDIAKONOS.xlsx") && agglo.includes("3 pièce(s) Diakonos absente(s) des lancements du dossier « 1ER TOUR AGGLO »"),
+  verifier(agglo.includes("✓ LAN264601STARTDIAKONOS.xlsx") && agglo.includes("⚠ 3 pièce(s) Diakonos dans aucun lancement chargé"),
     "Agglo 1er tour : son Diakonos, 3 pièces absentes");
   verifier(/Comparé à : LAN264601(START|RECYCLAGE)\.xlsx, LAN264601(START|RECYCLAGE)\.xlsx/.test(agglo), "Agglo 1er tour comparé au START et au recyclage");
   const feno = await carte("✓ LAN264601FENO.xlsx");
   console.log(feno.split("\n").slice(0, 14).join("\n"));
-  verifier(feno.includes("1 pièce(s) Diakonos absente(s) des lancements du dossier « FENO »") && !feno.includes("CVC26100810001"), "Feno : son Diakonos, 1 pièce absente");
+  verifier(feno.includes("⚠ 1 pièce(s) Diakonos dans aucun lancement chargé") && !feno.includes("CVC26100810001"), "Feno : son Diakonos, 1 pièce absente");
   verifier(!/Comparé à :[^\n]*START/.test(feno), "le Diakonos du Feno n'est pas comparé à l'agglo");
   const recyclage = await carte("✓ LAN264601RECYCLAGE.xlsx");
   verifier(recyclage.includes("02\nRecyclage") && !recyclage.includes("Diakonos"), "recyclage : case sous l'Agglo 1er tour, sans Diakonos");
@@ -131,7 +131,7 @@ for r in wb["Rapport"].iter_rows(values_only=True):
     console.log(lu);
     verifier(/Commandée, pas lancée \(Diakonos\) — 3 pièce\(s\)/.test(lu), "problèmes : groupe des pièces Diakonos pas lancées");
     verifier(/À corriger \| CVC26100810001 \| TPPVC39551 \|[^\n]*Absente des lancements du dossier « 1ER TOUR AGGLO »[^\n]*\| hors lancement/.test(lu), "problèmes : pièce Diakonos hors du lancement");
-    verifier(/⚠ Problème \| Diakonos \| 3 pièce\(s\) commandée\(s\) absente\(s\)/.test(lu), "problèmes : bilan Diakonos");
+    verifier(/⚠ Problème \| Diakonos \| 3 pièce\(s\) commandée\(s\) dans aucun lancement chargé/.test(lu), "problèmes : bilan Diakonos");
   }
 
   // Rapport du lancement du Feno : page Diakonos du dossier.
@@ -140,7 +140,7 @@ for r in wb["Rapport"].iter_rows(values_only=True):
   const chemin = `${captures}/web_feno_rapport_dossier.pdf`;
   await pdf.saveAs(chemin);
   const texte = execFileSync("pdftotext", ["-layout", chemin, "-"]).toString();
-  verifier(texte.includes("Feno") && texte.includes("1 pièce(s) Diakonos absente(s) des lancements du dossier « FENO »"), "rapport du Feno : Diakonos du dossier");
+  verifier(texte.includes("Feno") && texte.includes("1 pièce(s) Diakonos dans aucun lancement"), "rapport du Feno : Diakonos du dossier");
   await page.screenshot({ path: `${captures}/web_dossiers_46.png`, fullPage: true });
   await navigateur.close();
   console.log(echecs.length ? `\n${echecs.length} ÉCHEC(S)` : "\nTOUT EST OK");

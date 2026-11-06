@@ -1257,13 +1257,15 @@ function htmlDiakonos(r) {
   const portee = porteeDiakonos(r);
   if (r.erreur) return bandeau(`❌ Diakonos illisible : ${echapper(r.erreur)}`, "alerte");
   if (!r.lancements.length) return bandeau(`⚠ ${echapper(portee.aucun)}`, "attention");
+  // Une pièce lancée dans un autre lancement de la semaine (chantier extrait du lancement) est bonne : seules les
+  // pièces lancées nulle part sont un problème.
   const ailleurs = r.manquantes.filter((m) => r.ailleurs.has(m.cle)).length;
-  let html = r.manquantes.length
-    ? bandeau(
-        `⚠ ${r.manquantes.length} pièce(s) Diakonos absente(s) ${echapper(portee.de)}${ailleurs ? ` — dont ${ailleurs} lancée(s) dans un autre lancement` : ""}`,
-        ailleurs === r.manquantes.length ? "attention" : "alerte"
-      )
-    : bandeau(`✔ Les ${r.nbPieces} pièces Diakonos sont ${echapper(portee.dans)}`, "ok");
+  const nulle = r.manquantes.length - ailleurs;
+  const ou = [...new Set(r.manquantes.filter((m) => r.ailleurs.has(m.cle)).map((m) => r.ailleurs.get(m.cle)))];
+  const precision = ailleurs ? ` (dont ${ailleurs} dans ${ou.map(echapper).join(", ")})` : "";
+  let html = nulle
+    ? bandeau(`⚠ ${nulle} pièce(s) Diakonos dans aucun lancement chargé${precision}`, "alerte")
+    : bandeau(`✔ Les ${r.nbPieces} pièces Diakonos sont lancées${precision}`, "ok");
   html += `<div class="note">Comparé à : ${r.lancements.map(echapper).join(", ")}</div>`;
   return html;
 }
@@ -1354,9 +1356,16 @@ function partieDiakonos(r, base) {
   p.total = false;
   if (r.erreur) [p.statut, p.couleurStatut] = [`Diakonos illisible : ${r.erreur}`, STATUT.ALERTE];
   else if (!r.lancements.length) [p.statut, p.couleurStatut] = [portee.aucun, STATUT.ATTENTION];
-  else if (!r.manquantes.length) [p.statut, p.couleurStatut] = [`Les ${r.nbPieces} pièces Diakonos sont ${portee.dans}`, STATUT.OK];
-  else [p.statut, p.couleurStatut] = [`${r.manquantes.length} pièce(s) Diakonos absente(s) ${portee.de}`, STATUT.ALERTE];
-  for (const m of r.manquantes) p.rangees.push([m.cle, m.article, dimensionsDiakonos(m), m.coloris, r.ailleurs.get(m.cle) || ""]);
+  else {
+    // Pièces lancées dans un autre lancement de la semaine : bonnes (chantier extrait du lancement), juste notées.
+    const nulle = r.manquantes.filter((m) => !r.ailleurs.has(m.cle));
+    const ailleurs = r.manquantes.length - nulle.length;
+    if (!nulle.length) [p.statut, p.couleurStatut] = [`Les ${r.nbPieces} pièces Diakonos sont lancées`, STATUT.OK];
+    else [p.statut, p.couleurStatut] = [`${nulle.length} pièce(s) Diakonos dans aucun lancement`, STATUT.ALERTE];
+    for (const m of nulle) p.rangees.push([m.cle, m.article, dimensionsDiakonos(m), m.coloris, ""]);
+    if (ailleurs)
+      p.notes.push([`${ailleurs} pièce(s) dans un autre lancement : `, [...new Set(r.manquantes.filter((m) => r.ailleurs.has(m.cle)).map((m) => r.ailleurs.get(m.cle)))].join(", ")]);
+  }
   p.notes.push(["Fichier Diakonos : ", r.fichier]);
   if (r.lancements.length) p.notes.push(["Comparé à : ", r.lancements.join(", ")]);
   return p;
