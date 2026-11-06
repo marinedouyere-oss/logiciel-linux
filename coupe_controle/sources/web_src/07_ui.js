@@ -503,8 +503,9 @@ async function detecterSemaine(p) {
     const { lignes } = await stratEnCache(p.strat);
     const l = lignes.find((x) => x.lancement);
     if (!l) return null;
-    // Une casse rangée dans un dossier « Semaine NN » est la casse de cette semaine.
-    if (p.poste === "Casse" && p.semaineDossier) return String(p.semaineDossier).padStart(2, "0");
+    // Un lancement rangé dans un dossier « Semaine NN » est de cette semaine, même si sa colonne lancement dit
+    // autre chose (LAN2646BSR dans « Semaine 47 ») ; une casse rangée là est la casse de cette semaine.
+    if (p.semaineDossier) return String(p.semaineDossier).padStart(2, "0");
     let semaine = extraireSemaine(l.lancement);
     // Sinon la casse a une semaine de décalage : la casse 43 se fabrique en semaine 44.
     if (semaine && p.poste === "Casse") {

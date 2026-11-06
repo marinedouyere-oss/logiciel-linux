@@ -180,18 +180,18 @@ const semainesConnuesAvant = (avant) =>
     .reverse()
     .map((s) => String(s.semaine).padStart(2, "0"));
 
-// Semaine d'un lancement, comme l'onglet l'affiche : celle du code de la colonne lancement (sinon du nom du
-// fichier, sinon du dossier « Semaine 46 ») ; la casse se fabrique la semaine d'après, sauf si elle est rangée
-// dans un dossier « Semaine NN » : c'est alors la casse de cette semaine-là.
+// Semaine d'un lancement, comme l'onglet l'affiche : celle du dossier « Semaine NN » où il est rangé (même si sa
+// colonne lancement dit autre chose : LAN2646BSR dans « Semaine 47 »), sinon celle du code de la colonne
+// lancement, sinon du nom du fichier ; hors dossier, la casse se fabrique la semaine d'après.
 function semaineDuLancement(lignes, casse, nomFichier, semaineDossier = null) {
-  if (casse && semaineDossier) {
-    const base = semaineDuLancement(lignes, false, nomFichier, semaineDossier);
-    const n = parseInt(semaineDossier, 10);
-    if (base && n >= 1 && n <= 53) {
-      // Année : celle du lancement, corrigée au passage d'une année à l'autre (casse 52 rangée en semaine 01).
-      const annee = n < base.semaine - 26 ? base.annee + 1 : n > base.semaine + 26 ? base.annee - 1 : base.annee;
-      return { annee, semaine: n };
-    }
+  const nDossier = parseInt(semaineDossier, 10);
+  if (nDossier >= 1 && nDossier <= 53) {
+    const base = semaineDuLancement(lignes, false, nomFichier, null);
+    // Année : celle du lancement, corrigée au passage d'une année à l'autre (casse 52 rangée en semaine 01).
+    const annee = !base
+      ? new Date().getFullYear()
+      : nDossier < base.semaine - 26 ? base.annee + 1 : nDossier > base.semaine + 26 ? base.annee - 1 : base.annee;
+    return { annee, semaine: nDossier };
   }
   let code = String((lignes.find((l) => l.lancement) || {}).lancement || "");
   let semaine = extraireSemaine(code);
@@ -281,7 +281,7 @@ async function archiverOnglet(parite, lancementsRapport) {
       const strat = await stratEnCache(p.strat);
       const casse = p.poste === "Casse";
       // La casse est dans l'onglet de la semaine où le scan l'a rangée.
-      const sem = semaineDuLancement(strat.lignes, casse, p.strat.name, casse ? String(numeroSemaine(parite)) : null);
+      const sem = semaineDuLancement(strat.lignes, casse, p.strat.name, casse ? String(numeroSemaine(parite)) : p.semaineDossier || null);
       if (!sem) continue;
       const c = controles.get(p);
       const fichiers = {};

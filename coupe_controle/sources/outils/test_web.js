@@ -117,9 +117,11 @@ async function attendreFin(page, maxMs = 600000) {
   for (const detail of ["CVC26100163003", "CVC26090772001", "Couleur B125-FA", "prévue(s)", "Absente de", "à livrer en semaine"])
     verifier(!texte.includes(detail), `pas de détail à l'écran : « ${detail} »`);
   verifier(texte.includes("pièces dans les .bkp"), "compteur affiché");
-  verifier(texte.includes("LAN2644TRIGANO.xlsx → semaine 45"), "chantier TRIGANO (semaine 45) envoyé dans l'onglet 45");
+  // Le dossier « Semaine 44 » décide de la semaine, même si la colonne lancement dit 45 (comme LAN2647CHANTIERSBIS,
+  // colonne LAN2646BSR, rangé dans « Semaine 47 »).
+  verifier(!texte.includes("LAN2644TRIGANO.xlsx → semaine 45"), "chantier TRIGANO du dossier Semaine 44 pas envoyé en 45");
   const recap44 = await page.innerText("#zoneRecap");
-  verifier(!/LAN2644TRIGANO\s*\t/.test(recap44) && !recap44.includes("Semaine 45"), "plus de chantier de la semaine 45 dans l'onglet 44");
+  verifier(/LAN2644TRIGANO\s*\t/.test(recap44), "chantier LAN2644TRIGANO dans l'onglet 44 (son dossier)");
   verifier(texte.includes("Exporter le rapport de la semaine (.xlsx)"), "bouton d'export de la semaine en haut");
   console.log("Créés tout seuls :", telecharges.join(", "));
   verifier(telecharges.includes("rapport_sentinelle_semaine_44.xlsx"), "problèmes : rapport de la semaine créé tout seul après le scan");
@@ -225,7 +227,7 @@ for r in wb["Rapport"].iter_rows(values_only=True):
     verifier(/Pour info \| CVC26100337006 \|[^\n]*Déjà lancée en semaine 44 dans LAN26\d+\w+\.xlsx/.test(lu), "problèmes casse : pièce relancée et son lancement d'origine");
   }
   verifier(texte.includes("Couleurs : pas de stratifié dans ce .bkp"), "recyclage sans stratifié");
-  verifier(/LAN2644TRIGANO\s*\t/.test(await page.innerText("#zoneRecap")), "chantier LAN2644TRIGANO dans l'onglet 45");
+  verifier(!/LAN2644TRIGANO\s*\t/.test(await page.innerText("#zoneRecap")), "chantier LAN2644TRIGANO pas dans l'onglet 45");
   console.log(texte.split("\n").slice(0, 60).join("\n"));
   await page.screenshot({ path: `${captures}/web_s45.png`, fullPage: true });
   verifier(!texte.includes("Exporter le rapport (.xlsx)"), "plus de bouton d'export par lancement");
@@ -242,8 +244,8 @@ for r in wb.worksheets[0].iter_rows(values_only=True):
 `, `${captures}/rapport_semaine_45.xlsx`]).toString();
     console.log(lu.split("\n").slice(0, 26).join("\n"));
     verifier(/Agglo 1er tour \| LAN264501STRAT \| 422 \| 422 \|/.test(lu), "rapport de la semaine : pièces prévues et .bkp de chaque lancement");
-    verifier(/Total \| 1216 \| 1173 \|/.test(lu), "rapport de la semaine : total des pièces");
-    verifier(/Pièces : 1216 prévues dans 7 lancement\(s\), 1173 dans les \.bkp\./.test(lu), "bilan de la semaine : pièces");
+    verifier(/Total \| 1196 \| 1173 \|/.test(lu), "rapport de la semaine : total des pièces");
+    verifier(/Pièces : 1196 prévues dans 6 lancement\(s\), 1173 dans les \.bkp\./.test(lu), "bilan de la semaine : pièces");
     verifier(/Casse \(LAN2644CASSE\) : 61 pièce\(s\) — 13 déjà lancée\(s\) en semaine 44, 47 rajout\(s\)/.test(lu), "bilan de la semaine : casse (déjà lancées, rajouts)");
     verifier(/2 pièce\(s\) lancée\(s\) deux fois/.test(lu), "bilan de la semaine : pièces lancées deux fois");
     verifier(/FEUILLES \['Semaine 45 — synthèse', 'Agglo 1er tour', [^\n]*'Casse'/.test(lu), "rapport de la semaine : synthèse puis un onglet par lancement");
