@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.0.12 — Contrôle de coupe</title>
+<title>Sentinelle V6.0.13 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -431,7 +431,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.12</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.0.13</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -509,7 +509,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.0.12 · Contrôle de coupe</span>
+    <span>Sentinelle V6.0.13 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -6560,7 +6560,38 @@ const ITERATIONS_LIEN = 150000;
 const TAILLE_PARTIE_LIEN = 4 * 1024 * 1024;
 const ALPHABET_CODE_LIEN = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sans 0/O ni 1/I : se recopie sans erreur
 
-const lienTelephone = { envoi: null, minuteur: null, reprendre: false };
+const lienTelephone = { envoi: null, minuteur: null, reprendre: false, etape: "", essais: 0 };
+// Après un envoi raté : nouvel essai tout seul au bout de 2, 10 puis 30 minutes (ensuite toutes les 30 minutes).
+const RELANCES_LIEN_MS = [2, 10, 30].map((m) => m * 60000);
+
+// Une demande au site qui abandonne au bout d'un délai : un réseau qui ne répond jamais ne doit pas laisser
+// l'envoi bloqué sur « Envoi en cours ».
+async function demandeLien(url, options, delai) {
+  if (lienTelephone.delaiMax) delai = Math.min(delai, lienTelephone.delaiMax); // essais (tests)
+  const controle = new AbortController();
+  const minuteur = setTimeout(() => controle.abort(), delai);
+  try {
+    const reponse = await fetch(url, { ...options, cache: "no-store", signal: controle.signal });
+    // Le corps est lu ici, sous le même délai (petit : réponse JSON du site).
+    const texte = await reponse.text();
+    return { ok: reponse.ok, status: reponse.status, texte };
+  } catch (erreur) {
+    if (controle.signal.aborted) throw new Error(`le site ne répond pas (rien en ${Math.round(delai / 1000)} s)`);
+    throw erreur;
+  } finally {
+    clearTimeout(minuteur);
+  }
+}
+
+// Délai d'une partie : 1 minute, plus 1 seconde par 25 Ko (connexion lente).
+const delaiPartieLien = (octets) => 60000 + Math.ceil(octets / 25600) * 1000;
+const moLien = (octets) =>
+  octets < 1048576 ? `${Math.max(1, Math.round(octets / 1024))} Ko` : `${(octets / 1048576).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Mo`;
+
+function etapeLien(texte) {
+  lienTelephone.etape = texte;
+  rafraichirBibliotheque();
+}
 
 function lireLienTelephone() {
   try {
@@ -6623,31 +6654,47 @@ async function envoyerPaquetLien(secrets, paquet, genere) {
   const version = Date.now().toString(36) + hexLien(crypto.getRandomValues(new Uint8Array(4)));
   const parties = Math.max(1, Math.ceil(paquet.length / TAILLE_PARTIE_LIEN));
   const api = `${ADRESSE_LIEN_TELEPHONE}/api/partage?canal=${secrets.canal}`;
-  const verifier = async (reponse) => {
-    if (reponse.ok) return;
+  const verifier = (r) => {
+    if (r.ok) return;
     let detail = "";
     try {
-      detail = (await reponse.json()).erreur || "";
+      detail = JSON.parse(r.texte).erreur || "";
     } catch (_e) {
       detail = "";
     }
-    throw new Error(`le site a répondu ${reponse.status}${detail ? ` (${detail})` : ""}`);
+    throw new Error(`le site a répondu ${r.status}${detail ? ` (${detail})` : ""}`);
   };
-  for (let i = 0; i < parties; i++)
-    await verifier(
-      await fetch(`${api}&version=${version}&partie=${i}`, {
-        method: "PUT",
-        headers: { "X-Sentinelle-Jeton": secrets.jeton, "Content-Type": "application/octet-stream" },
-        body: paquet.slice(i * TAILLE_PARTIE_LIEN, (i + 1) * TAILLE_PARTIE_LIEN),
-      })
+  for (let i = 0; i < parties; i++) {
+    const morceau = paquet.slice(i * TAILLE_PARTIE_LIEN, (i + 1) * TAILLE_PARTIE_LIEN);
+    etapeLien(`envoi ${parties > 1 ? `partie ${i + 1}/${parties}, ` : ""}${moLien(morceau.length)}`);
+    verifier(
+      await demandeLien(
+        `${api}&version=${version}&partie=${i}`,
+        { method: "PUT", headers: { "X-Sentinelle-Jeton": secrets.jeton, "Content-Type": "application/octet-stream" }, body: morceau },
+        delaiPartieLien(morceau.length)
+      )
     );
-  await verifier(
-    await fetch(api, {
-      method: "POST",
-      headers: { "X-Sentinelle-Jeton": secrets.jeton, "Content-Type": "application/json" },
-      body: JSON.stringify({ version, parties, taille: paquet.length, genere }),
-    })
+  }
+  etapeLien("publication");
+  verifier(
+    await demandeLien(
+      api,
+      { method: "POST", headers: { "X-Sentinelle-Jeton": secrets.jeton, "Content-Type": "application/json" }, body: JSON.stringify({ version, parties, taille: paquet.length, genere }) },
+      30000
+    )
   );
+}
+
+// Après un envoi raté : le site répond-il au moins en lecture ? (dit si c'est l'envoi qui est bloqué par le réseau).
+async function diagnosticLien(secrets) {
+  try {
+    const r = await demandeLien(`${ADRESSE_LIEN_TELEPHONE}/api/partage?canal=${secrets.canal}`, { method: "GET" }, 15000);
+    return r.ok || r.status === 404
+      ? "le site répond en lecture : c'est l'envoi qui n'aboutit pas (le réseau de ce PC bloque sans doute l'envoi de fichiers)"
+      : `le site répond ${r.status}`;
+  } catch (_e) {
+    return "le site est injoignable depuis ce PC (internet coupé, ou site bloqué par le réseau)";
+  }
 }
 
 // Envoie la bibliothèque au téléphone si elle a changé depuis le dernier envoi (ou si forcer).
@@ -6661,20 +6708,34 @@ function envoyerAuTelephone(forcer = false) {
   lienTelephone.envoi = (async () => {
     const signature = signatureDesSemaines([...bibliotheque.semaines.values()]);
     if (!forcer && etat.signature === signature && !etat.erreur) return { ok: true, inchange: true };
+    clearTimeout(lienTelephone.relance);
+    let secrets = null;
     try {
-      const secrets = await secretsLien(etat.code);
+      etapeLien("préparation");
+      secrets = await secretsLien(etat.code);
       const contenu = contenuFichierPartage();
       const paquet = await paquetChiffre(secrets.cle, await compresserJson(contenu));
       await envoyerPaquetLien(secrets, paquet, contenu.genere);
       const nbSemaines = [...bibliotheque.semaines.values()].filter((s) => s.lancements.length).length;
       ecrireLienTelephone({ ...etatLienTelephone(), signature, dernierEnvoi: new Date().toISOString(), nbSemaines, erreur: null });
+      lienTelephone.essais = 0;
       return { ok: true };
     } catch (erreur) {
       const texte = erreur && erreur.message ? erreur.message : String(erreur);
-      ecrireLienTelephone({ ...etatLienTelephone(), erreur: /fetch|network|réseau/i.test(texte) ? "pas de connexion au site (internet coupé ou bloqué)" : texte });
+      const raison = /failed to fetch|networkerror|network|réseau/i.test(texte) ? "pas de connexion au site" : texte;
+      // Pas de réponse du site : on regarde s'il répond au moins en lecture (sinon, sa réponse dit déjà tout).
+      const diagnostic = secrets && !/^le site a répondu/.test(texte) ? await diagnosticLien(secrets) : "";
+      const etape = lienTelephone.etape ? ` à l'étape « ${lienTelephone.etape} »` : "";
+      ecrireLienTelephone({ ...etatLienTelephone(), erreur: `${raison}${etape}${diagnostic ? ` — ${diagnostic}` : ""}` });
+      // Nouvel essai tout seul un peu plus tard.
+      const delai = RELANCES_LIEN_MS[Math.min(lienTelephone.essais, RELANCES_LIEN_MS.length - 1)];
+      lienTelephone.essais++;
+      lienTelephone.prochainEssai = Date.now() + delai;
+      lienTelephone.relance = setTimeout(() => envoyerAuTelephone(false), delai);
       return { ok: false, erreur: texte };
     } finally {
       lienTelephone.envoi = null;
+      lienTelephone.etape = "";
       rafraichirBibliotheque();
       if (lienTelephone.reprendre) {
         lienTelephone.reprendre = false;
@@ -6719,10 +6780,11 @@ function htmlLienTelephone() {
     html += `<div class="note">Sentinelle envoie toute seule la bibliothèque au téléphone, chiffrée, à chaque changement : plus besoin du Drive. Le site de Sentinelle ne garde qu'un fichier illisible.</div>
       <div class="boutons-carte"><button type="button" id="btnActiverLien">Activer l'envoi au téléphone</button></div>`;
   } else {
+    const heure = (ms) => new Date(ms).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
     const statut = lienTelephone.envoi
-      ? "Envoi en cours…"
+      ? `Envoi en cours…${lienTelephone.etape ? ` (${lienTelephone.etape})` : ""}`
       : etat.erreur
-        ? `⚠ Dernier envoi raté : ${etat.erreur}`
+        ? `⚠ Dernier envoi raté : ${etat.erreur}.${lienTelephone.prochainEssai > Date.now() ? ` Nouvel essai à ${heure(lienTelephone.prochainEssai)}.` : ""}${etat.dernierEnvoi ? ` Le téléphone a la version du ${date(etat.dernierEnvoi)}.` : ""}`
         : etat.dernierEnvoi
           ? `✔ Envoyé le ${date(etat.dernierEnvoi)} (${etat.nbSemaines || 0} semaine(s))`
           : "Pas encore envoyé.";
