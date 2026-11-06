@@ -1310,12 +1310,25 @@ async function rapportLancement(p) {
   const numero = String(numeroSemaine(p.parite)).padStart(2, "0");
   const parties = [];
   let s = null;
+  let erreurSommaire = null;
   if (p.sommaire) {
-    s = lireSommaireCutRite(await extraireLignesTextePDF(await chargerDocumentPDF(p.sommaire)));
-    parties.push(...partiesSommaire(s));
+    // Sommaire illisible : le rapport sort quand même (Diakonos, casse), avec la raison en tête.
+    try {
+      s = lireSommaireCutRite(await extraireLignesTextePDF(await chargerDocumentPDF(p.sommaire)));
+      parties.push(...partiesSommaire(s));
+    } catch (erreur) {
+      erreurSommaire = erreur && erreur.message ? erreur.message : String(erreur);
+    }
   }
   const nomLancement = p.strat ? p.strat.name : s ? s.lancement : titreCase(p);
   const base = s ? baseSommaire(s) : baseLancement(nomLancement);
+  if (erreurSommaire) {
+    const partie = partieRapport("Sommaire", `${base} — Sommaire Cut Rite`, ["Fichier"], [180], 1);
+    partie.total = false;
+    [partie.statut, partie.couleurStatut] = [`Sommaire Cut Rite illisible : ${erreurSommaire}`, STATUT.ALERTE];
+    partie.notes.push(["Fichier : ", p.sommaire.name]);
+    parties.push(partie);
+  }
   const groupe = groupeDiakonosDossier(p);
   const diakonos = diakonosDeLaCase(p);
   if (groupe) parties.push(partieDiakonos(await calculerDiakonosDossier(groupe, [...semaine, ...pairesDeLaSemaine(autre)]), base));

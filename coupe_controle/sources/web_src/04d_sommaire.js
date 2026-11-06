@@ -35,7 +35,7 @@ function formatMateriau(m) {
 // Le texte arrive ligne par ligne : « CODE DESCRIPTION… Epaisseur x Pqt. n », puis
 // « [CODE] [STRAT] panneaux restes » ; à la fin, le total.
 function lireSommaireCutRite(lignes) {
-  const s = { lancement: "", date: "", materiaux: [], totalPanneaux: 0, totalRestes: 0 };
+  const s = { lancement: "", date: "", materiaux: [], totalPanneaux: 0, totalRestes: 0, sansQuantites: [], ecartTotal: null };
   const parCode = new Map();
   let courant = null;
   let total = null;
@@ -51,6 +51,7 @@ function lireSommaireCutRite(lignes) {
       if (courant && courant.panneaux < 0 && (!code || code === courant.code || code === "STRAT")) {
         courant.panneaux = parseInt(q[2], 10);
         courant.restes = parseInt(q[3], 10);
+        courant.sansCode = !code;
       } else if (!code) {
         total = [parseInt(q[2], 10), parseInt(q[3], 10)];
       }
@@ -63,17 +64,44 @@ function lireSommaireCutRite(lignes) {
     courant = { code: mots[0], description: l.slice(mots[0].length).trim(), panneaux: -1, restes: -1 };
     parCode.set(courant.code, courant);
   }
-  for (const m of parCode.values()) {
-    if (m.panneaux < 0) throw new Error(`Sommaire Cut Rite : quantités introuvables pour « ${m.code} ».`);
+  // Dernier panneau sans ses quantités : la ligne du total (sans code) lui a été donnée. Elle se reconnaît :
+  // elle vaut au moins la somme de tous les autres panneaux.
+  const tous = [...parCode.values()];
+  const dernier = tous[tous.length - 1];
+  const autres = tous.slice(0, -1).filter((m) => m.panneaux >= 0);
+  if (!total && dernier && dernier.sansCode && autres.length >= 3) {
+    const [p, r] = [totalMateriaux(autres, "panneaux"), totalMateriaux(autres, "restes")];
+    if (p > 0 && dernier.panneaux >= p && dernier.restes >= r) {
+      total = [dernier.panneaux, dernier.restes];
+      dernier.panneaux = -1;
+    }
+  }
+  for (const m of tous) {
+    delete m.sansCode;
+    // Panneau à zéro dont Cut Rite n'a pas imprimé les quantités comme d'habitude : compté 0, signalé dans le rapport
+    // (le rapport sort quand même).
+    if (m.panneaux < 0) {
+      m.panneaux = 0;
+      m.restes = 0;
+      s.sansQuantites.push(m.code);
+    }
     s.materiaux.push(m);
     s.totalPanneaux += m.panneaux;
     s.totalRestes += m.restes;
   }
   if (!s.materiaux.length) throw new Error("Ce PDF n'est pas un sommaire des matériaux Cut Rite.");
   if (total && (total[0] !== s.totalPanneaux || total[1] !== s.totalRestes)) {
-    throw new Error(`Sommaire Cut Rite mal lu : total ${total[0]} / ${total[1]}, lu ${s.totalPanneaux} / ${s.totalRestes}.`);
+    s.ecartTotal = `total du sommaire ${total[0]} panneaux / ${total[1]} restes, lu ${s.totalPanneaux} / ${s.totalRestes}`;
   }
   return s;
+}
+
+// Ce qui n'a pas pu être lu normalement dans le sommaire (null si tout est lu).
+function avertissementSommaire(s) {
+  const a = [];
+  if (s.sansQuantites.length) a.push(`quantités illisibles pour ${s.sansQuantites.join(", ")} (comptées 0 : vérifiez sur le sommaire)`);
+  if (s.ecartTotal) a.push(s.ecartTotal);
+  return a.length ? `Sommaire Cut Rite : ${a.join(" ; ")}.` : null;
 }
 
 const aggloSommaire = (s) => s.materiaux.filter(estAggloMateriau);
@@ -311,6 +339,8 @@ function partiesSommaire(s) {
   if (absentes.length) couleurs.notes.push(["Pas dans ce lancement : ", absentes.join(", ")]);
   const horsGamme = horsGammeSommaire(s).map((m) => `${m.code} (${m.panneaux} panneau(x), ${m.restes} reste(s))`);
   couleurs.notes.push(["Hors gamme : ", horsGamme.length ? horsGamme.join(", ") : "aucune dans ce lancement"]);
+  const avertissement = avertissementSommaire(s);
+  if (avertissement) [agglo.statut, agglo.couleurStatut] = [avertissement, STATUT.ATTENTION];
   return [agglo, strats, couleurs];
 }
 
