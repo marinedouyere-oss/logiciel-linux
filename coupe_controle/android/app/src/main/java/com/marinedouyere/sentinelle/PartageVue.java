@@ -328,7 +328,6 @@ final class PartageVue {
         if (l.scies != null && l.scies < 0) res.add("Scies : contrôle impossible");
         else if (l.scies != null && l.scies > 0) res.add("Scies : " + l.scies + " pièce(s) différente(s)");
         if (l.couleursAbsentes != null && l.couleursAbsentes > 0) res.add("Couleurs : " + l.couleursAbsentes + " couleur(s) absente(s) du .bkp");
-        if (l.couleursPf != null && l.couleursPf > 0) res.add("Couleurs : " + l.couleursPf + " en version PF, à vérifier");
         return res;
     }
 
@@ -984,7 +983,6 @@ final class PartageVue {
     private static String[] celluleCouleurs(FichierPartage.Lancement l) {
         if (l.couleursAbsentes == null) return new String[] {"—", "info"};
         if (l.couleursAbsentes > 0) return new String[] {"⚠ " + l.couleursAbsentes, "alerte"};
-        if (l.couleursPf != null && l.couleursPf > 0) return new String[] {"≈ " + l.couleursPf + " PF", "attention"};
         return new String[] {"✔ OK", "ok"};
     }
 

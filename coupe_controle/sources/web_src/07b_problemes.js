@@ -116,17 +116,17 @@ async function problemesDuLancement(p) {
       for (const a of liste) for (const cle of a.cles) m.set(cle, [...(m.get(cle) || []), a]);
       return m;
     };
+    // Une couleur optimisée en petit format (« 1136 » → « 1136-PF ») est voulue : pas un problème, juste précisé.
+    const formatsPf = variantes.length ? ` (${[...new Set(variantes.map((v) => v.variante))].join(", ")} : petit format)` : "";
     if (c.sansStratifie) bilan.push({ statut: "info", controle: "Couleurs (.bkp)", texte: "Pas de stratifié dans ce .bkp." });
-    else if (!c.absentes.length && !variantes.length) bilan.push({ statut: "ok", controle: "Couleurs (.bkp)", texte: `Les ${c.nbCouleurs} couleurs du lancement sont dans le .bkp.` });
+    else if (!c.absentes.length) bilan.push({ statut: "ok", controle: "Couleurs (.bkp)", texte: `Les ${c.nbCouleurs} couleurs du lancement sont dans le .bkp${formatsPf}.` });
     else {
-      const phrases = [];
-      if (c.absentes.length) phrases.push(`${c.absentes.length} couleur(s) du lancement absente(s) du .bkp : ${faces(c.absentes).join(", ")}. Ces panneaux ne sont pas optimisés.`);
-      if (variantes.length)
-        phrases.push(`${[...new Set(variantes.map((v) => `${v.couleur} remplacée par ${v.variante}`))].join(", ")} dans le .bkp (version PF, même décor) : à confirmer.`);
-      bilan.push({ statut: c.absentes.length ? "alerte" : "attention", controle: "Couleurs (.bkp)", texte: phrases.join(" ") });
+      bilan.push({
+        statut: "alerte",
+        controle: "Couleurs (.bkp)",
+        texte: `${c.absentes.length} couleur(s) du lancement absente(s) du .bkp : ${faces(c.absentes).join(", ")}. Ces panneaux ne sont pas optimisés.${formatsPf}`,
+      });
       for (const [cle, liste] of parPiece(c.absentes)) ajouter(cle, GRAVITE.CORRIGER, "Couleur absente du .bkp", `Couleur ${faces(liste).join(", ")} : pas de panneau dans le .bkp`);
-      for (const [cle, liste] of parPiece(variantes))
-        ajouter(cle, GRAVITE.VERIFIER, "Couleur en version PF", `Couleur ${faces(liste).join(", ")} : le .bkp utilise ${[...new Set(liste.map((v) => v.variante))].join(", ")}`);
     }
   }
 

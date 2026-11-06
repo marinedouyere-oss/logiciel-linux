@@ -44,7 +44,6 @@ function problemesDeLaCase(p) {
   if (p.erreurScies) l.push("Scies : contrôle impossible");
   else if (p.ecartsScies && p.ecartsScies.length) l.push(`Scies : ${p.ecartsScies.length} pièce(s) différente(s)`);
   if (p.couleurs && p.couleurs.absentes.length) l.push(`Couleurs : ${p.couleurs.absentes.length} couleur(s) absente(s) du .bkp`);
-  if (p.couleurs && (p.couleurs.variantes || []).length) l.push(`Couleurs : ${p.couleurs.variantes.length} en version PF, à vérifier`);
   if (p.etatErreur && p.etat) l.push(p.etat.replace(/^❌\s*/, ""));
   return l;
 }

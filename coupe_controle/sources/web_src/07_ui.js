@@ -1021,12 +1021,10 @@ function htmlCouleurs(c) {
   if (!c) return "";
   if (c.sansStratifie) return '<div class="note">Couleurs : pas de stratifié dans ce .bkp</div>';
   const variantes = c.variantes || [];
-  if (c.absentes.length === 0 && !variantes.length) return bandeau(`✔ Couleurs : les ${c.nbCouleurs} couleurs sont dans le .bkp`, "ok");
-  let html = "";
-  if (c.absentes.length) html += bandeau(`⚠ Couleurs : ${c.absentes.length} couleur(s) du lancement absente(s) du .bkp — ces panneaux ne sont pas optimisés`, "alerte");
-  if (variantes.length)
-    html += bandeau(`⚠ Couleurs : ${[...new Set(variantes.map((v) => `${echapper(v.couleur)} remplacée par ${echapper(v.variante)}`))].join(", ")} dans le .bkp — à vérifier`, "attention");
-  return html;
+  // Petit format (« 1136-PF » pour « 1136 ») : voulu, simplement précisé.
+  const formatsPf = variantes.length ? ` (${[...new Set(variantes.map((v) => echapper(v.variante)))].join(", ")} : petit format)` : "";
+  if (c.absentes.length === 0) return bandeau(`✔ Couleurs : les ${c.nbCouleurs} couleurs sont dans le .bkp${formatsPf}`, "ok");
+  return bandeau(`⚠ Couleurs : ${c.absentes.length} couleur(s) du lancement absente(s) du .bkp — ces panneaux ne sont pas optimisés`, "alerte");
 }
 
 // ---- Diakonos : chaque pièce commandée doit être dans un lancement du même tour ----
@@ -1471,7 +1469,6 @@ function celluleScies(p) {
 function celluleCouleurs(p) {
   if (!p.couleurs || p.couleurs.sansStratifie) return '<td class="centre pale">—</td>';
   if (p.couleurs.absentes.length) return `<td class="centre alerte">⚠ ${p.couleurs.absentes.length}</td>`;
-  if ((p.couleurs.variantes || []).length) return `<td class="centre attention" title="Couleur remplacée par sa version PF dans le .bkp">≈ ${p.couleurs.variantes.length} PF</td>`;
   return '<td class="centre ok">✔ OK</td>';
 }
 
@@ -1498,9 +1495,7 @@ function totauxRecap(lignes) {
 function ligneTotalRecap(libelle, t) {
   const alerte = (n) => `<td class="centre alerte">${n > 0 ? `⚠ ${n}` : ""}</td>`;
   return `<tr class="total"><td>${echapper(libelle)}</td><td class="droite">${t.prevuesConnues ? fmtNombre(t.prevues) : "…"}</td>
-    <td class="droite">${!t.auMoinsUnBkp ? "—" : t.bkpConnus ? fmtNombre(t.bkp) : "…"}</td>${alerte(t.anomalies)}${alerte(t.ecarts)}${
-      t.couleurs || !t.couleursPf ? alerte(t.couleurs) : `<td class="centre attention">≈ ${t.couleursPf} PF</td>`
-    }</tr>`;
+    <td class="droite">${!t.auMoinsUnBkp ? "—" : t.bkpConnus ? fmtNombre(t.bkp) : "…"}</td>${alerte(t.anomalies)}${alerte(t.ecarts)}${alerte(t.couleurs)}</tr>`;
 }
 
 const nomLancementRecap = (l) => `${l.nom} (${l.lancement})`;

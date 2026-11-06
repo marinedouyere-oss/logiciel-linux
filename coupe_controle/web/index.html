@@ -2894,7 +2894,7 @@ function controlerCouleurs(lignesStrat, couleursBkp) {
   for (const a of demandes.values()) {
     const presentes = a.face === "dessus" ? couleursBkp.dessus : couleursBkp.dessous;
     if (presentes.has(a.couleur)) continue;
-    // Un coloris simple (« 1136 ») remplacé par sa version PF (« 1136-PF ») : à confirmer. L'inverse (un PF demandé,
+    // Un coloris simple (« 1136 ») optimisé en petit format (« 1136-PF ») : voulu, pas un problème. L’inverse (un PF demandé,
     // seul le simple optimisé) reste une couleur absente.
     const versionPf = /-PF$/i.test(a.couleur) ? null : `${a.couleur}-PF`.toUpperCase();
     const variante = versionPf && [...presentes.keys()].find((c) => String(c).toUpperCase() === versionPf);
@@ -7845,12 +7845,10 @@ function htmlCouleurs(c) {
   if (!c) return "";
   if (c.sansStratifie) return '<div class="note">Couleurs : pas de stratifié dans ce .bkp</div>';
   const variantes = c.variantes || [];
-  if (c.absentes.length === 0 && !variantes.length) return bandeau(`✔ Couleurs : les ${c.nbCouleurs} couleurs sont dans le .bkp`, "ok");
-  let html = "";
-  if (c.absentes.length) html += bandeau(`⚠ Couleurs : ${c.absentes.length} couleur(s) du lancement absente(s) du .bkp — ces panneaux ne sont pas optimisés`, "alerte");
-  if (variantes.length)
-    html += bandeau(`⚠ Couleurs : ${[...new Set(variantes.map((v) => `${echapper(v.couleur)} remplacée par ${echapper(v.variante)}`))].join(", ")} dans le .bkp — à vérifier`, "attention");
-  return html;
+  // Petit format (« 1136-PF » pour « 1136 ») : voulu, simplement précisé.
+  const formatsPf = variantes.length ? ` (${[...new Set(variantes.map((v) => echapper(v.variante)))].join(", ")} : petit format)` : "";
+  if (c.absentes.length === 0) return bandeau(`✔ Couleurs : les ${c.nbCouleurs} couleurs sont dans le .bkp${formatsPf}`, "ok");
+  return bandeau(`⚠ Couleurs : ${c.absentes.length} couleur(s) du lancement absente(s) du .bkp — ces panneaux ne sont pas optimisés`, "alerte");
 }
 
 // ---- Diakonos : chaque pièce commandée doit être dans un lancement du même tour ----
@@ -8295,7 +8293,6 @@ function celluleScies(p) {
 function celluleCouleurs(p) {
   if (!p.couleurs || p.couleurs.sansStratifie) return '<td class="centre pale">—</td>';
   if (p.couleurs.absentes.length) return `<td class="centre alerte">⚠ ${p.couleurs.absentes.length}</td>`;
-  if ((p.couleurs.variantes || []).length) return `<td class="centre attention" title="Couleur remplacée par sa version PF dans le .bkp">≈ ${p.couleurs.variantes.length} PF</td>`;
   return '<td class="centre ok">✔ OK</td>';
 }
 
@@ -8322,9 +8319,7 @@ function totauxRecap(lignes) {
 function ligneTotalRecap(libelle, t) {
   const alerte = (n) => `<td class="centre alerte">${n > 0 ? `⚠ ${n}` : ""}</td>`;
   return `<tr class="total"><td>${echapper(libelle)}</td><td class="droite">${t.prevuesConnues ? fmtNombre(t.prevues) : "…"}</td>
-    <td class="droite">${!t.auMoinsUnBkp ? "—" : t.bkpConnus ? fmtNombre(t.bkp) : "…"}</td>${alerte(t.anomalies)}${alerte(t.ecarts)}${
-      t.couleurs || !t.couleursPf ? alerte(t.couleurs) : `<td class="centre attention">≈ ${t.couleursPf} PF</td>`
-    }</tr>`;
+    <td class="droite">${!t.auMoinsUnBkp ? "—" : t.bkpConnus ? fmtNombre(t.bkp) : "…"}</td>${alerte(t.anomalies)}${alerte(t.ecarts)}${alerte(t.couleurs)}</tr>`;
 }
 
 const nomLancementRecap = (l) => `${l.nom} (${l.lancement})`;
@@ -9493,17 +9488,17 @@ async function problemesDuLancement(p) {
       for (const a of liste) for (const cle of a.cles) m.set(cle, [...(m.get(cle) || []), a]);
       return m;
     };
+    // Une couleur optimisée en petit format (« 1136 » → « 1136-PF ») est voulue : pas un problème, juste précisé.
+    const formatsPf = variantes.length ? ` (${[...new Set(variantes.map((v) => v.variante))].join(", ")} : petit format)` : "";
     if (c.sansStratifie) bilan.push({ statut: "info", controle: "Couleurs (.bkp)", texte: "Pas de stratifié dans ce .bkp." });
-    else if (!c.absentes.length && !variantes.length) bilan.push({ statut: "ok", controle: "Couleurs (.bkp)", texte: `Les ${c.nbCouleurs} couleurs du lancement sont dans le .bkp.` });
+    else if (!c.absentes.length) bilan.push({ statut: "ok", controle: "Couleurs (.bkp)", texte: `Les ${c.nbCouleurs} couleurs du lancement sont dans le .bkp${formatsPf}.` });
     else {
-      const phrases = [];
-      if (c.absentes.length) phrases.push(`${c.absentes.length} couleur(s) du lancement absente(s) du .bkp : ${faces(c.absentes).join(", ")}. Ces panneaux ne sont pas optimisés.`);
-      if (variantes.length)
-        phrases.push(`${[...new Set(variantes.map((v) => `${v.couleur} remplacée par ${v.variante}`))].join(", ")} dans le .bkp (version PF, même décor) : à confirmer.`);
-      bilan.push({ statut: c.absentes.length ? "alerte" : "attention", controle: "Couleurs (.bkp)", texte: phrases.join(" ") });
+      bilan.push({
+        statut: "alerte",
+        controle: "Couleurs (.bkp)",
+        texte: `${c.absentes.length} couleur(s) du lancement absente(s) du .bkp : ${faces(c.absentes).join(", ")}. Ces panneaux ne sont pas optimisés.${formatsPf}`,
+      });
       for (const [cle, liste] of parPiece(c.absentes)) ajouter(cle, GRAVITE.CORRIGER, "Couleur absente du .bkp", `Couleur ${faces(liste).join(", ")} : pas de panneau dans le .bkp`);
-      for (const [cle, liste] of parPiece(variantes))
-        ajouter(cle, GRAVITE.VERIFIER, "Couleur en version PF", `Couleur ${faces(liste).join(", ")} : le .bkp utilise ${[...new Set(liste.map((v) => v.variante))].join(", ")}`);
     }
   }
 
@@ -10165,7 +10160,6 @@ function problemesDeLaCase(p) {
   if (p.erreurScies) l.push("Scies : contrôle impossible");
   else if (p.ecartsScies && p.ecartsScies.length) l.push(`Scies : ${p.ecartsScies.length} pièce(s) différente(s)`);
   if (p.couleurs && p.couleurs.absentes.length) l.push(`Couleurs : ${p.couleurs.absentes.length} couleur(s) absente(s) du .bkp`);
-  if (p.couleurs && (p.couleurs.variantes || []).length) l.push(`Couleurs : ${p.couleurs.variantes.length} en version PF, à vérifier`);
   if (p.etatErreur && p.etat) l.push(p.etat.replace(/^❌\s*/, ""));
   return l;
 }

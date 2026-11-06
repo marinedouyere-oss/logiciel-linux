@@ -38,7 +38,7 @@ function controlerCouleurs(lignesStrat, couleursBkp) {
   for (const a of demandes.values()) {
     const presentes = a.face === "dessus" ? couleursBkp.dessus : couleursBkp.dessous;
     if (presentes.has(a.couleur)) continue;
-    // Un coloris simple (« 1136 ») remplacé par sa version PF (« 1136-PF ») : à confirmer. L'inverse (un PF demandé,
+    // Un coloris simple (« 1136 ») optimisé en petit format (« 1136-PF ») : voulu, pas un problème. L’inverse (un PF demandé,
     // seul le simple optimisé) reste une couleur absente.
     const versionPf = /-PF$/i.test(a.couleur) ? null : `${a.couleur}-PF`.toUpperCase();
     const variante = versionPf && [...presentes.keys()].find((c) => String(c).toUpperCase() === versionPf);

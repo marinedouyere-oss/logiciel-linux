@@ -140,7 +140,7 @@ async function attendreFin(page, maxMs = 600000) {
         { dessus: new Map([["1136-PF", 1]]), dessous: new Map([["975", 1]]), sansStratifie: false });
       return `${r.variantes.map((v) => `${v.couleur}>${v.variante}`).join(",")} / ${r.absentes.map((a) => a.couleur).join(",")}`;
     });
-    verifier(c === "1136>1136-PF / 1063", `couleurs : version PF à vérifier, couleur absente à corriger (${c})`);
+    verifier(c === "1136>1136-PF / 1063", `couleurs : petit format repéré (voulu), couleur absente à corriger (${c})`);
   }
   // Rapport des problèmes du lancement : bilan des contrôles, puis les pièces, problème par problème.
   {
@@ -183,7 +183,8 @@ for r in wb["Rapport"].iter_rows(values_only=True):
   verifier(onglets2[1] === "Semaine 45", `onglet impair = « ${onglets2[1]} »`);
   verifier(texte.includes("✔ Casse : LAN2644CASSE.xlsx + .bkp"), "casse 44 rangée en semaine 45");
   verifier(texte.includes("LAN264502STRA backup.bkp"), "bkp au nom approché rattaché");
-  verifier(texte.includes("⚠ Couleurs : 1063 remplacée par 1063-PF dans le .bkp — à vérifier"), "couleur 1063 en version PF dans le .bkp (Feno) : à vérifier");
+  // Petit format voulu : 1063 optimisé en 1063-PF n'est pas un problème, juste précisé.
+  verifier(/✔ Couleurs : les \d+ couleurs sont dans le \.bkp \(1063-PF : petit format\)/.test(texte) && !texte.includes("remplacée par 1063-PF"), "couleur 1063 en petit format 1063-PF (Feno) : pas un problème");
   verifier(texte.includes("✔ Tout est correct — 116 pièces"), "Feno 45 : 116 pièces");
   verifier(!texte.includes("CVC26100043001") && !texte.includes("CVC26100043002"), "doublons CVC26100043001/002 : pas de détail à l'écran");
   await page.waitForFunction(() => document.querySelector("main").innerText.includes("de la casse déjà lancée(s)"), null, { timeout: 60000 });
