@@ -36,7 +36,8 @@ final class FichierPartage {
     }
 
     static final class Probleme {
-        String niveau; // corriger, verifier, info
+        String niveau; // corriger, verifier, info ; valide : validé « c'est voulu » sur le PC, ne compte plus
+        String valide; // date de la validation (ISO), vide sinon
         String type;
         String cle;
         String article;
@@ -248,6 +249,8 @@ final class FichierPartage {
                 p.quantite = texte(jp, "quantite");
                 p.detail = texte(jp, "detail");
                 p.lignes = texte(jp, "lignes");
+                p.valide = texte(jp, "valide");
+                if (!p.valide.isEmpty()) p.niveau = "valide";
                 l.problemes.add(p);
             }
         JSONArray pieces = jl.optJSONArray("pieces");

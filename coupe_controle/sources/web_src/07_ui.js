@@ -93,11 +93,16 @@ function nouvellePaire(poste, label, parite) {
 }
 
 const estChantier = (p) => p.poste === POSTE_CHANTIERS;
+// Case ajoutée à la main ou par le scan : un chantier, ou un lancement de plus d'un poste (« Feno 2 »).
+const estSupplement = (p) => Boolean(p.supplement);
+const caseAjoutee = (p) => estChantier(p) || estSupplement(p);
+// Postes qui peuvent avoir plusieurs lancements dans la semaine (une case « Feno 2 », « Feno 3 »…).
+const POSTES_SUPPLEMENTS = ["Feno"];
 // Case du fichier de contrôle Diakonos (son fichier est rangé à la place du lancement).
 const estDiakonos = (p) => POSTES_DIAKONOS.includes(p.poste);
 
 function titrePaire(p) {
-  if (!estChantier(p)) return p.semaine ? `Semaine ${p.semaine}` : p.label;
+  if (!caseAjoutee(p)) return p.semaine ? `Semaine ${p.semaine}` : p.label;
   return p.semaine ? `${p.label} (sem ${p.semaine})` : p.label;
 }
 
@@ -112,17 +117,25 @@ function pariteDuNumero(semaine) {
 // changé d'onglet.
 function ranger(p) {
   const parite = pariteDuNumero(p.semaine);
-  if (!estChantier(p) || !parite || parite === p.parite) return false;
+  if (!caseAjoutee(p) || !parite || parite === p.parite) return false;
   p.parite = parite;
   return true;
 }
 
 const nomComplet = (p) => `${p.poste} — ${titrePaire(p)}`;
 // Titre d'une case : le poste (la semaine est déjà sur l'onglet), ou le chantier.
-const titreCase = (p) => (estChantier(p) ? titrePaire(p) : p.poste);
+const titreCase = (p) => (caseAjoutee(p) ? titrePaire(p) : p.poste);
 
 function paireFixe(poste, parite) {
-  return paires.find((p) => p.poste === poste && p.parite === parite);
+  return paires.find((p) => p.poste === poste && p.parite === parite && !estSupplement(p));
+}
+
+// Les lancements de plus d'un poste (« Feno 2 »…), dans l'ordre de leur numéro.
+function supplements(parite, poste = null) {
+  const numero = (label) => parseInt(String(label).replace(/\D/g, ""), 10) || 0;
+  return paires
+    .filter((p) => estSupplement(p) && p.parite === parite && (!poste || p.poste === poste))
+    .sort((a, b) => POSTES_SEMAINE.indexOf(a.poste) - POSTES_SEMAINE.indexOf(b.poste) || numero(a.label) - numero(b.label));
 }
 
 function semaineDeChantier(p) {
@@ -142,7 +155,7 @@ function chantiers(parite) {
 }
 
 function pairesDeLaSemaine(parite) {
-  return [...POSTES_SEMAINE.map((poste) => paireFixe(poste, parite)), ...chantiers(parite)];
+  return [...POSTES_SEMAINE.flatMap((poste) => [paireFixe(poste, parite), ...supplements(parite, poste)]), ...chantiers(parite)];
 }
 
 // Les deux cases Diakonos de l'onglet (1er tour, 2ème tour).
@@ -406,12 +419,31 @@ async function initialiserPaires() {
     if (ranger(p)) sauvegarderDansMemoire(p, { semaineParite: p.parite });
     prochainNumeroChantier = Math.max(prochainNumeroChantier, numero(label) + 1);
   }
+  // Les lancements de plus d'un poste (« Feno||Feno 2 »).
+  for (const rec of memoires.filter((r) => r.supplement && typeof r.cleMemoire === "string").sort((a, b) => numero(a.cleMemoire) - numero(b.cleMemoire))) {
+    const [poste, label] = rec.cleMemoire.split("||");
+    if (!POSTES_SEMAINE.includes(poste) || !label) continue;
+    const p = nouvellePaire(poste, label, rec.semaineParite || "paire");
+    p.supplement = true;
+    restaurer(p, rec);
+    if (ranger(p)) sauvegarderDansMemoire(p, { semaineParite: p.parite });
+  }
   if (!paires.some(estChantier)) ajouterChantier("paire");
 }
 
 function ajouterChantier(parite) {
   const p = nouvellePaire(POSTE_CHANTIERS, `Chantier ${prochainNumeroChantier++}`, parite);
   sauvegarderDansMemoire(p, { semaineParite: parite });
+  return p;
+}
+
+// Un lancement de plus pour un poste (« Feno 2 », « Feno 3 »…) : sa propre case, avec ses fichiers.
+function ajouterSupplement(poste, parite) {
+  const numero = (label) => parseInt(String(label).replace(/\D/g, ""), 10) || 0;
+  const pris = paires.filter((p) => estSupplement(p) && p.poste === poste).map((p) => numero(p.label));
+  const p = nouvellePaire(poste, `${poste} ${Math.max(1, ...pris) + 1}`, parite);
+  p.supplement = true;
+  sauvegarderDansMemoire(p, { semaineParite: parite, supplement: true });
   return p;
 }
 
@@ -441,6 +473,7 @@ function viderResultats(p) {
   p.totalScies = null;
   p.erreurScies = null;
   p.couleurs = null;
+  p.analyse = null;
 }
 
 // Un fichier changé à la main : les résultats faits avec l'ancien ne valent plus (refaire GO / Vérifier Scies).
@@ -461,13 +494,14 @@ function oublierResultatsDe(p, role) {
   if (role === "strat" || role === "coupe" || role === "bkp") {
     p.etat = null;
     p.etatErreur = false;
+    p.analyse = null;
   }
 }
 
 async function reinitialiser(p) {
   viderPaire(p);
   await effacerMemoire(p);
-  if (estChantier(p)) await sauvegarderDansMemoire(p, { semaineParite: p.parite, codeLancement: p.codeLancement });
+  if (caseAjoutee(p)) await sauvegarderDansMemoire(p, { semaineParite: p.parite, codeLancement: p.codeLancement, supplement: estSupplement(p) });
 }
 
 // ---- Lectures mises en cache (un fichier ne change pas une fois choisi) ----
@@ -500,12 +534,18 @@ function lignesStratEnCache(fichier) {
 async function detecterSemaine(p) {
   if (!p.strat) return null;
   try {
-    const { lignes } = await stratEnCache(p.strat);
+    const { lignes, semaines } = await stratEnCache(p.strat);
+    // La semaine écrite dans le fichier (colonne com_livsem) : LAN2646BSR livré en semaine 47 est de la 47 ;
+    // la casse 46 se fabrique en semaine 47.
+    const livraison = semaineLivraisonDuLancement(semaines);
+    if (livraison) {
+      const n = p.poste === "Casse" ? (livraison.semaine >= 52 ? 1 : livraison.semaine + 1) : livraison.semaine;
+      return String(n).padStart(2, "0");
+    }
+    // Sinon : le dossier « Semaine NN » où il est rangé (une casse rangée là est la casse de cette semaine).
+    if (p.semaineDossier) return String(p.semaineDossier).padStart(2, "0");
     const l = lignes.find((x) => x.lancement);
     if (!l) return null;
-    // Un lancement rangé dans un dossier « Semaine NN » est de cette semaine, même si sa colonne lancement dit
-    // autre chose (LAN2646BSR dans « Semaine 47 ») ; une casse rangée là est la casse de cette semaine.
-    if (p.semaineDossier) return String(p.semaineDossier).padStart(2, "0");
     let semaine = extraireSemaine(l.lancement);
     // Sinon la casse a une semaine de décalage : la casse 43 se fabrique en semaine 44.
     if (semaine && p.poste === "Casse") {
@@ -636,6 +676,7 @@ function construireSemaine(parite) {
         <div class="carte compteur" id="texteCompteur"><span class="valeur">…</span></div>
         <nav class="liste-postes" id="listePostes" aria-label="Les postes de la semaine"></nav>
         <button type="button" class="contour" id="btnAjouterChantier">+ Ajouter un chantier</button>
+        ${POSTES_SUPPLEMENTS.map((poste) => `<button type="button" class="contour" data-ajouter-poste="${echapper(poste)}">+ Ajouter un lancement ${echapper(poste)}</button>`).join("")}
         <button type="button" class="texte" id="btnReinitialiserSemaine">↺ Réinitialiser la semaine</button>
       </div>
       <div class="colonne-cases">
@@ -671,15 +712,20 @@ function construireSemaine(parite) {
     }
   });
   $("btnReinitialiserSemaine").addEventListener("click", reinitialiserSemaine);
-  $("btnAjouterChantier").addEventListener("click", () => {
-    const p = ajouterChantier(parite);
+  const montrerNouvelle = (p) => {
     afficher();
     const carte = document.querySelector(`.carte-paire[data-id="${p.id}"]`);
     if (carte) carte.scrollIntoView({ behavior: "smooth", block: "center" });
-  });
-  for (const poste of POSTES_SEMAINE) $("cartesPostes").appendChild(carteDe(paireFixe(poste, parite)));
+  };
+  $("btnAjouterChantier").addEventListener("click", () => montrerNouvelle(ajouterChantier(parite)));
+  document.querySelectorAll("[data-ajouter-poste]").forEach((b) => b.addEventListener("click", () => montrerNouvelle(ajouterSupplement(b.dataset.ajouterPoste, parite))));
+  for (const poste of POSTES_SEMAINE) {
+    $("cartesPostes").appendChild(carteDe(paireFixe(poste, parite)));
+    for (const s of supplements(parite, poste)) $("cartesPostes").appendChild(carteDe(s));
+  }
   for (const c of chantiers(parite)) $("cartesChantiers").appendChild(carteDe(c));
   majDiakonos();
+  analyserEnFond(parite);
 }
 
 function carteDe(p) {
@@ -707,8 +753,7 @@ function rafraichir(p) {
 
 // Numéro de la case dans son onglet (pastille de la charte) : postes, puis chantiers.
 function numeroCase(p) {
-  const cases = [...POSTES_SEMAINE.map((poste) => paireFixe(poste, p.parite)), ...chantiers(p.parite)];
-  return cases.indexOf(p) + 1;
+  return pairesDeLaSemaine(p.parite).indexOf(p) + 1;
 }
 
 function remplirCarte(carte, p) {
@@ -729,7 +774,7 @@ function remplirCarte(carte, p) {
     <div class="entete-carte">
       ${numeroCase(p) ? `<span class="pastille">${String(numeroCase(p)).padStart(2, "0")}</span>` : ""}
       <span class="titre-carte">${echapper(titreCase(p))}</span>
-      ${estChantier(p) ? '<button type="button" class="texte alerte" data-action="retirer">✕ Retirer</button>' : ""}
+      ${caseAjoutee(p) ? '<button type="button" class="texte alerte" data-action="retirer">✕ Retirer</button>' : ""}
       <button type="button" class="texte" data-action="reinitialiser">↺ Réinitialiser</button>
     </div>
     ${zonesDiakonosHtml(p)}
@@ -741,6 +786,7 @@ function remplirCarte(carte, p) {
     <button type="button" class="contour pleine" data-action="rapport-lancement" ${p.enCours ? "disabled" : ""}>📄 Rapport du lancement (.pdf)</button>
     ${p.strat ? `<button type="button" class="contour pleine" data-action="problemes-lancement" ${p.enCours ? "disabled" : ""}>📊 Problèmes du lancement (.xlsx)</button>` : ""}
     ${p.etat ? `<div class="etat ${p.etatErreur ? "erreur" : ""}">${echapper(p.etat)}</div>` : ""}
+    <div class="zone-problemes"></div>
     <div class="zone-rapport"></div>
     <div class="zone-scies"></div>
     <div class="zone-casse"></div>
@@ -781,6 +827,7 @@ function remplirCarte(carte, p) {
   });
   const retirer = carte.querySelector('[data-action="retirer"]');
   if (retirer) retirer.addEventListener("click", () => retirerChantier(p));
+  remplirProblemes(carte.querySelector(".zone-problemes"), p);
   if (p.rapport) afficherRapport(carte.querySelector(".zone-rapport"), p);
   if (p.ecartsScies || p.erreurScies) afficherScies(carte.querySelector(".zone-scies"), p);
   if (p.poste === "Casse" && p.strat && estOngletSemaine()) remplirCasse(carte.querySelector(".zone-casse"), p);
@@ -1420,7 +1467,7 @@ function lignesRecap(pairesSemaine) {
     lignes.push({
       paire: p,
       semaine: p.semaine,
-      nom: estChantier(p) ? p.label : p.poste,
+      nom: caseAjoutee(p) ? p.label : p.poste,
       lancement: nom.includes(".") ? nom.slice(0, nom.lastIndexOf(".")) : nom,
       prevues: r ? r.prevues : null,
       bkp: r ? r.bkp : null,
@@ -1461,23 +1508,30 @@ function majRecap() {
 
 const nombreRecap = (v) => (v === null || v === undefined ? "…" : Number.isNaN(v) ? "?" : fmtNombre(v));
 
+// Problèmes validés « c'est voulu » : la cellule passe à « ✔ Validé » quand il n'en reste aucun.
+const celluleValidee = '<td class="centre ok" title="Problèmes validés (voulus)">✔ Validé</td>';
+
 function celluleControle(p) {
   if (p.enCours) return '<td class="centre gris">⏳</td>';
   if (!p.rapport) return '<td class="centre pale">—</td>';
   if (p.rapport.nbAnomalies === 0) return '<td class="centre ok">✔ OK</td>';
-  return `<td class="centre alerte">⚠ ${p.rapport.nbAnomalies}</td>`;
+  const reste = restantsDuControle(p, estControleListe);
+  if (reste === 0) return celluleValidee;
+  return `<td class="centre alerte">⚠ ${reste ?? p.rapport.nbAnomalies}</td>`;
 }
 
 function celluleScies(p) {
   if (p.erreurScies) return '<td class="centre alerte">❌</td>';
   if (!p.ecartsScies) return '<td class="centre pale">—</td>';
   if (p.ecartsScies.length === 0) return '<td class="centre ok">✔ OK</td>';
-  return `<td class="centre alerte">⚠ ${p.ecartsScies.length}</td>`;
+  const reste = restantsDuControle(p, estControleScies);
+  if (reste === 0) return celluleValidee;
+  return `<td class="centre alerte">⚠ ${reste ?? p.ecartsScies.length}</td>`;
 }
 
 function celluleCouleurs(p) {
   if (!p.couleurs || p.couleurs.sansStratifie) return '<td class="centre pale">—</td>';
-  if (p.couleurs.absentes.length) return `<td class="centre alerte">⚠ ${p.couleurs.absentes.length}</td>`;
+  if (p.couleurs.absentes.length) return restantsDuControle(p, estControleCouleurs) === 0 ? celluleValidee : `<td class="centre alerte">⚠ ${p.couleurs.absentes.length}</td>`;
   return '<td class="centre ok">✔ OK</td>';
 }
 
@@ -1543,8 +1597,13 @@ const alerteRecap = (texte, genre) => `<div class="alertes-recap"><div class="ti
 function htmlDoublonsRecap(lignes) {
   if (lignes.some((l) => l.cles === null)) return "";
   const groupes = doublonsEntreLancements(new Map(lignes.map((l) => [nomLancementRecap(l), l.cles])));
-  const n = groupes.reduce((t, g) => t + g.cles.length, 0);
-  return n ? alerteRecap(`⚠ ${n} pièce(s) lancée(s) deux fois : elles sont dans deux lancements`, "alerte") : "";
+  const cles = groupes.flatMap((g) => g.cles);
+  // Validées « c'est voulu » (Recyclage et 2ème tour…) : elles ne comptent plus.
+  const validees = cles.filter((cle) => validationDe("", { cle, type: "Lancée deux fois" })).length;
+  const n = cles.length - validees;
+  const precision = validees ? ` (${validees} autre(s) validée(s) OK)` : "";
+  if (!n) return validees ? alerteRecap(`✔ ${validees} pièce(s) dans deux lancements, validée(s) OK`, "ok") : "";
+  return alerteRecap(`⚠ ${n} pièce(s) lancée(s) deux fois : elles sont dans deux lancements${precision}`, "alerte");
 }
 
 // Pièces déjà présentes dans un lancement de l'autre onglet semaine (relancées, ou lancées en double).
@@ -1619,7 +1678,7 @@ async function fichierChoisi() {
   }
   await memoriserFichier(p, role, fichier);
   enregistrer(p);
-  if (role === "strat" && estChantier(p)) afficher();
+  if (role === "strat" && caseAjoutee(p)) afficher();
   else rafraichir(p);
   if (role === "bkp") majCompteur();
   if (deplace) alert(`${p.label} : lancement de la semaine ${p.semaine}, rangé dans l'onglet ${libelleOnglet(p.parite)}.`);
@@ -2004,6 +2063,22 @@ async function placerFichiersScannes(parite, r) {
     }
     affectations.push({ cible: g, paire: p, libelle: g.poste, copie: false });
   }
+  // Un lancement de plus d'un poste (second lancement du dossier FENO) : sa case « Feno 2 ».
+  for (const g of r.supplements || []) {
+    const identite = `${g.code}|${g.suffixe}`;
+    let p = paires.find((c) => estSupplement(c) && c.poste === g.poste && c.codeLancement === identite);
+    if (!p) {
+      p = supplements(g.parite, g.poste).find((c) => !c.strat && !c.codeLancement) || ajouterSupplement(g.poste, g.parite);
+      p.codeLancement = identite;
+      sauvegarderDansMemoire(p, { semaineParite: g.parite, codeLancement: identite, supplement: true });
+    }
+    // Rangé en chantier par une version d'avant : la case chantier disparaît.
+    for (const c of paires.filter((x) => estChantier(x) && x.codeLancement === identite)) {
+      await effacerMemoire(c);
+      paires.splice(paires.indexOf(c), 1);
+    }
+    affectations.push({ cible: g, paire: p, libelle: p.label, copie: false });
+  }
   for (const g of r.chantiers) {
     const identite = `${g.code}|${g.suffixe}`;
     let p = paires.find((c) => estChantier(c) && c.codeLancement === identite);
@@ -2104,7 +2179,7 @@ async function placerFichiersScannes(parite, r) {
     for (const p of [...pairesDeLaSemaine(parite), ...diakonosDeLaSemaine(parite)]) {
       if (placees.has(p) || !p.strat || deLaSemaine(p)) continue;
       const ancienne = `${titreCase(p)} : ${p.strat.name} (semaine ${p.semaine}) retiré, ce n'est pas la semaine ${semaineScan}`;
-      if (estChantier(p)) {
+      if (caseAjoutee(p)) {
         await effacerMemoire(p);
         paires.splice(paires.indexOf(p), 1);
       } else await reinitialiser(p);
@@ -2119,6 +2194,7 @@ async function placerFichiersScannes(parite, r) {
   if (lignes.length === 0) compte.push("Aucun lancement de cette semaine dans ce dossier.");
   compte.push(...lignes);
   if (r.nonReconnus.length) compte.push(`Non reconnu(s) : ${r.nonReconnus.join(", ")}`);
+  if (r.sansLancement && r.sansLancement.length) compte.push(`⚠ Sans fichier de lancement (LAN) dans le dossier, pas contrôlé(s) : ${r.sansLancement.join(", ")}`);
   if (r.dossiersLus && r.dossiersLus.length) compte.push(`Dossiers lus : ${r.dossiersLus.join(", ")}`);
   etatsScan[parite] = { lignes: compte, erreur: lignes.length === 0 };
   if (parite === onglet) afficher();
@@ -2184,6 +2260,156 @@ function demanderConfirmation(titre, message, libelleOk = "OK") {
     ok.addEventListener("click", surOk);
     annuler.addEventListener("click", surAnnuler);
   });
+}
+
+// ---- Les problèmes du lancement, à l'écran : chacun peut être validé « c'est voulu » (il ne compte plus) ----
+
+const MAX_PROBLEMES_ECRAN = 40;
+// L'écran reste léger : une ligne par case ; la liste (avec « Valider ») s'ouvre d'un clic.
+const problemesOuverts = new Set(); // id des cases dont la liste est ouverte
+
+function remplirProblemes(zone, p) {
+  if (!zone) return;
+  zone.innerHTML = "";
+  if (!p.strat || p.enCours) return;
+  const a = analyseDeLaCase(p);
+  if (!a) {
+    if (!p.rapport && !p.ecartsScies && !p.couleurs) return;
+    zone.innerHTML = '<button type="button" class="texte" data-action="voir-problemes">🔍 Voir les problèmes du lancement (et les valider)</button>';
+    const bouton = zone.querySelector("button");
+    bouton.addEventListener("click", async () => {
+      bouton.disabled = true;
+      bouton.textContent = "Lecture des problèmes…";
+      try {
+        await analyserLancement(p);
+      } catch (erreur) {
+        zone.innerHTML = `<div class="message-alerte">Problèmes illisibles : ${echapper(erreur && erreur.message ? erreur.message : erreur)}</div>`;
+        return;
+      }
+      remplirProblemes(zone, p);
+      majRecap();
+    });
+    return;
+  }
+  if (!a.aTraiter.length && !a.valides.length) {
+    zone.innerHTML = '<div class="problemes-case"><div class="problemes-titre ok">✔ Aucun problème trouvé dans ce lancement.</div></div>';
+    return;
+  }
+  const morceaux = [];
+  if (a.nbCorriger) morceaux.push(`<span class="alerte">${a.nbCorriger} à corriger</span>`);
+  if (a.nbVerifier) morceaux.push(`<span class="attention">${a.nbVerifier} à vérifier</span>`);
+  if (a.valides.length) morceaux.push(`<span class="ok">${a.valides.length} validé(s) OK</span>`);
+  if (!a.aTraiter.length) morceaux.unshift('<span class="ok">✔ Plus rien à traiter</span>');
+  const ouvert = problemesOuverts.has(p.id);
+  let html = `<div class="problemes-case"><div class="problemes-entete"><div class="problemes-titre">Problèmes du lancement : ${morceaux.join(" · ")}</div>
+    <button type="button" class="texte" data-action="ouvrir-problemes">${ouvert ? "Masquer ▾" : "Voir et valider ▸"}</button></div>`;
+  if (!ouvert) {
+    zone.innerHTML = html + "</div>";
+    zone.querySelector('[data-action="ouvrir-problemes"]').addEventListener("click", () => {
+      problemesOuverts.add(p.id);
+      remplirProblemes(zone, p);
+    });
+    return;
+  }
+  html += '<div class="note">« Valider » : le problème est voulu, il ne compte plus (ici, dans les rapports et sur le téléphone).</div>';
+  // Les plus graves d'abord, regroupés par problème ; les validés à la fin.
+  const groupes = new Map();
+  for (const e of a.aTraiter) groupes.set(e.type, [...(groupes.get(e.type) || []), e]);
+  const ordre = [...groupes.keys()].sort(
+    (x, y) => Math.max(...groupes.get(y).map((e) => e.gravite)) - Math.max(...groupes.get(x).map((e) => e.gravite)) || (RANG_PROBLEME.get(x) ?? 99) - (RANG_PROBLEME.get(y) ?? 99)
+  );
+  const entrees = [];
+  let montres = 0;
+  const ligne = (e, valide) => {
+    const i = entrees.push(e) - 1;
+    const quoi = [e.article, e.dimensions, e.coloris].filter(Boolean).join(" · ");
+    const badge = valide
+      ? `<span class="badge-probleme ok">✔ Validé le ${echapper(dateValidation(e.validation))}</span>`
+      : `<span class="badge-probleme ${e.gravite === GRAVITE.CORRIGER ? "alerte" : "attention"}">${A_FAIRE[e.gravite]}</span>`;
+    return `<div class="probleme${valide ? " valide" : ""}">
+      <div class="probleme-textes"><div>${badge} <strong>${echapper(e.cle)}</strong>${valide ? ` · ${echapper(e.type)}` : ""}</div>
+        <div class="probleme-detail">${echapper(e.detail)}${quoi ? ` — ${echapper(quoi)}` : ""}</div></div>
+      ${valide
+        ? `<button type="button" class="texte" data-annuler="${i}">Annuler</button>`
+        : `<button type="button" class="contour petit" data-valider="${i}">✔ Valider</button>`}
+    </div>`;
+  };
+  for (const type of ordre) {
+    const liste = groupes.get(type);
+    html += `<div class="probleme-groupe">${echapper(type)} — ${liste.length} pièce(s)</div>`;
+    for (const e of liste) {
+      if (montres >= MAX_PROBLEMES_ECRAN) break;
+      html += ligne(e, false);
+      montres++;
+    }
+  }
+  if (montres < a.aTraiter.length) html += `<div class="note">… et ${a.aTraiter.length - montres} autre(s) : voir « Problèmes du lancement (.xlsx) ».</div>`;
+  if (a.valides.length) {
+    html += `<div class="probleme-groupe ok">Validé OK (voulu) — ${a.valides.length} pièce(s)</div>`;
+    for (const e of a.valides.slice(0, MAX_PROBLEMES_ECRAN)) html += ligne(e, true);
+  }
+  zone.innerHTML = html + "</div>";
+  zone.querySelector('[data-action="ouvrir-problemes"]').addEventListener("click", () => {
+    problemesOuverts.delete(p.id);
+    remplirProblemes(zone, p);
+  });
+  zone.querySelectorAll("[data-valider]").forEach((b) => b.addEventListener("click", () => basculerValidation(p, entrees[Number(b.dataset.valider)], true)));
+  zone.querySelectorAll("[data-annuler]").forEach((b) => b.addEventListener("click", () => basculerValidation(p, entrees[Number(b.dataset.annuler)], false)));
+}
+
+// Semaine rouverte (Sentinelle relancé) : les problèmes de chaque case sont relus en fond, pour que les comptes
+// tiennent compte des validations comme juste après le contrôle. Une fois par fichier de lancement.
+const analysesTentees = new WeakSet(); // fichiers de lancement déjà relus (ou en échec)
+let analyseEnFondEnCours = false;
+async function analyserEnFond(parite) {
+  if (analyseEnFondEnCours || scansEnCours.size) return;
+  const aLire = pairesDeLaSemaine(parite).filter((p) => p.strat && !p.enCours && !analyseDeLaCase(p) && !analysesTentees.has(p.strat));
+  if (!aLire.length) return;
+  analyseEnFondEnCours = true;
+  try {
+    for (const p of aLire) {
+      analysesTentees.add(p.strat);
+      try {
+        await analyserLancement(p);
+      } catch (_erreur) {
+        continue; // le bouton « Voir les problèmes » reste là
+      }
+      const zone = document.querySelector(`.carte-paire[data-id="${p.id}"] .zone-problemes`);
+      if (zone) remplirProblemes(zone, p);
+    }
+  } finally {
+    analyseEnFondEnCours = false;
+  }
+  if (onglet === parite) majRecap();
+}
+
+// Valide (ou remet) un problème ; les cases touchées (« lancée deux fois » : les deux lancements), le tableau et la
+// liste des postes se mettent à jour, puis la bibliothèque et le téléphone.
+function basculerValidation(p, e, oui) {
+  if (!e || !p.analyse) return;
+  validerProbleme(p.analyse.base, e, oui);
+  for (const c of pairesDeLaSemaine(p.parite)) {
+    const zone = document.querySelector(`.carte-paire[data-id="${c.id}"] .zone-problemes`);
+    if (zone) remplirProblemes(zone, c);
+  }
+  majRecap();
+  planifierArchivageValidations(p.parite);
+}
+
+const archivagesValidations = new Map(); // parité → minuterie
+function planifierArchivageValidations(parite) {
+  clearTimeout(archivagesValidations.get(parite));
+  archivagesValidations.set(
+    parite,
+    setTimeout(async () => {
+      archivagesValidations.delete(parite);
+      try {
+        await archiverOnglet(parite, await bilansDeLOnglet(parite));
+      } catch (_erreur) {
+        // la bibliothèque sera mise à jour au prochain contrôle
+      }
+    }, 2000)
+  );
 }
 
 // ---- Recherche : une fiche par commande, une ligne par pièce ----
@@ -2342,7 +2568,7 @@ function afficherFiches(liste, a, debut) {
 
 function nomSourceRecherche(t) {
   const p = t.source.paire;
-  return p ? (estChantier(p) ? p.label : p.poste) : t.source.nom;
+  return p ? (caseAjoutee(p) ? p.label : p.poste) : t.source.nom;
 }
 
 function fiche(f, cleCherchee) {

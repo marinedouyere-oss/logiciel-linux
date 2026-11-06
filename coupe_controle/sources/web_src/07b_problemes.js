@@ -40,9 +40,10 @@ async function problemesDuLancement(p) {
   const parCle = new Map(); // clé → [{ gravite, type, detail }]
   const hors = []; // { gravite, type, detail, cle, article, dimensions, coloris }
   const bilan = []; // { statut: "ok" | "alerte" | "attention" | "info", controle, texte }
-  const ajouter = (cle, gravite, type, detail) => {
+  // Chaque problème garde le contrôle qui l'a trouvé (une validation peut rendre ce contrôle OK).
+  const ajouter = (cle, gravite, type, detail, controle) => {
     if (!parCle.has(cle)) parCle.set(cle, []);
-    parCle.get(cle).push({ gravite, type, detail });
+    parCle.get(cle).push({ gravite, type, detail, controle });
   };
   const dehors = (h) => hors.push({ gravite: GRAVITE.CORRIGER, article: "", dimensions: "", coloris: "", ...h });
   const bkp = p.source === "bkp";
@@ -73,13 +74,13 @@ async function problemesDuLancement(p) {
       const unite = (n) => (couches ? `${fmtNombre(n)} couche(s)` : `${fmtNombre(n)} pièce(s)`);
       const debut = couches ? `Pièce en ${l.couches} couches : ` : "";
       if (bkp) signales.add(l.cle);
-      if (l.statut === "Manquant") ajouter(l.cle, GRAVITE.CORRIGER, `Absente ${de}`, `${debut}${unite(l.qte_attendue)} dans le lancement, aucune dans ${dans}`);
+      if (l.statut === "Manquant") ajouter(l.cle, GRAVITE.CORRIGER, `Absente ${de}`, `${debut}${unite(l.qte_attendue)} dans le lancement, aucune dans ${dans}`, controle);
       else if (l.statut === "En trop")
-        dehors({ cle: l.cle, article: l.article || "", type: `En trop dans ${dans}`, quantite: fmtNombre(l.qte_trouvee), detail: `${unite(l.qte_trouvee)} dans ${dans}, rien dans le lancement` });
+        dehors({ cle: l.cle, article: l.article || "", type: `En trop dans ${dans}`, quantite: fmtNombre(l.qte_trouvee), detail: `${unite(l.qte_trouvee)} dans ${dans}, rien dans le lancement`, controle });
       else {
         const ecart = Math.abs(l.qte_trouvee - l.qte_attendue);
         ajouter(l.cle, GRAVITE.CORRIGER, `Quantité différente dans ${dans}`,
-          `${debut}${unite(l.qte_attendue)} dans le lancement, ${fmtNombre(l.qte_trouvee)} dans ${dans} (${fmtNombre(ecart)} ${l.qte_trouvee < l.qte_attendue ? "en moins" : "en trop"})`);
+          `${debut}${unite(l.qte_attendue)} dans le lancement, ${fmtNombre(l.qte_trouvee)} dans ${dans} (${fmtNombre(ecart)} ${l.qte_trouvee < l.qte_attendue ? "en moins" : "en trop"})`, controle);
       }
     }
   } else
@@ -95,9 +96,9 @@ async function problemesDuLancement(p) {
       : { statut: "ok", controle: "Scies (.bkp)", texte: `Tout correspond : ${panneaux}.` });
     for (const e of p.ecartsScies) {
       if (signales.has(e.cle)) continue; // déjà dans le contrôle avec le .bkp
-      if (e.attendu === 0) dehors({ cle: e.cle, type: "En trop dans le .bkp", quantite: fmtNombre(e.trouve), detail: `${fmtNombre(e.trouve)} dans le .bkp, rien dans le lancement` });
-      else if (e.trouve === 0) ajouter(e.cle, GRAVITE.CORRIGER, "Absente du .bkp", `${fmtNombre(e.attendu)} pièce(s) dans le lancement, aucune dans le .bkp`);
-      else ajouter(e.cle, GRAVITE.VERIFIER, "Quantité différente dans le .bkp", `${fmtNombre(e.attendu)} pièce(s) dans le lancement, ${fmtNombre(e.trouve)} dans le .bkp`);
+      if (e.attendu === 0) dehors({ cle: e.cle, type: "En trop dans le .bkp", quantite: fmtNombre(e.trouve), detail: `${fmtNombre(e.trouve)} dans le .bkp, rien dans le lancement`, controle: "Scies (.bkp)" });
+      else if (e.trouve === 0) ajouter(e.cle, GRAVITE.CORRIGER, "Absente du .bkp", `${fmtNombre(e.attendu)} pièce(s) dans le lancement, aucune dans le .bkp`, "Scies (.bkp)");
+      else ajouter(e.cle, GRAVITE.VERIFIER, "Quantité différente dans le .bkp", `${fmtNombre(e.attendu)} pièce(s) dans le lancement, ${fmtNombre(e.trouve)} dans le .bkp`, "Scies (.bkp)");
     }
   }
 
@@ -126,7 +127,7 @@ async function problemesDuLancement(p) {
         controle: "Couleurs (.bkp)",
         texte: `${c.absentes.length} couleur(s) du lancement absente(s) du .bkp : ${faces(c.absentes).join(", ")}. Ces panneaux ne sont pas optimisés.${formatsPf}`,
       });
-      for (const [cle, liste] of parPiece(c.absentes)) ajouter(cle, GRAVITE.CORRIGER, "Couleur absente du .bkp", `Couleur ${faces(liste).join(", ")} : pas de panneau dans le .bkp`);
+      for (const [cle, liste] of parPiece(c.absentes)) ajouter(cle, GRAVITE.CORRIGER, "Couleur absente du .bkp", `Couleur ${faces(liste).join(", ")} : pas de panneau dans le .bkp`, "Couleurs (.bkp)");
     }
   }
 
@@ -139,7 +140,7 @@ async function problemesDuLancement(p) {
       const n = autres.reduce((t, s) => t + s.nbPieces, 0);
       bilan.push({ statut: "attention", controle: "Semaine de livraison",
         texte: `${n} pièce(s) à livrer une autre semaine que la semaine ${principale.semaine} : ${autres.map((s) => `${s.nbPieces} en semaine ${s.semaine}`).join(", ")}.` });
-      for (const s of autres) for (const cle of s.cles || []) ajouter(cle, GRAVITE.VERIFIER, "Autre semaine de livraison", `À livrer en semaine ${s.semaine} ; le reste du lancement est pour la semaine ${principale.semaine}`);
+      for (const s of autres) for (const cle of s.cles || []) ajouter(cle, GRAVITE.VERIFIER, "Autre semaine de livraison", `À livrer en semaine ${s.semaine} ; le reste du lancement est pour la semaine ${principale.semaine}`, "Semaine de livraison");
     }
   }
 
@@ -159,7 +160,7 @@ async function problemesDuLancement(p) {
     const cles = (await resume(o.strat, o.bkp)).cles;
     for (const cle of clesDuLancement) {
       if (!cles.has(cle) || !cleValable(cle)) continue;
-      ajouter(cle, GRAVITE.CORRIGER, "Lancée deux fois", `Aussi dans ${nomDe(o)}`);
+      ajouter(cle, GRAVITE.CORRIGER, "Lancée deux fois", `Aussi dans ${nomDe(o)}`, "Autres lancements de la semaine");
       deuxFois.set(nomDe(o), (deuxFois.get(nomDe(o)) || 0) + 1);
     }
   }
@@ -180,8 +181,8 @@ async function problemesDuLancement(p) {
         texte: r.dejaLancees.length
           ? `${r.dejaLancees.length} pièce(s) relancée(s) (déjà lancées ${libelleSemaines(r.dejaLancees.map((t) => t.semaine))}) et ${r.rajouts.length} rajout(s).`
           : `Aucune pièce relancée (rien ${r.periode}) : ${r.rajouts.length} rajout(s).` });
-      for (const t of r.dejaLancees) ajouter(t.ligne.cle, GRAVITE.INFO, "Casse : relancée", `Déjà lancée en semaine ${t.semaine} dans ${t.lancement}`);
-      for (const l of r.rajouts) ajouter(l.cle, GRAVITE.INFO, "Casse : rajout", `Pas lancée ${r.periode}`);
+      for (const t of r.dejaLancees) ajouter(t.ligne.cle, GRAVITE.INFO, "Casse : relancée", `Déjà lancée en semaine ${t.semaine} dans ${t.lancement}`, "Casse");
+      for (const l of r.rajouts) ajouter(l.cle, GRAVITE.INFO, "Casse : rajout", `Pas lancée ${r.periode}`, "Casse");
     }
   } else if (!autresLancements.length)
     bilan.push({ statut: "info", controle: `Déjà lancée en ${libelleOnglet(autre)}`, texte: `Aucun lancement chargé en ${libelleOnglet(autre)} : pas de comparaison.` });
@@ -192,7 +193,7 @@ async function problemesDuLancement(p) {
       const cles = (await resume(o.strat, o.bkp)).cles;
       for (const cle of clesDuLancement) {
         if (!cles.has(cle) || cle.length <= 3) continue;
-        ajouter(cle, GRAVITE.VERIFIER, "Déjà lancée la semaine d'avant", `Déjà dans ${libelleOnglet(autre)} : ${nomDe(o)}`);
+        ajouter(cle, GRAVITE.VERIFIER, "Déjà lancée la semaine d'avant", `Déjà dans ${libelleOnglet(autre)} : ${nomDe(o)}`, `Déjà lancée en ${libelleOnglet(autre)}`);
         n++;
       }
     }
@@ -240,6 +241,7 @@ async function problemesDuLancement(p) {
         type: "Commandée, pas lancée (Diakonos)",
         detail: `Absente ${portee.de}${ailleurs ? ` ; elle est dans ${ailleurs}` : ""}`,
         diakonos: true,
+        controle: "Diakonos",
         porteeDe: portee.de,
         porteeDans: portee.dans,
         ailleurs,
@@ -265,7 +267,8 @@ function diagnostiquerHors(hors) {
   const resultat = [];
   for (const [cle, liste] of parCle) {
     const decrite = liste.find((h) => h.article) || liste[0];
-    const piece = { cle, article: decrite.article || "", dimensions: decrite.dimensions || "", coloris: decrite.coloris || "" };
+    const controle = (liste.find((h) => h.type.startsWith("En trop")) || liste[0]).controle;
+    const piece = { cle, article: decrite.article || "", dimensions: decrite.dimensions || "", coloris: decrite.coloris || "", controle };
     const enTrop = liste.filter((h) => h.type.startsWith("En trop"));
     const diakonos = liste.find((h) => h.diakonos);
     const ailleurs = (enTrop.find((h) => h.ailleurs) || {}).ailleurs || (diakonos && diakonos.ailleurs);
@@ -285,7 +288,7 @@ function diagnostiquerHors(hors) {
       });
     } else if (diakonos && diakonos.ailleurs) {
       // Commandée ici, lancée dans un autre lancement de la semaine : bonne (chantier extrait du lancement).
-    } else if (diakonos) resultat.push({ ...piece, gravite: GRAVITE.CORRIGER, type: "Commandée, pas lancée (Diakonos)", detail: `Absente ${diakonos.porteeDe} et des autres lancements chargés` });
+    } else if (diakonos) resultat.push({ ...piece, controle: "Diakonos", gravite: GRAVITE.CORRIGER, type: "Commandée, pas lancée (Diakonos)", detail: `Absente ${diakonos.porteeDe} et des autres lancements chargés` });
     else resultat.push(...liste);
   }
   return resultat;
@@ -310,8 +313,63 @@ const MISE_EN_PAGE_RAPPORT = (pied) => ({
   headerFooter: { oddFooter: `&L${pied} — LAISNÉ INDUSTRIE, document interne&RPage &P / &N` },
 });
 
-// Écrit le rapport des problèmes d'un lancement dans une nouvelle feuille du classeur ; renvoie son bilan.
-async function feuilleRapportLancement(wb, p, nomFeuille) {
+// ---- Problème validé (« c'est voulu ») : il ne compte plus, nulle part (case, tableau, rapports, téléphone) ----
+// Gardé dans ce PC (et dans la bibliothèque, d'où il revient s'il le faut), par lancement, pièce et problème.
+
+const CLE_VALIDATIONS = "sentinelle-problemes-valides";
+let validationsProblemes = null; // clé → { date }
+
+function lesValidations() {
+  if (validationsProblemes) return validationsProblemes;
+  validationsProblemes = new Map();
+  try {
+    for (const [k, v] of Object.entries(JSON.parse(localStorage.getItem(CLE_VALIDATIONS) || "{}"))) if (v && v.date) validationsProblemes.set(k, v);
+  } catch (_e) {
+    // stockage indisponible : les validations de la bibliothèque restent
+  }
+  return validationsProblemes;
+}
+
+function enregistrerValidations() {
+  try {
+    localStorage.setItem(CLE_VALIDATIONS, JSON.stringify(Object.fromEntries(lesValidations())));
+  } catch (_e) {
+    // stockage indisponible
+  }
+}
+
+const baseDuLancement = (p) => (p && p.strat ? p.strat.name.replace(/\.[^.]*$/, "") : "");
+// « Lancée deux fois » se valide pour les deux lancements à la fois.
+const cleValidation = (base, cle, type) => (type === "Lancée deux fois" ? `*|${cle}|${type}` : `${base}|${cle}|${type}`);
+const validationDe = (base, e) => lesValidations().get(cleValidation(base, e.cle, e.type)) || null;
+
+function validerProbleme(base, e, oui) {
+  const k = cleValidation(base, e.cle, e.type);
+  if (oui) lesValidations().set(k, { date: new Date().toISOString() });
+  else lesValidations().delete(k);
+  enregistrerValidations();
+}
+
+// Les validations gardées dans la bibliothèque (autre navigateur, stockage effacé) reviennent sur ce PC.
+function validationsDepuisBibliotheque(semaines) {
+  let ajout = false;
+  for (const s of semaines || [])
+    for (const l of s.lancements || [])
+      for (const e of l.problemes || []) {
+        if (!e.valide || !e.cle || !e.type) continue;
+        const k = cleValidation(l.nom, e.cle, e.type);
+        if (lesValidations().has(k)) continue;
+        lesValidations().set(k, { date: e.valide });
+        ajout = true;
+      }
+  if (ajout) enregistrerValidations();
+}
+
+const dateValidation = (v) => (v && v.date ? new Date(v.date).toLocaleDateString("fr-FR") : "");
+
+// Les problèmes d'un lancement, une ligne par pièce et par problème, avec ce que dit le fichier de lancement de la
+// pièce. Gardés dans la case (p.analyse) : une validation s'applique ensuite sans tout relire.
+async function analyserLancement(p) {
   const { parCle, hors, bilan, diakonos } = await problemesDuLancement(p);
   const classeur = await classeurEnCache(p.strat);
   const { feuille, entetes } = trouverFeuilleEtEntetes(classeur);
@@ -341,7 +399,7 @@ async function feuilleRapportLancement(wb, p, nomFeuille) {
     const cle = cleDeLigne(r);
     if (!cle) continue;
     const liste = protection(r) && clesAvecPiece.has(cle) ? [] : [...(parCle.get(cle) || [])];
-    if (doublons.has(r)) liste.unshift({ gravite: GRAVITE.CORRIGER, type: "Ligne en double", detail: "Identique à une ligne au-dessus : la retirer" });
+    if (doublons.has(r)) liste.unshift({ gravite: GRAVITE.CORRIGER, type: "Ligne en double", detail: "Identique à une ligne au-dessus : la retirer", controle: "Lignes en double" });
     for (const x of liste) {
       const id = `${cle}|${x.type}|${x.detail}`;
       if (!parProbleme.has(id)) parProbleme.set(id, { ...x, cle, rangs: [] });
@@ -361,6 +419,67 @@ async function feuilleRapportLancement(wb, p, nomFeuille) {
     lignes: e.rangs.join(", "),
   }));
   for (const h of hors) pieces.push({ ...h, quantite: h.quantite || "", lignes: "hors lancement", rangs: [Infinity] });
+  p.analyse = { base: baseDuLancement(p), strat: p.strat, pieces, bilan, diakonos };
+  return p.analyse;
+}
+
+// L'analyse avec les validations : les problèmes à traiter, les validés, et le bilan des contrôles (un contrôle dont
+// tous les problèmes sont validés est OK).
+function etatAnalyse(a) {
+  const valides = [];
+  const restants = [];
+  for (const e of a.pieces) {
+    const v = e.gravite > GRAVITE.INFO ? validationDe(a.base, e) : null;
+    if (v) valides.push({ ...e, validation: v });
+    else restants.push(e);
+  }
+  const aTraiter = restants.filter((e) => e.gravite > GRAVITE.INFO);
+  const nbCorriger = aTraiter.filter((e) => e.gravite === GRAVITE.CORRIGER).length;
+  const bilan = a.bilan.map((b) => {
+    if (b.statut !== "alerte" && b.statut !== "attention") return b;
+    const n = valides.filter((e) => e.controle === b.controle).length;
+    if (!n) return b;
+    const reste = aTraiter.some((e) => e.controle === b.controle);
+    return { ...b, statut: reste ? b.statut : "ok", texte: `${b.texte} ${reste ? `(${n} validé(s) OK)` : `Validé OK (${n}).`}` };
+  });
+  return { restants, aTraiter, valides, nbCorriger, nbVerifier: aTraiter.length - nbCorriger, bilan };
+}
+
+// L'analyse de la case si elle vaut pour son fichier de lancement actuel, avec les validations ; sinon null.
+const analyseDeLaCase = (p) => (p && p.strat && p.analyse && p.analyse.strat === p.strat ? etatAnalyse(p.analyse) : null);
+
+// Problèmes d'un contrôle (« Scies (.bkp) »…) encore à traiter : null si l'analyse ne dit rien de ce contrôle.
+function restantsDuControle(p, test) {
+  const a = analyseDeLaCase(p);
+  if (!a) return null;
+  const total = a.aTraiter.filter((e) => test(e.controle || "")).length + a.valides.filter((e) => test(e.controle || "")).length;
+  return total ? a.aTraiter.filter((e) => test(e.controle || "")).length : null;
+}
+const estControleListe = (c) => c.startsWith("Lancement /");
+const estControleScies = (c) => c === "Scies (.bkp)";
+const estControleCouleurs = (c) => c === "Couleurs (.bkp)";
+
+// Les bilans de tous les lancements de l'onglet (sans fichier à enregistrer), pour la bibliothèque.
+async function bilansDeLOnglet(parite) {
+  const wb = new ExcelJS.Workbook();
+  const pris = new Set();
+  const lancements = [];
+  for (const p of pairesDeLaSemaine(parite)) {
+    if (!p.strat) continue;
+    try {
+      lancements.push({ p, ...(await feuilleRapportLancement(wb, p, nomFeuilleExcel(titreCase(p), pris))) });
+    } catch (erreur) {
+      lancements.push({ p, erreur: erreur && erreur.message ? erreur.message : String(erreur), bilan: [], nbCorriger: 0, nbVerifier: 0, problemes: [] });
+    }
+  }
+  return lancements;
+}
+
+// Écrit le rapport des problèmes d'un lancement dans une nouvelle feuille du classeur ; renvoie son bilan.
+async function feuilleRapportLancement(wb, p, nomFeuille) {
+  const analyse = await analyserLancement(p);
+  const { diakonos } = analyse;
+  const { restants: pieces, aTraiter, valides, nbCorriger, nbVerifier, bilan } = etatAnalyse(analyse);
 
   // Regroupées par problème, dans l'ordre du rapport (les plus graves d'abord).
   const groupes = new Map();
@@ -372,8 +491,6 @@ async function feuilleRapportLancement(wb, p, nomFeuille) {
     (a, b) => Math.max(...groupes.get(b).map((e) => e.gravite)) - Math.max(...groupes.get(a).map((e) => e.gravite)) || (RANG_PROBLEME.get(a) ?? 99) - (RANG_PROBLEME.get(b) ?? 99)
   );
   for (const type of ordre) groupes.get(type).sort((a, b) => a.rangs[0] - b.rangs[0] || a.cle.localeCompare(b.cle));
-  const aTraiter = pieces.filter((e) => e.gravite > GRAVITE.INFO);
-  const nbCorriger = aTraiter.filter((e) => e.gravite === GRAVITE.CORRIGER).length;
 
   // Mise en page : une feuille A4 paysage, lue de haut en bas.
   const { BORDEAUX, NOIR, GRIS, COULEURS } = CHARTE_RAPPORT;
@@ -413,10 +530,10 @@ async function feuilleRapportLancement(wb, p, nomFeuille) {
     { italic: true, color: { argb: GRIS } });
   const comptes = await resume(p.strat, p.bkp);
   bandeau(`${nombrePieces(comptes.prevues)} pièces prévues${p.bkp ? ` · ${nombrePieces(comptes.bkp)} dans le .bkp` : ""}`, { bold: true, color: { argb: NOIR } });
-  const nbVerifier = aTraiter.length - nbCorriger;
-  const resumeTexte = !aTraiter.length
-    ? "Aucun problème trouvé."
-    : `${nbCorriger ? `${nbCorriger} problème(s) à corriger${nbVerifier ? `, ${nbVerifier} à vérifier` : ""}` : `${nbVerifier} problème(s) à vérifier`}. Le détail des pièces est plus bas.`;
+  const resumeTexte = (!aTraiter.length
+    ? valides.length ? "Aucun problème à traiter." : "Aucun problème trouvé."
+    : `${nbCorriger ? `${nbCorriger} problème(s) à corriger${nbVerifier ? `, ${nbVerifier} à vérifier` : ""}` : `${nbVerifier} problème(s) à vérifier`}. Le détail des pièces est plus bas.`) +
+    (valides.length ? ` ${valides.length} problème(s) validé(s) OK (voulu).` : "");
   const tete = !aTraiter.length ? COULEURS.ok : nbCorriger ? COULEURS.alerte : COULEURS.attention;
   bandeau(resumeTexte, { bold: true, size: 13, color: { argb: tete.texte } }, { fond: tete.fond, hauteur: 26, indent: 1 });
 
@@ -436,8 +553,8 @@ async function feuilleRapportLancement(wb, p, nomFeuille) {
   }
 
   // 2. Détail des pièces, problème par problème.
-  titreSection(aTraiter.length || pieces.length ? "2. Détail des pièces à problème" : "2. Détail des pièces : aucune pièce à problème");
-  if (pieces.length) {
+  titreSection(aTraiter.length || pieces.length || valides.length ? "2. Détail des pièces à problème" : "2. Détail des pièces : aucune pièce à problème");
+  if (pieces.length || valides.length) {
     const entete = f.addRow(["À faire", "Pièce (commande + ligne)", "Article", "Dimensions (L × l × ép.)", "Coloris (dessus / dessous)", "Qté", "Explication", "Ligne(s) Excel du lancement"]);
     entete.eachCell((c) => {
       c.font = { name: "Lato", bold: true, size: 9, color: { argb: BORDEAUX } };
@@ -471,6 +588,22 @@ async function feuilleRapportLancement(wb, p, nomFeuille) {
         ligne.height = Math.max(hauteur(e.detail, LARGEURS[6]), hauteur(e.dimensions, LARGEURS[3]), hauteur(e.lignes, LARGEURS[7]));
       }
     }
+    // Les problèmes validés « c'est voulu » : gardés pour mémoire, ils ne comptent plus.
+    if (valides.length) {
+      f.addRow([]).height = 8;
+      bandeau(`Validé OK (voulu) — ${valides.length} pièce(s)`, { bold: true, size: 11, color: { argb: COULEURS.ok.texte } },
+        { fond: COULEURS.ok.fond, bordureGauche: COULEURS.ok.texte, hauteur: 20, indent: 1 });
+      for (const e of valides) {
+        const detail = `${e.type} : ${e.detail}`;
+        const ligne = f.addRow([`Validé le ${dateValidation(e.validation)}`, e.cle, e.article, e.dimensions, e.coloris, e.quantite, detail, e.lignes]);
+        ligne.eachCell({ includeEmpty: true }, (c, n) => {
+          c.font = { name: "Lato", bold: n === 2, color: { argb: n === 1 ? COULEURS.ok.texte : NOIR } };
+          c.alignment = { vertical: "top", wrapText: true };
+          c.border = bordure;
+        });
+        ligne.height = Math.max(hauteur(detail, LARGEURS[6]), hauteur(e.dimensions, LARGEURS[3]), hauteur(e.lignes, LARGEURS[7]));
+      }
+    }
   }
 
   // 3. Fichiers comparés.
@@ -494,11 +627,12 @@ async function feuilleRapportLancement(wb, p, nomFeuille) {
   // Le détail, dans l'ordre du rapport, pour le fichier partagé (l'appli Android l'affiche).
   const NIVEAU = { [GRAVITE.CORRIGER]: "corriger", [GRAVITE.VERIFIER]: "verifier", [GRAVITE.INFO]: "info" };
   const texte = (v) => (v === null || v === undefined ? "" : String(v));
-  const details = ordre.flatMap((type) => groupes.get(type)).map((e) => ({
-    niveau: NIVEAU[e.gravite], type: e.type, cle: e.cle, article: texte(e.article), dimensions: texte(e.dimensions), coloris: texte(e.coloris),
-    quantite: texte(e.quantite), detail: texte(e.detail), lignes: texte(e.lignes),
-  }));
-  return { base, bilan, nbCorriger, nbVerifier, details, problemes: aTraiter.map((e) => ({ id: `${e.cle}|${e.type}`, gravite: e.gravite })) };
+  const ligneDetail = (e) => ({
+    niveau: e.validation ? "valide" : NIVEAU[e.gravite], type: e.type, cle: e.cle, article: texte(e.article), dimensions: texte(e.dimensions), coloris: texte(e.coloris),
+    quantite: texte(e.quantite), detail: texte(e.detail), lignes: texte(e.lignes), ...(e.validation ? { valide: e.validation.date } : {}),
+  });
+  const details = [...ordre.flatMap((type) => groupes.get(type)), ...valides].map(ligneDetail);
+  return { base, bilan, nbCorriger, nbVerifier, nbValides: valides.length, details, problemes: aTraiter.map((e) => ({ id: `${e.cle}|${e.type}`, gravite: e.gravite })) };
 }
 
 async function problemesLancementXlsx(p) {

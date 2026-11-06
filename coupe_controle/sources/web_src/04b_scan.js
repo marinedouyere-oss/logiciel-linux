@@ -9,6 +9,8 @@
 // Le recyclage a sa case, sous l'Agglo 1er tour.
 const POSTES_SEMAINE = ["Agglo 1er tour", "Recyclage", "Feno", "Casse", "Agglo 2ème tour"];
 const POSTE_CHANTIERS = "Chantiers";
+// Postes qui peuvent avoir plusieurs lancements dans la semaine : le second a sa propre case (« Feno 2 »).
+const POSTES_SUPPLEMENTS_SCAN = ["Feno"];
 const MOTIF_DATE_SAUVEGARDE = /_\d{4}-\d{2}-\d{2}_\d{3,4}.*$/i;
 const MOTIF_STRAT = /STRAT|START/;
 
@@ -199,7 +201,7 @@ function associerFichierSansCode(nom, ancrages) {
 // donne alors la case et y range la liste de coupe, le .bkp, le sommaire et le Diakonos du lancement.
 // Les fichiers posés directement dans le dossier de la semaine sont rangés d'après leur nom.
 function repartirFichiersDossier(fichiersDossier, pariteScan, racine = "") {
-  const res = { nbFichiers: fichiersDossier.length, nonReconnus: [], aucunLancement: false, ignoresAutreSemaine: 0, fixes: [], chantiers: [], diakonos: [] };
+  const res = { nbFichiers: fichiersDossier.length, nonReconnus: [], sansLancement: [], aucunLancement: false, ignoresAutreSemaine: 0, fixes: [], supplements: [], chantiers: [], diakonos: [] };
   const aPlat = [];
   const parDossier = new Map();
   for (const f of fichiersDossier) {
@@ -295,13 +297,17 @@ function groupesAPlat(fichiersDossier, res, fichiersDiakonos) {
     if (info.poste) poste = info.poste;
     else if (info.suffixe) poste = posteParCodeEtSuffixe.get(`${info.code}|${info.suffixe}`) || POSTE_CHANTIERS;
     else poste = posteParCode.get(info.code) || POSTE_CHANTIERS;
+    let supplement = false;
     if (poste !== POSTE_CHANTIERS) {
-      // Un second lancement du même poste, au nom différent, devient un chantier.
+      // Un second lancement du même poste, au nom différent : un Feno de plus (« Feno 2 »), sinon un chantier.
       const existant = groupes.get(`${poste}|${info.code}`);
-      if (existant && info.suffixe && existant.suffixe && existant.suffixe !== info.suffixe) poste = POSTE_CHANTIERS;
+      if (existant && info.suffixe && existant.suffixe && existant.suffixe !== info.suffixe) {
+        if (POSTES_SUPPLEMENTS_SCAN.includes(poste)) supplement = true;
+        else poste = POSTE_CHANTIERS;
+      }
     }
-    const cleGroupe = poste === POSTE_CHANTIERS ? `${poste}|${info.code}|${info.suffixe}` : `${poste}|${info.code}`;
-    if (!groupes.has(cleGroupe)) groupes.set(cleGroupe, nouveauGroupe(poste, info, null));
+    const cleGroupe = poste === POSTE_CHANTIERS || supplement ? `${poste}|${info.code}|${info.suffixe}` : `${poste}|${info.code}`;
+    if (!groupes.has(cleGroupe)) groupes.set(cleGroupe, { ...nouveauGroupe(poste, info, null), supplement });
     // Deux fichiers du même lancement (ex. LAN264601START.xlsx et sa version _corrige) : le plus récent.
     const groupe = groupes.get(cleGroupe);
     if (!groupe.strat || d.f.date >= groupe.strat.date) groupe.strat = d.f;
@@ -378,10 +384,11 @@ function diakonosDesTours(fichiersDiakonos, pariteScan, res) {
   res.diakonos.push(...diakonosParTour.values());
 }
 
-// Un lancement par poste fixe (le plus récent) et un par chantier ; ceux
-// de l'autre semaine sont laissés de côté.
+// Un lancement par poste fixe (le plus récent), un par lancement de plus d'un poste (« Feno 2 ») et un par
+// chantier ; ceux de l'autre semaine sont laissés de côté.
 function selectionnerCibles(listeGroupes, pariteScan, res) {
   const ciblesFixes = new Map();
+  const ciblesSupplements = new Map();
   const ciblesChantiers = new Map();
   for (const g of listeGroupes) {
     if (!g.strat) continue;
@@ -389,18 +396,20 @@ function selectionnerCibles(listeGroupes, pariteScan, res) {
       res.ignoresAutreSemaine++;
       continue;
     }
-    const cibles = g.poste === POSTE_CHANTIERS ? ciblesChantiers : ciblesFixes;
-    const cle = g.poste === POSTE_CHANTIERS ? `${g.code}|${g.suffixe}` : `${g.poste}|${g.parite}`;
+    const cibles = g.poste === POSTE_CHANTIERS ? ciblesChantiers : g.supplement ? ciblesSupplements : ciblesFixes;
+    const cle = g.poste === POSTE_CHANTIERS || g.supplement ? `${g.poste}|${g.code}|${g.suffixe}` : `${g.poste}|${g.parite}`;
     const actuel = cibles.get(cle);
     if (!actuel || g.strat.date > actuel.strat.date) cibles.set(cle, { ...g });
   }
   res.fixes.push(...ciblesFixes.values());
+  res.supplements.push(...ciblesSupplements.values());
   res.chantiers.push(...ciblesChantiers.values());
 }
 
 // Un dossier de lancement (« 1ER TOUR AGGLO », « FENO », « CASSE », « AIRDESIGN »…) : son lancement
 // principal prend la case du dossier (un chantier si le dossier n'en désigne pas) ; le recyclage
-// prend sa propre case, les autres lancements du dossier (bis…) deviennent des chantiers. Liste de coupe, .bkp, sommaire et
+// prend sa propre case, les autres lancements du dossier FENO ont chacun leur case (« Feno 2 »…),
+// ceux des autres dossiers (bis…) deviennent des chantiers. Liste de coupe, .bkp, sommaire et
 // Diakonos vont au lancement dont ils portent le nom, sinon au lancement principal du dossier.
 function groupesDuDossier(dossier, semaine, fichiers, res, fichiersDiakonos) {
   const poste = posteDuDossier(dossier);
@@ -443,7 +452,14 @@ function groupesDuDossier(dossier, semaine, fichiers, res, fichiersDiakonos) {
     g.suffixe.length / 100;
   const principal = [...liste].sort((a, b) => score(b) - score(a))[0];
   principal.poste = poste || POSTE_CHANTIERS;
-  for (const g of liste) if (g !== principal && g.info.poste === "Recyclage") g.poste = "Recyclage";
+  for (const g of liste) {
+    if (g === principal) continue;
+    if (g.info.poste === "Recyclage") g.poste = "Recyclage";
+    else if (poste && POSTES_SUPPLEMENTS_SCAN.includes(poste)) {
+      g.poste = poste;
+      g.supplement = true;
+    }
+  }
   // Le dossier de la semaine décide de l'onglet (la casse rangée dans « Semaine 46 » y reste).
   for (const g of liste) {
     g.semaineDossier = semaine || null;
@@ -453,7 +469,19 @@ function groupesDuDossier(dossier, semaine, fichiers, res, fichiersDiakonos) {
 
   const qualites = new Map();
   for (const { f, info, role } of rattaches) {
-    const choix = info ? choisirLancement(info, liste, new Map()) : null;
+    let choix = info ? choisirLancement(info, liste, new Map()) : null;
+    if (!choix && info && info.suffixe) {
+      // Même nom de lancement, code différent (« liste de coupe LAN264601AIRDESIGN.pdf » pour LAN2646AIRDESIGN.xlsx).
+      const s = suffixeSansSauvegarde(info.suffixe);
+      const parNom = liste.find((g) => g.suffixe && (s.startsWith(g.suffixe) || g.suffixe.startsWith(s)));
+      if (parNom) choix = { groupe: parNom, qualite: -1 };
+      else {
+        // Liste de coupe, .bkp ou sommaire d'un lancement dont le fichier de lancement n'est pas dans le dossier
+        // (« LISTE DE COUPE LAN264701RETARD6087.pdf ») : signalé, jamais pris pour celui du lancement principal.
+        res.sansLancement.push(nomComplet(f));
+        continue;
+      }
+    }
     const g = choix ? choix.groupe : principal;
     const q = choix ? choix.qualite : -1;
     const cle = `${role}|${g.code}|${g.suffixe}`;

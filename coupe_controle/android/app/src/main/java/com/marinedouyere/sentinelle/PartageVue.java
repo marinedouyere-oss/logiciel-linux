@@ -654,7 +654,8 @@ final class PartageVue {
                 + (quantite.isEmpty() ? "" : " · " + nombre(quantite) + " pièce(s)"), 13, false, ui.couleur(R.color.gris_texte)));
         for (FichierPartage.Probleme pb : t.problemes) {
             int[] c = couleursNiveau(pb.niveau);
-            corps.addView(ui.texte(symboleNiveau(pb.niveau) + " " + pb.type + " : " + pb.detail, 13, true, c[1]), ui.marges(2, 0));
+            String debut = "valide".equals(pb.niveau) ? "Validé OK (" + dateLisibleCourte(pb.valide) + ") · " : "";
+            corps.addView(ui.texte(symboleNiveau(pb.niveau) + " " + debut + pb.type + " : " + pb.detail, 13, true, c[1]), ui.marges(2, 0));
         }
     }
 
@@ -771,6 +772,15 @@ final class PartageVue {
         }
         corps.addView(boutons, ui.marges(6, 0));
         return carte;
+    }
+
+    static final String TYPE_VALIDES = "Validé OK (voulu)";
+
+    /** « 2026-11-06T10:21:00.000Z » → « 06/11 » (jour de l'appareil). */
+    static String dateLisibleCourte(String iso) {
+        String d = dateLisible(iso);
+        int a = d.indexOf(" à ");
+        return a > 0 ? d.substring(0, a) : d;
     }
 
     /** « 2026-10-31T10:21:00Z » → « 31/10 à 11:21 » (heure de l'appareil). */
@@ -956,6 +966,7 @@ final class PartageVue {
     }
 
     private int[] couleursNiveau(String niveau) {
+        if ("valide".equals(niveau)) return couleursStatut("ok");
         return couleursStatut("corriger".equals(niveau) ? "alerte" : "verifier".equals(niveau) ? "attention" : "info");
     }
 
@@ -964,6 +975,7 @@ final class PartageVue {
     }
 
     private static String symboleNiveau(String niveau) {
+        if ("valide".equals(niveau)) return "✔";
         return "corriger".equals(niveau) || "verifier".equals(niveau) ? "⚠" : "•";
     }
 
@@ -1115,11 +1127,18 @@ final class PartageVue {
         }
 
         // Problèmes, regroupés par type (dans l'ordre du rapport : les plus graves d'abord).
+        // Les problèmes validés « c'est voulu » sur le PC : à la fin, ils ne comptent plus.
         Map<String, List<FichierPartage.Probleme>> parType = new LinkedHashMap<>();
+        List<FichierPartage.Probleme> valides = new ArrayList<>();
         for (FichierPartage.Probleme p : l.problemes) {
+            if ("valide".equals(p.niveau)) {
+                valides.add(p);
+                continue;
+            }
             if (!parType.containsKey(p.type)) parType.put(p.type, new ArrayList<>());
             parType.get(p.type).add(p);
         }
+        if (!valides.isEmpty()) parType.put(TYPE_VALIDES, valides);
         for (Map.Entry<String, List<FichierPartage.Probleme>> e : parType.entrySet()) {
             List<FichierPartage.Probleme> liste = e.getValue();
             String niveau = "info";
@@ -1127,8 +1146,10 @@ final class PartageVue {
                 if ("corriger".equals(p.niveau)) niveau = "corriger";
                 else if ("verifier".equals(p.niveau) && !"corriger".equals(niveau)) niveau = "verifier";
             }
+            boolean groupeValides = TYPE_VALIDES.equals(e.getKey());
+            if (groupeValides) niveau = "valide";
             int[] c = couleursNiveau(niveau);
-            corps.addView(ui.bandeau(e.getKey() + " — " + liste.size() + " pièce(s)", c[0], c[1]), ui.marges(12, 2));
+            corps.addView(ui.bandeau((groupeValides ? "✔ " : "") + e.getKey() + " — " + liste.size() + " pièce(s)", c[0], c[1]), ui.marges(12, 2));
             String[] explication = donnees.explications.get(e.getKey());
             if (explication != null) {
                 String texte = explication[0] + (explication[1].isEmpty() ? "" : " Que faire : " + explication[1]);
@@ -1145,7 +1166,8 @@ final class PartageVue {
                 gras(sb, p.cle);
                 sb.append(joindre(" · ", p.article, p.dimensions, p.coloris, p.quantite.isEmpty() ? "" : "qté " + p.quantite));
                 corps.addView(ui.texte(sb, 13, false, Ui.NOIR), ui.marges(4, 0));
-                corps.addView(ui.texte(p.detail + (p.lignes.isEmpty() || "hors lancement".equals(p.lignes) ? "" : " (ligne(s) " + p.lignes + ")"),
+                String detail = groupeValides ? p.type + " : " + p.detail + " — validé le " + dateLisibleCourte(p.valide) : p.detail;
+                corps.addView(ui.texte(detail + (p.lignes.isEmpty() || "hors lancement".equals(p.lignes) ? "" : " (ligne(s) " + p.lignes + ")"),
                         12, false, ui.couleur(R.color.gris_texte)));
             }
         }

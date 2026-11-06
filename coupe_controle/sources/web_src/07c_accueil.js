@@ -39,6 +39,16 @@ function datesSemaine(semaine) {
 
 function problemesDeLaCase(p) {
   const l = [];
+  // Après le contrôle : les problèmes du rapport qui ne sont pas validés « c'est voulu », par problème.
+  const a = analyseDeLaCase(p);
+  if (a) {
+    const parType = new Map();
+    for (const e of a.aTraiter) parType.set(e.type, (parType.get(e.type) || 0) + 1);
+    for (const [type, n] of parType) l.push(`${type} : ${n} pièce(s)`);
+    if (p.erreurScies) l.push("Scies : contrôle impossible");
+    if (p.etatErreur && p.etat) l.push(p.etat.replace(/^❌\s*/, ""));
+    return l;
+  }
   if (p.rapport && p.rapport.nbAnomalies) l.push(`${p.rapport.nbAnomalies} pièce(s) à vérifier dans ${sourceControle(p)}`);
   if (p.doublons.length) l.push(`${p.doublons.length} doublon(s) dans le lancement`);
   if (p.erreurScies) l.push("Scies : contrôle impossible");
@@ -174,7 +184,7 @@ function afficherAccueil() {
   const controlees = avecLancement.filter((p) => p.rapport);
   const aRegarder = [];
   for (const p of cases) for (const t of problemesDeLaCase(p)) aRegarder.push({ p, titre: `${titreCase(p)} — ${t}`, genre: "souci" });
-  for (const p of cases) if (!p.strat && !estChantier(p)) aRegarder.push({ p, titre: `${titreCase(p)} — pas encore de lancement`, genre: "vide" });
+  for (const p of cases) if (!p.strat && !caseAjoutee(p)) aRegarder.push({ p, titre: `${titreCase(p)} — pas encore de lancement`, genre: "vide" });
   const nbProblemes = aRegarder.filter((a) => a.genre === "souci").length;
 
   const semaines = ["paire", "impaire"].map((x) => ({ parite: x, numero: numeroSemaine(x) })).sort((a, b) => a.numero - b.numero);

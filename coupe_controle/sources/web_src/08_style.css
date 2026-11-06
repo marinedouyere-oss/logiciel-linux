@@ -171,6 +171,25 @@
   .titre-alerte { font-weight: 700; font-size: 0.92rem; }
   .titre-alerte.alerte { color: var(--alerte-texte); }
   .titre-alerte.attention { color: var(--attention-texte); }
+  .titre-alerte.ok { color: var(--ok-texte); }
+  /* Problèmes du lancement dans sa case, chacun avec « Valider » */
+  .problemes-case { margin-top: 10px; border-top: 1px solid var(--gris-filet); padding-top: 8px; }
+  .problemes-titre { font-weight: 700; font-size: 0.95rem; margin-bottom: 2px; }
+  .problemes-entete { display: flex; align-items: center; gap: 10px; justify-content: space-between; flex-wrap: wrap; }
+  .problemes-titre .alerte, .problemes-titre.alerte { color: var(--alerte-texte); }
+  .problemes-titre .attention { color: var(--attention-texte); }
+  .problemes-titre .ok, .problemes-titre.ok { color: var(--ok-texte); }
+  .probleme-groupe { margin: 10px 0 2px; font-weight: 700; font-size: 0.85rem; color: var(--bordeaux); border-bottom: 1px solid var(--saumon); padding-bottom: 2px; }
+  .probleme-groupe.ok { color: var(--ok-texte); border-bottom-color: var(--ok-fond); }
+  .probleme { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--gris-filet); }
+  .probleme-textes { flex: 1; min-width: 0; font-size: 0.9rem; }
+  .probleme-detail { color: var(--gris-texte); font-size: 0.82rem; margin-top: 1px; }
+  .probleme.valide .probleme-textes { opacity: 0.75; }
+  .badge-probleme { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 0.75rem; font-weight: 700; }
+  .badge-probleme.alerte { background: var(--alerte-fond); color: var(--alerte-texte); }
+  .badge-probleme.attention { background: var(--attention-fond); color: var(--attention-texte); }
+  .badge-probleme.ok { background: var(--ok-fond); color: var(--ok-texte); }
+  button.petit { padding: 4px 10px; font-size: 0.82rem; white-space: nowrap; }
   .pied {
     width: 100%; max-width: 1180px; margin: 0 auto; padding: 14px 32px 26px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px;
     color: #6b605d; font-size: 0.75rem; border-top: 1px solid var(--gris-filet);

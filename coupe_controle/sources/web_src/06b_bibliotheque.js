@@ -99,6 +99,7 @@ async function chargerBibliotheque() {
     // pas de copie locale
   }
   changementBibliotheque();
+  validationsDepuisBibliotheque([...bibliotheque.semaines.values()]);
   // Casses gardées sans analyse (semaines ajoutées avant cette version) : analysées tout de suite.
   try {
     await analyserCassesBibliotheque();
@@ -180,10 +181,47 @@ const semainesConnuesAvant = (avant) =>
     .reverse()
     .map((s) => String(s.semaine).padStart(2, "0"));
 
-// Semaine d'un lancement, comme l'onglet l'affiche : celle du dossier « Semaine NN » où il est rangé (même si sa
-// colonne lancement dit autre chose : LAN2646BSR dans « Semaine 47 »), sinon celle du code de la colonne
-// lancement, sinon du nom du fichier ; hors dossier, la casse se fabrique la semaine d'après.
-function semaineDuLancement(lignes, casse, nomFichier, semaineDossier = null) {
+// Semaine écrite dans le fichier de lancement lui-même : colonne com_livsem (année : com_livan), celle du plus
+// grand nombre de pièces (à égalité, la plus récente) ; null si la colonne est vide. « 47.0 » vaut 47.
+function semaineLivraisonDuLancement(semaines) {
+  const parSemaine = new Map();
+  for (const s of semaines || []) {
+    const semaine = Math.trunc(parseFloat(s.semaine));
+    if (!(semaine >= 1 && semaine <= 53)) continue;
+    const an = Math.trunc(parseFloat(s.annee));
+    const annee = an >= 2000 && an < 2100 ? an : null;
+    const cle = `${annee}-${semaine}`;
+    const actuel = parSemaine.get(cle) || { annee, semaine, nbPieces: 0 };
+    actuel.nbPieces += s.nbPieces || 0;
+    parSemaine.set(cle, actuel);
+  }
+  const rang = (s) => (s.annee || 0) * 100 + s.semaine;
+  let meilleure = null;
+  for (const s of parSemaine.values())
+    if (!meilleure || s.nbPieces > meilleure.nbPieces || (s.nbPieces === meilleure.nbPieces && rang(s) > rang(meilleure))) meilleure = s;
+  return meilleure;
+}
+
+// Semaine d'un lancement, comme l'onglet l'affiche : celle écrite dans le fichier (colonne com_livsem) ; sinon celle
+// du dossier « Semaine NN » où il est rangé, sinon celle du code de la colonne lancement, sinon du nom du fichier.
+// La casse se fabrique la semaine d'après (casse 46 en semaine 47), sauf rangée dans un dossier de semaine.
+function semaineDuLancement(lignes, casse, nomFichier, semaineDossier = null, semainesLivraison = null) {
+  const livraison = semaineLivraisonDuLancement(semainesLivraison);
+  if (livraison) {
+    let n = livraison.semaine;
+    let annee = livraison.annee;
+    if (!annee) {
+      const base = semaineDuLancement(lignes, false, nomFichier, null);
+      annee = base ? base.annee : new Date().getFullYear();
+    }
+    if (casse) {
+      if (n >= 52) {
+        n = 1;
+        annee++;
+      } else n++;
+    }
+    return { annee, semaine: n };
+  }
   const nDossier = parseInt(semaineDossier, 10);
   if (nDossier >= 1 && nDossier <= 53) {
     const base = semaineDuLancement(lignes, false, nomFichier, null);
@@ -281,7 +319,7 @@ async function archiverOnglet(parite, lancementsRapport) {
       const strat = await stratEnCache(p.strat);
       const casse = p.poste === "Casse";
       // La casse est dans l'onglet de la semaine où le scan l'a rangée.
-      const sem = semaineDuLancement(strat.lignes, casse, p.strat.name, casse ? String(numeroSemaine(parite)) : p.semaineDossier || null);
+      const sem = semaineDuLancement(strat.lignes, casse, p.strat.name, casse ? String(numeroSemaine(parite)) : p.semaineDossier || null, strat.semaines);
       if (!sem) continue;
       const c = controles.get(p);
       const fichiers = {};
@@ -300,6 +338,11 @@ async function archiverOnglet(parite, lancementsRapport) {
         couleursPf: couleurs ? (couleurs.variantes || []).length : null,
         casse: null,
       };
+      // Problèmes validés « c'est voulu » : ils ne comptent plus dans le tableau (ni sur le téléphone).
+      const reste = (test, valeur) => (valeur > 0 && restantsDuControle(p, test) === 0 ? 0 : valeur);
+      recap.controle = reste(estControleListe, recap.controle);
+      recap.scies = reste(estControleScies, recap.scies);
+      recap.couleursAbsentes = reste(estControleCouleurs, recap.couleursAbsentes);
       // Casse : combien de ses pièces étaient déjà lancées, combien de rajouts.
       if (casse) {
         const autre = parite === "paire" ? "impaire" : "paire";
@@ -509,6 +552,8 @@ function synchroniserBibliotheque(interactif) {
 
 // Des semaines reçues : l'écran (casse comprise) se recalcule.
 function apresSynchro(r) {
+  // Validations faites sur un autre PC (fichier partagé reçu) : reprises ici.
+  if (r && r.recues) validationsDepuisBibliotheque([...bibliotheque.semaines.values()]);
   rafraichirBibliotheque();
   if (r && r.recues && estOngletSemaine()) afficher();
 }
@@ -581,7 +626,7 @@ async function importerSemainesBibliotheque() {
         const { semaine: semaineDossier, dossier } = placeDuFichier(f, handle.name);
         const poste = (info && info.poste) || posteDuDossier(dossier) || POSTE_CHANTIERS;
         const casse = poste === "Casse";
-        const sem = semaineDuLancement(strat.lignes, casse, f.nom, semaineDossier);
+        const sem = semaineDuLancement(strat.lignes, casse, f.nom, semaineDossier, strat.semaines);
         if (!sem) throw new Error("semaine introuvable");
         items.push({ ...sem, lancement: ficheLancementBibliotheque(f.nom, strat, { poste, dossier, casse }) });
       } catch (_erreur) {
