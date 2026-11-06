@@ -1,8 +1,9 @@
 // Sommaire Cut Rite avec un panneau à zéro dont les quantités ne sont pas imprimées : le sommaire se lit
 // (panneau compté 0, signalé), et le rapport du lancement sort même avec un sommaire illisible.
-// Usage : node test_web_sommaire_zero.js <index.html> <SOMMAIRE…pdf>
+// Code matériau avec un tiret bas (RCB_0003_PORTES, 0 panneau et 1 reste) : lu, totaux comme Cut Rite.
+// Usage : node test_web_sommaire_zero.js <index.html> <SOMMAIRE…pdf> [<SOMMAIRE LAN264701STRAT.pdf de la S47>]
 const { chromium } = require("playwright"); const fs = require("fs");
-const [pageHtml, pdf] = process.argv.slice(2);
+const [pageHtml, pdf, pdfS47] = process.argv.slice(2);
 let echecs = 0; const verifier = (ok, t) => { console.log(`${ok ? "OK  " : "ÉCHEC"} ${t}`); if (!ok) echecs++; };
 (async () => {
   const nav = await chromium.launch(); const page = await nav.newPage();
@@ -33,5 +34,13 @@ let echecs = 0; const verifier = (ok, t) => { console.log(`${ok ? "OK  " : "ÉCH
   verifier(r.lu && /lu 141 \/ 61/.test(r.lu[2] || ""), "écart avec le total du sommaire relevé");
   verifier(/quantités illisibles pour SAG58HYBR, SMELBLALIS19/.test(r.statut || ""), "avertissement en tête du rapport agglo");
   verifier(!r.erreurRapport && r.rapport && r.rapport[2] === "%PDF-", "sommaire illisible : le rapport du lancement sort quand même");
+  if (pdfS47) {
+    const s = await page.evaluate(async (o) => {
+      const lu = lireSommaireCutRite(await extraireLignesTextePDF(await chargerDocumentPDF(new File([new Uint8Array(o)], "SOMMAIRE.pdf"))));
+      const m = lu.materiaux.find((x) => x.code === "RCB_0003_PORTES");
+      return { n: lu.materiaux.length, p: lu.totalPanneaux, r: lu.totalRestes, ecart: lu.ecartTotal, m: m && [m.panneaux, m.restes] };
+    }, Array.from(fs.readFileSync(pdfS47)));
+    verifier(s.n === 60 && s.p === 183 && s.r === 76 && !s.ecart && s.m && s.m.join() === "0,1", `S47 1er tour : RCB_0003_PORTES lu, ${s.n} matériaux, ${s.p} / ${s.r}`);
+  }
   await nav.close(); console.log(echecs ? `${echecs} ÉCHEC(S)` : "TOUT EST BON"); process.exit(echecs ? 1 : 0);
 })();

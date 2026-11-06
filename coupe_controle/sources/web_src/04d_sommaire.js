@@ -59,7 +59,7 @@ function lireSommaireCutRite(lignes) {
     }
     const mots = l.split(" ");
     // Une suite de description (« 38.0 Pqt. 1 ») ne commence pas par un code matière.
-    if (mots.length < 3 || !/^[A-Za-z0-9][A-Za-z0-9-]*$/.test(mots[0])) continue;
+    if (mots.length < 3 || !/^[A-Za-z0-9][A-Za-z0-9_-]*$/.test(mots[0])) continue; // RCB_0003_PORTES : tiret bas permis
     if (["LAISNE", "Sommaire", "Code"].includes(mots[0]) || parCode.has(mots[0])) continue;
     courant = { code: mots[0], description: l.slice(mots[0].length).trim(), panneaux: -1, restes: -1 };
     parCode.set(courant.code, courant);
