@@ -88,9 +88,12 @@ function trouverFeuilleEtEntetes(workbook) {
   );
 }
 
+// Colonnes qui doivent aussi être identiques pour faire un doublon (dimensions finies, de débit, couleurs).
+const COLONNES_SIGNATURE_DOUBLON = ["conf_epaisseur", "conf_longueur", "conf_largeur", "longueur", "largeur", "coloris", "coloris_inf"];
+
 // Un doublon, c'est deux lignes parfaitement identiques sur toute la donnée
 // (commande, ligne, article, quantité, lancement, agglo, semaine de
-// livraison...) dans le fichier de lancement (hors panneaux "PROTECTION",
+// livraison, dimensions, couleurs...) dans le fichier de lancement (hors panneaux "PROTECTION",
 // qui accompagnent normalement une pièce sans être un doublon) : ça peut
 // signaler une pièce lancée deux fois par erreur dans l'ERP. Deux lignes qui
 // partagent la même clé commande+ligne mais dont une autre donnée diffère
@@ -188,6 +191,9 @@ function lireStrat(workbook) {
       agglo === null || agglo === undefined ? "" : String(agglo).trim(),
       livsem === null || livsem === undefined ? "" : String(livsem).trim(),
       livan === null || livan === undefined ? "" : String(livan).trim(),
+      // Dimensions et couleurs : deux couches d'une même pièce (Feno : 600 × 600 × 10 et 2400 × 640 × 21 en
+      // FENO8) ne sont pas un doublon.
+      ...COLONNES_SIGNATURE_DOUBLON.map((c) => toutesDonnees[c] ?? ""),
     ]);
     if (!lignesBrutesParCle.has(cle)) lignesBrutesParCle.set(cle, []);
     lignesBrutesParCle.get(cle).push({ signature, article: String(article), qte: qteNum });

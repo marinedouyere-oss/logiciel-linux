@@ -713,9 +713,12 @@ function trouverFeuilleEtEntetes(workbook) {
   );
 }
 
+// Colonnes qui doivent aussi être identiques pour faire un doublon (dimensions finies, de débit, couleurs).
+const COLONNES_SIGNATURE_DOUBLON = ["conf_epaisseur", "conf_longueur", "conf_largeur", "longueur", "largeur", "coloris", "coloris_inf"];
+
 // Un doublon, c'est deux lignes parfaitement identiques sur toute la donnée
 // (commande, ligne, article, quantité, lancement, agglo, semaine de
-// livraison...) dans le fichier de lancement (hors panneaux "PROTECTION",
+// livraison, dimensions, couleurs...) dans le fichier de lancement (hors panneaux "PROTECTION",
 // qui accompagnent normalement une pièce sans être un doublon) : ça peut
 // signaler une pièce lancée deux fois par erreur dans l'ERP. Deux lignes qui
 // partagent la même clé commande+ligne mais dont une autre donnée diffère
@@ -813,6 +816,9 @@ function lireStrat(workbook) {
       agglo === null || agglo === undefined ? "" : String(agglo).trim(),
       livsem === null || livsem === undefined ? "" : String(livsem).trim(),
       livan === null || livan === undefined ? "" : String(livan).trim(),
+      // Dimensions et couleurs : deux couches d'une même pièce (Feno : 600 × 600 × 10 et 2400 × 640 × 21 en
+      // FENO8) ne sont pas un doublon.
+      ...COLONNES_SIGNATURE_DOUBLON.map((c) => toutesDonnees[c] ?? ""),
     ]);
     if (!lignesBrutesParCle.has(cle)) lignesBrutesParCle.set(cle, []);
     lignesBrutesParCle.get(cle).push({ signature, article: String(article), qte: qteNum });
@@ -4074,7 +4080,7 @@ function rapportLancementPdf(titre, enTete, sousTitre, semaine, nbPieces, couleu
 const nomCorrige = (nom) => `${nom.replace(/\.[^.]*$/, "").replace(/_corrige$/, "")}_corrige.xlsx`;
 
 // Lignes parfaitement identiques (même commande, ligne, article, quantité,
-// lancement, agglo, semaine de livraison), comme les doublons signalés par le
+// lancement, agglo, semaine de livraison, dimensions, couleurs), comme les doublons signalés par le
 // contrôle (lireStrat) ; protections exclues. La première de chaque groupe est gardée.
 function doublonsLancement(workbook) {
   const { feuille, entetes } = trouverFeuilleEtEntetes(workbook);
@@ -4095,6 +4101,7 @@ function doublonsLancement(workbook) {
     const signature = JSON.stringify([
       commande, numeroLigne === null || numeroLigne === undefined ? "" : String(numeroLigne), brut(r, COL_ARTICLE), qte,
       brut(r, COL_LANCEMENT), brut(r, COL_AGGLO).trim(), brut(r, COL_LIVSEM).trim(), brut(r, COL_LIVAN).trim(),
+      ...COLONNES_SIGNATURE_DOUBLON.map((c) => brut(r, c).trim()),
     ]);
     if (!premieres.has(signature)) {
       premieres.add(signature);
@@ -7841,7 +7848,7 @@ function htmlCouleurs(c) {
   let html = "";
   if (c.absentes.length) html += bandeau(`⚠ Couleurs : ${c.absentes.length} couleur(s) du lancement absente(s) du .bkp — ces panneaux ne sont pas optimisés`, "alerte");
   if (variantes.length)
-    html += bandeau(`⚠ Couleurs : ${variantes.map((v) => `${echapper(v.couleur)} remplacée par ${echapper(v.variante)}`).join(", ")} dans le .bkp — à vérifier`, "attention");
+    html += bandeau(`⚠ Couleurs : ${[...new Set(variantes.map((v) => `${echapper(v.couleur)} remplacée par ${echapper(v.variante)}`))].join(", ")} dans le .bkp — à vérifier`, "attention");
   return html;
 }
 

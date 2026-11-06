@@ -7,7 +7,7 @@
 const nomCorrige = (nom) => `${nom.replace(/\.[^.]*$/, "").replace(/_corrige$/, "")}_corrige.xlsx`;
 
 // Lignes parfaitement identiques (même commande, ligne, article, quantité,
-// lancement, agglo, semaine de livraison), comme les doublons signalés par le
+// lancement, agglo, semaine de livraison, dimensions, couleurs), comme les doublons signalés par le
 // contrôle (lireStrat) ; protections exclues. La première de chaque groupe est gardée.
 function doublonsLancement(workbook) {
   const { feuille, entetes } = trouverFeuilleEtEntetes(workbook);
@@ -28,6 +28,7 @@ function doublonsLancement(workbook) {
     const signature = JSON.stringify([
       commande, numeroLigne === null || numeroLigne === undefined ? "" : String(numeroLigne), brut(r, COL_ARTICLE), qte,
       brut(r, COL_LANCEMENT), brut(r, COL_AGGLO).trim(), brut(r, COL_LIVSEM).trim(), brut(r, COL_LIVAN).trim(),
+      ...COLONNES_SIGNATURE_DOUBLON.map((c) => brut(r, c).trim()),
     ]);
     if (!premieres.has(signature)) {
       premieres.add(signature);

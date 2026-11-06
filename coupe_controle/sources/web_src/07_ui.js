@@ -1024,7 +1024,7 @@ function htmlCouleurs(c) {
   let html = "";
   if (c.absentes.length) html += bandeau(`⚠ Couleurs : ${c.absentes.length} couleur(s) du lancement absente(s) du .bkp — ces panneaux ne sont pas optimisés`, "alerte");
   if (variantes.length)
-    html += bandeau(`⚠ Couleurs : ${variantes.map((v) => `${echapper(v.couleur)} remplacée par ${echapper(v.variante)}`).join(", ")} dans le .bkp — à vérifier`, "attention");
+    html += bandeau(`⚠ Couleurs : ${[...new Set(variantes.map((v) => `${echapper(v.couleur)} remplacée par ${echapper(v.variante)}`))].join(", ")} dans le .bkp — à vérifier`, "attention");
   return html;
 }
 
