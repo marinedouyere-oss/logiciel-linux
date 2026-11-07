@@ -20,7 +20,7 @@
     <button type="button" class="blanc" data-ouvrir>Charger une extraction Diakonos…</button>
   </div>
 </header>
-<input type="file" id="champFichier" accept=".xlsx" hidden>
+<input type="file" id="champFichier" accept=".xlsx,.xlsm" multiple hidden>
 
 <main>
   <div id="message" class="message" hidden></div>
@@ -29,6 +29,7 @@
     <div class="depot-icone" aria-hidden="true">⇩</div>
     <h1>Déposez ici l'extraction Diakonos</h1>
     <p>Le fichier <strong>suivi_production_JJMMAAAA.xlsx</strong> exporté de Diakonos. Tout est calculé à chaque nouveau fichier : il suffit de redéposer l'extraction du jour pour mettre le tableau à jour.</p>
+    <p>Plusieurs extractions (ex. production + fournitures) : choisissez-les ensemble, ou ajoutez-les ensuite. Une ligne présente dans deux fichiers n'est comptée qu'une fois.</p>
     <p class="pale">Le fichier est lu sur ce PC : rien n'est envoyé sur internet.</p>
     <button type="button" data-ouvrir>Choisir le fichier…</button>
   </section>
@@ -45,6 +46,7 @@
       <span id="pucesFiltres"></span>
       <button type="button" class="texte" id="btnEffacer" hidden>Effacer les filtres</button>
     </div>
+    <div class="bande-filtre" id="bandeFiltre" hidden></div>
 
     <section class="indicateurs" id="indicateurs" aria-label="Chiffres clés"></section>
 

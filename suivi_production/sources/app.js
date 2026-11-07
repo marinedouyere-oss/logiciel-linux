@@ -55,8 +55,9 @@ const lettreColonne = (i) => {
   return s;
 };
 
-// La première feuille du classeur, en tableau de lignes (valeurs brutes : texte, nombre ou vide).
+// Toutes les feuilles du classeur : [{ nom, lignes }] (valeurs brutes : texte, nombre ou vide).
 async function lireClasseur(fichier) {
+  if (/\.xls$/i.test(fichier.name)) throw new Error("ancien format Excel (.xls) : ouvrez-le dans Excel et enregistrez-le en .xlsx");
   const zip = await lireZip(new Uint8Array(await fichier.arrayBuffer()));
   const trouver = (nom) => zip.noms.find((n) => n.toLowerCase() === nom.toLowerCase());
   const xml = async (nom) => {
@@ -65,15 +66,24 @@ async function lireClasseur(fichier) {
   };
   const wb = await xml("xl/workbook.xml");
   if (!wb) throw new Error("classeur illisible (pas de « xl/workbook.xml »)");
-  const feuille = tous(wb, "sheet")[0];
   const rels = await xml("xl/_rels/workbook.xml.rels");
-  const rid = feuille && (feuille.getAttributeNS(NS_REL, "id") || feuille.getAttribute("r:id"));
-  const rel = rels && tous(rels, "Relationship").find((r) => r.getAttribute("Id") === rid);
-  const cible = rel ? rel.getAttribute("Target") : "worksheets/sheet1.xml";
-  const doc = await xml(cible.startsWith("/") ? cible : `xl/${cible}`);
-  if (!doc) throw new Error("feuille introuvable dans le classeur");
   const ss = await xml("xl/sharedStrings.xml");
   const chaines = ss ? tous(ss, "si").map((si) => tous(si, "t").filter((t) => t.parentNode.localName !== "rPh").map((t) => t.textContent).join("")) : [];
+  const feuilles = [];
+  const declarees = tous(wb, "sheet");
+  for (let k = 0; k < Math.max(1, declarees.length); k++) {
+    const f = declarees[k];
+    const rid = f && (f.getAttributeNS(NS_REL, "id") || f.getAttribute("r:id"));
+    const rel = rels && tous(rels, "Relationship").find((r) => r.getAttribute("Id") === rid);
+    const cible = rel ? rel.getAttribute("Target") : `worksheets/sheet${k + 1}.xml`;
+    const doc = await xml(cible.startsWith("/") ? cible : `xl/${cible}`);
+    if (doc) feuilles.push({ nom: f ? f.getAttribute("name") : `Feuille ${k + 1}`, lignes: lireFeuille(doc, chaines) });
+  }
+  if (!feuilles.length) throw new Error("aucune feuille lisible dans le classeur");
+  return feuilles;
+}
+
+function lireFeuille(doc, chaines) {
   const lignes = [];
   for (const row of tous(doc, "row")) {
     const vals = [];
@@ -98,6 +108,28 @@ async function lireClasseur(fichier) {
     lignes[r > 0 ? r - 1 : lignes.length] = vals;
   }
   return lignes.filter(Boolean);
+}
+
+// Semaine écrite de toutes les façons : 47, « 47 », « S47 », « 2026-47 », « 47/2026 », une date (Excel ou jj/mm/aaaa).
+// Renvoie { semaine, annee (ou null) }, ou null si la case est vide ou à 0 (pas encore planifiée).
+function lireSemaine(v) {
+  if (v === null || v === undefined || v === "") return null;
+  if (typeof v === "number") {
+    if (v >= 1 && v <= 53 && Number.isInteger(v)) return { semaine: v, annee: null };
+    if (v > 20000 && v < 80000) return semaineIso(new Date(Date.UTC(1899, 11, 30) + Math.round(v) * 86400000 + 43200000));
+    return null;
+  }
+  const t = String(v).trim().toUpperCase();
+  let m;
+  if ((m = /^S?\s*0*(\d{1,2})(?:[.,]0+)?$/.exec(t))) return Number(m[1]) >= 1 && Number(m[1]) <= 53 ? { semaine: Number(m[1]), annee: null } : null;
+  if ((m = /^(20\d{2})\s*[-/ ]\s*S?\s*(\d{1,2})$/.exec(t))) return { semaine: Number(m[2]), annee: Number(m[1]) };
+  if ((m = /^S?\s*(\d{1,2})\s*[-/ ]\s*(20\d{2})$/.exec(t))) return { semaine: Number(m[1]), annee: Number(m[2]) };
+  if ((m = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/.exec(t))) {
+    const a = Number(m[3]) < 100 ? 2000 + Number(m[3]) : Number(m[3]);
+    return semaineIso(new Date(a, Number(m[2]) - 1, Number(m[1])));
+  }
+  if ((m = /^(20\d{2})-(\d{2})-(\d{2})/.exec(t))) return semaineIso(new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
+  return null;
 }
 
 // ---------- Semaines ----------
@@ -152,52 +184,72 @@ const COLONNES = {
 };
 const OBLIGATOIRES = { semaine: "Semaine", commande: "Commande", transporteur: "Transporteur" };
 
-function analyser(lignesBrutes, fichier) {
-  const iEntete = lignesBrutes.findIndex((l) => l && l.some((v) => sansAccents(v) === "semaine") && l.some((v) => sansAccents(v) === "commande"));
-  if (iEntete < 0) throw new Error("colonnes « Semaine » et « Commande » introuvables : est-ce bien l'extraction « Suivi production » de Diakonos ?");
-  const entete = lignesBrutes[iEntete];
-  const idx = {};
-  entete.forEach((v, i) => {
-    const n = sansAccents(v);
-    for (const [cle, noms] of Object.entries(COLONNES)) if (idx[cle] === undefined && noms.includes(n)) idx[cle] = i;
-  });
-  for (const [cle, nom] of Object.entries(OBLIGATOIRES)) if (idx[cle] === undefined) throw new Error(`colonne « ${nom} » introuvable dans le fichier`);
-  // Colonnes sans titre qui ont des valeurs (ex. colonne T : 0, 1 ou 2 par commande) : gardées telles quelles.
-  const corps = lignesBrutes.slice(iEntete + 1).filter((l) => l && l.some((v) => v !== null && v !== undefined && v !== ""));
-  const sansTitre = [];
-  const largeur = Math.max(entete.length, ...corps.map((l) => l.length));
-  for (let i = 0; i < largeur; i++) if ((entete[i] === null || entete[i] === undefined || entete[i] === "") && corps.some((l) => l[i] !== null && l[i] !== undefined && l[i] !== "")) sansTitre.push(i);
-
-  const date = dateExtraction(fichier);
+function analyser(feuilles, fichier, dateReference) {
+  const date = dateReference || dateExtraction(fichier);
   const courante = semaineIso(date);
   const txt = (v) => (v === null || v === undefined ? "" : String(v).trim());
   const num = (v) => (typeof v === "number" ? v : Number(String(v ?? "").replace(",", ".")) || 0);
   const lignes = [];
-  const ignorees = [];
-  for (const l of corps) {
-    const get = (cle) => (idx[cle] === undefined ? null : l[idx[cle]]);
-    const semaine = Math.round(num(get("semaine")));
-    const commande = txt(get("commande"));
-    if (!semaine || !commande) {
-      ignorees.push(l);
-      continue;
+  const lues = [];
+  let nbLignesFichier = 0;
+  let manquantes = null;
+  let sansTitreLettres = [];
+  for (const feuille of feuilles) {
+    const lignesBrutes = feuille.lignes;
+    const iEntete = lignesBrutes.findIndex((l) => l && l.some((v) => sansAccents(v) === "semaine") && l.some((v) => sansAccents(v) === "commande"));
+    if (iEntete < 0) continue; // feuille sans le tableau « Suivi production »
+    const entete = lignesBrutes[iEntete];
+    const idx = {};
+    entete.forEach((v, i) => {
+      const n = sansAccents(v);
+      for (const [cle, noms] of Object.entries(COLONNES)) if (idx[cle] === undefined && noms.includes(n)) idx[cle] = i;
+    });
+    // Les lignes du tableau : toutes celles qui ont au moins une valeur (aucune n'est écartée).
+    const corps = lignesBrutes.slice(iEntete + 1).filter((l) => l && l.some((v) => v !== null && v !== undefined && String(v).trim() !== ""));
+    nbLignesFichier += corps.length;
+    // Colonnes sans titre qui ont des valeurs (ex. colonne T : 0, 1 ou 2 par commande) : gardées telles quelles.
+    const sansTitre = [];
+    const largeur = Math.max(entete.length, ...corps.map((l) => l.length));
+    for (let i = 0; i < largeur; i++) if ((entete[i] === null || entete[i] === undefined || entete[i] === "") && corps.some((l) => l[i] !== null && l[i] !== undefined && l[i] !== "")) sansTitre.push(i);
+    if (!lues.length) sansTitreLettres = sansTitre.map(lettreColonne);
+    const absentes = Object.keys(COLONNES).filter((c) => idx[c] === undefined);
+    manquantes = manquantes === null ? absentes : manquantes.filter((c) => absentes.includes(c));
+    lues.push({ nom: feuille.nom, lignes: corps.length });
+    for (const l of corps) {
+      const get = (cle) => (idx[cle] === undefined ? null : l[idx[cle]]);
+      const sem = lireSemaine(get("semaine"));
+      const commande = txt(get("commande")) || "(sans commande)";
+      const annee = sem ? sem.annee || anneeDeLaSemaine(sem.semaine, commande, courante) : null;
+      const r = {
+        semaine: sem ? sem.semaine : null, annee, semaineBrute: txt(get("semaine")), commande, ligne: txt(get("ligne")), catalogue: txt(get("catalogue")) || "(sans catalogue)", article: txt(get("article")),
+        designation: txt(get("designation")), qteLanc: num(get("qteLanc")), qteCours: num(get("qteCours")), L: num(get("L")), W: num(get("W")), E: num(get("E")),
+        codeColoris: txt(get("codeColoris")), coloris: txt(get("coloris")), cp: txt(get("cp")), ville: txt(get("ville")), codeTransp: txt(get("codeTransp")),
+        transporteur: txt(get("transporteur")) || txt(get("codeTransp")) || "(sans transporteur)", lancement: txt(get("lancement")), groupement: txt(get("groupement")) || "AUCUN",
+        autres: sansTitre.map((i) => txt(l[i])), feuille: feuille.nom, fichier: fichier.name,
+      };
+      // Sans semaine (vide, 0, illisible) : la ligne est gardée, dans la colonne « Sans semaine ».
+      r.retard = sem ? ecartSemaines({ annee, semaine: sem.semaine }, courante) : 0; // > 0 : semaine dépassée
+      r.cleSemaine = !sem ? "sans" : r.retard > 0 ? "retard" : `${annee}-${String(sem.semaine).padStart(2, "0")}`;
+      r.departement = /^\d{5}$/.test(r.cp) ? (r.cp.startsWith("20") ? "2A/2B" : r.cp.slice(0, 2)) : /^\d{4}$/.test(r.cp) ? `0${r.cp[0]}` : r.cp ? "Étranger / autre" : "(sans CP)";
+      r.m2 = r.L > 0 && r.W > 0 ? (r.L * r.W * (r.qteCours || 1)) / 1e6 : 0;
+      r.cle = "";
+      lignes.push(r);
     }
-    const annee = anneeDeLaSemaine(semaine, commande, courante);
-    const r = {
-      semaine, annee, commande, ligne: txt(get("ligne")), catalogue: txt(get("catalogue")) || "(sans catalogue)", article: txt(get("article")),
-      designation: txt(get("designation")), qteLanc: num(get("qteLanc")), qteCours: num(get("qteCours")), L: num(get("L")), W: num(get("W")), E: num(get("E")),
-      codeColoris: txt(get("codeColoris")), coloris: txt(get("coloris")), cp: txt(get("cp")), ville: txt(get("ville")), codeTransp: txt(get("codeTransp")),
-      transporteur: txt(get("transporteur")) || txt(get("codeTransp")) || "(sans transporteur)", lancement: txt(get("lancement")), groupement: txt(get("groupement")) || "AUCUN",
-      autres: sansTitre.map((i) => txt(l[i])),
-    };
-    r.retard = ecartSemaines({ annee, semaine }, courante); // > 0 : semaine dépassée de r.retard semaine(s)
-    r.cleSemaine = r.retard > 0 ? "retard" : `${annee}-${String(semaine).padStart(2, "0")}`;
-    r.departement = /^\d{5}$/.test(r.cp) ? (r.cp.startsWith("20") ? "2A/2B" : r.cp.slice(0, 2)) : /^\d{4}$/.test(r.cp) ? `0${r.cp[0]}` : r.cp ? "Étranger / autre" : "(sans CP)";
-    r.m2 = r.L > 0 && r.W > 0 ? (r.L * r.W * (r.qteCours || 1)) / 1e6 : 0;
-    r.cle = `${commande}|${r.ligne}|${r.lancement}`;
-    lignes.push(r);
   }
-  return { fichier: fichier.name, taille: fichier.size, date, courante, lignes, ignorees: ignorees.length, sansTitre: sansTitre.map(lettreColonne), colonnesManquantes: Object.keys(COLONNES).filter((c) => idx[c] === undefined) };
+  if (!lues.length) throw new Error("colonnes « Semaine » et « Commande » introuvables : est-ce bien l'extraction « Suivi production » de Diakonos ?");
+  // Une même ligne (commande + ligne + lancement) en double : numérotée, pour que la comparaison entre extractions reste juste.
+  const vues = new Map();
+  for (const r of lignes) {
+    const base = `${r.commande}|${r.ligne}|${r.lancement}`;
+    const n = (vues.get(base) || 0) + 1;
+    vues.set(base, n);
+    r.cle = n > 1 ? `${base}#${n}` : base;
+  }
+  return {
+    fichier: fichier.name, taille: fichier.size, date, courante, lignes, nbLignesFichier, feuilles: lues,
+    sansSemaine: lignes.filter((r) => r.cleSemaine === "sans").length,
+    sansTitre: sansTitreLettres, colonnesManquantes: manquantes || [],
+  };
 }
 
 // ---------- Mesures et regroupements ----------
@@ -238,8 +290,9 @@ const etat = {
   vue: "transporteur",
   mesure: "lignes",
   filtres: { semaine: "", transporteur: "", catalogue: "", groupement: "", coloris: "", departement: "", texte: "" },
-  limiteDetail: 100,
+  limiteDetail: 2000,
   evolution: null,
+  sources: [], // fichiers chargés ensemble : { fichier, feuilles }
   catalogues: [],
 };
 
@@ -248,12 +301,13 @@ const esc = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 
 function libelleSemaine(cle) {
   if (cle === "retard") return "En retard";
+  if (cle === "sans") return "Sans semaine (vide ou à 0)";
   const [a, s] = cle.split("-").map(Number);
   const c = etat.analyse.courante;
   const ecart = ecartSemaines(c, { annee: a, semaine: s });
   return `S${s}${a !== c.annee ? ` ${a}` : ""}${ecart === 0 ? " (en cours)" : ""}`;
 }
-const libelleCourt = (cle) => (cle === "retard" ? "Retard" : `S${Number(cle.split("-")[1])}`);
+const libelleCourt = (cle) => (cle === "retard" ? "Retard" : cle === "sans" ? "Sans sem." : `S${Number(cle.split("-")[1])}`);
 
 function lignesFiltrees() {
   const f = etat.filtres;
@@ -273,7 +327,7 @@ function lignesFiltrees() {
 // Les colonnes « semaine » : retard d'abord, puis chaque semaine à venir (toutes celles du fichier).
 function colonnesSemaines(lignes) {
   const cles = new Set(lignes.map((r) => r.cleSemaine));
-  return [...(cles.has("retard") ? ["retard"] : []), ...[...cles].filter((c) => c !== "retard").sort()];
+  return [...(cles.has("retard") ? ["retard"] : []), ...[...cles].filter((c) => c !== "retard" && c !== "sans").sort(), ...(cles.has("sans") ? ["sans"] : [])];
 }
 
 // ---------- Affichage ----------
@@ -284,7 +338,15 @@ function afficher() {
   $("tableauBord").hidden = !a;
   if (!a) return;
   const d = a.date.toLocaleDateString("fr-FR");
-  $("source").innerHTML = `Extraction Diakonos du <strong>${esc(d)}</strong> · semaine en cours <strong>S${a.courante.semaine}</strong> · <span class="pale">${esc(a.fichier)}</span>`;
+  $("source").innerHTML = `Extraction Diakonos du <strong>${esc(d)}</strong> · semaine en cours <strong>S${a.courante.semaine}</strong>
+    <div class="fichiers">${a.fichiers
+      .map((f, i) => `<span class="fichier">${esc(f.nom)} · ${fmt(f.lignes)} ligne(s)${f.doublons ? ` <span class="pale">(${fmt(f.doublons)} déjà dans un autre fichier)</span>` : ""}${a.fichiers.length > 1 ? ` <button type="button" class="texte" data-enlever="${i}" title="Enlever ce fichier du tableau">✕</button>` : ""}</span>`)
+      .join("")}<button type="button" class="contour petit" data-ajouter>+ Ajouter un fichier Diakonos</button></div>`;
+  $("source").querySelectorAll("[data-enlever]").forEach((b) => b.addEventListener("click", () => {
+    etat.sources.splice(Number(b.dataset.enlever), 1);
+    recalculer("enlever");
+  }));
+  $("source").querySelector("[data-ajouter]").addEventListener("click", () => ouvrirChoix(true));
   afficherFiltres();
   const lignes = lignesFiltrees();
   afficherIndicateurs(lignes);
@@ -318,16 +380,23 @@ function afficherFiltres() {
   $("pucesFiltres").innerHTML = puces.map(([k, t]) => `<button type="button" class="puce-filtre" data-retirer="${k}" title="Retirer ce filtre">${esc(t)} ✕</button>`).join("");
   const actifs = Object.values(f).some(Boolean);
   $("btnEffacer").hidden = !actifs;
+  const n = lignesFiltrees().length;
+  $("bandeFiltre").hidden = !actifs;
+  $("bandeFiltre").innerHTML = actifs ? `Filtre actif : <strong>${fmt(n)}</strong> ligne(s) affichée(s) sur ${fmt(a.lignes.length)}. <button type="button" class="texte" data-tout>Tout afficher</button>` : "";
+  const tout = $("bandeFiltre").querySelector("[data-tout]");
+  if (tout) tout.addEventListener("click", () => filtrer({ semaine: "", transporteur: "", catalogue: "", groupement: "", coloris: "", departement: "", texte: "" }));
 }
 
 function afficherIndicateurs(lignes) {
   const a = etat.analyse;
   const tout = nouveauGroupe();
   const retard = nouveauGroupe();
+  const sansSem = nouveauGroupe();
   const parSem = new Map();
   for (const r of lignes) {
     ajouter(tout, r);
     if (r.retard > 0) ajouter(retard, r);
+    else if (r.cleSemaine === "sans") ajouter(sansSem, r);
     else {
       if (!parSem.has(r.retard)) parSem.set(r.retard, nouveauGroupe());
       ajouter(parSem.get(r.retard), r);
@@ -346,6 +415,7 @@ function afficherIndicateurs(lignes) {
     <div class="tuile ${retard.lignes ? "alerte" : "bon"}"><div class="tuile-titre">${retard.lignes ? "⚠ En retard" : "✔ Aucun retard"}</div>
       <div class="tuile-valeur">${fmt(retard.lignes)}</div><div class="tuile-sous">${retard.lignes ? `ligne(s) · ${fmt(retard.commandes.size)} commande(s) dont la semaine est passée` : "toutes les semaines sont à venir"}</div></div>
     ${semaine(0)}${semaine(1)}${semaine(2)}
+    ${sansSem.lignes ? `<div class="tuile attention"><div class="tuile-titre">⚠ Sans semaine</div><div class="tuile-valeur">${fmt(sansSem.lignes)}</div><div class="tuile-sous">ligne(s) · semaine vide ou à 0 dans Diakonos</div></div>` : ""}
     <div class="tuile"><div class="tuile-titre">Surface à produire</div><div class="tuile-valeur">${fmt(tout.m2, 0)} m²</div>
       <div class="tuile-sous">qté en cours ${fmt(tout.qte, 1)} · pièces avec longueur et largeur</div></div>`;
 }
@@ -571,7 +641,8 @@ function afficherRetards(lignes) {
 // ---------- Détail des lignes ----------
 
 function afficherDetail(lignes) {
-  const tri = [...lignes].sort((a, b) => (a.retard > 0) === (b.retard > 0) ? a.annee - b.annee || a.semaine - b.semaine || a.transporteur.localeCompare(b.transporteur) || a.commande.localeCompare(b.commande) || Number(a.ligne) - Number(b.ligne) : a.retard > 0 ? -1 : 1);
+  const rang = (r) => (r.retard > 0 ? 0 : r.cleSemaine === "sans" ? 2 : 1);
+  const tri = [...lignes].sort((a, b) => rang(a) - rang(b) || (a.annee || 0) - (b.annee || 0) || (a.semaine || 0) - (b.semaine || 0) || a.transporteur.localeCompare(b.transporteur) || a.commande.localeCompare(b.commande) || Number(a.ligne) - Number(b.ligne));
   const n = Math.min(tri.length, etat.limiteDetail);
   const autres = etat.analyse.sansTitre;
   $("titreDetail").textContent = `Détail des lignes (${fmt(tri.length)})`;
@@ -579,7 +650,7 @@ function afficherDetail(lignes) {
   $("detail").innerHTML = `<div class="defile"><table class="liste detail"><thead><tr><th>Sem.</th><th>Commande</th><th class="d">Ligne</th><th>Catalogue</th><th>Article</th><th>Désignation</th><th class="d">Dimensions (mm)</th><th>Coloris</th><th class="d">Qté en cours</th><th>Livraison</th><th>Transporteur</th><th>Groupement</th><th class="d">Lanc.</th>${autres.map((l) => `<th class="d" title="Colonne ${l} du fichier, sans titre">Col. ${l}</th>`).join("")}</tr></thead>
     <tbody>${tri
       .slice(0, n)
-      .map((r) => `<tr class="${r.retard > 0 ? "en-retard" : ""}"><td>${r.retard > 0 ? `<span class="badge-retard" title="Semaine dépassée de ${r.retard} semaine(s)">S${r.semaine}</span>` : `S${r.semaine}`}</td><td>${esc(r.commande)}</td><td class="d">${esc(r.ligne)}</td>
+      .map((r) => `<tr class="${r.retard > 0 ? "en-retard" : ""}"><td>${r.retard > 0 ? `<span class="badge-retard" title="Semaine dépassée de ${r.retard} semaine(s)">S${r.semaine}</span>` : r.semaine ? `S${r.semaine}` : `<span class="badge-sans" title="Semaine dans Diakonos : « ${esc(r.semaineBrute || "vide")} »">—</span>`}</td><td>${esc(r.commande)}</td><td class="d">${esc(r.ligne)}</td>
         <td><i class="pastille" style="background:${couleurCatalogue(r.catalogue)}"></i>${esc(r.catalogue)}</td><td>${esc(r.article)}</td><td class="desig">${esc(r.designation)}</td><td class="d">${dims(r)}</td>
         <td>${esc(r.coloris)}${r.codeColoris ? ` <span class="pale">${esc(r.codeColoris)}</span>` : ""}</td><td class="d">${fmt(r.qteCours, 2)}${r.qteLanc !== r.qteCours ? ` <span class="pale">/ ${fmt(r.qteLanc, 2)}</span>` : ""}</td>
         <td>${esc(r.cp)} ${esc(r.ville)}</td><td>${esc(r.transporteur)}</td><td>${esc(r.groupement)}</td><td class="d">${esc(r.lancement)}</td>${r.autres.map((v) => `<td class="d">${esc(v)}</td>`).join("")}</tr>`)
@@ -587,7 +658,7 @@ function afficherDetail(lignes) {
     ${n < tri.length ? `<button type="button" class="contour" id="btnSuite">Afficher la suite (${fmt(tri.length - n)} ligne(s))</button>` : ""}`;
   const suite = $("btnSuite");
   if (suite) suite.addEventListener("click", () => {
-    etat.limiteDetail += 300;
+    etat.limiteDetail += 2000;
     afficherDetail(lignes);
   });
 }
@@ -600,7 +671,7 @@ function exporterCsv() {
     const t = typeof v === "number" ? String(v).replace(".", ",") : String(v ?? "");
     return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t;
   };
-  const corps = lignes.map((r) => [r.semaine, r.annee, Math.max(0, r.retard), r.commande, r.ligne, r.catalogue, r.article, r.designation, r.qteLanc, r.qteCours, r.L, r.W, r.E, r.codeColoris, r.coloris, r.cp, r.ville, r.codeTransp, r.transporteur, r.lancement, r.groupement, ...r.autres].map(cel).join(";"));
+  const corps = lignes.map((r) => [r.semaine ?? r.semaineBrute, r.annee ?? "", Math.max(0, r.retard), r.commande, r.ligne, r.catalogue, r.article, r.designation, r.qteLanc, r.qteCours, r.L, r.W, r.E, r.codeColoris, r.coloris, r.cp, r.ville, r.codeTransp, r.transporteur, r.lancement, r.groupement, ...r.autres].map(cel).join(";"));
   const texte = "﻿" + [ent.map(cel).join(";"), ...corps].join("\r\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([texte], { type: "text/csv;charset=utf-8" }));
@@ -692,45 +763,124 @@ function afficherEvolution() {
 
 // ---------- Chargement d'un fichier ----------
 
-async function chargerFichier(fichier) {
-  if (!fichier) return;
+// Lit les fichiers choisis puis recalcule tout. ajouter : ils s'ajoutent à ceux déjà chargés (ex. l'extraction des
+// fournitures en plus de celle de la production), sinon ils les remplacent.
+async function chargerFichiers(fichiers, ajouter) {
+  fichiers = [...(fichiers || [])].filter(Boolean);
+  if (!fichiers.length) return;
   $("message").hidden = false;
   $("message").className = "message";
-  $("message").textContent = `Lecture de ${fichier.name}…`;
+  $("message").textContent = `Lecture de ${fichiers.map((f) => f.name).join(", ")}…`;
+  const lus = [];
+  const erreurs = [];
+  for (const f of fichiers) {
+    try {
+      lus.push({ fichier: f, feuilles: await lireClasseur(f) });
+    } catch (e) {
+      erreurs.push(`${f.name} : ${e && e.message ? e.message : e}`);
+    }
+  }
+  if (!lus.length) {
+    $("message").textContent = `⚠ Illisible — ${erreurs.join(" · ")}`;
+    $("message").className = "message alerte";
+    return;
+  }
+  const garder = ajouter ? etat.sources.filter((x) => !lus.some((l) => l.fichier.name === x.fichier.name)) : [];
+  const avant = etat.sources;
+  etat.sources = [...garder, ...lus];
+  if (!recalculer(ajouter ? "ajouter" : "remplacer", erreurs)) etat.sources = avant;
+}
+
+// Analyse tous les fichiers chargés (même date de référence : la plus récente) et les fusionne. Une même ligne
+// (commande + ligne + n° de lancement) présente dans deux fichiers n'est comptée qu'une fois : rien n'est perdu, rien
+// n'est compté deux fois.
+function recalculer(quoi, erreurs = []) {
+  if (!etat.sources.length) {
+    etat.analyse = null;
+    afficher();
+    return true;
+  }
   try {
-    const a = analyser(await lireClasseur(fichier), fichier);
-    if (!a.lignes.length) throw new Error("aucune ligne de production dans ce fichier");
-    etat.analyse = a;
-    etat.limiteDetail = 100;
+    const dateRef = new Date(Math.max(...etat.sources.map((x) => dateExtraction(x.fichier).getTime())));
+    const analyses = etat.sources.map((x) => ({ x, a: analyser(x.feuilles, x.fichier, dateRef) }));
+    const vues = new Set();
+    const lignes = [];
+    const fichiers = [];
+    let doublons = 0;
+    for (const { x, a } of analyses) {
+      let d = 0;
+      for (const r of a.lignes) {
+        if (vues.has(r.cle)) {
+          d++;
+          continue;
+        }
+        vues.add(r.cle);
+        lignes.push(r);
+      }
+      doublons += d;
+      fichiers.push({ nom: x.fichier.name, lignes: a.lignes.length, lignesFichier: a.nbLignesFichier, doublons: d, feuilles: a.feuilles });
+    }
+    const a0 = analyses[0].a;
+    const fusion = {
+      fichier: fichiers.map((f) => f.nom).join(" + "), date: dateRef, courante: semaineIso(dateRef), lignes, fichiers, doublons,
+      nbLignesFichier: fichiers.reduce((t, f) => t + f.lignesFichier, 0), sansSemaine: lignes.filter((r) => r.cleSemaine === "sans").length,
+      sansTitre: a0.sansTitre, colonnesManquantes: analyses.map((y) => y.a.colonnesManquantes).reduce((acc, c) => acc.filter((k) => c.includes(k))),
+    };
+    if (!fusion.lignes.length) throw new Error("aucune ligne de production dans ce fichier");
+    etat.analyse = fusion;
+    etat.limiteDetail = 2000;
     etat.filtres = { semaine: "", transporteur: "", catalogue: "", groupement: "", coloris: "", departement: "", texte: "" };
     // Ordre des catalogues (couleurs fixes) : les connus d'abord, puis les autres par nombre de lignes.
     const compte = new Map();
-    for (const r of a.lignes) compte.set(r.catalogue, (compte.get(r.catalogue) || 0) + 1);
+    for (const r of fusion.lignes) compte.set(r.catalogue, (compte.get(r.catalogue) || 0) + 1);
     etat.catalogues = [...ORDRE_CATALOGUES.filter((c) => compte.has(c)), ...[...compte.keys()].filter((c) => !ORDRE_CATALOGUES.includes(c)).sort((x, y) => compte.get(y) - compte.get(x))];
-    etat.evolution = memoriserEtComparer(a);
-    const infos = [`${fmt(a.lignes.length)} lignes lues`];
-    if (a.ignorees) infos.push(`${a.ignorees} ligne(s) sans semaine ou sans commande ignorée(s)`);
-    if (a.colonnesManquantes.length) infos.push(`colonnes absentes : ${a.colonnesManquantes.join(", ")}`);
-    $("message").textContent = `✔ ${fichier.name} : ${infos.join(" · ")}.`;
-    $("message").className = "message bon";
+    etat.evolution = memoriserEtComparer(fusion);
+    // Contrôle : toutes les lignes des fichiers sont prises en compte (à comparer avec Diakonos).
+    const lues = fusion.nbLignesFichier;
+    const infos = [`${fmt(fusion.lignes.length)} ligne(s) prise(s) en compte sur ${fmt(lues)} ligne(s) lue(s)${fichiers.length > 1 ? ` dans ${fichiers.length} fichiers` : ""}`];
+    if (doublons) infos.push(`${fmt(doublons)} ligne(s) présente(s) dans deux fichiers, comptée(s) une fois`);
+    if (fusion.sansSemaine) infos.push(`${fmt(fusion.sansSemaine)} sans semaine (gardée(s), colonne « Sans sem. »)`);
+    const feuilles = fichiers.flatMap((f) => f.feuilles);
+    if (feuilles.length > fichiers.length) infos.push(`${feuilles.length} feuilles lues`);
+    if (fusion.colonnesManquantes.length) infos.push(`colonnes absentes : ${fusion.colonnesManquantes.join(", ")}`);
+    if (erreurs.length) infos.push(`⚠ illisible(s) : ${erreurs.join(" · ")}`);
+    $("message").textContent = `✔ ${quoi === "ajouter" ? "Fichier ajouté. " : ""}${infos.join(" · ")}.`;
+    $("message").className = `message ${erreurs.length ? "alerte" : "bon"}`;
     afficher();
+    return true;
   } catch (e) {
-    $("message").textContent = `⚠ ${fichier.name} illisible : ${e && e.message ? e.message : e}`;
+    $("message").textContent = `⚠ ${etat.sources.map((x) => x.fichier.name).join(", ")} : ${e && e.message ? e.message : e}`;
     $("message").className = "message alerte";
+    return false;
   }
+}
+
+let ajoutDemande = false;
+function ouvrirChoix(ajouter) {
+  ajoutDemande = ajouter;
+  $("champFichier").click();
+}
+
+// Un fichier déposé alors qu'un tableau est déjà chargé : remplacer, ou ajouter (ex. les fournitures) ?
+function demanderRemplacerOuAjouter(fichiers) {
+  const m = $("message");
+  m.hidden = false;
+  m.className = "message question";
+  m.innerHTML = `${esc(fichiers.map((f) => f.name).join(", "))} : <button type="button" data-choix="ajouter">Ajouter au tableau</button> <button type="button" class="contour" data-choix="remplacer">Remplacer ce qui est chargé</button>`;
+  m.querySelectorAll("[data-choix]").forEach((b) => b.addEventListener("click", () => chargerFichiers(fichiers, b.dataset.choix === "ajouter")));
 }
 
 function filtrer(changements) {
   Object.assign(etat.filtres, changements);
-  etat.limiteDetail = 100;
+  etat.limiteDetail = 2000;
   afficher();
 }
 
 function brancher() {
   const champ = $("champFichier");
-  document.querySelectorAll("[data-ouvrir]").forEach((b) => b.addEventListener("click", () => champ.click()));
+  document.querySelectorAll("[data-ouvrir]").forEach((b) => b.addEventListener("click", () => ouvrirChoix(false)));
   champ.addEventListener("change", () => {
-    chargerFichier(champ.files[0]);
+    chargerFichiers(champ.files, ajoutDemande);
     champ.value = "";
   });
   // Glisser-déposer le fichier n'importe où sur la page.
@@ -748,8 +898,10 @@ function brancher() {
     e.preventDefault();
     profondeur = 0;
     document.body.classList.remove("depot");
-    const f = [...(e.dataTransfer.files || [])].find((x) => /\.xlsx$/i.test(x.name)) || (e.dataTransfer.files || [])[0];
-    chargerFichier(f);
+    const fichiers = [...(e.dataTransfer.files || [])];
+    if (!fichiers.length) return;
+    if (etat.analyse) demanderRemplacerOuAjouter(fichiers);
+    else chargerFichiers(fichiers, false);
   });
   for (const [id, cle] of [["filtreSemaine", "semaine"], ["filtreTransporteur", "transporteur"], ["filtreCatalogue", "catalogue"], ["filtreGroupement", "groupement"]]) $(id).addEventListener("change", (e) => filtrer({ [cle]: e.target.value }));
   let minuteur = null;
