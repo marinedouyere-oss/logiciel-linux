@@ -286,11 +286,31 @@ function ajouter(g, r) {
 const fmt = (v, dec = 0) => Number(v).toLocaleString("fr-FR", { maximumFractionDigits: dec, minimumFractionDigits: 0 });
 const fmtMesure = (m, v) => fmt(v, 2);
 const PERIMETRES = {
-  production: "Production (Stratifié, Crédences, Compact, Portes…)",
+  production: "Production",
   fournitures: "Fournitures & Dibond",
   resine: "Résine (m²)",
-  tout: "Tout le fichier",
 };
+const DETAIL_PERIMETRES = { production: "Stratifié, Crédences, Compact, Portes…", fournitures: "bandes de chant, kits, panneaux…", resine: "Méganite, quantités en m²" };
+
+// Ce qui est compté : la production toujours proposée ; fournitures et résine intégrées, à exclure d'un clic (retenu).
+const CLE_INCLUS = "suivi-production-inclus";
+function lireInclus() {
+  try {
+    const x = JSON.parse(localStorage.getItem(CLE_INCLUS) || "null");
+    if (x && typeof x === "object") return { production: x.production !== false, fournitures: x.fournitures !== false, resine: x.resine !== false };
+  } catch (_e) {
+    // stockage indisponible : tout est compté
+  }
+  return { production: true, fournitures: true, resine: true };
+}
+function ecrireInclus() {
+  try {
+    localStorage.setItem(CLE_INCLUS, JSON.stringify(etat.inclus));
+  } catch (_e) {
+    // le choix dure le temps de la page
+  }
+}
+const estCompte = (r) => Boolean(etat.inclus[r.perimetre]);
 
 const VUES = {
   transporteur: { nom: "Transporteur", cle: (r) => r.transporteur },
@@ -311,7 +331,8 @@ const etat = {
   analyse: null,
   vue: "transporteur",
   mesure: "cours",
-  perimetre: "production",
+  inclus: lireInclus(),
+  dossier: null, // dossier des extractions (choisi une fois, retenu)
   filtres: { semaine: "", transporteur: "", catalogue: "", groupement: "", coloris: "", departement: "", texte: "" },
   limiteDetail: 2000,
   evolution: null,
@@ -338,7 +359,7 @@ function lignesFiltrees(sauf = null) {
   const t = sansAccents(f.texte);
   return etat.analyse.lignes.filter(
     (r) =>
-      (etat.perimetre === "tout" || r.perimetre === etat.perimetre) &&
+      estCompte(r) &&
       (!f.semaine || r.cleSemaine === f.semaine) &&
       (!f.transporteur || r.transporteur === f.transporteur) &&
       (!f.catalogue || r.catalogue === f.catalogue) &&
@@ -392,20 +413,29 @@ function afficherFiltres() {
   const a = etat.analyse;
   const f = etat.filtres;
   // Pièces restantes (Qté en cours) de chaque choix, avec les autres filtres (semaine, catalogue…) déjà appliqués.
-  const unite = etat.perimetre === "resine" ? "m²" : "pièce";
+  const seuleResine = etat.inclus.resine && !etat.inclus.production && !etat.inclus.fournitures;
+  const unite = seuleResine ? "m²" : "pièce";
   const libelle = (v, n) => `${v} — ${fmt(n, 2)} ${unite}${unite === "pièce" && n > 1 ? "s" : ""} restante${n > 1 ? "s" : ""}`;
   const compte = (cle, filtre) => {
     const m = new Map();
     for (const r of lignesFiltrees(filtre)) m.set(cle(r), (m.get(cle(r)) || 0) + r.qteCours);
     // les choix sans reste à faire avec ces filtres restent dans la liste (à 0)
-    for (const r of a.lignes) if ((etat.perimetre === "tout" || r.perimetre === etat.perimetre) && !m.has(cle(r))) m.set(cle(r), 0);
+    for (const r of a.lignes) if (estCompte(r) && !m.has(cle(r))) m.set(cle(r), 0);
     return [...m.entries()].sort((x, y) => y[1] - x[1] || String(x[0]).localeCompare(String(y[0])));
   };
-  $("filtrePerimetre").innerHTML = Object.entries(PERIMETRES)
-    .map(([k, lib]) => `<option value="${k}" ${k === etat.perimetre ? "selected" : ""}>${esc(lib)} — ${fmt(a.totaux[k].lignes)} ligne(s)</option>`)
-    .join("");
+  // Cases « compter » : une par partie présente dans le fichier, avec son reste à faire.
+  $("choixInclus").innerHTML = `<span class="inclus-titre">Compter :</span>${Object.keys(PERIMETRES)
+    .filter((k) => a.totaux[k].lignes)
+    .map((k) => `<label class="inclus-case ${etat.inclus[k] ? "coche" : ""}" title="${esc(DETAIL_PERIMETRES[k])}"><input type="checkbox" data-inclus="${k}" ${etat.inclus[k] ? "checked" : ""}> ${esc(PERIMETRES[k])} <span class="pale">${fmt(a.totaux[k].cours, 2)}${k === "resine" ? " m²" : ""} en cours</span></label>`)
+    .join("")}`;
+  $("choixInclus").querySelectorAll("[data-inclus]").forEach((c) => c.addEventListener("change", () => {
+    etat.inclus[c.dataset.inclus] = c.checked;
+    ecrireInclus();
+    etat.limiteDetail = 2000;
+    afficher();
+  }));
   const parSemaine = new Map(compte((r) => r.cleSemaine, "semaine"));
-  $("filtreSemaine").innerHTML = options(colonnesSemaines(a.lignes.filter((r) => etat.perimetre === "tout" || r.perimetre === etat.perimetre)).map((c) => [c, libelle(libelleSemaine(c), parSemaine.get(c) || 0)]), f.semaine, "Toutes les semaines");
+  $("filtreSemaine").innerHTML = options(colonnesSemaines(a.lignes.filter(estCompte)).map((c) => [c, libelle(libelleSemaine(c), parSemaine.get(c) || 0)]), f.semaine, "Toutes les semaines");
   $("filtreTransporteur").innerHTML = options(compte((r) => r.transporteur, "transporteur").map(([v, n]) => [v, libelle(v, n)]), f.transporteur, "Tous les transporteurs");
   $("filtreCatalogue").innerHTML = options(compte((r) => r.catalogue, "catalogue").map(([v, n]) => [v, libelle(v, n)]), f.catalogue, "Tous les catalogues");
   $("filtreGroupement").innerHTML = options(compte((r) => r.groupement, "groupement").map(([v, n]) => [v, libelle(v, n)]), f.groupement, "Tous les groupements");
@@ -425,7 +455,7 @@ function afficherFiltres() {
 
 function afficherIndicateurs(lignes) {
   const a = etat.analyse;
-  const m2 = etat.perimetre === "resine" ? " m²" : "";
+  const m2 = etat.inclus.resine && !etat.inclus.production && !etat.inclus.fournitures ? " m²" : "";
   const tout = nouveauGroupe();
   const retard = nouveauGroupe();
   const sansSem = nouveauGroupe();
@@ -446,26 +476,29 @@ function afficherIndicateurs(lignes) {
     return `<div class="tuile"><div class="tuile-titre">S${ws.semaine} · ${ecart === 0 ? "cette semaine" : ecart === 1 ? "semaine prochaine" : `dans ${ecart} semaines`}</div>
       <div class="tuile-valeur">${fmt(g.cours, 2)}</div><div class="tuile-sous">qté en cours${m2} · ${fmt(g.commandes.size)} commande(s) · ${fmt(g.lignes)} ligne(s)</div></div>`;
   };
-  const hors = ["production", "fournitures", "resine"].filter((k) => k !== etat.perimetre && a.totaux[k].lignes);
+  const presents = Object.keys(PERIMETRES).filter((k) => a.totaux[k].lignes);
+  const comptes = presents.filter((k) => etat.inclus[k]);
+  const hors = presents.filter((k) => !etat.inclus[k]);
+  const dont = comptes.length > 1 ? comptes.map((k) => {
+    const g = lignes.filter((r) => r.perimetre === k).reduce((t, r) => t + r.qteCours, 0);
+    return `${PERIMETRES[k].replace(" (m²)", "")} ${fmt(g, 2)}${k === "resine" ? " m²" : ""}`;
+  }).join(" · ") : "";
   $("indicateurs").innerHTML = `
-    <div class="tuile principale"><div class="tuile-titre">${esc(PERIMETRES[etat.perimetre])}</div>
+    <div class="tuile principale"><div class="tuile-titre">Compté : ${esc(comptes.map((k) => PERIMETRES[k].replace(" (m²)", "")).join(" + ") || "rien")}</div>
       <div class="tuile-valeur">${fmt(tout.cours, 2)}<span class="unite">${m2 || " "}en cours</span></div>
-      <div class="tuile-sous">Qté lancement ${fmt(tout.lanc, 2)}${m2} · ${fmt(tout.commandes.size)} commande(s) · ${fmt(tout.lignes)} ligne(s)</div></div>
+      <div class="tuile-sous">Qté lancement ${fmt(tout.lanc, 2)}${m2} · ${fmt(tout.commandes.size)} commande(s) · ${fmt(tout.lignes)} ligne(s)${dont ? `<br>dont ${esc(dont)}` : ""}</div></div>
     <div class="tuile ${retard.lignes ? "alerte" : "bon"}"><div class="tuile-titre">${retard.lignes ? "⚠ Semaine passée" : "✔ Aucune semaine passée"}</div>
       <div class="tuile-valeur">${fmt(retard.cours, 2)}</div><div class="tuile-sous">${retard.lignes ? `qté en cours${m2} · ${fmt(retard.commandes.size)} commande(s) · ${fmt(retard.lignes)} ligne(s)` : "toutes les semaines sont à venir"}</div></div>
     ${semaine(0)}${semaine(1)}${semaine(2)}
     ${sansSem.lignes ? `<div class="tuile attention"><div class="tuile-titre">⚠ Sans semaine</div><div class="tuile-valeur">${fmt(sansSem.cours, 2)}</div><div class="tuile-sous">qté en cours · ${fmt(sansSem.lignes)} ligne(s) · semaine vide ou à 0</div></div>` : ""}
-    ${hors.length ? `<div class="tuile hors"><div class="tuile-titre">Pas compté ici</div>${hors
-      .map((k) => `<button type="button" class="lien" data-perimetre="${k}">${esc(PERIMETRES[k])}</button><div class="tuile-sous">${fmt(a.totaux[k].lignes)} ligne(s) · ${qte(a.totaux[k])}${k === "resine" ? " m²" : ""}</div>`)
+    ${hors.length ? `<div class="tuile hors"><div class="tuile-titre">Exclu du comptage</div>${hors
+      .map((k) => `<div class="hors-ligne"><strong>${esc(PERIMETRES[k])}</strong> <button type="button" class="texte petit" data-compter="${k}">Compter aussi</button></div><div class="tuile-sous">${fmt(a.totaux[k].lignes)} ligne(s) · ${qte(a.totaux[k])}${k === "resine" ? " m²" : ""}</div>`)
       .join("")}</div>` : ""}`;
-  $("indicateurs").querySelectorAll("[data-perimetre]").forEach((b) => b.addEventListener("click", () => changerPerimetre(b.dataset.perimetre)));
-}
-
-function changerPerimetre(k) {
-  etat.perimetre = k;
-  etat.filtres.catalogue = "";
-  etat.limiteDetail = 2000;
-  afficher();
+  $("indicateurs").querySelectorAll("[data-compter]").forEach((b) => b.addEventListener("click", () => {
+    etat.inclus[b.dataset.compter] = true;
+    ecrireInclus();
+    afficher();
+  }));
 }
 
 // ---------- Graphique : charge par semaine, par catalogue ----------
@@ -700,8 +733,13 @@ function afficherControle() {
   const a = etat.analyse;
   $("controle").innerHTML = `<div class="defile"><table class="liste"><thead><tr><th>Périmètre</th><th class="d">Lignes</th><th class="d">Commandes</th><th class="d">Somme « Qte Lancement »</th><th class="d">Somme « Qte en cours »</th></tr></thead><tbody>
     ${Object.entries(PERIMETRES)
-      .map(([k, lib]) => `<tr class="${k === etat.perimetre ? "total-controle" : ""}"><td>${esc(lib)}</td><td class="d">${fmt(a.totaux[k].lignes)}</td><td class="d">${fmt(a.totaux[k].commandes)}</td><td class="d">${fmt(a.totaux[k].lanc, 2)}</td><td class="d">${fmt(a.totaux[k].cours, 2)}</td></tr>`)
+      .map(([k, lib]) => `<tr><td>${esc(lib)} ${etat.inclus[k] ? '<span class="puce-compte">compté</span>' : '<span class="puce-exclu">exclu</span>'}</td><td class="d">${fmt(a.totaux[k].lignes)}</td><td class="d">${fmt(a.totaux[k].commandes)}</td><td class="d">${fmt(a.totaux[k].lanc, 2)}</td><td class="d">${fmt(a.totaux[k].cours, 2)}</td></tr>`)
       .join("")}
+    ${(() => {
+      const c = a.lignes.filter(estCompte);
+      return `<tr class="total-controle"><td>Total compté</td><td class="d">${fmt(c.length)}</td><td class="d">${fmt(new Set(c.map((r) => r.commande)).size)}</td><td class="d">${fmt(c.reduce((t, r) => t + r.qteLanc, 0), 2)}</td><td class="d">${fmt(c.reduce((t, r) => t + r.qteCours, 0), 2)}</td></tr>`;
+    })()}
+    <tr><td>Tout le fichier</td><td class="d">${fmt(a.totaux.tout.lignes)}</td><td class="d">${fmt(a.totaux.tout.commandes)}</td><td class="d">${fmt(a.totaux.tout.lanc, 2)}</td><td class="d">${fmt(a.totaux.tout.cours, 2)}</td></tr>
     </tbody></table></div>
     <div class="note">Mêmes chiffres que dans Excel : nombre de lignes et SOMME des colonnes « Qte Lancement » et « Qte en cours », par catalogue (Production = Stratifié, Crédences, Compact, Portes et les autres catalogues de l'atelier). ${a.relancees ? `${fmt(a.relancees)} ligne(s) de commande apparaissent plusieurs fois (n° de lancement 1, 2…) : marquées « relancée » dans le détail.` : ""} ${a.fichiers.length > 1 ? `Fichiers : ${a.fichiers.map((f) => `${esc(f.nom)} (${fmt(f.lignesFichier)} lignes${f.doublons ? `, ${fmt(f.doublons)} déjà dans un autre fichier` : ""})`).join(" · ")}.` : ""}</div>`;
 }
@@ -933,15 +971,14 @@ function recalculer(quoi, erreurs = []) {
     etat.catalogues = [...ORDRE_CATALOGUES.filter((c) => compte.has(c)), ...[...compte.keys()].filter((c) => !ORDRE_CATALOGUES.includes(c)).sort((x, y) => compte.get(y) - compte.get(x))];
     const tot = (liste) => ({ lignes: liste.length, commandes: new Set(liste.map((r) => r.commande)).size, lanc: liste.reduce((s2, r) => s2 + r.qteLanc, 0), cours: liste.reduce((s2, r) => s2 + r.qteCours, 0) });
     fusion.totaux = Object.fromEntries(["production", "fournitures", "resine"].map((k) => [k, tot(lignes.filter((r) => r.perimetre === k))]).concat([["tout", tot(lignes)]]));
-    if (!fusion.totaux[etat.perimetre] || (!fusion.totaux[etat.perimetre].lignes && etat.perimetre !== "tout")) etat.perimetre = fusion.totaux.production.lignes ? "production" : "tout";
     etat.evolution = memoriserEtComparer(fusion);
     // Contrôle : toutes les lignes des fichiers sont prises en compte (à comparer avec Diakonos).
     const lues = fusion.nbLignesFichier;
     const t = fusion.totaux;
     const infos = [`${fmt(fusion.lignes.length)} ligne(s) lue(s)${fichiers.length > 1 ? ` dans ${fichiers.length} fichiers` : ""}`,
       `Production : ${fmt(t.production.lignes)} ligne(s), Qté lancement ${fmt(t.production.lanc, 2)}, Qté en cours ${fmt(t.production.cours, 2)}`];
-    if (t.fournitures.lignes) infos.push(`Fournitures & Dibond : ${fmt(t.fournitures.lignes)} ligne(s) (à part)`);
-    if (t.resine.lignes) infos.push(`Résine : ${fmt(t.resine.lignes)} ligne(s) (à part, en m²)`);
+    if (t.fournitures.lignes) infos.push(`Fournitures & Dibond : ${fmt(t.fournitures.lignes)} ligne(s), en cours ${fmt(t.fournitures.cours, 2)}`);
+    if (t.resine.lignes) infos.push(`Résine : ${fmt(t.resine.lignes)} ligne(s), en cours ${fmt(t.resine.cours, 2)} m²`);
     if (doublons) infos.push(`${fmt(doublons)} ligne(s) présente(s) dans deux fichiers, comptée(s) une fois`);
     if (fusion.sansSemaine) infos.push(`${fmt(fusion.sansSemaine)} sans semaine (gardée(s), colonne « Sans sem. »)`);
     const feuilles = fichiers.flatMap((f) => f.feuilles);
@@ -972,6 +1009,151 @@ function demanderRemplacerOuAjouter(fichiers) {
   m.className = "message question";
   m.innerHTML = `${esc(fichiers.map((f) => f.name).join(", "))} : <button type="button" data-choix="ajouter">Ajouter au tableau</button> <button type="button" class="contour" data-choix="remplacer">Remplacer ce qui est chargé</button>`;
   m.querySelectorAll("[data-choix]").forEach((b) => b.addEventListener("click", () => chargerFichiers(fichiers, b.dataset.choix === "ajouter")));
+}
+
+// ---------- Dossier des extractions : la dernière version, toute seule ----------
+// Le dossier est choisi une fois (retenu par le navigateur). À chaque ouverture de la page, et quand on y revient,
+// l'outil y cherche les extractions Diakonos (sous-dossiers compris) et lit la plus récente de chacune : production
+// (« suivi_production_JJMMAAAA.xlsx »), et fournitures / résine si elles sont dans des fichiers à part.
+
+const BASE_REGLAGES = "suivi-production-reglages";
+function ouvrirBaseReglages() {
+  return new Promise((resolve, reject) => {
+    const q = indexedDB.open(BASE_REGLAGES, 1);
+    q.onupgradeneeded = () => q.result.createObjectStore("reglages");
+    q.onsuccess = () => resolve(q.result);
+    q.onerror = () => reject(q.error);
+  });
+}
+async function memoriserDossier(h) {
+  try {
+    const db = await ouvrirBaseReglages();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("reglages", "readwrite");
+      tx.objectStore("reglages").put(h, "dossier");
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (_e) {
+    // le dossier sera redemandé à la prochaine ouverture
+  }
+}
+async function dossierMemorise() {
+  try {
+    const db = await ouvrirBaseReglages();
+    return await new Promise((resolve) => {
+      const q = db.transaction("reglages").objectStore("reglages").get("dossier");
+      q.onsuccess = () => resolve(q.result || null);
+      q.onerror = () => resolve(null);
+    });
+  } catch (_e) {
+    return null;
+  }
+}
+
+// Le genre d'extraction d'après le nom du fichier (null : pas une extraction Diakonos).
+function genreExtraction(nom) {
+  if (!/\.xlsx$/i.test(nom) || nom.startsWith("~$")) return null;
+  const n = sansAccents(nom);
+  if (/fourniture/.test(n)) return "fournitures";
+  if (/resine/.test(n)) return "resine";
+  if (/suivi.*prod|production/.test(n)) return "production";
+  return null;
+}
+
+async function chercherExtractions(dossier, chemin = [], profondeur = 0, res = []) {
+  for await (const [nom, h] of dossier.entries()) {
+    if (h.kind === "directory") {
+      if (profondeur < 3 && !nom.startsWith(".")) await chercherExtractions(h, [...chemin, nom], profondeur + 1, res);
+      continue;
+    }
+    const genre = genreExtraction(nom);
+    if (!genre) continue;
+    const fichier = await h.getFile();
+    res.push({ genre, nom, chemin, fichier, date: dateExtraction(fichier) });
+  }
+  return res;
+}
+
+// La plus récente de chaque genre : date dans le nom (JJMMAAAA), sinon date du fichier.
+function dernieresVersions(trouves) {
+  const par = new Map();
+  for (const x of trouves) {
+    const a = par.get(x.genre);
+    if (!a || x.date > a.date || (x.date.getTime() === a.date.getTime() && x.fichier.lastModified > a.fichier.lastModified)) par.set(x.genre, x);
+  }
+  return [...par.values()];
+}
+
+const signatureVersions = (liste) => liste.map((x) => `${x.chemin.join("/")}/${x.nom}|${x.fichier.size}|${x.fichier.lastModified}`).sort().join(";");
+
+async function lireDossier(interactif) {
+  const d = etat.dossier;
+  if (!d) return;
+  try {
+    let acces = d.queryPermission ? await d.queryPermission({ mode: "read" }) : "granted";
+    if (acces !== "granted" && interactif && d.requestPermission) acces = await d.requestPermission({ mode: "read" });
+    if (acces !== "granted") {
+      etat.infoDossier = { texte: "Cliquez sur « Actualiser » pour lire la dernière extraction (le navigateur redemande l'accès au dossier à chaque ouverture)." };
+      afficherDossier();
+      return;
+    }
+    const trouves = await chercherExtractions(d);
+    if (!trouves.length) {
+      etat.infoDossier = { texte: `Aucune extraction Diakonos dans « ${d.name} » (fichiers « suivi_production_JJMMAAAA.xlsx »).`, alerte: true };
+      afficherDossier();
+      return;
+    }
+    const choisis = dernieresVersions(trouves);
+    const signature = signatureVersions(choisis);
+    etat.infoDossier = { choisis, ignores: trouves.length - choisis.length };
+    if (signature !== etat.signatureDossier || !etat.analyse) {
+      etat.signatureDossier = signature;
+      await chargerFichiers(choisis.map((x) => x.fichier), false);
+    }
+    afficherDossier();
+  } catch (e) {
+    etat.infoDossier = { texte: `Dossier illisible : ${e && e.message ? e.message : e}`, alerte: true };
+    afficherDossier();
+  }
+}
+
+async function choisirDossier() {
+  if (!window.showDirectoryPicker) {
+    etat.infoDossier = { texte: "Ce navigateur ne sait pas ouvrir un dossier : utilisez Chrome ou Edge (ou chargez le fichier à la main).", alerte: true };
+    afficherDossier();
+    return;
+  }
+  let h;
+  try {
+    h = await window.showDirectoryPicker({ id: "extractions-diakonos", mode: "read" });
+  } catch (_e) {
+    return; // fenêtre fermée
+  }
+  etat.dossier = h;
+  etat.signatureDossier = null;
+  await memoriserDossier(h);
+  await lireDossier(true);
+}
+
+function afficherDossier() {
+  const z = $("infoDossier");
+  const d = etat.dossier;
+  $("btnActualiser").hidden = !d;
+  $("btnDossier").textContent = d ? "Changer de dossier…" : "Dossier des extractions…";
+  if (!d) {
+    z.hidden = true;
+    return;
+  }
+  const i = etat.infoDossier || {};
+  const jour = (x) => x.date.toLocaleDateString("fr-FR");
+  z.hidden = false;
+  z.className = `info-dossier${i.alerte ? " alerte" : ""}`;
+  z.innerHTML = `📁 Dossier <strong>${esc(d.name)}</strong> · ${
+    i.choisis
+      ? `dernière version lue : ${i.choisis.map((x) => `<strong>${esc(x.nom)}</strong> <span class="pale">(${esc(jour(x))}${x.chemin.length ? `, ${esc(x.chemin.join(" / "))}` : ""})</span>`).join(" + ")}${i.ignores ? ` <span class="pale">· ${i.ignores} version(s) plus ancienne(s) laissée(s) de côté</span>` : ""}`
+      : esc(i.texte || "…")
+  }`;
 }
 
 function filtrer(changements) {
@@ -1027,6 +1209,14 @@ function brancher() {
     afficher();
   }));
   $("btnExporter").addEventListener("click", exporterCsv);
+  $("btnDossier").addEventListener("click", choisirDossier);
+  $("btnActualiser").addEventListener("click", () => lireDossier(true));
+  const choixVide = $("btnDossierVide");
+  if (choixVide) choixVide.addEventListener("click", choisirDossier);
+  // Retour sur la page : une nouvelle extraction dans le dossier est lue toute seule.
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && etat.dossier) lireDossier(false);
+  });
   $("btnImprimer").addEventListener("click", () => window.print());
   let largeur = window.innerWidth;
   window.addEventListener("resize", () => {
@@ -1039,3 +1229,9 @@ function brancher() {
 
 brancher();
 afficher();
+dossierMemorise().then((h) => {
+  if (!h) return;
+  etat.dossier = h;
+  afficherDossier();
+  lireDossier(false);
+});

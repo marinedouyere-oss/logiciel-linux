@@ -17,12 +17,15 @@
     <div class="sous">Extraction Diakonos « Suivi production »</div>
   </div>
   <div class="actions-bandeau">
-    <button type="button" class="blanc" data-ouvrir>Charger une extraction Diakonos…</button>
+    <button type="button" class="blanc" id="btnDossier">Dossier des extractions…</button>
+    <button type="button" class="blanc" id="btnActualiser" hidden>↻ Actualiser</button>
+    <button type="button" class="contour-blanc" data-ouvrir>Charger un fichier…</button>
   </div>
 </header>
 <input type="file" id="champFichier" accept=".xlsx,.xlsm" multiple hidden>
 
 <main>
+  <div id="infoDossier" class="info-dossier" hidden></div>
   <div id="message" class="message" hidden></div>
 
   <section id="vide" class="carte vide">
@@ -31,14 +34,16 @@
     <p>Le fichier <strong>suivi_production_JJMMAAAA.xlsx</strong> exporté de Diakonos. Tout est calculé à chaque nouveau fichier : il suffit de redéposer l'extraction du jour pour mettre le tableau à jour.</p>
     <p>Plusieurs extractions (ex. production + fournitures) : choisissez-les ensemble, ou ajoutez-les ensuite. Une ligne présente dans deux fichiers n'est comptée qu'une fois.</p>
     <p class="pale">Le fichier est lu sur ce PC : rien n'est envoyé sur internet.</p>
-    <button type="button" data-ouvrir>Choisir le fichier…</button>
+    <p><strong>Le plus simple :</strong> choisissez une fois le dossier où arrivent les extractions. L'outil y lira tout seul la dernière version à chaque ouverture.</p>
+    <button type="button" id="btnDossierVide">Choisir le dossier des extractions…</button>
+    <button type="button" class="contour" data-ouvrir>Ou charger un fichier…</button>
   </section>
 
   <div id="tableauBord" hidden>
     <div class="source" id="source"></div>
 
+    <div class="inclus" id="choixInclus" role="group" aria-label="Ce qui est compté"></div>
     <div class="filtres" role="search" aria-label="Filtres">
-      <select id="filtrePerimetre" aria-label="Périmètre" class="perimetre"></select>
       <select id="filtreSemaine" aria-label="Semaine"></select>
       <select id="filtreTransporteur" aria-label="Transporteur"></select>
       <select id="filtreCatalogue" aria-label="Catalogue"></select>

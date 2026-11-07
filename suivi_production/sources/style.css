@@ -153,3 +153,17 @@ table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nu
 .tuile.principale { border-left: 6px solid var(--bordeaux); }
 .tuile-valeur .unite { font-size: 0.9rem; font-weight: 400; color: var(--gris); margin-left: 6px; }
 .tuile.hors .lien { display: block; padding: 4px 0 0; }
+.actions-bandeau { display: flex; gap: 8px; flex-wrap: wrap; }
+button.contour-blanc { background: transparent; color: #fff; border-color: #fff; }
+.info-dossier { background: #fff; border: 1px solid var(--gris-filet); border-radius: 10px; padding: 10px 14px; margin-bottom: 12px; }
+.info-dossier.alerte { background: var(--critique-fond); color: var(--critique-texte); border-color: transparent; }
+.inclus { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+.inclus-titre { font-weight: 700; color: var(--bordeaux); }
+.inclus-case { display: inline-flex; align-items: center; gap: 6px; background: #fff; border: 1px solid #d9d4cf; border-radius: 999px; padding: 6px 14px; cursor: pointer; font-weight: 700; }
+.inclus-case.coche { border-color: var(--bordeaux); background: var(--saumon-pale); color: var(--bordeaux); }
+.inclus-case input { accent-color: var(--bordeaux); width: 16px; height: 16px; }
+.inclus-case .pale { font-weight: 400; }
+.puce-compte { display: inline-block; background: var(--bon-fond); color: var(--bon-texte); border-radius: 999px; padding: 0 8px; font-size: 0.75rem; font-weight: 700; }
+.puce-exclu { display: inline-block; background: #eef0f3; color: #52514e; border-radius: 999px; padding: 0 8px; font-size: 0.75rem; font-weight: 700; }
+.hors-ligne { margin-top: 4px; }
+.vide button { margin: 6px 4px 0; }
