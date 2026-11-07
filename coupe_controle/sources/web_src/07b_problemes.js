@@ -14,6 +14,8 @@ const PROBLEMES = [
   ["Absente du .bkp", "Pièce du lancement introuvable dans l'optimisation (.bkp) : aucun panneau n'est prévu pour elle.", "l'ajouter à l'optimisation."],
   ["Quantité différente dans le .bkp", "L'optimisation (.bkp) ne prévoit pas le même nombre de pièces que le lancement.", "corriger la quantité dans l'optimisation."],
   ["Couleur absente du .bkp", "Aucun panneau de ce coloris dans l'optimisation (.bkp) : ces pièces ne sont pas optimisées.", "ajouter un panneau de ce coloris à l'optimisation."],
+  ["Pas dans les plans de coupe", "Pièce prévue dans l'optimisation (.bkp), mais posée sur aucun panneau des plans de coupe : elle ne sera pas coupée.",
+    "relancer l'optimisation Cut Rite (panneau manquant, pièce trop grande…), ou valider si c'est voulu."],
   ["Ligne en double", "Deux lignes identiques dans le fichier de lancement : la pièce serait fabriquée deux fois.",
     "supprimer la ligne en trop (bouton « Créer le lancement sans doublons » de Sentinelle)."],
   ["Lancée deux fois", "La même pièce est aussi dans un autre lancement de la semaine : risque de la fabriquer deux fois.", "la retirer d'un des deux lancements."],
@@ -130,6 +132,23 @@ async function problemesDuLancement(p) {
       for (const [cle, liste] of parPiece(c.absentes)) ajouter(cle, GRAVITE.CORRIGER, "Couleur absente du .bkp", `Couleur ${faces(liste).join(", ")} : pas de panneau dans le .bkp`, "Couleurs (.bkp)");
     }
   }
+
+  // Pièces dans les plans de coupe : prévues par le .bkp, mais posées sur aucun panneau (Cut Rite n'a pas pu les placer).
+  const ctrlPlans = "Plans de coupe (.bkp)";
+  if (p.plans) {
+    const r = p.plans;
+    const plans = `${fmtNombre(r.nbPlans)} plans de panneaux et ${fmtNombre(r.nbModules)} modules`;
+    if (!r.nonPlacees.length)
+      bilan.push({ statut: "ok", controle: ctrlPlans, texte: `Les ${fmtNombre(r.nbPieces)} pièces prévues par le .bkp sont placées dans les plans de coupe (${plans}).` });
+    else {
+      bilan.push({ statut: "alerte", controle: ctrlPlans, texte: `${r.nonPlacees.length} pièce(s) du .bkp dans aucun plan de coupe : elles ne seront pas coupées (${plans}).` });
+      for (const n of r.nonPlacees)
+        ajouter(n.cle, GRAVITE.CORRIGER, "Pas dans les plans de coupe", n.place
+          ? `${fmtNombre(n.attendu)} pièce(s) prévue(s) dans le .bkp, ${fmtNombre(n.place)} seulement dans les plans de coupe`
+          : `${fmtNombre(n.attendu)} pièce(s) prévue(s) dans le .bkp, posée(s) sur aucun panneau`, ctrlPlans);
+    }
+  } else if (p.bkp && !p.erreurScies)
+    bilan.push({ statut: "info", controle: ctrlPlans, texte: p.ecartsScies ? "Refaire « Vérifier Scies » pour contrôler les plans de coupe." : "Pas encore fait (bouton Vérifier Scies)." });
 
   // Semaines de livraison (une casse en mélange toujours plusieurs).
   if (p.poste !== "Casse" && strat.semaines.length) {
@@ -458,6 +477,7 @@ function restantsDuControle(p, test) {
 const estControleListe = (c) => c.startsWith("Lancement /");
 const estControleScies = (c) => c === "Scies (.bkp)";
 const estControleCouleurs = (c) => c === "Couleurs (.bkp)";
+const estControlePlans = (c) => c === "Plans de coupe (.bkp)";
 
 // Les bilans de tous les lancements de l'onglet (sans fichier à enregistrer), pour la bibliothèque.
 async function bilansDeLOnglet(parite) {

@@ -207,6 +207,20 @@ class PdfSimple {
     if (trait !== null) this.page.push(`${couleurPdf(trait)} RG ${nombrePdf(epaisseur)} w ${r}S\n`);
   }
 
+  // Hachures à 45° dans un rectangle (coin haut gauche en x, y) : lisibles en noir et blanc.
+  hachures(x, y, l, h, rgb, pas, epaisseur) {
+    const n = nombrePdf;
+    const yb = PDF_HAUTEUR - y - h;
+    let s = `q ${n(x)} ${n(yb)} ${n(l)} ${n(h)} re W n ${couleurPdf(rgb)} RG ${n(epaisseur)} w `;
+    for (let d = -h; d < l; d += pas) s += `${n(x + d)} ${n(yb)} m ${n(x + d + h)} ${n(yb + h)} l `;
+    this.page.push(`${s}S Q\n`);
+  }
+
+  // Contour en pointillés (place laissée vide).
+  pointilles(x, y, l, h, rgb, epaisseur, tiret) {
+    this.page.push(`q [${nombrePdf(tiret)} ${nombrePdf(tiret * 0.7)}] 0 d ${couleurPdf(rgb)} RG ${nombrePdf(epaisseur)} w ${nombrePdf(x)} ${nombrePdf(PDF_HAUTEUR - y - h)} ${nombrePdf(l)} ${nombrePdf(h)} re S Q\n`);
+  }
+
   // Filet horizontal à y points du haut, de x1 à x2.
   filet(x1, x2, y, rgb, epaisseur) {
     this.page.push(`${couleurPdf(rgb)} RG ${nombrePdf(epaisseur)} w ${nombrePdf(x1)} ${nombrePdf(PDF_HAUTEUR - y)} m ${nombrePdf(x2)} ${nombrePdf(PDF_HAUTEUR - y)} l S\n`);

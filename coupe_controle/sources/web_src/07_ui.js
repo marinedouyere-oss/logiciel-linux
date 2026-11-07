@@ -84,6 +84,8 @@ function nouvellePaire(poste, label, parite) {
     totalScies: null,
     erreurScies: null,
     couleurs: null,
+    // Pièces dans les plans de coupe du .bkp : { nbPlans, nbModules, nonPlacees: [{ cle, attendu, place }] }.
+    plans: null,
     etat: null,
     etatErreur: false,
     enCours: false,
@@ -360,6 +362,7 @@ function resultatsAMemoriser(p) {
     totalScies: p.totalScies,
     erreurScies: p.erreurScies,
     couleurs: p.couleurs,
+    plans: p.plans || null,
   };
 }
 
@@ -394,6 +397,7 @@ function restaurer(p, rec) {
   p.totalScies = rec.totalScies ?? null;
   p.erreurScies = rec.erreurScies || null;
   p.couleurs = rec.couleurs || null;
+  p.plans = rec.plans || null;
 }
 
 async function initialiserPaires() {
@@ -473,6 +477,7 @@ function viderResultats(p) {
   p.totalScies = null;
   p.erreurScies = null;
   p.couleurs = null;
+  p.plans = null;
   p.analyse = null;
 }
 
@@ -490,6 +495,7 @@ function oublierResultatsDe(p, role) {
     p.totalScies = null;
     p.erreurScies = null;
     p.couleurs = null;
+    p.plans = null;
   }
   if (role === "strat" || role === "coupe" || role === "bkp") {
     p.etat = null;
@@ -637,11 +643,13 @@ function afficher() {
   $("pageRecherche").classList.toggle("inactif", onglet !== "recherche");
   $("pageBibliotheque").classList.toggle("inactif", onglet !== "bibliotheque");
   $("pageReecriture").classList.toggle("inactif", onglet !== "reecriture");
+  $("pagePlans").classList.toggle("inactif", onglet !== "plans");
   majMenuDossier();
   if (estOngletSemaine()) construireSemaine(onglet);
   else if (onglet === "accueil") afficherAccueil();
   else if (onglet === "bibliotheque") afficherBibliotheque();
   else if (onglet === "reecriture") afficherReecriture();
+  else if (onglet === "plans") afficherOutilPlans();
 }
 
 function majOnglets() {
@@ -785,6 +793,7 @@ function remplirCarte(carte, p) {
     </div>
     <button type="button" class="contour pleine" data-action="rapport-lancement" ${p.enCours ? "disabled" : ""}>📄 Rapport du lancement (.pdf)</button>
     ${p.strat ? `<button type="button" class="contour pleine" data-action="problemes-lancement" ${p.enCours ? "disabled" : ""}>📊 Problèmes du lancement (.xlsx)</button>` : ""}
+    ${p.bkp ? '<button type="button" class="contour pleine" data-action="plans-de-coupe">▦ Plans de coupe du .bkp</button>' : ""}
     ${p.etat ? `<div class="etat ${p.etatErreur ? "erreur" : ""}">${echapper(p.etat)}</div>` : ""}
     <div class="zone-problemes"></div>
     <div class="zone-rapport"></div>
@@ -794,6 +803,8 @@ function remplirCarte(carte, p) {
   carte.querySelectorAll('[data-action="choisir"]').forEach((b) => b.addEventListener("click", () => demanderFichier(p, b.dataset.role)));
   carte.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(p, null).then(() => problemesAutomatiques(p)));
   carte.querySelector('[data-action="scies"]').addEventListener("click", () => lancerControleScies(p, () => problemesAutomatiques(p)));
+  const boutonPlans = carte.querySelector('[data-action="plans-de-coupe"]');
+  if (boutonPlans) boutonPlans.addEventListener("click", () => ouvrirOutilPlans(p));
   const problemes = carte.querySelector('[data-action="problemes-lancement"]');
   if (problemes)
     problemes.addEventListener("click", async () => {
@@ -1060,7 +1071,19 @@ function afficherScies(zone, p) {
     html += bandeau(`⚠ Scies : ${p.ecartsScies.length} pièce(s) différente(s) entre le lancement et le .bkp (${panneaux} vérifiés)`, "alerte");
   }
   html += htmlCouleurs(p.couleurs);
+  html += htmlPlans(p);
   zone.innerHTML = html;
+}
+
+// Pièces dans les plans de coupe : chaque pièce prévue par le .bkp doit être posée sur un panneau.
+function htmlPlans(p) {
+  const r = p.plans;
+  if (!r) return "";
+  const reste = restantsDuControle(p, estControlePlans) ?? r.nonPlacees.length;
+  const plans = `${fmtNombre(r.nbPlans)} plans, ${fmtNombre(r.nbModules)} modules`;
+  if (!r.nonPlacees.length) return bandeau(`✔ Plans de coupe : toutes les pièces sont placées (${plans})`, "ok");
+  if (!reste) return bandeau(`✔ Plans de coupe : ${r.nonPlacees.length} pièce(s) hors des plans, validée(s) OK (${plans})`, "ok");
+  return bandeau(`⚠ Plans de coupe : ${reste} pièce(s) dans aucun plan — elles ne seront pas coupées (${plans})`, "alerte");
 }
 
 // Contrôle des couleurs : chaque coloris du lancement doit avoir été optimisé dans le .bkp.
@@ -1520,13 +1543,24 @@ function celluleControle(p) {
   return `<td class="centre alerte">⚠ ${reste ?? p.rapport.nbAnomalies}</td>`;
 }
 
+// Colonne Scies : les écarts lancement / .bkp et les pièces hors des plans de coupe (même bouton Vérifier Scies).
+const nbHorsPlans = (p) => (p.plans ? p.plans.nonPlacees.length : 0);
+// Ce qui reste à traiter (les problèmes validés ne comptent plus) ; null si pas fait, -1 si erreur.
+function sciesRestants(p) {
+  if (p.erreurScies) return -1;
+  if (!p.ecartsScies) return null;
+  const n = p.ecartsScies.length;
+  const h = nbHorsPlans(p);
+  return (n ? restantsDuControle(p, estControleScies) ?? n : 0) + (h ? restantsDuControle(p, estControlePlans) ?? h : 0);
+}
+
 function celluleScies(p) {
-  if (p.erreurScies) return '<td class="centre alerte">❌</td>';
-  if (!p.ecartsScies) return '<td class="centre pale">—</td>';
-  if (p.ecartsScies.length === 0) return '<td class="centre ok">✔ OK</td>';
-  const reste = restantsDuControle(p, estControleScies);
+  const reste = sciesRestants(p);
+  if (reste === -1) return '<td class="centre alerte">❌</td>';
+  if (reste === null) return '<td class="centre pale">—</td>';
+  if (p.ecartsScies.length + nbHorsPlans(p) === 0) return '<td class="centre ok">✔ OK</td>';
   if (reste === 0) return celluleValidee;
-  return `<td class="centre alerte">⚠ ${reste ?? p.ecartsScies.length}</td>`;
+  return `<td class="centre alerte">⚠ ${reste}</td>`;
 }
 
 function celluleCouleurs(p) {
@@ -1546,7 +1580,7 @@ function totauxRecap(lignes) {
       else t.bkp += l.bkp;
     }
     if (l.paire.rapport) t.anomalies += l.paire.rapport.nbAnomalies;
-    if (l.paire.ecartsScies) t.ecarts += l.paire.ecartsScies.length;
+    if (l.paire.ecartsScies) t.ecarts += l.paire.ecartsScies.length + nbHorsPlans(l.paire);
     if (l.paire.couleurs) {
       t.couleurs += l.paire.couleurs.absentes.length;
       t.couleursPf += (l.paire.couleurs.variantes || []).length;
@@ -1812,11 +1846,14 @@ async function lancerControleScies(p, fin) {
     p.totalScies = sommeValeurs(attendues);
     etape = "contrôle des couleurs";
     p.couleurs = controlerCouleurs((await stratEnCache(p.strat)).lignes, await lireCouleursBkp(p.bkp));
+    etape = "lecture des plans de coupe";
+    p.plans = await controlerPlans(attendues, p.bkp, bkp);
     p.erreurScies = null;
   } catch (erreur) {
     p.ecartsScies = null;
     p.totalScies = null;
     p.couleurs = null;
+    p.plans = null;
     p.erreurScies = `échec à l'étape « ${etape} » : ${erreur && erreur.message ? erreur.message : erreur}`;
   }
   enregistrer(p);
@@ -2538,6 +2575,20 @@ function afficherRecherche(a) {
     }
     const liste = document.createElement("div");
     zone.appendChild(liste);
+    // Une pièce cherchée par sa clé : sa fiche simple d'abord (avec ses plans de coupe), la commande repliée dessous.
+    const simple = a.cleCherchee && a.fiches.length === 1 ? fichePieceSimple(a) : null;
+    if (simple) {
+      const f = a.fiches[0];
+      const nonTrouvees = f.lignes.filter((l) => !l.trouvee).length;
+      const autres = document.createElement("details");
+      autres.className = "carte fp-autres";
+      autres.innerHTML = `<summary>Les autres pièces de la commande ${echapper(f.commande)} <span class="note">(${f.lignes.length} pièce(s) · ${
+        nonTrouvees ? `⚠ ${nonTrouvees} non trouvée(s)` : "✔ toutes trouvées"
+      })</span></summary>`;
+      zone.insertBefore(simple, liste);
+      zone.replaceChild(autres, liste);
+      autres.appendChild(liste);
+    }
     afficherFiches(liste, a, 0);
   }
   if (a.erreurs.length) zone.insertAdjacentHTML("beforeend", `<div class="message-alerte">Illisibles : ${echapper(a.erreurs.join(" · "))}</div>`);

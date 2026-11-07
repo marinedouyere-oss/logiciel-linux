@@ -425,3 +425,72 @@
     table.recap { font-size: 0.8rem; }
     .entete-page h1 { font-size: 1.6rem; }
   }
+
+  /* ---- V6.1 : fiche simple d'une pièce (recherche) ---- */
+  .fiche-piece .fp-cle { font-family: ui-monospace, Consolas, monospace; font-size: 0.82rem; color: var(--gris); overflow-wrap: anywhere; }
+  .fiche-piece .fp-nom { font-family: var(--titres); font-weight: 700; font-size: 1.5rem; margin: 4px 0 2px; }
+  .fiche-piece .fp-sous { color: var(--gris); }
+  .fp-verdict { display: flex; gap: 12px; align-items: center; border-radius: 10px; padding: 12px 14px; margin: 14px 0 4px; border-left: 6px solid; }
+  .fp-verdict .ico { font-size: 1.35rem; line-height: 1; }
+  .fp-verdict .txt { flex: 1; }
+  .fp-verdict b { font-size: 1.05rem; display: block; margin-bottom: 2px; }
+  .fp-verdict span { color: var(--noir); }
+  .fp-verdict.bon { background: var(--ok-fond); color: var(--ok-texte); border-color: var(--ok-texte); }
+  .fp-verdict.att { background: var(--attention-fond); color: var(--attention-texte); border-color: #c98a00; }
+  .fp-h3 { font-family: var(--titres); font-weight: 700; font-size: 0.9rem; color: var(--bordeaux); margin: 16px 0 6px; border-bottom: 1px solid var(--saumon); padding-bottom: 4px; }
+  .fp-titre-plans { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .fp-titre-plans .note { font-family: var(--texte); font-weight: 400; }
+  .fp-titre-plans button { margin-left: auto; }
+  .fp-ou-va { display: grid; grid-template-columns: 3fr 2fr; gap: 12px; align-items: start; }
+  .fp-ou-va.seule { grid-template-columns: minmax(0, 520px); }
+  .fp-ou-va > div { border: 1px solid var(--gris-filet); border-radius: 10px; padding: 8px; background: #fff; min-width: 0; }
+  .fp-ou-va svg { max-width: 100%; height: auto; }
+  .fp-table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  .fp-table th { font-size: 0.78rem; color: var(--gris); text-align: left; font-weight: 700; padding: 5px 8px; border-bottom: 1px solid var(--gris-filet); }
+  .fp-table td { padding: 7px 8px; border-bottom: 1px solid var(--gris-filet); vertical-align: middle; }
+  .fp-table .c { text-align: center; }
+  .fp-table .d { text-align: right; white-space: nowrap; }
+  .fp-table td.ok, .fiche-piece .ok { color: var(--ok-texte); font-weight: 700; }
+  .fp-table td.alerte { color: var(--alerte-texte); font-weight: 700; }
+  .fp-table .pale { color: #b9b8b5; }
+  .fp-table tr.visee td { background: #fff3c4; font-weight: 700; }
+  .fp-donnees { margin-top: 12px; }
+  .fp-autres > summary { cursor: pointer; color: var(--bordeaux); font-weight: 700; }
+  .fp-autres > div { margin-top: 10px; }
+  .fp-autres .carte { border: 0; box-shadow: none; padding: 0; margin: 0; }
+  .defilement { overflow-x: auto; }
+  button.petit { padding: 5px 10px; font-size: 0.85rem; }
+  /* ---- V6.1 : plans de coupe ---- */
+  .pl-grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; margin-top: 8px; }
+  .pl-carte { display: block; cursor: pointer; border: 1px solid var(--gris-filet); border-radius: 10px; padding: 10px 12px; background: #fff; min-width: 0; }
+  .pl-carte:hover, .pl-carte:focus-visible { border-color: var(--bordeaux); box-shadow: 0 0 0 2px var(--saumon); }
+  .pl-titre { font-family: var(--titres); font-weight: 700; color: var(--bordeaux); display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .pl-pdc { font-family: var(--texte); background: var(--saumon-pale); color: var(--bordeaux); border-radius: 999px; padding: 2px 9px; font-size: 0.8rem; white-space: nowrap; font-weight: 700; }
+  .pl-sous { font-size: 0.8rem; color: var(--gris); margin: 2px 0 6px; }
+  .pl-pos { font-size: 0.85rem; margin-top: 6px; }
+  .svg-plan { display: block; width: 100%; height: auto; }
+  .modale-boite.pl-grand { max-width: min(1200px, 96vw); max-height: 94vh; }
+  .pl-grand-tete { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .pl-grand-tete h3 { flex: 1; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .pl-dessin { margin: 10px 0; border: 1px solid var(--gris-filet); border-radius: 8px; padding: 6px; background: #fff; }
+  .pl-boutons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; margin: 8px 0 12px; }
+  .badge-nouveau { display: inline-block; background: #fff; color: var(--bordeaux); border-radius: 4px; font-size: 10px; font-weight: 700; padding: 1px 5px; margin-left: 4px; vertical-align: 1px; letter-spacing: .04em; }
+  @media (max-width: 900px) { .fp-ou-va { grid-template-columns: 1fr; } }
+  @media (max-width: 560px) { .pl-grille { grid-template-columns: 1fr; } .fiche-piece .fp-nom { font-size: 1.25rem; } }
+  .onglet-btn.actif .badge-nouveau { background: var(--bordeaux); color: #fff; }
+  .pl-choix { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .pl-choix select { flex: 1; min-width: 220px; padding: 8px 10px; border: 1px solid #d9d4cf; border-radius: 8px; font: inherit; background: #fff; }
+  .pl-resume { margin: 10px 0 4px; font-weight: 700; }
+  .pl-puces { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+  .pl-puce { border-radius: 999px; padding: 4px 12px; font-weight: 700; font-size: 0.9rem; background: var(--gris-clair); }
+  .pl-puce.att { background: var(--attention-fond); color: var(--attention-texte); }
+  .pl-puce.bon { background: var(--ok-fond); color: var(--ok-texte); }
+  .pl-puce.alerte { background: var(--alerte-fond); color: var(--alerte-texte); }
+  .pl-avap { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 6px 0 14px; }
+  .pl-avap .lab { font-family: var(--titres); font-weight: 700; color: var(--gris); font-size: 0.85rem; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 4px; }
+  .pl-legende { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.85rem; color: var(--gris); margin: 8px 0; }
+  .pl-legende i { display: inline-block; width: 22px; height: 12px; border-radius: 2px; vertical-align: -1px; margin-right: 5px; border: 2px solid; }
+  .pl-change-titre { font-family: var(--titres); font-weight: 700; color: var(--bordeaux); margin-top: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .pl-plus { color: var(--ok-texte); font-weight: 700; }
+  .pl-moins { color: #c62828; font-weight: 700; }
+  @media (max-width: 900px) { .pl-avap { grid-template-columns: 1fr; } }

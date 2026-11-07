@@ -341,7 +341,8 @@ async function archiverOnglet(parite, lancementsRapport) {
       // Problèmes validés « c'est voulu » : ils ne comptent plus dans le tableau (ni sur le téléphone).
       const reste = (test, valeur) => (valeur > 0 && restantsDuControle(p, test) === 0 ? 0 : valeur);
       recap.controle = reste(estControleListe, recap.controle);
-      recap.scies = reste(estControleScies, recap.scies);
+      recap.scies = sciesRestants(p);
+      recap.horsPlans = p.plans ? reste(estControlePlans, p.plans.nonPlacees.length) : null;
       recap.couleursAbsentes = reste(estControleCouleurs, recap.couleursAbsentes);
       // Casse : combien de ses pièces étaient déjà lancées, combien de rajouts.
       if (casse) {
