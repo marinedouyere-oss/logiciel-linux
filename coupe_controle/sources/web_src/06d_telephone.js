@@ -155,10 +155,14 @@ function envoyerAuTelephone(forcer = false) {
     lienTelephone.reprendre = true; // un changement pendant l'envoi : on renverra après
     return lienTelephone.envoi;
   }
-  lienTelephone.envoi = (async () => {
-    const signature = signatureDesSemaines([...bibliotheque.semaines.values()]);
-    if (!forcer && etat.signature === signature && !etat.erreur) return { ok: true, inchange: true };
-    clearTimeout(lienTelephone.relance);
+  // Rien n'a changé depuis le dernier envoi réussi : rien à faire (et surtout rien qui reste « en cours »).
+  const signature = signatureDesSemaines([...bibliotheque.semaines.values()]);
+  if (!forcer && etat.signature === signature && !etat.erreur) return Promise.resolve({ ok: true, inchange: true });
+  clearTimeout(lienTelephone.relance);
+  const envoi = (async () => {
+    // La suite tourne une fois « lienTelephone.envoi » posé : sinon, une fin immédiate le laissait posé pour toujours
+    // (« Envoi en cours… » sans fin, plus aucun envoi jusqu'au rechargement de la page).
+    await null;
     let secrets = null;
     try {
       etapeLien("préparation");
@@ -184,7 +188,7 @@ function envoyerAuTelephone(forcer = false) {
       lienTelephone.relance = setTimeout(() => envoyerAuTelephone(false), delai);
       return { ok: false, erreur: texte };
     } finally {
-      lienTelephone.envoi = null;
+      if (lienTelephone.envoi === envoi) lienTelephone.envoi = null;
       lienTelephone.etape = "";
       rafraichirBibliotheque();
       if (lienTelephone.reprendre) {
@@ -193,7 +197,9 @@ function envoyerAuTelephone(forcer = false) {
       }
     }
   })();
-  return lienTelephone.envoi;
+  lienTelephone.envoi = envoi;
+  rafraichirBibliotheque();
+  return envoi;
 }
 
 // Après chaque changement de la bibliothèque : envoi quelques secondes plus tard (un seul pour plusieurs changements).

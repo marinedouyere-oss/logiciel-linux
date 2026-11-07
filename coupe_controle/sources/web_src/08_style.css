@@ -276,6 +276,7 @@
     display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px;
   }
   .modale-fond.masquee { display: none; }
+  #modaleConfirmation { z-index: 1100; } /* toujours au-dessus d'une autre fenêtre (ex. un plan ouvert en grand) */
   .modale-boite {
     background: #fff; border-radius: 4px; border-top: 6px solid var(--bordeaux); max-width: 480px; width: 100%; max-height: 80vh; overflow-y: auto;
     padding: 20px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
@@ -494,6 +495,35 @@
   .pl-plus { color: var(--ok-texte); font-weight: 700; }
   .pl-moins { color: #c62828; font-weight: 700; }
   @media (max-width: 900px) { .pl-avap { grid-template-columns: 1fr; } }
+  /* ---- V6.1.2 : plan de coupe modifié dans Sentinelle ---- */
+  .bouton-plans { margin: 8px 0 4px; }
+  .details-piece .fp-plans { margin-top: 6px; }
+  .pl-carte.modifie { border-color: #1565c0; }
+  .pl-modifie { color: #1565c0; font-weight: 700; }
+  .pl-puce.modif { background: #e3f0fc; color: #0d47a1; font-size: 0.8rem; }
+  .pl-bascule { display: inline-flex; gap: 0; margin-top: 8px; }
+  .pl-bascule button { border-radius: 0; }
+  .pl-bascule button:first-child { border-radius: 8px 0 0 8px; }
+  .pl-bascule button:last-child { border-radius: 0 8px 8px 0; }
+  .pl-aide { margin-top: 8px; background: #e3f0fc; color: #0d47a1; border-radius: 8px; padding: 8px 12px; font-size: 0.9rem; }
+  .pl-dessin.pl-edition .pl-zone { cursor: pointer; }
+  .pl-dessin.pl-edition .pl-zone:hover > rect:first-child { stroke: #1565c0; }
+  .pl-message { margin: 6px 0; font-weight: 700; color: #0d47a1; }
+  .pl-panneau { border: 2px solid #1565c0; border-radius: 10px; padding: 10px 12px; margin: 8px 0; background: #f7fbff; }
+  .pl-panneau-titre { font-family: var(--titres); font-weight: 700; color: #0d47a1; margin-bottom: 4px; }
+  .pl-champs { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 12px; margin: 8px 0; }
+  .pl-champs label { display: flex; flex-direction: column; gap: 3px; font-size: 0.8rem; color: var(--gris); font-weight: 700; }
+  .pl-champs label.pl-large { grid-column: 1 / -1; }
+  .pl-champs label.pl-case { flex-direction: row; align-items: center; gap: 6px; }
+  .pl-champs input[type="text"], .pl-champs input[type="number"] { padding: 7px 9px; border: 1px solid #d9d4cf; border-radius: 8px; font: inherit; color: var(--noir); background: #fff; }
+  .pl-boutons-gauche { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+  .pl-changements { margin: 8px 0; }
+  .pl-marque { color: #0d47a1; font-size: 0.85rem; font-weight: 400; }
+  .pl-table tr[data-choisir] { cursor: pointer; }
+  .pl-table tr[data-choisir]:hover td { background: #eef5fd; }
+  .pl-table tr.pl-choisi td { background: #e3f0fc; }
+  .pl-table tr.pl-etat-partie td { color: #c62828; text-decoration: line-through; }
+  .pl-table tr.pl-etat-partie td .pl-marque { text-decoration: none; color: #c62828; font-weight: 700; }
   /* ---- V6.1 : partie expérimentale ---- */
   .essai-avertissement { background: var(--attention-fond); color: var(--attention-texte); border-left: 6px solid #c98a00; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
   .essai-avertissement strong { margin-right: 4px; }

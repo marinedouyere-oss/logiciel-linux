@@ -20,12 +20,18 @@ final class PlansLancement {
         String nom = "";
         String article = "";
         boolean chute;
+        /** Plan modifié dans Sentinelle sur le PC : « a » pièce posée, « m » modifiée, « r » retirée (ne pas couper). */
+        String etat = "";
+        /** Ce qui a changé (texte écrit par le PC). */
+        String marque = "";
     }
 
     static final class Plan {
         String matiere, nom, sorte, desc;
         int pdc, fois;
         boolean module;
+        /** Modifié dans Sentinelle sur le PC (le .bkp, lui, ne change pas). */
+        boolean modifie;
         double L, W;
         final List<Morceau> morceaux = new ArrayList<>();
     }
@@ -95,6 +101,7 @@ final class PlansLancement {
         p.W = j.optDouble(6, 1);
         p.fois = j.optInt(7, 1);
         p.desc = j.optString(8, "");
+        p.modifie = j.optInt(10, 0) == 1;
         JSONArray rects = j.optJSONArray(9);
         if (rects != null)
             for (int i = 0; i < rects.length(); i++) {
@@ -112,6 +119,8 @@ final class PlansLancement {
                     m.article = nom(noms, r.optInt(5, -1));
                     m.finiL = r.optDouble(6, m.L);
                     m.finiW = r.optDouble(7, m.W);
+                    m.etat = r.optString(8, "");
+                    m.marque = nom(noms, r.optInt(9, -1));
                 }
                 p.morceaux.add(m);
             }

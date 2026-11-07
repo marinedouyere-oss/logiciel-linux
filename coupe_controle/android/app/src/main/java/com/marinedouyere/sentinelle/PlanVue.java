@@ -72,16 +72,34 @@ final class PlanVue extends View {
             }
             n++;
             boolean v = visees.contains(i);
-            fond.setColor(v ? 0xFFFFD54F : Ui.SAUMON);
-            c.drawRect(x, y, x + l, y + h, fond);
-            trait.setColor(Ui.BORDEAUX);
-            trait.setStrokeWidth((v ? 2.5f : 0.8f) * densite);
-            c.drawRect(x, y, x + l, y + h, trait);
+            if ("r".equals(m.etat)) {
+                // Pièce retirée sur le PC : place vide, pointillés rouges, « retirée » (comme le plan imprimé).
+                fond.setColor(0xFFFFFFFF);
+                c.drawRect(x, y, x + l, y + h, fond);
+                trait.setColor(0xFFC62828);
+                trait.setStrokeWidth(2 * densite);
+                trait.setPathEffect(new DashPathEffect(new float[] {6 * densite, 4 * densite}, 0));
+                c.drawRect(x, y, x + l, y + h, trait);
+                trait.setPathEffect(null);
+                float t = Math.min(h * 0.35f, 11 * densite);
+                texte.setTextSize(t);
+                texte.setColor(0xFFC62828);
+                String mot = texte.measureText("retirée — ne pas couper") < l * 0.95f ? "retirée — ne pas couper" : "retirée";
+                if (t >= 6 * densite && texte.measureText(mot) < l * 0.95f) c.drawText(mot, x + l / 2, y + h / 2 + t * 0.35f, texte);
+            } else {
+                boolean pose = "a".equals(m.etat);
+                boolean modif = "m".equals(m.etat);
+                fond.setColor(pose ? 0xFFC8E6C9 : modif ? 0xFFBBDEFB : v ? 0xFFFFD54F : Ui.SAUMON);
+                c.drawRect(x, y, x + l, y + h, fond);
+                trait.setColor(pose ? 0xFF2E7D32 : modif ? 0xFF1565C0 : Ui.BORDEAUX);
+                trait.setStrokeWidth((v || pose || modif ? 2.5f : 0.8f) * densite);
+                c.drawRect(x, y, x + l, y + h, trait);
+            }
             // Nom (clé sans « CVC », module, stratifié) et cote finie quand il y a la place.
             float taille = Math.min(h * 0.32f, 12 * densite);
             String nom = m.nom.replaceFirst("^CVC", "");
             texte.setTextSize(taille);
-            if (taille >= 6 * densite && texte.measureText(nom) < l * 0.95f) {
+            if (!"r".equals(m.etat) && taille >= 6 * densite && texte.measureText(nom) < l * 0.95f) {
                 texte.setColor(Ui.NOIR);
                 boolean deux = h > taille * 2.6f;
                 c.drawText(nom, x + l / 2, y + h / 2 + (deux ? -taille * 0.15f : taille * 0.35f), texte);

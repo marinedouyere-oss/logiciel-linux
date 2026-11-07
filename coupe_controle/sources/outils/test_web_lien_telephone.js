@@ -62,6 +62,19 @@ async function lireCommeLeTelephone(code) {
   await page.waitForFunction((v) => { const e = JSON.parse(localStorage.getItem("sentinelle-lien-telephone")); return e && e.dernierEnvoi && !e.erreur && e.nbSemaines !== undefined; }, versionAvant);
   for (let i = 0; i < 60; i++) { lu = await lireCommeLeTelephone(code); if (lu.manifeste.version !== versionAvant) break; await new Promise((r) => setTimeout(r, 1000)); }
   verifier(lu.manifeste.version !== versionAvant && avec(lu.contenu) === nbPc - 1, `changement envoyé tout seul : ${avec(lu.contenu)} semaine(s) maintenant`);
+  // Rien de changé (cas de chaque ouverture de la page) : pas d'envoi, et surtout pas bloqué sur « Envoi en cours ».
+  const inchange = await page.evaluate(async () => {
+    const r = await envoyerAuTelephone(false);
+    await new Promise((x) => setTimeout(x, 300));
+    return { r, envoi: !!lienTelephone.envoi, etat: document.querySelector("#etatLien").innerText, bouton: document.querySelector("#btnEnvoyerLien").disabled };
+  });
+  verifier(inchange.r.inchange && !inchange.envoi && !inchange.bouton && /Envoyé le/.test(inchange.etat), `rien de changé : pas bloqué sur « Envoi en cours » (${inchange.etat.trim()})`);
+  // « Envoyer maintenant » marche toujours ensuite.
+  await page.click("#btnEnvoyerLien");
+  const versionAvant2 = lu.manifeste.version;
+  await page.waitForFunction(() => !lienTelephone.envoi && /Envoyé le|raté/.test(document.querySelector("#etatLien").innerText), null, { timeout: 120000 });
+  lu = await lireCommeLeTelephone(code);
+  verifier(lu.manifeste.version !== versionAvant2 && /Envoyé le/.test(await page.textContent("#etatLien")), "« Envoyer maintenant » renvoie bien ensuite");
   await page.screenshot({ path: sortieCode.replace(/\.txt$/, ".png"), fullPage: true });
   await nav.close(); console.log(echecs ? `${echecs} ÉCHEC(S)` : "TOUT EST BON"); process.exit(echecs ? 1 : 0);
 })();

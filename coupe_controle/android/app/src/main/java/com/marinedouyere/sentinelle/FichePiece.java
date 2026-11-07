@@ -247,6 +247,7 @@ final class FichePiece {
         tete.addView(badge);
         bloc.addView(tete);
         bloc.addView(ui.texte(t[2], 12, false, Ui.GRIS), ui.marges(2, 4));
+        if (y.plan.modifie) bloc.addView(ui.texte("✎ Plan modifié dans Sentinelle sur le PC", 12, true, 0xFF1565C0), ui.marges(0, 4));
         bloc.addView(new PlanVue(activite, y.plan, y.visees, false), ui.pleineLargeur());
         bloc.addView(ui.texte(t[3], 13, false, Ui.NOIR), ui.marges(4, 0));
         bloc.setOnClickListener(v -> planEnGrand(y, t));
@@ -258,6 +259,8 @@ final class FichePiece {
         LinearLayout corps = ui.colonne();
         corps.setPadding(ui.dp(16), ui.dp(8), ui.dp(16), ui.dp(8));
         corps.addView(ui.texte(t[1] + " · " + t[2], 12, false, Ui.GRIS));
+        if (y.plan.modifie)
+            corps.addView(ui.bandeau("✎ Plan modifié dans Sentinelle sur le PC.\nBleu : pièce modifiée · vert : pièce posée · pointillés rouges : pièce retirée (ne pas couper).", 0xFFE3F0FC, 0xFF0D47A1), ui.marges(6, 0));
         corps.addView(new PlanVue(activite, y.plan, y.visees, true), ui.marges(6, 8));
         int n = 0;
         for (int i = 0; i < y.plan.morceaux.size(); i++) {
@@ -265,7 +268,11 @@ final class FichePiece {
             if (m.chute) continue;
             n++;
             boolean v = y.visees.contains(i);
-            corps.addView(ui.texte(n + ". " + m.nom + (v ? " ← pièce cherchée" : "") + " · " + m.article + " · " + PlansLancement.dims(m.finiL, m.finiW), 13, v, Ui.NOIR), ui.marges(2, 0));
+            boolean change = !m.etat.isEmpty();
+            String ligne = n + ". " + m.nom + (v ? " ← pièce cherchée" : "") + " · " + m.article + " · " + PlansLancement.dims(m.finiL, m.finiW)
+                    + (change && !m.marque.isEmpty() ? " (" + m.marque + ")" : "");
+            int couleur = "r".equals(m.etat) ? 0xFFC62828 : change ? 0xFF0D47A1 : Ui.NOIR;
+            corps.addView(ui.texte(ligne, 13, v || change, couleur), ui.marges(2, 0));
         }
         List<String> chutes = new ArrayList<>();
         for (PlansLancement.Morceau m : y.plan.morceaux) if (m.chute) chutes.add(PlansLancement.dims(m.L, m.W));

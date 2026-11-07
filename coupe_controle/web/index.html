@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.1.1 — Contrôle de coupe</title>
+<title>Sentinelle V6.1.2 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -294,6 +294,7 @@
     display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px;
   }
   .modale-fond.masquee { display: none; }
+  #modaleConfirmation { z-index: 1100; } /* toujours au-dessus d'une autre fenêtre (ex. un plan ouvert en grand) */
   .modale-boite {
     background: #fff; border-radius: 4px; border-top: 6px solid var(--bordeaux); max-width: 480px; width: 100%; max-height: 80vh; overflow-y: auto;
     padding: 20px; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
@@ -512,6 +513,35 @@
   .pl-plus { color: var(--ok-texte); font-weight: 700; }
   .pl-moins { color: #c62828; font-weight: 700; }
   @media (max-width: 900px) { .pl-avap { grid-template-columns: 1fr; } }
+  /* ---- V6.1.2 : plan de coupe modifié dans Sentinelle ---- */
+  .bouton-plans { margin: 8px 0 4px; }
+  .details-piece .fp-plans { margin-top: 6px; }
+  .pl-carte.modifie { border-color: #1565c0; }
+  .pl-modifie { color: #1565c0; font-weight: 700; }
+  .pl-puce.modif { background: #e3f0fc; color: #0d47a1; font-size: 0.8rem; }
+  .pl-bascule { display: inline-flex; gap: 0; margin-top: 8px; }
+  .pl-bascule button { border-radius: 0; }
+  .pl-bascule button:first-child { border-radius: 8px 0 0 8px; }
+  .pl-bascule button:last-child { border-radius: 0 8px 8px 0; }
+  .pl-aide { margin-top: 8px; background: #e3f0fc; color: #0d47a1; border-radius: 8px; padding: 8px 12px; font-size: 0.9rem; }
+  .pl-dessin.pl-edition .pl-zone { cursor: pointer; }
+  .pl-dessin.pl-edition .pl-zone:hover > rect:first-child { stroke: #1565c0; }
+  .pl-message { margin: 6px 0; font-weight: 700; color: #0d47a1; }
+  .pl-panneau { border: 2px solid #1565c0; border-radius: 10px; padding: 10px 12px; margin: 8px 0; background: #f7fbff; }
+  .pl-panneau-titre { font-family: var(--titres); font-weight: 700; color: #0d47a1; margin-bottom: 4px; }
+  .pl-champs { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 12px; margin: 8px 0; }
+  .pl-champs label { display: flex; flex-direction: column; gap: 3px; font-size: 0.8rem; color: var(--gris); font-weight: 700; }
+  .pl-champs label.pl-large { grid-column: 1 / -1; }
+  .pl-champs label.pl-case { flex-direction: row; align-items: center; gap: 6px; }
+  .pl-champs input[type="text"], .pl-champs input[type="number"] { padding: 7px 9px; border: 1px solid #d9d4cf; border-radius: 8px; font: inherit; color: var(--noir); background: #fff; }
+  .pl-boutons-gauche { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+  .pl-changements { margin: 8px 0; }
+  .pl-marque { color: #0d47a1; font-size: 0.85rem; font-weight: 400; }
+  .pl-table tr[data-choisir] { cursor: pointer; }
+  .pl-table tr[data-choisir]:hover td { background: #eef5fd; }
+  .pl-table tr.pl-choisi td { background: #e3f0fc; }
+  .pl-table tr.pl-etat-partie td { color: #c62828; text-decoration: line-through; }
+  .pl-table tr.pl-etat-partie td .pl-marque { text-decoration: none; color: #c62828; font-weight: 700; }
   /* ---- V6.1 : partie expérimentale ---- */
   .essai-avertissement { background: var(--attention-fond); color: var(--attention-texte); border-left: 6px solid #c98a00; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
   .essai-avertissement strong { margin-right: 4px; }
@@ -526,7 +556,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.1.1</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.1.2</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -628,7 +658,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.1.1 · Contrôle de coupe</span>
+    <span>Sentinelle V6.1.2 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -3439,6 +3469,8 @@ function plansDeLaPiece(donnees, cle) {
 // Les plans d'un lancement pour le téléphone (fichier partagé), compacts : les noms à part, chaque plan une fois
 // (matière, Pdc, module, panneau, sorte, L, W, fois, désignation, morceaux [x, y, L, W, nom, article, fini L, fini W] ;
 // une chute : [x, y, L, W, -1]), et pour chaque pièce du lancement ses plans et les morceaux à mettre en jaune.
+// Un plan modifié dans Sentinelle part modifié : 11e valeur 1, et chaque morceau changé a en plus son état
+// (« a » posée, « m » modifiée, « r » retirée) et ce qui a changé (index dans les noms).
 function plansPourTelephone(donnees, cles) {
   const noms = [];
   const indexNom = new Map();
@@ -3452,14 +3484,36 @@ function plansPourTelephone(donnees, cles) {
   const r1 = (v) => Math.round(v * 10) / 10;
   const plans = [];
   const indexPlan = new Map();
+  const version = (plan) => (typeof versionDuPlan === "function" ? versionDuPlan(donnees.lancement, plan) : { plan, etats: null, marques: null, origine: null, rt: null });
+  const CODES = { ajoutee: "a", modifiee: "m", partie: "r" };
   const ajouter = (plan) => {
     if (!indexPlan.has(plan)) {
       const m = donnees.matieres.get(plan.matiere);
-      indexPlan.set(plan, plans.length);
-      plans.push([plan.matiere, plan.pdc, plan.module ? 1 : 0, plan.nom, plan.sorte, r1(plan.L), r1(plan.W), plan.fois, m ? m.desc : "",
-        plan.rects.map((r) => (r.chute ? [r1(r.x), r1(r.y), r1(r.L), r1(r.W), -1] : [r1(r.x), r1(r.y), r1(r.L), r1(r.W), nom(nomMorceauPlan(r)), nom(r.article || ""), r1(r.fini[0]), r1(r.fini[1])]))]);
+      const v = version(plan);
+      indexPlan.set(plan, { i: plans.length, v });
+      const morceaux = v.plan.rects.map((r, idx) => {
+        if (r.chute) return [r1(r.x), r1(r.y), r1(r.L), r1(r.W), -1];
+        const x = [r1(r.x), r1(r.y), r1(r.L), r1(r.W), nom(nomMorceauPlan(r)), nom(r.article || ""), r1(r.fini[0]), r1(r.fini[1])];
+        const etat = v.etats ? CODES[v.etats.get(idx)] : null;
+        if (etat) x.push(etat, nom((v.marques && v.marques.get(idx)) || ""));
+        return x;
+      });
+      plans.push([plan.matiere, plan.pdc, plan.module ? 1 : 0, plan.nom, plan.sorte, r1(plan.L), r1(plan.W), plan.fois, m ? m.desc : "", morceaux, ...(v.rt ? [1] : [])]);
     }
-    return indexPlan.get(plan);
+    return indexPlan.get(plan).i;
+  };
+  // Les morceaux en jaune, dans le plan tel qu'il part (modifié ou non).
+  const visees = (plan, visee, cle) => {
+    const { v } = indexPlan.get(plan);
+    return v.plan.rects
+      .map((r, j) => {
+        if (r.chute) return -1;
+        const o = v.origine ? v.origine[j] : { idx: j };
+        if (!o || o.reste) return -1;
+        if (o.ajout !== undefined) return r.cle === cle ? j : -1;
+        return visee(plan.rects[o.idx]) ? j : -1;
+      })
+      .filter((j) => j >= 0);
   };
   const pieces = {};
   for (const cle of cles) {
@@ -3471,8 +3525,23 @@ function plansPourTelephone(donnees, cles) {
       d: pp.piece ? pp.piece.dessus : "",
       s: pp.piece ? pp.piece.dessous : "",
       n: donnees.placees.get(cle) || 0,
-      p: pp.plans.map((x) => [ajouter(x.plan), x.rang, x.plan.rects.map((r, i) => (!r.chute && x.visee(r) ? i : -1)).filter((i) => i >= 0)]),
+      p: pp.plans.map((x) => [ajouter(x.plan), x.rang, visees(x.plan, x.visee, cle)]),
     };
+  }
+  // Une pièce du lancement posée dans un plan modifié : ce plan est aussi le sien.
+  const lancees = new Set(cles);
+  for (const m of donnees.matieres.values()) {
+    for (const plan of m.plans) {
+      const rt = typeof retoucheDuPlan === "function" ? retoucheDuPlan(donnees.lancement, plan) : null;
+      if (!rt) continue;
+      for (const a of rt.ajouts || []) {
+        if (!a.cle || !lancees.has(a.cle)) continue;
+        const i = ajouter(plan);
+        if (!pieces[a.cle]) pieces[a.cle] = { g: "", t: "", d: "", s: "", n: donnees.placees.get(a.cle) || 0, p: [] };
+        if (pieces[a.cle].p.some((x) => x[0] === i)) continue;
+        pieces[a.cle].p.push([i, plan.module ? 0 : 1, visees(plan, () => false, a.cle)]);
+      }
+    }
   }
   return { lancement: donnees.lancement, noms, plans, pieces };
 }
@@ -3503,8 +3572,9 @@ async function controlerPlans(qteAttendueParCle, fichierBkp, qteParCleBkp) {
 
 // ---- Dessin d'un plan (SVG) ----
 // options : { visee(r) → bool, numeros, cote: "fini"|"debit", imprimable, modules (Map nom → plan, pour dessiner leurs
-// pièces dans le panneau, comme Cut Rite), etats (Map index → "ajoutee"|"partie"|"deplacee"|"chute_perdue"),
-// textes (Map index → texte écrit dans une place laissée vide) }
+// pièces dans le panneau, comme Cut Rite), etats (Map index → "ajoutee"|"modifiee"|"partie"|"deplacee"|"chute_perdue"),
+// textes (Map index → texte écrit dans une place laissée vide), cliquable (chaque morceau dans un <g data-idx>, pour
+// le modifier), selection (index du morceau choisi : entouré en bleu) }
 function svgPlan(plan, options = {}) {
   const { L, W } = plan;
   const visee = options.visee || (() => false);
@@ -3520,7 +3590,7 @@ function svgPlan(plan, options = {}) {
     `<rect x="0" y="0" width="${L.toFixed(0)}" height="${W.toFixed(0)}" fill="${imp ? "#fff" : "#f4f3f1"}" stroke="${imp ? "#22231d" : "#797978"}" stroke-width="${ech(10)}"/>`,
   ];
   let n = 0;
-  plan.rects.forEach((r, idx) => {
+  const morceau = (r, idx) => {
     const etat = options.etats ? options.etats.get(idx) : null;
     const xywh = `x="${r.x.toFixed(0)}" y="${r.y.toFixed(0)}" width="${r.L.toFixed(0)}" height="${r.W.toFixed(0)}"`;
     if (r.chute) {
@@ -3541,8 +3611,8 @@ function svgPlan(plan, options = {}) {
     const mod = options.modules && MOTIF_NOYAU_PLAN.test(r.nom || "") ? options.modules.get(nom) : null;
     // Un module dessiné avec ses pièces : ses trous restent clairs, seule la pièce visée est en jaune.
     const fondModule = mod && !etat ? (v ? "#fff6d6" : "#fbfaf9") : null;
-    const fond = fondModule || (etat === "ajoutee" ? "#c8e6c9" : etat === "deplacee" ? `url(#${id}r)` : v ? (imp ? `url(#${id}v)` : "#ffd54f") : imp ? "#f1f0ee" : "#eac2b7");
-    const trait = etat === "ajoutee" ? "#2e7d32" : etat === "deplacee" ? "#c62828" : imp ? "#22231d" : "#78140c";
+    const fond = fondModule || (etat === "ajoutee" ? "#c8e6c9" : etat === "modifiee" ? "#bbdefb" : etat === "deplacee" ? `url(#${id}r)` : v ? (imp ? `url(#${id}v)` : "#ffd54f") : imp ? "#f1f0ee" : "#eac2b7");
+    const trait = etat === "ajoutee" ? "#2e7d32" : etat === "modifiee" ? "#1565c0" : etat === "deplacee" ? "#c62828" : imp ? "#22231d" : "#78140c";
     s.push(`<rect ${xywh} fill="${fond}" stroke="${trait}" stroke-width="${ech(v || etat ? 16 : 6)}"/>`);
     if (mod && !etat) {
       for (const q of mod.rects) {
@@ -3567,7 +3637,15 @@ function svgPlan(plan, options = {}) {
       s.push(`<circle cx="${cx.toFixed(0)}" cy="${cy.toFixed(0)}" r="${rr.toFixed(0)}" fill="${v ? "#22231d" : "#fff"}" stroke="#22231d" stroke-width="${(rr / 7).toFixed(0)}"/>`);
       s.push(`<text x="${cx.toFixed(0)}" y="${(cy + rr * 0.38).toFixed(0)}" font-size="${(rr * 1.1).toFixed(0)}" text-anchor="middle" font-weight="700" fill="${v ? "#fff" : "#22231d"}" font-family="Lato,Arial">${n}</text>`);
     }
+  };
+  plan.rects.forEach((r, idx) => {
+    if (!options.cliquable) return morceau(r, idx);
+    s.push(`<g data-idx="${idx}" class="pl-zone">`);
+    morceau(r, idx);
+    s.push("</g>");
   });
+  const choisi = options.selection !== null && options.selection !== undefined ? plan.rects[options.selection] : null;
+  if (choisi) s.push(`<rect x="${choisi.x.toFixed(0)}" y="${choisi.y.toFixed(0)}" width="${choisi.L.toFixed(0)}" height="${choisi.W.toFixed(0)}" fill="none" stroke="#1565c0" stroke-width="${ech(34)}" stroke-dasharray="${ech(90)} ${ech(50)}" pointer-events="none"/>`);
   s.push("</svg>");
   return s.join("");
 }
@@ -4478,9 +4556,16 @@ const PDF_MM = 72 / 25.4;
 const POLICE = { TITRE: 0, TEXTE: 1, GRAS: 2, ITALIQUE: 3 };
 const WINANSI_SPECIAUX = { "€": 0x80, "‚": 0x82, "ƒ": 0x83, "„": 0x84, "…": 0x85, "†": 0x86, "‡": 0x87, "ˆ": 0x88, "‰": 0x89, "Š": 0x8a, "‹": 0x8b, "Œ": 0x8c, "Ž": 0x8e, "‘": 0x91, "’": 0x92, "“": 0x93, "”": 0x94, "•": 0x95, "–": 0x96, "—": 0x97, "˜": 0x98, "™": 0x99, "š": 0x9a, "›": 0x9b, "œ": 0x9c, "ž": 0x9e, "Ÿ": 0x9f };
 
+// Signes absents des polices du PDF : écrits autrement (sinon « ? »).
+const PDF_REMPLACES = { "→": "->", "←": "<-", "⇒": "=>", "✔": "OK", "✓": "OK", "✗": "x", "✘": "x", "⚠": "!", "✎": "", "▸": ">", "▾": "v", "≥": ">=", "≤": "<=", "−": "-", "≠": "<>" };
+
 function codesWinAnsi(texte) {
   const codes = [];
   for (const c of String(texte)) {
+    if (PDF_REMPLACES[c] !== undefined) {
+      for (const r of PDF_REMPLACES[c]) codes.push(r.codePointAt(0));
+      continue;
+    }
     const n = c.codePointAt(0);
     if (n < 0x80 || (n >= 0xa0 && n <= 0xff)) codes.push(n);
     else codes.push(WINANSI_SPECIAUX[c] ?? 0x3f);
@@ -7618,10 +7703,14 @@ function envoyerAuTelephone(forcer = false) {
     lienTelephone.reprendre = true; // un changement pendant l'envoi : on renverra après
     return lienTelephone.envoi;
   }
-  lienTelephone.envoi = (async () => {
-    const signature = signatureDesSemaines([...bibliotheque.semaines.values()]);
-    if (!forcer && etat.signature === signature && !etat.erreur) return { ok: true, inchange: true };
-    clearTimeout(lienTelephone.relance);
+  // Rien n'a changé depuis le dernier envoi réussi : rien à faire (et surtout rien qui reste « en cours »).
+  const signature = signatureDesSemaines([...bibliotheque.semaines.values()]);
+  if (!forcer && etat.signature === signature && !etat.erreur) return Promise.resolve({ ok: true, inchange: true });
+  clearTimeout(lienTelephone.relance);
+  const envoi = (async () => {
+    // La suite tourne une fois « lienTelephone.envoi » posé : sinon, une fin immédiate le laissait posé pour toujours
+    // (« Envoi en cours… » sans fin, plus aucun envoi jusqu'au rechargement de la page).
+    await null;
     let secrets = null;
     try {
       etapeLien("préparation");
@@ -7647,7 +7736,7 @@ function envoyerAuTelephone(forcer = false) {
       lienTelephone.relance = setTimeout(() => envoyerAuTelephone(false), delai);
       return { ok: false, erreur: texte };
     } finally {
-      lienTelephone.envoi = null;
+      if (lienTelephone.envoi === envoi) lienTelephone.envoi = null;
       lienTelephone.etape = "";
       rafraichirBibliotheque();
       if (lienTelephone.reprendre) {
@@ -7656,7 +7745,9 @@ function envoyerAuTelephone(forcer = false) {
       }
     }
   })();
-  return lienTelephone.envoi;
+  lienTelephone.envoi = envoi;
+  rafraichirBibliotheque();
+  return envoi;
 }
 
 // Après chaque changement de la bibliothèque : envoi quelques secondes plus tard (un seul pour plusieurs changements).
@@ -11115,6 +11206,10 @@ function remplirDetails(zone, f, l) {
   }
   for (const i of l.infos) html += `<div class="info${i.alerte ? " alerte" : ""}${i.commentaire ? " commentaire" : ""}">${echapper(i.texte)}</div>`;
   if (f.schema && l.piece && f.schema.nonPlacees.includes(l.piece)) html += '<div class="info">Position à lire sur le plan client</div>';
+  // Ses plans de coupe (si un .bkp de son lancement est chargé) : affichés au clic, modifiables en grand.
+  const lancements = l.trouvee ? lancementsDeLaPiece(l) : null;
+  const avecPlans = lancements && lancements.cases.some((g) => g.source.bkp);
+  if (avecPlans) html += '<button type="button" class="contour petit bouton-plans" data-voir-plans aria-expanded="false">▸ Voir les plans de coupe</button><div class="fp-plans" hidden></div>';
   const donnees = c && c.toutesDonneesLan ? Object.entries(c.toutesDonneesLan) : [];
   if (donnees.length) {
     html += `<details class="donnees"><summary>Toutes les données (${donnees.length})</summary><table class="table-donnees-lan">${donnees
@@ -11122,6 +11217,21 @@ function remplirDetails(zone, f, l) {
       .join("")}</table></details>`;
   }
   zone.innerHTML = html;
+  const bouton = zone.querySelector("[data-voir-plans]");
+  if (bouton) {
+    const plans = zone.querySelector(".fp-plans");
+    bouton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const ouvrir = plans.hidden;
+      plans.hidden = !ouvrir;
+      bouton.setAttribute("aria-expanded", String(ouvrir));
+      bouton.textContent = ouvrir ? "▾ Masquer les plans de coupe" : "▸ Voir les plans de coupe";
+      if (ouvrir && !plans.dataset.lus) {
+        plans.dataset.lus = "1";
+        remplirPlansPiece(plans, l, lancements);
+      }
+    });
+  }
 }
 
 // ---- Pièce sans étiquette : cote finie (sens du fil puis largeur), couleur facultative, semaine obligatoire ----
@@ -12785,67 +12895,89 @@ function fichePieceSimple(a) {
   return carte;
 }
 
-// Les plans de la pièce, lus après l'affichage (quelques dixièmes de seconde par .bkp).
+// Les plans de la pièce, lus après l'affichage (quelques dixièmes de seconde par .bkp) : verdict et tableau complétés.
 async function remplirPlansFiche(carte, l, lancements) {
   if (!lancements.cases.some((g) => g.source.bkp)) return;
-  const zone = carte.querySelector(".fp-plans");
-  zone.innerHTML = '<div class="note">Lecture des plans de coupe…</div>';
-  const plans = await plansDeLaPieceParCase(l.cle, lancements);
+  const plans = await remplirPlansPiece(carte.querySelector(".fp-plans"), l, lancements);
   carte.querySelector(".fp-zone-verdict").innerHTML = htmlVerdict(verdictPiece(l, lancements, plans));
-  let html = "";
-  const groupes = [];
   for (const [p, x] of plans) {
     const td = carte.querySelector(`[data-plan-case="${p.id}"]`);
+    if (!td) continue;
     if (x.erreur) {
-      if (td) td.innerHTML = '<span class="alerte">illisible</span>';
-      html += `<div class="message-alerte">${echapper(nomCasePlans(p))} : plans illisibles (${echapper(x.erreur)})</div>`;
+      td.innerHTML = '<span class="alerte">illisible</span>';
       continue;
     }
     const premier = x.pp.plans.find((y) => y.rang === 0) || x.pp.plans.find((y) => y.rang === 1);
-    if (td) {
-      td.className = `c ${x.place ? "ok" : "alerte"}`;
-      td.textContent = x.place
-        ? `✔ placée${premier ? ` · Pdc ${premier.plan.pdc}${premier.rang === 0 ? ` (module ${premier.plan.nom})` : ` · ${premier.plan.matiere}`}` : ""}`
-        : "✗ dans aucun plan";
-    }
-    if (!x.pp.plans.length) continue;
-    groupes.push({ p, x });
-  }
-  for (const { p, x } of groupes) {
-    const n = x.pp.plans.length;
-    const bande = x.pp.bande && !x.pp.module ? `<div class="note">Pièce de la bande ${echapper(x.pp.groupe)} : elle est coupée dans la bande (pas de plan à part).</div>` : "";
-    html += `<div class="fp-h3 fp-titre-plans"><span>Plans de coupe${groupes.length > 1 ? ` — ${echapper(nomCasePlans(p))}` : ""}</span>
-      <span class="note">${n} plan(s), mêmes numéros « Pdc » que dans Cut Rite</span>
-      <button type="button" class="contour petit" data-imprimer-case="${p.id}">Imprimer les plans (PDF)</button></div>${bande}
-      <div class="pl-grille">${x.pp.plans
-        .map((y, i) => {
-          const t = textesPlanPiece(y, x.pp, x.donnees);
-          return `<div class="pl-carte" role="button" tabindex="0" data-case="${p.id}" data-i="${i}" title="Ouvrir le plan en grand">
-            <div class="pl-titre"><span>${i + 1} · ${echapper(t.titre)}</span><span class="pl-pdc">${echapper(t.badge)}</span></div>
-            <div class="pl-sous">${echapper(t.sous)}</div>
-            ${svgPlan(y.plan, { visee: y.visee })}
-            <div class="pl-pos">${echapper(t.position)}</div></div>`;
-        })
-        .join("")}</div>`;
-  }
-  if (groupes.length) html += '<div class="note">Cliquer un plan l\'ouvre en grand avec toutes ses pièces numérotées (cote finie comme dans Cut Rite). Plans lus dans la sauvegarde .bkp du lancement.</div>';
-  zone.innerHTML = html;
-  for (const b of zone.querySelectorAll(".pl-carte")) {
-    const { x } = groupes.find((gr) => String(gr.p.id) === b.dataset.case);
-    const y = x.pp.plans[Number(b.dataset.i)];
-    activerCartePlan(b, () => ouvrirPlanEnGrand({ plan: y.plan, donnees: x.donnees, visee: y.visee, ...textesPlanPiece(y, x.pp, x.donnees) }));
-  }
-  for (const b of zone.querySelectorAll("[data-imprimer-case]")) {
-    const { p, x } = groupes.find((gr) => String(gr.p.id) === b.dataset.imprimerCase);
-    b.addEventListener("click", () => imprimerPlansPiece(l, p, x));
+    td.className = `c ${x.place ? "ok" : "alerte"}`;
+    td.textContent = x.place
+      ? `✔ placée${premier ? ` · Pdc ${premier.plan.pdc}${premier.rang === 0 ? ` (module ${premier.plan.nom})` : ` · ${premier.plan.matiere}`}` : ""}`
+      : "✗ dans aucun plan";
   }
 }
+
+// Les vignettes des plans de coupe d'une pièce (fiche de la pièce, ou une pièce de la commande dans la recherche).
+// Un plan modifié dans Sentinelle est montré modifié (badge « ✎ modifié »). Rend les plans lus, par case.
+async function remplirPlansPiece(zone, l, lancements) {
+  zone.innerHTML = '<div class="note">Lecture des plans de coupe…</div>';
+  const plans = await plansDeLaPieceParCase(l.cle, lancements);
+  const dessiner = () => {
+    let html = "";
+    const groupes = [];
+    for (const [p, x] of plans) {
+      if (x.erreur) {
+        html += `<div class="message-alerte">${echapper(nomCasePlans(p))} : plans illisibles (${echapper(x.erreur)})</div>`;
+        continue;
+      }
+      if (x.pp.plans.length) groupes.push({ p, x });
+    }
+    for (const { p, x } of groupes) {
+      const n = x.pp.plans.length;
+      const bande = x.pp.bande && !x.pp.module ? `<div class="note">Pièce de la bande ${echapper(x.pp.groupe)} : elle est coupée dans la bande (pas de plan à part).</div>` : "";
+      html += `<div class="fp-h3 fp-titre-plans"><span>Plans de coupe${groupes.length > 1 ? ` — ${echapper(nomCasePlans(p))}` : ""}</span>
+        <span class="note">${n} plan(s), mêmes numéros « Pdc » que dans Cut Rite</span>
+        <button type="button" class="contour petit" data-imprimer-case="${p.id}">Imprimer les plans (PDF)</button></div>${bande}
+        <div class="pl-grille">${x.pp.plans
+          .map((y, i) => {
+            const t = textesPlanPiece(y, x.pp, x.donnees);
+            const v = versionDuPlan(x.donnees.lancement, y.plan);
+            return `<div class="pl-carte${v.rt ? " modifie" : ""}" role="button" tabindex="0" data-case="${p.id}" data-i="${i}" title="Ouvrir le plan en grand (et le modifier)">
+              <div class="pl-titre"><span>${i + 1} · ${echapper(t.titre)}</span><span class="pl-pdc">${echapper(t.badge)}</span></div>
+              <div class="pl-sous">${echapper(t.sous)}${v.rt ? ' · <span class="pl-modifie">✎ modifié dans Sentinelle</span>' : ""}</div>
+              ${svgPlan(v.plan, { visee: y.visee, etats: v.etats, textes: v.textes })}
+              <div class="pl-pos">${echapper(t.position)}</div></div>`;
+          })
+          .join("")}</div>`;
+    }
+    if (groupes.length) html += '<div class="note">Cliquer un plan l\'ouvre en grand avec toutes ses pièces numérotées (cote finie comme dans Cut Rite) : on peut y modifier les pièces et imprimer le plan d\'origine ou modifié. Plans lus dans la sauvegarde .bkp du lancement.</div>';
+    zone.innerHTML = html;
+    for (const b of zone.querySelectorAll(".pl-carte")) {
+      const { x } = groupes.find((gr) => String(gr.p.id) === b.dataset.case);
+      const y = x.pp.plans[Number(b.dataset.i)];
+      activerCartePlan(b, () => ouvrirPlanEnGrand({ plan: y.plan, donnees: x.donnees, visee: y.visee, ...textesPlanPiece(y, x.pp, x.donnees), apresModification: dessiner }));
+    }
+    for (const b of zone.querySelectorAll("[data-imprimer-case]")) {
+      const { p, x } = groupes.find((gr) => String(gr.p.id) === b.dataset.imprimerCase);
+      b.addEventListener("click", () => imprimerPlansPiece(l, p, x));
+    }
+  };
+  dessiner();
+  return plans;
+}
+
+// Un plan pour le PDF : la version modifiée s'il l'a été (bien marquée), sinon d'origine.
+function planPourPdf(x) {
+  const v = versionDuPlan(x.donnees.lancement, x.plan);
+  if (!v.rt) return x;
+  return { ...x, plan: v.plan, etats: v.etats, textes: v.textes, marques: v.marques, titre: `${x.titre || `Plan ${x.plan.pdc}`} — MODIFIÉ`, legende: `Modifié dans Sentinelle${v.rt.date ? ` le ${new Date(v.rt.date).toLocaleDateString("fr-FR")}` : ""} : ${changementsRetouche(x.plan, v.rt).length} changement(s)` };
+}
+const NOTE_PDF_MODIFIES = " Plans marqués « MODIFIÉ » : bleu = pièce modifiée, vert = pièce posée, pointillés rouges = pièce retirée (ne pas couper) ; modifiés dans Sentinelle, le .bkp ne change pas.";
 
 function imprimerPlansPiece(l, p, x) {
   const c = l.trouvee ? l.trouvee.champs : null;
   const d = (c && c.toutesDonneesLan) || {};
   const dims = c && c.longueurFinie != null ? `${fmtDim(c.longueurFinie)} × ${fmtDim(c.largeurFinie)}${c.epaisseurFinie != null ? ` × ${fmtDim(c.epaisseurFinie)}` : ""} mm` : "";
   const lancement = p.strat ? p.strat.name.replace(/\.[^.]*$/, "") : x.donnees.lancement;
+  const plans = x.pp.plans.map((y) => planPourPdf({ plan: y.plan, donnees: x.donnees, visee: y.visee, ...textesPlanPiece(y, x.pp, x.donnees) }));
   const octets = pdfPlansDeCoupe({
     surtitre: `Plans de coupe de la pièce · lancement ${lancement} · semaine ${semaineDeLaCase(p)}`,
     titre: `${d.conf_article || ""} ${dims}`.trim() || l.cle,
@@ -12853,8 +12985,8 @@ function imprimerPlansPiece(l, p, x) {
       [l.cle, d.conf_commande ? `commande ${d.conf_commande}, ligne ${d.conf_ligne}` : "", d.com_clientcom || "", d.com_reference ? `réf. ${d.com_reference}` : ""].filter(Boolean).join(" · "),
       [d.agglo ? `Agglo ${d.agglo}` : "", d.coloris ? `dessus ${d.coloris}` : "", d.coloris_inf ? `dessous ${d.coloris_inf}` : "", x.pp.groupe ? `${x.pp.module ? "module" : "bande"} ${x.pp.groupe}` : ""].filter(Boolean).join(" · "),
     ],
-    note: "La pièce cherchée (ou le module et les stratifiés qui la portent) est hachurée, avec un bord épais et un numéro sur fond noir. Les numéros « Pdc » sont ceux de Cut Rite. Cotes finies en mm.",
-    plans: x.pp.plans.map((y) => ({ plan: y.plan, donnees: x.donnees, visee: y.visee, ...textesPlanPiece(y, x.pp, x.donnees) })),
+    note: `La pièce cherchée (ou le module et les stratifiés qui la portent) est hachurée, avec un bord épais et un numéro sur fond noir. Les numéros « Pdc » sont ceux de Cut Rite. Cotes finies en mm.${plans.some((y) => y.marques) ? NOTE_PDF_MODIFIES : ""}`,
+    plans,
     document: `Plans de coupe de ${l.cle}`,
   });
   telecharger(`Plans_de_coupe_${l.cle}.pdf`, octets, "application/pdf");
@@ -12884,79 +13016,7 @@ function morceauxNumerotes(plan) {
   return { morceaux, chutes };
 }
 
-function fermerPlanEnGrand() {
-  const m = $("modalePlan");
-  if (m) m.remove();
-  document.removeEventListener("keydown", toucheModalePlan);
-}
-
-function toucheModalePlan(e) {
-  if (e.key === "Escape") fermerPlanEnGrand();
-}
-
-// x : { plan, donnees, visee, titre, badge, sous }
-function ouvrirPlanEnGrand(x) {
-  fermerPlanEnGrand();
-  const { plan, donnees } = x;
-  const visee = x.visee || (() => false);
-  let cote = "fini";
-  const fond = document.createElement("div");
-  fond.className = "modale-fond";
-  fond.id = "modalePlan";
-  const { morceaux, chutes } = morceauxNumerotes(plan);
-  const lignes = morceaux
-    .map((r, i) => {
-      const v = visee(r);
-      const nom = (r.nom || "").split("/")[0];
-      const module = MOTIF_NOYAU_PLAN.test(r.nom || "") && donnees.modules.has(nom);
-      const piece = r.cle && !MOTIF_NOYAU_PLAN.test(r.nom || "") && !MOTIF_STRATIFIE_PLAN.test(r.nom || "");
-      return `<tr class="${v ? "visee" : ""}"><td class="c">${i + 1}</td><td>${echapper(nomMorceauPlan(r))}${v ? " <strong>← pièce cherchée</strong>" : ""}${module ? ` <button type="button" class="texte petit" data-module="${echapper(nom)}">voir le module</button>` : ""}</td>
-        <td>${echapper(r.article)}</td><td class="d">${dimsPlan(r.fini[0], r.fini[1])}</td><td class="d">${dimsPlan(r.L, r.W)}</td><td>${piece ? `${echapper(r.commande)} / ${echapper(r.ligne)}` : ""}</td></tr>`;
-    })
-    .join("");
-  fond.innerHTML = `<div class="modale-boite pl-grand" role="dialog" aria-modal="true">
-    <div class="pl-grand-tete"><h3>${echapper(x.titre || `Plan ${plan.pdc}`)} <span class="pl-pdc">${echapper(x.badge || `Pdc ${plan.pdc}`)}</span></h3>
-      <button type="button" class="texte" data-fermer aria-label="Fermer">✕</button></div>
-    <div class="note">${echapper(x.sous || "")}</div>
-    <div class="pl-dessin"></div>
-    <div class="pl-boutons">
-      <button type="button" class="contour" data-cote>Voir les cotes de débit</button>
-      <button type="button" class="contour" data-imprimer>Imprimer ce plan (PDF)</button>
-      <button type="button" data-fermer>Fermer</button>
-    </div>
-    <div class="defilement"><table class="fp-table pl-table"><thead><tr><th class="c">N°</th><th>Pièce</th><th>Article</th><th class="d">Cote finie</th><th class="d">Débit</th><th>Commande / ligne</th></tr></thead><tbody>${lignes}</tbody></table></div>
-    ${chutes.length ? `<div class="note">Chutes gardées : ${chutes.map((r) => dimsPlan(r.L, r.W)).join(", ")}</div>` : ""}
-  </div>`;
-  const dessiner = () => {
-    fond.querySelector(".pl-dessin").innerHTML = svgPlan(plan, { visee, numeros: true, modules: plan.module ? null : donnees.modules, cote });
-  };
-  dessiner();
-  fond.addEventListener("click", (e) => {
-    if (e.target === fond || e.target.closest("[data-fermer]")) fermerPlanEnGrand();
-  });
-  fond.querySelector("[data-cote]").addEventListener("click", (e) => {
-    cote = cote === "fini" ? "debit" : "fini";
-    e.target.textContent = cote === "fini" ? "Voir les cotes de débit" : "Voir les cotes finies";
-    dessiner();
-  });
-  fond.querySelector("[data-imprimer]").addEventListener("click", () => {
-    const octets = pdfPlansDeCoupe({
-      surtitre: `Plan de coupe · lancement ${donnees.lancement}`,
-      titre: `${x.titre || "Plan"} — ${x.badge || `Pdc ${plan.pdc}`}`,
-      lignes: [],
-      note: "Les numéros « Pdc » sont ceux de Cut Rite. Cotes finies en mm.",
-      plans: [x],
-      document: `Plan de coupe ${plan.matiere} Pdc ${plan.pdc}`,
-    });
-    telecharger(`Plan_${donnees.lancement}_${plan.matiere}_Pdc${plan.pdc}.pdf`, octets, "application/pdf");
-  });
-  for (const b of fond.querySelectorAll("[data-module]")) {
-    const m = donnees.modules.get(b.dataset.module);
-    b.addEventListener("click", () => ouvrirPlanEnGrand({ plan: m, donnees, visee, titre: `Module ${m.nom}`, badge: `Pdc ${m.pdc}`, sous: `module · ${dimsPlan(m.L, m.W)} · ${m.matiere}` }));
-  }
-  document.body.appendChild(fond);
-  document.addEventListener("keydown", toucheModalePlan);
-}
+// Le plan en grand (et ses modifications) : voir 07g_retouche_plans.js.
 
 // ---- Les plans en PDF (A4 portrait, lisible en noir et blanc) ----
 // options : { surtitre, titre, lignes: [texte], note, plans: [{ plan, donnees, visee, titre, badge, sous, etats, textes, legende }],
@@ -13034,12 +13094,18 @@ function pdfPlansDeCoupe(o) {
       if (v) pdf.rectangle(M, y - 8.5, U, 11, 0xfff3c4, null, 0);
       const police = v ? POLICE.GRAS : POLICE.TEXTE;
       const piece = r.cle && !MOTIF_NOYAU_PLAN.test(r.nom || "") && !MOTIF_STRATIFIE_PLAN.test(r.nom || "");
-      const nom = `${nomMorceauPlan(r)}${v ? " ← pièce cherchée" : etat === "ajoutee" ? " (ajoutée)" : etat === "deplacee" ? " (part sur un autre plan)" : ""}`;
+      const marque = x.marques ? x.marques.get(plan.rects.indexOf(r)) : null;
+      const nom = `${nomMorceauPlan(r)}${v ? " ← pièce cherchée" : ""}${marque ? ` (${marque})` : etat === "ajoutee" ? " (ajoutée)" : etat === "deplacee" ? " (part sur un autre plan)" : ""}`;
       pdf.texte(M + 4, y, String(k + 1), 7.5, police, CHARTE.NOIR);
-      pdf.texte(M + 22, y, couperTextePdf(nom, 222, 7.5, police)[0], 7.5, police, CHARTE.NOIR);
+      const morceauxNom = couperTextePdf(nom, 222, 7.5, police);
+      pdf.texte(M + 22, y, morceauxNom[0], 7.5, police, CHARTE.NOIR);
       pdf.texte(M + 250, y, couperTextePdf(r.article || "", 76, 7.5, police)[0], 7.5, police, CHARTE.NOIR);
       pdf.texte(M + 330, y, dimsPlan(r.fini[0], r.fini[1]), 7.5, police, CHARTE.NOIR);
       if (piece) pdf.texte(M + 410, y, `${r.commande} / ${r.ligne}`, 7.5, police, CHARTE.NOIR);
+      for (const suite of morceauxNom.slice(1, 3)) {
+        y += 9;
+        pdf.texte(M + 22, y, suite, 7.5, police, CHARTE.NOIR);
+      }
       pdf.filet(M, M + U, y + 2.5, CHARTE.GRIS_FILET, 0.4);
       y += 11;
     });
@@ -13074,7 +13140,7 @@ function dessinerPlanPdf(pdf, x0, y0, ech, plan, donnees, visee, etats, textes) 
       return;
     }
     const v = visee(r);
-    const fond = etat === "ajoutee" ? 0xc8e6c9 : etat === "deplacee" ? 0xfde2df : v ? 0xffe082 : 0xf1f0ee;
+    const fond = etat === "ajoutee" ? 0xc8e6c9 : etat === "modifiee" ? 0xbbdefb : etat === "deplacee" ? 0xfde2df : v ? 0xffe082 : 0xf1f0ee;
     pdf.rectangle(x, y, l, h, fond, null, 0);
     if (v || etat === "deplacee") pdf.hachures(x, y, l, h, etat === "deplacee" ? 0xc62828 : CHARTE.NOIR, 5, 0.6);
     const nom = (r.nom || "").split("/")[0];
@@ -13100,8 +13166,9 @@ function dessinerPlanPdf(pdf, x0, y0, ech, plan, donnees, visee, etats, textes) 
         texteCentrePdf(pdf, x + l / 2, y + h / 2 + taille * 0.35, t, taille, POLICE.GRAS, CHARTE.NOIR);
       }
     }
-    const trait = etat === "ajoutee" ? 0x2e7d32 : etat === "deplacee" ? 0xc62828 : CHARTE.NOIR;
+    const trait = etat === "ajoutee" ? 0x2e7d32 : etat === "modifiee" ? 0x1565c0 : etat === "deplacee" ? 0xc62828 : CHARTE.NOIR;
     pdf.rectangle(x, y, l, h, null, trait, v || etat ? 1.8 : 0.5);
+    if ((etat === "ajoutee" || etat === "modifiee") && l > 44 && h > 22) texteCentrePdf(pdf, x + l / 2, y + h - 3.5, etat === "ajoutee" ? "POSÉE" : "MODIFIÉE", 5.5, POLICE.GRAS, trait);
     // Numéro : sur fond noir pour la pièce cherchée.
     const rr = Math.max(3.2, Math.min(5.5, h * 0.3, l * 0.2));
     pdf.disque(x + rr + 1.5, y + rr + 1.5, rr, CHARTE.NOIR);
@@ -13220,10 +13287,11 @@ function afficherPlansLancement(zone) {
     <div class="pl-grille">${plans
       .map((p, i) => {
         const n = p.rects.filter((r) => !r.chute).length;
-        return `<div class="pl-carte" role="button" tabindex="0" data-i="${i}" title="Ouvrir le plan en grand">
+        const v = versionDuPlan(d.lancement, p);
+        return `<div class="pl-carte${v.rt ? " modifie" : ""}" role="button" tabindex="0" data-i="${i}" title="Ouvrir le plan en grand (et le modifier)">
           <div class="pl-titre"><span>${p.module ? `Module ${echapper(p.nom)}` : `Pdc ${p.pdc}`}</span><span class="pl-pdc">${p.module ? `Pdc ${p.pdc} · ${echapper(p.matiere)}` : echapper(p.sorte)}</span></div>
-          <div class="pl-sous">${p.module ? "module" : echapper(p.nom)} · ${dimsPlan(p.L, p.W)}${p.fois > 1 ? ` · coupé ${p.fois} fois` : ""} · ${n} morceau(x)${p.ok ? "" : " · ⚠ mal lu"}</div>
-          ${svgPlan(p, {})}</div>`;
+          <div class="pl-sous">${p.module ? "module" : echapper(p.nom)} · ${dimsPlan(p.L, p.W)}${p.fois > 1 ? ` · coupé ${p.fois} fois` : ""} · ${n} morceau(x)${p.ok ? "" : " · ⚠ mal lu"}${v.rt ? ' · <span class="pl-modifie">✎ modifié dans Sentinelle</span>' : ""}</div>
+          ${svgPlan(v.plan, { etats: v.etats, textes: v.textes })}</div>`;
       })
       .join("")}</div>`;
   const texteDe = (p) => ({
@@ -13232,6 +13300,7 @@ function afficherPlansLancement(zone) {
     titre: p.module ? `Module ${p.nom}` : `${p.matiere} — Pdc ${p.pdc}`,
     badge: `Pdc ${p.pdc} · ${p.matiere}`,
     sous: `${p.module ? "module" : `${p.sorte} ${p.nom}`} · ${dimsPlan(p.L, p.W)}${p.fois > 1 ? ` · coupé ${p.fois} fois` : ""}`,
+    apresModification: () => afficherPlansLancement(zone),
   });
   zone.querySelectorAll(".pl-carte").forEach((b) => activerCartePlan(b, () => ouvrirPlanEnGrand(texteDe(plans[Number(b.dataset.i)]))));
   $("choixPlansMatiere").addEventListener("change", (e) => {
@@ -13241,12 +13310,14 @@ function afficherPlansLancement(zone) {
   $("btnImprimerMatiere").addEventListener("click", () => {
     const m = d.matieres.get(etatPlans.matiere);
     const titre = etatPlans.matiere === "*modules" ? "Modules" : `${etatPlans.matiere}${m && m.desc ? ` — ${m.desc}` : ""}`;
+    const aImprimer = plans.map((p) => planPourPdf(texteDe(p)));
+    const nbModifies = aImprimer.filter((y) => y.marques).length;
     const octets = pdfPlansDeCoupe({
       surtitre: `Plans de coupe · lancement ${d.lancement}`,
       titre,
-      lignes: [`${plans.length} plan(s) · lus dans ${etatPlans.source.bkp.name}`],
-      note: "Les numéros « Pdc » sont ceux de Cut Rite. Cotes finies en mm.",
-      plans: plans.map(texteDe),
+      lignes: [`${plans.length} plan(s) · lus dans ${etatPlans.source.bkp.name}${nbModifies ? ` · ${nbModifies} modifié(s) dans Sentinelle` : ""}`],
+      note: `Les numéros « Pdc » sont ceux de Cut Rite. Cotes finies en mm.${nbModifies ? NOTE_PDF_MODIFIES : ""}`,
+      plans: aImprimer,
       document: `Plans de coupe ${d.lancement} ${etatPlans.matiere === "*modules" ? "modules" : etatPlans.matiere}`,
     });
     telecharger(`Plans_${d.lancement}_${etatPlans.matiere === "*modules" ? "modules" : etatPlans.matiere}.pdf`, octets, "application/pdf");
@@ -13735,6 +13806,582 @@ async function testerWoodstore() {
   } finally {
     $("btnTesterWoodstore").disabled = false;
   }
+}
+
+// ---- Plan de coupe modifié dans Sentinelle (sur le PC seulement) ----
+// Dans un plan ouvert en grand : retirer une pièce, changer sa clé, son article ou sa cote finie, ou poser une pièce
+// dans une chute (ou à la place d'une pièce retirée). Puis imprimer le plan d'origine, le plan modifié, ou les deux.
+// Les modifications restent dans Sentinelle (ce PC, et le téléphone qui les affiche) : le .bkp, la liste de coupe et
+// le fichier de lancement ne sont JAMAIS modifiés.
+
+const CLE_RETOUCHES_PLANS = "sentinelle-plans-modifies";
+let retouchesEnMemoire = null; // sans stockage du navigateur : le temps de la page
+
+// Un plan : lancement + matière + Pdc (ou le module). L'empreinte vérifie que c'est bien le même plan (une
+// optimisation refaite renumérote les plans : une ancienne modification ne s'applique plus).
+const idPlanRetouche = (lancement, plan) => `${lancement}|${plan.module ? `module ${plan.nom}` : `${plan.matiere}|Pdc ${plan.pdc}`}`;
+const empreintePlan = (plan) => `${Math.round(plan.L)}x${Math.round(plan.W)}:${plan.rects.map((r) => (r.chute ? "-" : r.cle || r.nom || "?")).join(",")}`;
+const retoucheVide = (rt) => !rt || (!Object.keys(rt.morceaux || {}).length && !(rt.ajouts || []).length);
+
+function lireRetouchesPlans() {
+  if (retouchesEnMemoire) return retouchesEnMemoire;
+  try {
+    const t = JSON.parse(localStorage.getItem(CLE_RETOUCHES_PLANS) || "{}");
+    return t && typeof t === "object" ? t : {};
+  } catch (_e) {
+    return {};
+  }
+}
+
+function ecrireRetouchesPlans(t) {
+  try {
+    localStorage.setItem(CLE_RETOUCHES_PLANS, JSON.stringify(t));
+    retouchesEnMemoire = null;
+  } catch (_e) {
+    retouchesEnMemoire = t;
+  }
+}
+
+// La modification d'un plan (null : plan d'origine).
+function retoucheDuPlan(lancement, plan) {
+  const rt = lireRetouchesPlans()[idPlanRetouche(lancement, plan)];
+  return rt && rt.empreinte === empreintePlan(plan) && !retoucheVide(rt) ? rt : null;
+}
+
+function enregistrerRetouche(lancement, plan, rt) {
+  const t = { ...lireRetouchesPlans() };
+  const id = idPlanRetouche(lancement, plan);
+  if (retoucheVide(rt)) delete t[id];
+  else t[id] = { morceaux: rt.morceaux || {}, ajouts: rt.ajouts || [], empreinte: empreintePlan(plan), date: new Date().toISOString() };
+  ecrireRetouchesPlans(t);
+}
+
+const commandeDeCle = (cle) => (/^[A-Z]*\d{6,}$/.test(cle || "") ? cle.slice(0, -3) : "");
+const ligneDeCle = (cle) => (/^[A-Z]*\d{6,}$/.test(cle || "") ? String(parseInt(cle.slice(-3), 10)) : "");
+const estMorceauPiece = (r) => Boolean(r.cle) && !MOTIF_NOYAU_PLAN.test(r.nom || "") && !MOTIF_STRATIFIE_PLAN.test(r.nom || "");
+
+// Sens du morceau sur le plan : sa longueur finie va-t-elle de gauche à droite ?
+const morceauDroit = (r) => Math.abs(r.L - r.fini[0]) + Math.abs(r.W - r.fini[1]) <= Math.abs(r.L - r.fini[1]) + Math.abs(r.W - r.fini[0]);
+
+// Taille sur le plan d'un morceau dont la cote finie change (même surcote qu'avant).
+function tailleSurPlan(r, fini) {
+  const droit = morceauDroit(r);
+  const [dx, dy] = droit ? [r.L - r.fini[0], r.W - r.fini[1]] : [r.L - r.fini[1], r.W - r.fini[0]];
+  return droit ? { L: fini[0] + dx, W: fini[1] + dy } : { L: fini[1] + dx, W: fini[0] + dy };
+}
+
+// Taille sur le plan d'une pièce posée : sa cote finie, tournée ou non.
+const taillePosee = (a) => (a.tourne ? { L: a.fini[1], W: a.fini[0] } : { L: a.fini[0], W: a.fini[1] });
+
+// Pièces posées dans une place libre, en rangées depuis le coin haut gauche (coupes d'équerre, comme à la scie).
+function poserDansPlace(hote, ajouts) {
+  const poses = [];
+  const restes = [];
+  let x = hote.x;
+  let y = hote.y;
+  let h = 0;
+  const finX = hote.x + hote.L + 0.5;
+  const finY = hote.y + hote.W + 0.5;
+  for (const a of ajouts) {
+    const { L, W } = taillePosee(a);
+    if (x > hote.x && x + L > finX) {
+      restes.push({ x, y, L: hote.x + hote.L - x, W: h });
+      y += h;
+      x = hote.x;
+      h = 0;
+    }
+    if (x + L > finX || y + W > finY) {
+      poses.push({ a, L, W, place: null });
+      continue;
+    }
+    poses.push({ a, L, W, place: { x, y } });
+    x += L;
+    h = Math.max(h, W);
+  }
+  if (h) restes.push({ x, y, L: hote.x + hote.L - x, W: h });
+  restes.push({ x: hote.x, y: y + h, L: hote.L, W: hote.y + hote.W - y - h });
+  return { poses, restes: restes.filter((r) => r.L > 1 && r.W > 1) };
+}
+
+function morceauModifie(r, m) {
+  const n = { ...r };
+  if (m.cle !== undefined && m.cle !== r.cle) {
+    n.cle = m.cle;
+    n.commande = commandeDeCle(m.cle);
+    n.ligne = ligneDeCle(m.cle);
+    if (estMorceauPiece(r)) n.nom = m.cle;
+  }
+  if (m.article !== undefined) n.article = m.article;
+  if (m.fini) {
+    Object.assign(n, tailleSurPlan(r, m.fini));
+    n.fini = [...m.fini];
+  }
+  if (m.note) n.note = m.note;
+  return n;
+}
+
+// Le plan modifié : morceaux changés, retirés, posés. etats (couleurs), textes (place vide), marques (tableau) et
+// origine (morceau du plan affiché → morceau d'origine { idx } ou pièce posée { ajout }), par numéro de morceau.
+function planRetouche(plan, rt) {
+  const rects = [];
+  const etats = new Map();
+  const textes = new Map();
+  const marques = new Map();
+  const origine = [];
+  const hotes = new Map();
+  (rt.ajouts || []).forEach((a, k) => {
+    if (!hotes.has(a.dans)) hotes.set(a.dans, []);
+    hotes.get(a.dans).push({ ...a, k });
+  });
+  const poses = [];
+  const ajouter = (r, o, etat, marque) => {
+    if (etat) etats.set(rects.length, etat);
+    if (marque) marques.set(rects.length, marque);
+    origine[rects.length] = o;
+    rects.push(r);
+  };
+  plan.rects.forEach((r, idx) => {
+    const m = (rt.morceaux || {})[idx];
+    const ajouts = hotes.get(idx) || [];
+    if (r.chute) {
+      if (!ajouts.length) return ajouter(r, { idx });
+      const p = poserDansPlace(r, ajouts);
+      poses.push(...p.poses);
+      // ce qui reste de la chute (assez grand pour être gardé)
+      for (const q of p.restes) if (q.L >= 100 && q.W >= 100) ajouter({ x: q.x, y: q.y, L: q.L, W: q.W, chute: true }, { idx, reste: true });
+      return;
+    }
+    if (m && m.retire) {
+      if (ajouts.length) {
+        poses.push(...poserDansPlace(r, ajouts).poses);
+        return;
+      }
+      textes.set(rects.length, "retirée — ne pas couper");
+      return ajouter({ ...r }, { idx }, "partie", "retirée — ne pas couper");
+    }
+    if (m) return ajouter(morceauModifie(r, m), { idx }, "modifiee", texteModification(r, m));
+    ajouter(r, { idx });
+  });
+  for (const p of poses) {
+    if (!p.place) continue;
+    const a = p.a;
+    ajouter(
+      { x: p.place.x, y: p.place.y, L: p.L, W: p.W, nom: a.cle || "pièce posée", cle: a.cle || "", article: a.article || "", fini: [...a.fini], commande: commandeDeCle(a.cle), ligne: ligneDeCle(a.cle), seq: [], note: a.note || "" },
+      { ajout: a.k },
+      "ajoutee",
+      `posée dans Sentinelle${a.note ? ` — ${a.note}` : ""}`
+    );
+  }
+  return { plan: { ...plan, rects, retouche: rt }, etats, textes, marques, origine, nonPosees: poses.filter((p) => !p.place).map((p) => p.a) };
+}
+
+function texteModification(r, m) {
+  const t = [];
+  if (m.cle !== undefined && m.cle !== r.cle) t.push(`clé ${r.cle || "—"} → ${m.cle || "—"}`);
+  if (m.article !== undefined && m.article !== (r.article || "")) t.push(`article ${r.article || "—"} → ${m.article || "—"}`);
+  if (m.fini && (Math.abs(m.fini[0] - r.fini[0]) > 0.05 || Math.abs(m.fini[1] - r.fini[1]) > 0.05)) t.push(`cote finie ${dimsPlan(r.fini[0], r.fini[1])} → ${dimsPlan(m.fini[0], m.fini[1])}`);
+  if (m.note) t.push(m.note);
+  return `modifiée : ${t.join(" ; ") || "—"}`;
+}
+
+// Le plan tel qu'il faut le montrer : modifié s'il l'a été, sinon d'origine.
+function versionDuPlan(lancement, plan) {
+  const rt = retoucheDuPlan(lancement, plan);
+  if (!rt) return { plan, etats: null, textes: null, marques: null, origine: null, rt: null, nonPosees: [] };
+  return { ...planRetouche(plan, rt), rt };
+}
+
+// Ce qui a changé, une ligne par changement (numéros du plan d'origine).
+function changementsRetouche(plan, rt) {
+  const { morceaux } = morceauxNumerotes(plan);
+  const numero = (idx) => morceaux.indexOf(plan.rects[idx]) + 1;
+  const nom = (r) => (estMorceauPiece(r) ? r.cle : nomMorceauPlan(r));
+  const lignes = [];
+  for (const [k, m] of Object.entries(rt.morceaux || {}).sort((a, b) => a[0] - b[0])) {
+    const r = plan.rects[Number(k)];
+    if (!r) continue;
+    if (m.retire) lignes.push(`n°${numero(Number(k))} ${nom(r)} retirée du plan — ne pas la couper`);
+    else lignes.push(`n°${numero(Number(k))} ${nom(r)} ${texteModification(r, m)}`);
+  }
+  const pr = planRetouche(plan, rt);
+  (rt.ajouts || []).forEach((a, k) => {
+    const hote = plan.rects[a.dans];
+    if (!hote) return;
+    const ou = hote.chute ? `dans la chute ${dimsPlan(hote.L, hote.W)}` : `à la place de n°${numero(a.dans)} ${nom(hote)}`;
+    const pas = pr.nonPosees.some((x) => x.k === k);
+    lignes.push(`+ ${a.cle || "pièce"}${a.article ? ` ${a.article}` : ""} ${dimsPlan(a.fini[0], a.fini[1])} posée ${ou}${a.note ? ` — ${a.note}` : ""}${pas ? " (⚠ ne rentre pas)" : ""}`);
+  });
+  return lignes;
+}
+
+// ---- Les plans modifiés vont au téléphone : les plans du lancement sont refaits dans la bibliothèque ----
+
+let minuteurRetouchesBibliotheque = null;
+const retouchesAEnvoyer = new Map(); // lancement → plans lus (un seul envoi pour plusieurs modifications)
+function retoucheVersBibliotheque(donnees) {
+  retouchesAEnvoyer.set(donnees.lancement, donnees);
+  clearTimeout(minuteurRetouchesBibliotheque);
+  minuteurRetouchesBibliotheque = setTimeout(async () => {
+    const liste = [...retouchesAEnvoyer.values()];
+    retouchesAEnvoyer.clear();
+    for (const d of liste) await majPlansBibliotheque(d).catch(() => false);
+  }, 1500);
+}
+
+async function majPlansBibliotheque(donnees) {
+  if (typeof bibliotheque === "undefined") return false;
+  const maj = new Date().toISOString();
+  let touche = false;
+  for (const s of [...bibliotheque.semaines.values()]) {
+    if (!s.lancements.some((l) => l.plans && l.plans.lancement === donnees.lancement)) continue;
+    const lancements = s.lancements.map((l) => {
+      if (!l.plans || l.plans.lancement !== donnees.lancement) return l;
+      const cles = new Set(Object.keys(l.plans.pieces || {}));
+      for (const ligne of l.pieces || []) if (ligne && ligne[0]) cles.add(ligne[0]);
+      return { ...l, plans: plansPourTelephone(donnees, [...cles]), maj };
+    });
+    await enregistrerSemaineLocale({ ...s, lancements, maj });
+    touche = true;
+  }
+  if (!touche) return false;
+  changementBibliotheque();
+  if (bibliotheque.dossier) await synchroniserBibliotheque(false);
+  rafraichirBibliotheque();
+  return true;
+}
+
+// ---- Un plan en grand, avec ses modifications ----
+// x : { plan, donnees, visee, titre, badge, sous, apresModification() }
+
+const planEnGrand = { x: null, modifie: false };
+
+function fermerPlanEnGrand() {
+  const m = $("modalePlan");
+  if (m) m.remove();
+  document.removeEventListener("keydown", toucheModalePlan);
+  const x = planEnGrand.x;
+  const modifie = planEnGrand.modifie;
+  planEnGrand.x = null;
+  planEnGrand.modifie = false;
+  if (modifie && x && x.apresModification) x.apresModification();
+}
+
+function toucheModalePlan(e) {
+  const confirmation = $("modaleConfirmation");
+  if (confirmation && !confirmation.classList.contains("masquee")) return; // la question posée par-dessus d'abord
+  if (e.key === "Escape" && !(e.target && /INPUT|TEXTAREA|SELECT/.test(e.target.tagName))) fermerPlanEnGrand();
+}
+
+function ouvrirPlanEnGrand(x) {
+  fermerPlanEnGrand();
+  planEnGrand.x = x;
+  const { plan, donnees } = x;
+  const lancement = donnees.lancement;
+  const visee = x.visee || (() => false);
+  const st = { cote: "fini", vue: "modifie", edition: false, choix: null, message: "" };
+  let rt = retoucheDuPlan(lancement, plan);
+  const brouillon = () => (rt ? JSON.parse(JSON.stringify({ morceaux: rt.morceaux || {}, ajouts: rt.ajouts || [] })) : { morceaux: {}, ajouts: [] });
+  const fond = document.createElement("div");
+  fond.className = "modale-fond";
+  fond.id = "modalePlan";
+  const boite = document.createElement("div");
+  boite.className = "modale-boite pl-grand";
+  boite.setAttribute("role", "dialog");
+  boite.setAttribute("aria-modal", "true");
+  fond.appendChild(boite);
+
+  const enregistrer = (nouveau, message) => {
+    enregistrerRetouche(lancement, plan, nouveau);
+    rt = retoucheDuPlan(lancement, plan);
+    planEnGrand.modifie = true;
+    st.message = message || "";
+    st.vue = "modifie";
+    retoucheVersBibliotheque(donnees);
+  };
+  const version = () => (rt && st.vue === "modifie" ? { ...planRetouche(plan, rt), rt } : { plan, etats: null, textes: null, marques: null, origine: null, rt: null, nonPosees: [] });
+
+  const rendre = () => {
+    const v = version();
+    const vu = v.plan;
+    const { morceaux, chutes } = morceauxNumerotes(vu);
+    const lignes = morceaux
+      .map((r, i) => {
+        const idx = vu.rects.indexOf(r);
+        const vise = visee(r);
+        const nom = (r.nom || "").split("/")[0];
+        const module = MOTIF_NOYAU_PLAN.test(r.nom || "") && donnees.modules.has(nom);
+        const marque = v.marques ? v.marques.get(idx) : null;
+        const etat = v.etats ? v.etats.get(idx) : null;
+        return `<tr class="${vise ? "visee" : ""}${etat ? ` pl-etat-${etat}` : ""}${st.choix === idx ? " pl-choisi" : ""}" ${st.edition ? `data-choisir="${idx}" title="Modifier ce morceau"` : ""}><td class="c">${i + 1}</td>
+          <td>${echapper(nomMorceauPlan(r))}${vise ? " <strong>← pièce cherchée</strong>" : ""}${marque ? ` <span class="pl-marque">${echapper(marque)}</span>` : ""}${module ? ` <button type="button" class="texte petit" data-module="${echapper(nom)}">voir le module</button>` : ""}</td>
+          <td>${echapper(r.article)}</td><td class="d">${dimsPlan(r.fini[0], r.fini[1])}</td><td class="d">${dimsPlan(r.L, r.W)}</td><td>${estMorceauPiece(r) ? `${echapper(r.commande)} / ${echapper(r.ligne)}` : ""}</td></tr>`;
+      })
+      .join("");
+    const changements = rt ? changementsRetouche(plan, rt) : [];
+    const puce = rt ? `<span class="pl-puce modif">✎ modifié dans Sentinelle${rt.date ? ` le ${new Date(rt.date).toLocaleDateString("fr-FR")}` : ""}</span>` : "";
+    const bascule = rt && !st.edition
+      ? `<div class="pl-bascule" role="group" aria-label="Version du plan"><button type="button" class="${st.vue === "modifie" ? "actif" : "contour"} petit" data-vue="modifie">Plan modifié</button><button type="button" class="${st.vue === "origine" ? "actif" : "contour"} petit" data-vue="origine">Plan d'origine</button></div>`
+      : "";
+    boite.innerHTML = `
+      <div class="pl-grand-tete"><h3>${echapper(x.titre || `Plan ${plan.pdc}`)} <span class="pl-pdc">${echapper(x.badge || `Pdc ${plan.pdc}`)}</span> ${puce}</h3>
+        <button type="button" class="texte" data-fermer aria-label="Fermer">✕</button></div>
+      <div class="note">${echapper(x.sous || "")}</div>
+      ${bascule}
+      ${st.edition ? '<div class="pl-aide">Cliquez une pièce (sur le dessin ou dans le tableau) pour la modifier ou la retirer, ou une chute pour y poser une pièce.</div>' : ""}
+      <div class="pl-dessin${st.edition ? " pl-edition" : ""}">${svgPlan(vu, { visee, numeros: true, modules: vu.module ? null : donnees.modules, cote: st.cote, etats: v.etats, textes: v.textes, cliquable: st.edition, selection: st.edition ? st.choix : null })}</div>
+      ${rt && st.vue === "modifie" ? `<div class="pl-legende"><span><i style="background:#bbdefb;border-color:#1565c0"></i>pièce modifiée</span><span><i style="background:#c8e6c9;border-color:#2e7d32"></i>pièce posée</span><span><i style="background:#fff;border-color:#c62828;border-style:dashed"></i>pièce retirée (ne pas couper)</span></div>` : ""}
+      ${st.message ? `<div class="pl-message">${echapper(st.message)}</div>` : ""}
+      ${st.edition ? `<div class="pl-panneau">${panneauEdition()}</div>` : ""}
+      ${changements.length ? `<div class="pl-changements"><div class="fp-h3">Ce qui a changé (${changements.length})</div><ul class="liste-pieces">${changements.map((t) => `<li>${echapper(t)}</li>`).join("")}</ul>
+        ${st.edition ? '<button type="button" class="texte petit" data-tout-remettre>Tout remettre comme à l\'origine</button>' : ""}</div>` : ""}
+      <div class="pl-boutons">
+        <button type="button" class="contour" data-cote>${st.cote === "fini" ? "Voir les cotes de débit" : "Voir les cotes finies"}</button>
+        <button type="button" class="${st.edition ? "" : "contour"}" data-editer>${st.edition ? "✔ Terminer les modifications" : "✎ Modifier le plan"}</button>
+        <button type="button" class="contour" data-imprimer="origine">${rt ? "Imprimer le plan d'origine" : "Imprimer ce plan (PDF)"}</button>
+        ${rt ? '<button type="button" class="contour" data-imprimer="modifie">Imprimer le plan modifié</button><button type="button" class="contour" data-imprimer="deux">Imprimer avant / après</button>' : ""}
+        <button type="button" data-fermer>Fermer</button>
+      </div>
+      <div class="note">Les modifications restent dans Sentinelle (ce PC et le téléphone) : le .bkp, la liste de coupe et le fichier de lancement ne sont pas touchés.</div>
+      <div class="defilement"><table class="fp-table pl-table"><thead><tr><th class="c">N°</th><th>Pièce</th><th>Article</th><th class="d">Cote finie</th><th class="d">Débit</th><th>Commande / ligne</th></tr></thead><tbody>${lignes}</tbody></table></div>
+      ${chutes.length ? `<div class="note">Chutes gardées : ${chutes.map((r) => (st.edition ? `<button type="button" class="texte petit" data-choisir="${vu.rects.indexOf(r)}">${dimsPlan(r.L, r.W)}</button>` : dimsPlan(r.L, r.W))).join(", ")}</div>` : ""}`;
+    brancher(v);
+  };
+
+  // Le panneau du morceau choisi (index dans le plan modifié affiché).
+  const panneauEdition = () => {
+    if (st.choix === null) return '<div class="note">Aucune pièce choisie.</div>';
+    const v = version();
+    const o = v.origine ? v.origine[st.choix] : { idx: st.choix };
+    if (!o) return "";
+    const champs = (d, poser) => `<div class="pl-champs">
+        <label>Clé<input type="text" data-champ="cle" value="${echapper(d.cle || "")}" placeholder="CVC…" autocomplete="off"></label>
+        <label>Article<input type="text" data-champ="article" value="${echapper(d.article || "")}"></label>
+        <label>Cote finie : longueur<input type="number" min="1" step="0.1" data-champ="finiL" value="${d.fini ? d.fini[0] : ""}"></label>
+        <label>× largeur (mm)<input type="number" min="1" step="0.1" data-champ="finiW" value="${d.fini ? d.fini[1] : ""}"></label>
+        ${poser ? `<label class="pl-case"><input type="checkbox" data-champ="tourne" ${d.tourne ? "checked" : ""}> Tournée (longueur de haut en bas)</label>` : ""}
+        <label class="pl-large">Note (imprimée)<input type="text" data-champ="note" value="${echapper(d.note || "")}"></label></div>`;
+    if (o.ajout !== undefined) {
+      const a = rt.ajouts[o.ajout];
+      return `<div class="pl-panneau-titre">Pièce posée dans Sentinelle — ${echapper(a.cle || "sans clé")}</div>${champs(a, true)}
+        <div class="pl-boutons-gauche"><button type="button" data-action-plan="maj-ajout">Enregistrer</button><button type="button" class="contour" data-action-plan="enlever-ajout">Enlever cette pièce</button></div>`;
+    }
+    const r = plan.rects[o.idx];
+    const m = (rt && rt.morceaux && rt.morceaux[o.idx]) || null;
+    const n = morceauxNumerotes(plan).morceaux.indexOf(r) + 1;
+    if (r.chute) {
+      return `<div class="pl-panneau-titre">Chute gardée ${dimsPlan(r.L, r.W)} — poser une pièce dedans</div>${champs({ fini: null }, true)}
+        <div class="pl-boutons-gauche"><button type="button" data-action-plan="poser" data-hote="${o.idx}">Poser la pièce</button></div>`;
+    }
+    if (m && m.retire) {
+      return `<div class="pl-panneau-titre">n°${n} ${echapper(nomMorceauPlan(r))} — retirée du plan (ne pas couper)</div>
+        <div class="pl-boutons-gauche"><button type="button" data-action-plan="remettre" data-idx="${o.idx}">Remettre la pièce</button></div>
+        <div class="note" style="margin-top:8px">Ou poser une autre pièce à sa place (${dimsPlan(r.L, r.W)} sur le plan) :</div>${champs({ fini: null }, true)}
+        <div class="pl-boutons-gauche"><button type="button" class="contour" data-action-plan="poser" data-hote="${o.idx}">Poser la pièce à sa place</button></div>`;
+    }
+    const nomModule = (r.nom || "").split("/")[0];
+    if (MOTIF_NOYAU_PLAN.test(r.nom || "") && donnees.modules.has(nomModule) && !plan.module) {
+      return `<div class="pl-panneau-titre">Module ${echapper(nomModule)} (${dimsPlan(r.fini[0], r.fini[1])})</div>
+        <div class="note">Les pièces du module se modifient dans le plan du module.</div>
+        <div class="pl-boutons-gauche"><button type="button" data-module="${echapper(nomModule)}">Ouvrir le module</button>${m ? "" : `<button type="button" class="contour" data-action-plan="retirer" data-idx="${o.idx}">Retirer le module du plan</button>`}</div>`;
+    }
+    const d = m ? morceauModifie(r, m) : r;
+    return `<div class="pl-panneau-titre">n°${n} ${echapper(nomMorceauPlan(r))}${m ? " — modifiée" : ""}</div>
+      <div class="note">D'origine : ${echapper(r.cle || nomMorceauPlan(r))} · ${echapper(r.article || "")} · cote finie ${dimsPlan(r.fini[0], r.fini[1])} (au plus, pour tenir à sa place).</div>
+      ${champs({ cle: d.cle, article: d.article, fini: d.fini, note: m ? m.note : "" }, false)}
+      <div class="pl-boutons-gauche"><button type="button" data-action-plan="modifier" data-idx="${o.idx}">Enregistrer la modification</button>
+        <button type="button" class="contour" data-action-plan="retirer" data-idx="${o.idx}">Retirer la pièce du plan</button>
+        ${m ? `<button type="button" class="texte" data-action-plan="remettre" data-idx="${o.idx}">Remettre comme à l'origine</button>` : ""}</div>`;
+  };
+
+  // Les champs du panneau : { cle, article, fini, tourne, note } ou un message d'erreur.
+  const lireChamps = () => {
+    const val = (k) => {
+      const c = boite.querySelector(`[data-champ="${k}"]`);
+      return c ? (c.type === "checkbox" ? c.checked : c.value.trim()) : "";
+    };
+    const L = parseFloat(String(val("finiL")).replace(",", "."));
+    const W = parseFloat(String(val("finiW")).replace(",", "."));
+    if (!(L > 0) || !(W > 0)) return { erreur: "Indiquez la cote finie (longueur et largeur, en mm)." };
+    return { cle: String(val("cle")).toUpperCase().replace(/\s+/g, ""), article: String(val("article")), fini: [L, W], tourne: Boolean(val("tourne")), note: String(val("note")) };
+  };
+
+  // Une clé tapée : article et cote finie repris de l'optimisation (si la pièce y est).
+  const completerDepuisCle = () => {
+    const c = boite.querySelector('[data-champ="cle"]');
+    if (!c) return;
+    const p = morceauPiece(donnees, c.value.trim().toUpperCase());
+    if (!p) return;
+    const mettre = (k, v) => {
+      const e = boite.querySelector(`[data-champ="${k}"]`);
+      if (e && !e.value) e.value = v;
+    };
+    mettre("article", p.q[16] || "");
+    mettre("finiL", parseFloat(p.q[5]) || "");
+    mettre("finiW", parseFloat(p.q[7]) || "");
+  };
+
+  const action = (quoi, el) => {
+    const b = brouillon();
+    const idx = el.dataset.idx !== undefined ? Number(el.dataset.idx) : null;
+    if (quoi === "retirer") {
+      b.morceaux[idx] = { retire: true };
+      enregistrer(b, "Pièce retirée du plan : elle est marquée « ne pas couper » sur le plan modifié.");
+    } else if (quoi === "remettre") {
+      delete b.morceaux[idx];
+      b.ajouts = b.ajouts.filter((a) => a.dans !== idx);
+      enregistrer(b, "Remise comme à l'origine.");
+    } else if (quoi === "modifier") {
+      const c = lireChamps();
+      if (c.erreur) return message(c.erreur);
+      const r = plan.rects[idx];
+      const t = tailleSurPlan(r, c.fini);
+      if (t.L > r.L + 0.5 || t.W > r.W + 0.5) return message(`Plus grande que sa place sur le plan : au plus ${dimsPlan(r.fini[0], r.fini[1])} mm en cote finie.`);
+      const m = {};
+      if (c.cle !== (r.cle || "")) m.cle = c.cle;
+      if (c.article !== (r.article || "")) m.article = c.article;
+      if (Math.abs(c.fini[0] - r.fini[0]) > 0.05 || Math.abs(c.fini[1] - r.fini[1]) > 0.05) m.fini = c.fini;
+      if (c.note) m.note = c.note;
+      if (Object.keys(m).length) b.morceaux[idx] = m;
+      else delete b.morceaux[idx];
+      enregistrer(b, Object.keys(m).length ? "Modification enregistrée." : "Rien de changé : la pièce reste comme à l'origine.");
+    } else if (quoi === "poser") {
+      const c = lireChamps();
+      if (c.erreur) return message(c.erreur);
+      const hote = Number(el.dataset.hote);
+      const essai = { ...b, ajouts: [...b.ajouts, { dans: hote, cle: c.cle, article: c.article, fini: c.fini, tourne: c.tourne, note: c.note }] };
+      const r = plan.rects[hote];
+      const autres = essai.ajouts.filter((a) => a.dans === hote);
+      if (poserDansPlace(r, autres).poses.some((p) => !p.place)) return message(`Ne rentre pas : la place fait ${dimsPlan(r.L, r.W)} mm${autres.length > 1 ? `, avec ${autres.length - 1} autre(s) pièce(s) déjà posée(s)` : ""}. Essayez « Tournée ».`);
+      if (!r.chute && !(b.morceaux[hote] && b.morceaux[hote].retire)) essai.morceaux[hote] = { retire: true };
+      st.choix = null;
+      enregistrer(essai, `Pièce ${c.cle || ""} posée (en vert sur le plan modifié).`);
+    } else if (quoi === "maj-ajout" || quoi === "enlever-ajout") {
+      const v = version();
+      const o = v.origine[st.choix];
+      if (quoi === "enlever-ajout") {
+        b.ajouts.splice(o.ajout, 1);
+        st.choix = null;
+        enregistrer(b, "Pièce posée enlevée.");
+      } else {
+        const c = lireChamps();
+        if (c.erreur) return message(c.erreur);
+        const ancien = b.ajouts[o.ajout];
+        b.ajouts[o.ajout] = { ...ancien, cle: c.cle, article: c.article, fini: c.fini, tourne: c.tourne, note: c.note };
+        if (poserDansPlace(plan.rects[ancien.dans], b.ajouts.filter((a) => a.dans === ancien.dans)).poses.some((p) => !p.place)) return message("Ne rentre pas dans sa place avec cette cote.");
+        enregistrer(b, "Pièce posée modifiée.");
+      }
+    }
+    rendre();
+  };
+  const message = (t) => {
+    st.message = `⚠ ${t}`;
+    const zone = boite.querySelector(".pl-message");
+    if (zone) zone.textContent = st.message;
+    else rendre();
+  };
+
+  const brancher = (v) => {
+    boite.querySelectorAll("[data-fermer]").forEach((b) => b.addEventListener("click", fermerPlanEnGrand));
+    boite.querySelector("[data-cote]").addEventListener("click", () => {
+      st.cote = st.cote === "fini" ? "debit" : "fini";
+      rendre();
+    });
+    boite.querySelector("[data-editer]").addEventListener("click", () => {
+      st.edition = !st.edition;
+      st.choix = null;
+      st.message = "";
+      st.vue = "modifie";
+      rendre();
+    });
+    boite.querySelectorAll("[data-vue]").forEach((b) =>
+      b.addEventListener("click", () => {
+        st.vue = b.dataset.vue;
+        rendre();
+      })
+    );
+    boite.querySelectorAll("[data-imprimer]").forEach((b) => b.addEventListener("click", () => imprimerPlanEnGrand(x, b.dataset.imprimer)));
+    boite.querySelectorAll("[data-module]").forEach((b) => {
+      const m = donnees.modules.get(b.dataset.module);
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        ouvrirPlanEnGrand({ plan: m, donnees, visee, titre: `Module ${m.nom}`, badge: `Pdc ${m.pdc}`, sous: `module · ${dimsPlan(m.L, m.W)} · ${m.matiere}`, apresModification: x.apresModification });
+      });
+    });
+    if (st.edition) {
+      const choisir = (idx) => {
+        st.choix = idx;
+        st.message = "";
+        rendre();
+        const champ = boite.querySelector(".pl-panneau input");
+        if (champ) champ.focus();
+      };
+      boite.querySelectorAll(".pl-dessin [data-idx]").forEach((g) => g.addEventListener("click", () => choisir(Number(g.dataset.idx))));
+      boite.querySelectorAll("[data-choisir]").forEach((t) =>
+        t.addEventListener("click", (e) => {
+          if (e.target.closest("[data-module]")) return;
+          choisir(Number(t.dataset.choisir));
+        })
+      );
+      boite.querySelectorAll("[data-action-plan]").forEach((b) => b.addEventListener("click", () => action(b.dataset.actionPlan, b)));
+      const cle = boite.querySelector('[data-champ="cle"]');
+      if (cle) cle.addEventListener("change", completerDepuisCle);
+      const tout = boite.querySelector("[data-tout-remettre]");
+      if (tout)
+        tout.addEventListener("click", async () => {
+          if (!(await demanderConfirmation("Tout remettre comme à l'origine ?", "Toutes les modifications de ce plan seront effacées.", "Tout remettre"))) return;
+          st.choix = null;
+          enregistrer({ morceaux: {}, ajouts: [] }, "Plan remis comme à l'origine.");
+          rendre();
+        });
+    }
+    void v;
+  };
+
+  fond.addEventListener("click", (e) => {
+    if (e.target === fond) fermerPlanEnGrand();
+  });
+  rendre();
+  document.body.appendChild(fond);
+  document.addEventListener("keydown", toucheModalePlan);
+}
+
+// Les plans d'un plan ouvert en grand pour le PDF : d'origine, modifié, ou les deux (avant / après).
+function plansAImprimer(x, quoi) {
+  const { plan, donnees } = x;
+  const rt = retoucheDuPlan(donnees.lancement, plan);
+  if (!rt || quoi === "origine") return [{ ...x, titre: `${x.titre || `Plan ${plan.pdc}`}${rt ? " — PLAN D'ORIGINE" : ""}` }];
+  const pr = planRetouche(plan, rt);
+  const date = rt.date ? ` le ${new Date(rt.date).toLocaleDateString("fr-FR")}` : "";
+  const modifie = { ...x, plan: pr.plan, etats: pr.etats, textes: pr.textes, marques: pr.marques, titre: `${x.titre || `Plan ${plan.pdc}`} — MODIFIÉ`, legende: `Modifié dans Sentinelle${date} : ${changementsRetouche(plan, rt).length} changement(s)` };
+  if (quoi === "modifie") return [modifie];
+  // Avant : les morceaux d'origine qui changent, en rouge hachuré.
+  const etats = new Map();
+  const marques = new Map();
+  for (const [k, m] of Object.entries(rt.morceaux || {})) {
+    etats.set(Number(k), "deplacee");
+    marques.set(Number(k), m.retire ? "retirée dans le plan modifié" : "modifiée dans le plan modifié");
+  }
+  for (const a of rt.ajouts || []) if (plan.rects[a.dans] && plan.rects[a.dans].chute) etats.set(a.dans, "chute_perdue");
+  return [{ ...x, etats, marques, titre: `${x.titre || `Plan ${plan.pdc}`} — AVANT (plan d'origine)` }, { ...modifie, titre: `${x.titre || `Plan ${plan.pdc}`} — APRÈS (modifié)` }];
+}
+
+function imprimerPlanEnGrand(x, quoi) {
+  const { plan, donnees } = x;
+  const rt = retoucheDuPlan(donnees.lancement, plan);
+  const plans = plansAImprimer(x, quoi);
+  const avecModif = rt && quoi !== "origine";
+  const suffixe = !rt ? "" : quoi === "origine" ? "_origine" : quoi === "modifie" ? "_modifie" : "_avant_apres";
+  const octets = pdfPlansDeCoupe({
+    surtitre: `Plan de coupe · lancement ${donnees.lancement}`,
+    titre: `${x.titre || "Plan"} — ${x.badge || `Pdc ${plan.pdc}`}`,
+    lignes: avecModif ? changementsRetouche(plan, rt) : rt ? ["Plan d'origine (optimisation Cut Rite), sans les modifications faites dans Sentinelle."] : [],
+    note: avecModif
+      ? "Bleu : pièce modifiée. Vert : pièce posée dans Sentinelle. Pointillés rouges : pièce retirée, à ne pas couper. Modifications faites dans Sentinelle : le .bkp et le fichier de lancement ne changent pas. Cotes finies en mm."
+      : "Les numéros « Pdc » sont ceux de Cut Rite. Cotes finies en mm.",
+    plans,
+    document: `Plan de coupe ${plan.matiere} Pdc ${plan.pdc}${avecModif ? " (modifié)" : ""}`,
+  });
+  telecharger(`Plan_${donnees.lancement}_${plan.module ? `module_${plan.nom}` : `${plan.matiere}_Pdc${plan.pdc}`}${suffixe}.pdf`, octets, "application/pdf");
 }
 
 </script>

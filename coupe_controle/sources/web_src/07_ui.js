@@ -2803,6 +2803,10 @@ function remplirDetails(zone, f, l) {
   }
   for (const i of l.infos) html += `<div class="info${i.alerte ? " alerte" : ""}${i.commentaire ? " commentaire" : ""}">${echapper(i.texte)}</div>`;
   if (f.schema && l.piece && f.schema.nonPlacees.includes(l.piece)) html += '<div class="info">Position à lire sur le plan client</div>';
+  // Ses plans de coupe (si un .bkp de son lancement est chargé) : affichés au clic, modifiables en grand.
+  const lancements = l.trouvee ? lancementsDeLaPiece(l) : null;
+  const avecPlans = lancements && lancements.cases.some((g) => g.source.bkp);
+  if (avecPlans) html += '<button type="button" class="contour petit bouton-plans" data-voir-plans aria-expanded="false">▸ Voir les plans de coupe</button><div class="fp-plans" hidden></div>';
   const donnees = c && c.toutesDonneesLan ? Object.entries(c.toutesDonneesLan) : [];
   if (donnees.length) {
     html += `<details class="donnees"><summary>Toutes les données (${donnees.length})</summary><table class="table-donnees-lan">${donnees
@@ -2810,6 +2814,21 @@ function remplirDetails(zone, f, l) {
       .join("")}</table></details>`;
   }
   zone.innerHTML = html;
+  const bouton = zone.querySelector("[data-voir-plans]");
+  if (bouton) {
+    const plans = zone.querySelector(".fp-plans");
+    bouton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const ouvrir = plans.hidden;
+      plans.hidden = !ouvrir;
+      bouton.setAttribute("aria-expanded", String(ouvrir));
+      bouton.textContent = ouvrir ? "▾ Masquer les plans de coupe" : "▸ Voir les plans de coupe";
+      if (ouvrir && !plans.dataset.lus) {
+        plans.dataset.lus = "1";
+        remplirPlansPiece(plans, l, lancements);
+      }
+    });
+  }
 }
 
 // ---- Pièce sans étiquette : cote finie (sens du fil puis largeur), couleur facultative, semaine obligatoire ----

@@ -1,5 +1,6 @@
 // V6.1 : plans de coupe Cut Rite, contrôle des pièces placées, recherche d'une pièce, outil Plans de coupe,
-// plan modifié à la scie, liste de coupe générée (expérimental), noms de lancement avec espace.
+// plan modifié à la scie, liste de coupe générée (expérimental), noms de lancement avec espace,
+// V6.1.2 : plans depuis la liste des résultats, plan modifié dans Sentinelle (imprimé d'origine / modifié, envoyé au téléphone).
 // Usage : node test_web_plans.js <index.html> <dossier « 1ER TOUR AGGLO » de la semaine 48> <.bkp modifié (facultatif)> [dossier captures]
 // Le dossier contient LAN264801START.xlsx, LISTE DE COUPES LAN264801STRAT.pdf et LAN264801STARTbackup.bkp.
 // Le .bkp modifié : la même sauvegarde où le module T101 a été retiré du Pdc 4 du SAG10HYBR.
@@ -118,6 +119,76 @@ const verifier = (ok, message) => {
   // 6. Quatre semaines.
   const semaines = await page.evaluate(() => [45, 46, 47, 48].map(ongletDuNumero).join(" "));
   verifier(semaines === "impaire paire2 impaire2 paire" && (await page.locator('.onglet-btn[data-onglet^="paire"], .onglet-btn[data-onglet^="impaire"]').count()) === 4, "4 onglets semaine (45, 46, 47, 48)");
+
+  // 7. Recherche d'une commande : les plans de chaque pièce ; un plan modifié dans Sentinelle (le .bkp ne change pas),
+  //    imprimé d'origine, modifié ou avant / après, et envoyé modifié au téléphone.
+  await page.evaluate(async () => {
+    const d = await lirePlansBkp(pairesDeLaSemaine(ongletDuNumero(48))[0].bkp);
+    await archiverLancements([{ annee: 2026, semaine: 48, lancement: { nom: "LAN264801START", poste: "Agglo 1er tour", pieces: [["CVC26110064003"]], plans: plansPourTelephone(d, ["CVC26110064003"]) } }]);
+    onglet = "recherche";
+    afficher();
+  });
+  await page.fill("#champRecherche", "CVC26110064");
+  await page.click("#btnRechercher");
+  await page.waitForSelector(".ligne-piece [data-voir-plans]", { state: "attached", timeout: 120000 });
+  verifier((await page.locator(".ligne-piece [data-voir-plans]").count()) === 4, "recherche d'une commande : « Voir les plans de coupe » sur chaque pièce");
+  const ligne = page.locator(".ligne-piece").filter({ hasText: "26110064003" }).first();
+  await ligne.locator(".ligne-piece-haut").click();
+  await ligne.locator("[data-voir-plans]").click();
+  await ligne.locator(".pl-carte").first().waitFor({ timeout: 120000 });
+  verifier((await ligne.locator(".pl-carte").count()) === 4, "les 4 plans de la pièce dans la liste des résultats");
+  await ligne.locator(".pl-carte").first().click();
+  await page.waitForSelector("#modalePlan");
+  await page.click("#modalePlan [data-editer]");
+  const morceaux = await page.evaluate(() => planEnGrand.x.plan.rects.map((r, i) => ({ i, chute: !!r.chute, fini: r.fini })).filter((r) => !r.chute));
+  const [m1, m2] = morceaux;
+  await page.click(`#modalePlan .pl-dessin [data-idx="${m1.i}"]`);
+  await page.fill('#modalePlan [data-champ="finiL"]', String(m1.fini[0] + 500));
+  await page.click('#modalePlan [data-action-plan="modifier"]');
+  verifier((await page.innerText("#modalePlan .pl-message")).includes("Plus grande que sa place"), "pièce agrandie au-delà de sa place : refusée");
+  await page.fill('#modalePlan [data-champ="finiL"]', String(m1.fini[0] - 100));
+  await page.fill('#modalePlan [data-champ="note"]', "recoupée à la scie");
+  await page.click('#modalePlan [data-action-plan="modifier"]');
+  await page.click(`#modalePlan tr[data-choisir="${m2.i}"]`);
+  await page.click('#modalePlan [data-action-plan="retirer"]');
+  await page.click(`#modalePlan tr[data-choisir="${m2.i}"]`);
+  await page.fill('#modalePlan [data-champ="cle"]', "CVC26119999001");
+  await page.fill('#modalePlan [data-champ="article"]', "ESSAI");
+  await page.fill('#modalePlan [data-champ="finiL"]', "500");
+  await page.fill('#modalePlan [data-champ="finiW"]', "100");
+  await page.click('#modalePlan [data-action-plan="poser"]');
+  const changes = await page.innerText("#modalePlan .pl-changements");
+  verifier(changes.includes("Ce qui a changé (3)") && changes.includes("cote finie 480 × 192 → 380 × 192 ; recoupée à la scie") && changes.includes("CVC26110064004 retirée du plan") && changes.includes("+ CVC26119999001 ESSAI 500 × 100 posée à la place de n°2"), "plan modifié : cote, pièce retirée, pièce posée à sa place");
+  if (captures) await page.screenshot({ path: path.join(captures, "web_plan_modifie.png") });
+  await page.click("#modalePlan [data-editer]");
+  const pdfs = {};
+  for (const quoi of ["origine", "modifie", "deux"]) pdfs[quoi] = await telecharge(() => page.click(`#modalePlan [data-imprimer="${quoi}"]`));
+  verifier(Object.values(pdfs).every((f) => fs.statSync(f).size > 50000) && path.basename(pdfs.deux) === "Plan_LAN264801START_module_T73_avant_apres.pdf", "PDF : plan d'origine, plan modifié, avant / après");
+  if (fs.existsSync("/usr/bin/pdftotext")) {
+    const texte = (f) => require("child_process").execFileSync("pdftotext", ["-layout", f, "-"]).toString();
+    const [o, m, d] = [texte(pdfs.origine), texte(pdfs.modifie), texte(pdfs.deux)];
+    verifier(!o.includes("ESSAI") && m.includes("ESSAI") && m.includes("MODIFIÉ") && m.includes("480 × 192 -> 380 × 192") && !m.includes("?"), "PDF d'origine sans les modifications ; PDF modifié avec (sans « ? » à la place des flèches)");
+    verifier(d.includes("AVANT (plan d'origine)") && d.includes("APRÈS (modifié)") && d.includes("retirée dans le plan modifié"), "PDF avant / après");
+  }
+  await page.click("#modalePlan .pl-boutons [data-fermer]");
+  verifier((await ligne.locator(".pl-carte.modifie").count()) === 1 && (await ligne.locator(".pl-carte").first().innerText()).includes("✎ modifié dans Sentinelle"), "vignette : « ✎ modifié dans Sentinelle »");
+  await page.waitForFunction(() => { const s = [...bibliotheque.semaines.values()].find((x) => x.semaine === 48); const l = s && s.lancements.find((y) => y.nom === "LAN264801START"); return l && l.plans.plans.some((p) => p[10] === 1); }, null, { timeout: 15000 }).catch(() => null);
+  const tel = await page.evaluate(() => {
+    const s = [...bibliotheque.semaines.values()].find((x) => x.semaine === 48);
+    const t = s.lancements.find((y) => y.nom === "LAN264801START").plans;
+    const pl = t.plans[t.pieces.CVC26110064003.p[0][0]];
+    return { modifie: pl[10], etats: pl[9].filter((r) => r.length > 8).map((r) => `${r[8]}:${t.noms[r[4]]}`).join(" "), envoye: contenuFichierPartage().semaines.some((x) => x.lancements.some((l) => l.plans && l.plans.plans.some((p) => p[10] === 1))) };
+  });
+  verifier(tel.modifie === 1 && tel.etats === "m:CVC26110041005 a:CVC26119999001" && tel.envoye, `téléphone : le plan part modifié (${tel.etats})`);
+  // Tout remettre comme à l'origine.
+  await ligne.locator(".pl-carte").first().click();
+  await page.waitForSelector("#modalePlan");
+  await page.click("#modalePlan [data-editer]");
+  await page.click("#modalePlan [data-tout-remettre]");
+  await page.click("#modaleConfirmationOk");
+  await page.waitForFunction(() => !document.querySelector("#modalePlan .pl-changements"));
+  await page.click("#modalePlan .pl-boutons [data-fermer]");
+  verifier((await ligne.locator(".pl-carte.modifie").count()) === 0, "tout remis comme à l'origine");
 
   await nav.close();
   console.log(echecs ? `${echecs} ÉCHEC(S)` : "TOUT EST OK");

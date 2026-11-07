@@ -187,67 +187,89 @@ function fichePieceSimple(a) {
   return carte;
 }
 
-// Les plans de la pièce, lus après l'affichage (quelques dixièmes de seconde par .bkp).
+// Les plans de la pièce, lus après l'affichage (quelques dixièmes de seconde par .bkp) : verdict et tableau complétés.
 async function remplirPlansFiche(carte, l, lancements) {
   if (!lancements.cases.some((g) => g.source.bkp)) return;
-  const zone = carte.querySelector(".fp-plans");
-  zone.innerHTML = '<div class="note">Lecture des plans de coupe…</div>';
-  const plans = await plansDeLaPieceParCase(l.cle, lancements);
+  const plans = await remplirPlansPiece(carte.querySelector(".fp-plans"), l, lancements);
   carte.querySelector(".fp-zone-verdict").innerHTML = htmlVerdict(verdictPiece(l, lancements, plans));
-  let html = "";
-  const groupes = [];
   for (const [p, x] of plans) {
     const td = carte.querySelector(`[data-plan-case="${p.id}"]`);
+    if (!td) continue;
     if (x.erreur) {
-      if (td) td.innerHTML = '<span class="alerte">illisible</span>';
-      html += `<div class="message-alerte">${echapper(nomCasePlans(p))} : plans illisibles (${echapper(x.erreur)})</div>`;
+      td.innerHTML = '<span class="alerte">illisible</span>';
       continue;
     }
     const premier = x.pp.plans.find((y) => y.rang === 0) || x.pp.plans.find((y) => y.rang === 1);
-    if (td) {
-      td.className = `c ${x.place ? "ok" : "alerte"}`;
-      td.textContent = x.place
-        ? `✔ placée${premier ? ` · Pdc ${premier.plan.pdc}${premier.rang === 0 ? ` (module ${premier.plan.nom})` : ` · ${premier.plan.matiere}`}` : ""}`
-        : "✗ dans aucun plan";
-    }
-    if (!x.pp.plans.length) continue;
-    groupes.push({ p, x });
-  }
-  for (const { p, x } of groupes) {
-    const n = x.pp.plans.length;
-    const bande = x.pp.bande && !x.pp.module ? `<div class="note">Pièce de la bande ${echapper(x.pp.groupe)} : elle est coupée dans la bande (pas de plan à part).</div>` : "";
-    html += `<div class="fp-h3 fp-titre-plans"><span>Plans de coupe${groupes.length > 1 ? ` — ${echapper(nomCasePlans(p))}` : ""}</span>
-      <span class="note">${n} plan(s), mêmes numéros « Pdc » que dans Cut Rite</span>
-      <button type="button" class="contour petit" data-imprimer-case="${p.id}">Imprimer les plans (PDF)</button></div>${bande}
-      <div class="pl-grille">${x.pp.plans
-        .map((y, i) => {
-          const t = textesPlanPiece(y, x.pp, x.donnees);
-          return `<div class="pl-carte" role="button" tabindex="0" data-case="${p.id}" data-i="${i}" title="Ouvrir le plan en grand">
-            <div class="pl-titre"><span>${i + 1} · ${echapper(t.titre)}</span><span class="pl-pdc">${echapper(t.badge)}</span></div>
-            <div class="pl-sous">${echapper(t.sous)}</div>
-            ${svgPlan(y.plan, { visee: y.visee })}
-            <div class="pl-pos">${echapper(t.position)}</div></div>`;
-        })
-        .join("")}</div>`;
-  }
-  if (groupes.length) html += '<div class="note">Cliquer un plan l\'ouvre en grand avec toutes ses pièces numérotées (cote finie comme dans Cut Rite). Plans lus dans la sauvegarde .bkp du lancement.</div>';
-  zone.innerHTML = html;
-  for (const b of zone.querySelectorAll(".pl-carte")) {
-    const { x } = groupes.find((gr) => String(gr.p.id) === b.dataset.case);
-    const y = x.pp.plans[Number(b.dataset.i)];
-    activerCartePlan(b, () => ouvrirPlanEnGrand({ plan: y.plan, donnees: x.donnees, visee: y.visee, ...textesPlanPiece(y, x.pp, x.donnees) }));
-  }
-  for (const b of zone.querySelectorAll("[data-imprimer-case]")) {
-    const { p, x } = groupes.find((gr) => String(gr.p.id) === b.dataset.imprimerCase);
-    b.addEventListener("click", () => imprimerPlansPiece(l, p, x));
+    td.className = `c ${x.place ? "ok" : "alerte"}`;
+    td.textContent = x.place
+      ? `✔ placée${premier ? ` · Pdc ${premier.plan.pdc}${premier.rang === 0 ? ` (module ${premier.plan.nom})` : ` · ${premier.plan.matiere}`}` : ""}`
+      : "✗ dans aucun plan";
   }
 }
+
+// Les vignettes des plans de coupe d'une pièce (fiche de la pièce, ou une pièce de la commande dans la recherche).
+// Un plan modifié dans Sentinelle est montré modifié (badge « ✎ modifié »). Rend les plans lus, par case.
+async function remplirPlansPiece(zone, l, lancements) {
+  zone.innerHTML = '<div class="note">Lecture des plans de coupe…</div>';
+  const plans = await plansDeLaPieceParCase(l.cle, lancements);
+  const dessiner = () => {
+    let html = "";
+    const groupes = [];
+    for (const [p, x] of plans) {
+      if (x.erreur) {
+        html += `<div class="message-alerte">${echapper(nomCasePlans(p))} : plans illisibles (${echapper(x.erreur)})</div>`;
+        continue;
+      }
+      if (x.pp.plans.length) groupes.push({ p, x });
+    }
+    for (const { p, x } of groupes) {
+      const n = x.pp.plans.length;
+      const bande = x.pp.bande && !x.pp.module ? `<div class="note">Pièce de la bande ${echapper(x.pp.groupe)} : elle est coupée dans la bande (pas de plan à part).</div>` : "";
+      html += `<div class="fp-h3 fp-titre-plans"><span>Plans de coupe${groupes.length > 1 ? ` — ${echapper(nomCasePlans(p))}` : ""}</span>
+        <span class="note">${n} plan(s), mêmes numéros « Pdc » que dans Cut Rite</span>
+        <button type="button" class="contour petit" data-imprimer-case="${p.id}">Imprimer les plans (PDF)</button></div>${bande}
+        <div class="pl-grille">${x.pp.plans
+          .map((y, i) => {
+            const t = textesPlanPiece(y, x.pp, x.donnees);
+            const v = versionDuPlan(x.donnees.lancement, y.plan);
+            return `<div class="pl-carte${v.rt ? " modifie" : ""}" role="button" tabindex="0" data-case="${p.id}" data-i="${i}" title="Ouvrir le plan en grand (et le modifier)">
+              <div class="pl-titre"><span>${i + 1} · ${echapper(t.titre)}</span><span class="pl-pdc">${echapper(t.badge)}</span></div>
+              <div class="pl-sous">${echapper(t.sous)}${v.rt ? ' · <span class="pl-modifie">✎ modifié dans Sentinelle</span>' : ""}</div>
+              ${svgPlan(v.plan, { visee: y.visee, etats: v.etats, textes: v.textes })}
+              <div class="pl-pos">${echapper(t.position)}</div></div>`;
+          })
+          .join("")}</div>`;
+    }
+    if (groupes.length) html += '<div class="note">Cliquer un plan l\'ouvre en grand avec toutes ses pièces numérotées (cote finie comme dans Cut Rite) : on peut y modifier les pièces et imprimer le plan d\'origine ou modifié. Plans lus dans la sauvegarde .bkp du lancement.</div>';
+    zone.innerHTML = html;
+    for (const b of zone.querySelectorAll(".pl-carte")) {
+      const { x } = groupes.find((gr) => String(gr.p.id) === b.dataset.case);
+      const y = x.pp.plans[Number(b.dataset.i)];
+      activerCartePlan(b, () => ouvrirPlanEnGrand({ plan: y.plan, donnees: x.donnees, visee: y.visee, ...textesPlanPiece(y, x.pp, x.donnees), apresModification: dessiner }));
+    }
+    for (const b of zone.querySelectorAll("[data-imprimer-case]")) {
+      const { p, x } = groupes.find((gr) => String(gr.p.id) === b.dataset.imprimerCase);
+      b.addEventListener("click", () => imprimerPlansPiece(l, p, x));
+    }
+  };
+  dessiner();
+  return plans;
+}
+
+// Un plan pour le PDF : la version modifiée s'il l'a été (bien marquée), sinon d'origine.
+function planPourPdf(x) {
+  const v = versionDuPlan(x.donnees.lancement, x.plan);
+  if (!v.rt) return x;
+  return { ...x, plan: v.plan, etats: v.etats, textes: v.textes, marques: v.marques, titre: `${x.titre || `Plan ${x.plan.pdc}`} — MODIFIÉ`, legende: `Modifié dans Sentinelle${v.rt.date ? ` le ${new Date(v.rt.date).toLocaleDateString("fr-FR")}` : ""} : ${changementsRetouche(x.plan, v.rt).length} changement(s)` };
+}
+const NOTE_PDF_MODIFIES = " Plans marqués « MODIFIÉ » : bleu = pièce modifiée, vert = pièce posée, pointillés rouges = pièce retirée (ne pas couper) ; modifiés dans Sentinelle, le .bkp ne change pas.";
 
 function imprimerPlansPiece(l, p, x) {
   const c = l.trouvee ? l.trouvee.champs : null;
   const d = (c && c.toutesDonneesLan) || {};
   const dims = c && c.longueurFinie != null ? `${fmtDim(c.longueurFinie)} × ${fmtDim(c.largeurFinie)}${c.epaisseurFinie != null ? ` × ${fmtDim(c.epaisseurFinie)}` : ""} mm` : "";
   const lancement = p.strat ? p.strat.name.replace(/\.[^.]*$/, "") : x.donnees.lancement;
+  const plans = x.pp.plans.map((y) => planPourPdf({ plan: y.plan, donnees: x.donnees, visee: y.visee, ...textesPlanPiece(y, x.pp, x.donnees) }));
   const octets = pdfPlansDeCoupe({
     surtitre: `Plans de coupe de la pièce · lancement ${lancement} · semaine ${semaineDeLaCase(p)}`,
     titre: `${d.conf_article || ""} ${dims}`.trim() || l.cle,
@@ -255,8 +277,8 @@ function imprimerPlansPiece(l, p, x) {
       [l.cle, d.conf_commande ? `commande ${d.conf_commande}, ligne ${d.conf_ligne}` : "", d.com_clientcom || "", d.com_reference ? `réf. ${d.com_reference}` : ""].filter(Boolean).join(" · "),
       [d.agglo ? `Agglo ${d.agglo}` : "", d.coloris ? `dessus ${d.coloris}` : "", d.coloris_inf ? `dessous ${d.coloris_inf}` : "", x.pp.groupe ? `${x.pp.module ? "module" : "bande"} ${x.pp.groupe}` : ""].filter(Boolean).join(" · "),
     ],
-    note: "La pièce cherchée (ou le module et les stratifiés qui la portent) est hachurée, avec un bord épais et un numéro sur fond noir. Les numéros « Pdc » sont ceux de Cut Rite. Cotes finies en mm.",
-    plans: x.pp.plans.map((y) => ({ plan: y.plan, donnees: x.donnees, visee: y.visee, ...textesPlanPiece(y, x.pp, x.donnees) })),
+    note: `La pièce cherchée (ou le module et les stratifiés qui la portent) est hachurée, avec un bord épais et un numéro sur fond noir. Les numéros « Pdc » sont ceux de Cut Rite. Cotes finies en mm.${plans.some((y) => y.marques) ? NOTE_PDF_MODIFIES : ""}`,
+    plans,
     document: `Plans de coupe de ${l.cle}`,
   });
   telecharger(`Plans_de_coupe_${l.cle}.pdf`, octets, "application/pdf");
@@ -286,79 +308,7 @@ function morceauxNumerotes(plan) {
   return { morceaux, chutes };
 }
 
-function fermerPlanEnGrand() {
-  const m = $("modalePlan");
-  if (m) m.remove();
-  document.removeEventListener("keydown", toucheModalePlan);
-}
-
-function toucheModalePlan(e) {
-  if (e.key === "Escape") fermerPlanEnGrand();
-}
-
-// x : { plan, donnees, visee, titre, badge, sous }
-function ouvrirPlanEnGrand(x) {
-  fermerPlanEnGrand();
-  const { plan, donnees } = x;
-  const visee = x.visee || (() => false);
-  let cote = "fini";
-  const fond = document.createElement("div");
-  fond.className = "modale-fond";
-  fond.id = "modalePlan";
-  const { morceaux, chutes } = morceauxNumerotes(plan);
-  const lignes = morceaux
-    .map((r, i) => {
-      const v = visee(r);
-      const nom = (r.nom || "").split("/")[0];
-      const module = MOTIF_NOYAU_PLAN.test(r.nom || "") && donnees.modules.has(nom);
-      const piece = r.cle && !MOTIF_NOYAU_PLAN.test(r.nom || "") && !MOTIF_STRATIFIE_PLAN.test(r.nom || "");
-      return `<tr class="${v ? "visee" : ""}"><td class="c">${i + 1}</td><td>${echapper(nomMorceauPlan(r))}${v ? " <strong>← pièce cherchée</strong>" : ""}${module ? ` <button type="button" class="texte petit" data-module="${echapper(nom)}">voir le module</button>` : ""}</td>
-        <td>${echapper(r.article)}</td><td class="d">${dimsPlan(r.fini[0], r.fini[1])}</td><td class="d">${dimsPlan(r.L, r.W)}</td><td>${piece ? `${echapper(r.commande)} / ${echapper(r.ligne)}` : ""}</td></tr>`;
-    })
-    .join("");
-  fond.innerHTML = `<div class="modale-boite pl-grand" role="dialog" aria-modal="true">
-    <div class="pl-grand-tete"><h3>${echapper(x.titre || `Plan ${plan.pdc}`)} <span class="pl-pdc">${echapper(x.badge || `Pdc ${plan.pdc}`)}</span></h3>
-      <button type="button" class="texte" data-fermer aria-label="Fermer">✕</button></div>
-    <div class="note">${echapper(x.sous || "")}</div>
-    <div class="pl-dessin"></div>
-    <div class="pl-boutons">
-      <button type="button" class="contour" data-cote>Voir les cotes de débit</button>
-      <button type="button" class="contour" data-imprimer>Imprimer ce plan (PDF)</button>
-      <button type="button" data-fermer>Fermer</button>
-    </div>
-    <div class="defilement"><table class="fp-table pl-table"><thead><tr><th class="c">N°</th><th>Pièce</th><th>Article</th><th class="d">Cote finie</th><th class="d">Débit</th><th>Commande / ligne</th></tr></thead><tbody>${lignes}</tbody></table></div>
-    ${chutes.length ? `<div class="note">Chutes gardées : ${chutes.map((r) => dimsPlan(r.L, r.W)).join(", ")}</div>` : ""}
-  </div>`;
-  const dessiner = () => {
-    fond.querySelector(".pl-dessin").innerHTML = svgPlan(plan, { visee, numeros: true, modules: plan.module ? null : donnees.modules, cote });
-  };
-  dessiner();
-  fond.addEventListener("click", (e) => {
-    if (e.target === fond || e.target.closest("[data-fermer]")) fermerPlanEnGrand();
-  });
-  fond.querySelector("[data-cote]").addEventListener("click", (e) => {
-    cote = cote === "fini" ? "debit" : "fini";
-    e.target.textContent = cote === "fini" ? "Voir les cotes de débit" : "Voir les cotes finies";
-    dessiner();
-  });
-  fond.querySelector("[data-imprimer]").addEventListener("click", () => {
-    const octets = pdfPlansDeCoupe({
-      surtitre: `Plan de coupe · lancement ${donnees.lancement}`,
-      titre: `${x.titre || "Plan"} — ${x.badge || `Pdc ${plan.pdc}`}`,
-      lignes: [],
-      note: "Les numéros « Pdc » sont ceux de Cut Rite. Cotes finies en mm.",
-      plans: [x],
-      document: `Plan de coupe ${plan.matiere} Pdc ${plan.pdc}`,
-    });
-    telecharger(`Plan_${donnees.lancement}_${plan.matiere}_Pdc${plan.pdc}.pdf`, octets, "application/pdf");
-  });
-  for (const b of fond.querySelectorAll("[data-module]")) {
-    const m = donnees.modules.get(b.dataset.module);
-    b.addEventListener("click", () => ouvrirPlanEnGrand({ plan: m, donnees, visee, titre: `Module ${m.nom}`, badge: `Pdc ${m.pdc}`, sous: `module · ${dimsPlan(m.L, m.W)} · ${m.matiere}` }));
-  }
-  document.body.appendChild(fond);
-  document.addEventListener("keydown", toucheModalePlan);
-}
+// Le plan en grand (et ses modifications) : voir 07g_retouche_plans.js.
 
 // ---- Les plans en PDF (A4 portrait, lisible en noir et blanc) ----
 // options : { surtitre, titre, lignes: [texte], note, plans: [{ plan, donnees, visee, titre, badge, sous, etats, textes, legende }],
@@ -436,12 +386,18 @@ function pdfPlansDeCoupe(o) {
       if (v) pdf.rectangle(M, y - 8.5, U, 11, 0xfff3c4, null, 0);
       const police = v ? POLICE.GRAS : POLICE.TEXTE;
       const piece = r.cle && !MOTIF_NOYAU_PLAN.test(r.nom || "") && !MOTIF_STRATIFIE_PLAN.test(r.nom || "");
-      const nom = `${nomMorceauPlan(r)}${v ? " ← pièce cherchée" : etat === "ajoutee" ? " (ajoutée)" : etat === "deplacee" ? " (part sur un autre plan)" : ""}`;
+      const marque = x.marques ? x.marques.get(plan.rects.indexOf(r)) : null;
+      const nom = `${nomMorceauPlan(r)}${v ? " ← pièce cherchée" : ""}${marque ? ` (${marque})` : etat === "ajoutee" ? " (ajoutée)" : etat === "deplacee" ? " (part sur un autre plan)" : ""}`;
       pdf.texte(M + 4, y, String(k + 1), 7.5, police, CHARTE.NOIR);
-      pdf.texte(M + 22, y, couperTextePdf(nom, 222, 7.5, police)[0], 7.5, police, CHARTE.NOIR);
+      const morceauxNom = couperTextePdf(nom, 222, 7.5, police);
+      pdf.texte(M + 22, y, morceauxNom[0], 7.5, police, CHARTE.NOIR);
       pdf.texte(M + 250, y, couperTextePdf(r.article || "", 76, 7.5, police)[0], 7.5, police, CHARTE.NOIR);
       pdf.texte(M + 330, y, dimsPlan(r.fini[0], r.fini[1]), 7.5, police, CHARTE.NOIR);
       if (piece) pdf.texte(M + 410, y, `${r.commande} / ${r.ligne}`, 7.5, police, CHARTE.NOIR);
+      for (const suite of morceauxNom.slice(1, 3)) {
+        y += 9;
+        pdf.texte(M + 22, y, suite, 7.5, police, CHARTE.NOIR);
+      }
       pdf.filet(M, M + U, y + 2.5, CHARTE.GRIS_FILET, 0.4);
       y += 11;
     });
@@ -476,7 +432,7 @@ function dessinerPlanPdf(pdf, x0, y0, ech, plan, donnees, visee, etats, textes) 
       return;
     }
     const v = visee(r);
-    const fond = etat === "ajoutee" ? 0xc8e6c9 : etat === "deplacee" ? 0xfde2df : v ? 0xffe082 : 0xf1f0ee;
+    const fond = etat === "ajoutee" ? 0xc8e6c9 : etat === "modifiee" ? 0xbbdefb : etat === "deplacee" ? 0xfde2df : v ? 0xffe082 : 0xf1f0ee;
     pdf.rectangle(x, y, l, h, fond, null, 0);
     if (v || etat === "deplacee") pdf.hachures(x, y, l, h, etat === "deplacee" ? 0xc62828 : CHARTE.NOIR, 5, 0.6);
     const nom = (r.nom || "").split("/")[0];
@@ -502,8 +458,9 @@ function dessinerPlanPdf(pdf, x0, y0, ech, plan, donnees, visee, etats, textes) 
         texteCentrePdf(pdf, x + l / 2, y + h / 2 + taille * 0.35, t, taille, POLICE.GRAS, CHARTE.NOIR);
       }
     }
-    const trait = etat === "ajoutee" ? 0x2e7d32 : etat === "deplacee" ? 0xc62828 : CHARTE.NOIR;
+    const trait = etat === "ajoutee" ? 0x2e7d32 : etat === "modifiee" ? 0x1565c0 : etat === "deplacee" ? 0xc62828 : CHARTE.NOIR;
     pdf.rectangle(x, y, l, h, null, trait, v || etat ? 1.8 : 0.5);
+    if ((etat === "ajoutee" || etat === "modifiee") && l > 44 && h > 22) texteCentrePdf(pdf, x + l / 2, y + h - 3.5, etat === "ajoutee" ? "POSÉE" : "MODIFIÉE", 5.5, POLICE.GRAS, trait);
     // Numéro : sur fond noir pour la pièce cherchée.
     const rr = Math.max(3.2, Math.min(5.5, h * 0.3, l * 0.2));
     pdf.disque(x + rr + 1.5, y + rr + 1.5, rr, CHARTE.NOIR);
@@ -622,10 +579,11 @@ function afficherPlansLancement(zone) {
     <div class="pl-grille">${plans
       .map((p, i) => {
         const n = p.rects.filter((r) => !r.chute).length;
-        return `<div class="pl-carte" role="button" tabindex="0" data-i="${i}" title="Ouvrir le plan en grand">
+        const v = versionDuPlan(d.lancement, p);
+        return `<div class="pl-carte${v.rt ? " modifie" : ""}" role="button" tabindex="0" data-i="${i}" title="Ouvrir le plan en grand (et le modifier)">
           <div class="pl-titre"><span>${p.module ? `Module ${echapper(p.nom)}` : `Pdc ${p.pdc}`}</span><span class="pl-pdc">${p.module ? `Pdc ${p.pdc} · ${echapper(p.matiere)}` : echapper(p.sorte)}</span></div>
-          <div class="pl-sous">${p.module ? "module" : echapper(p.nom)} · ${dimsPlan(p.L, p.W)}${p.fois > 1 ? ` · coupé ${p.fois} fois` : ""} · ${n} morceau(x)${p.ok ? "" : " · ⚠ mal lu"}</div>
-          ${svgPlan(p, {})}</div>`;
+          <div class="pl-sous">${p.module ? "module" : echapper(p.nom)} · ${dimsPlan(p.L, p.W)}${p.fois > 1 ? ` · coupé ${p.fois} fois` : ""} · ${n} morceau(x)${p.ok ? "" : " · ⚠ mal lu"}${v.rt ? ' · <span class="pl-modifie">✎ modifié dans Sentinelle</span>' : ""}</div>
+          ${svgPlan(v.plan, { etats: v.etats, textes: v.textes })}</div>`;
       })
       .join("")}</div>`;
   const texteDe = (p) => ({
@@ -634,6 +592,7 @@ function afficherPlansLancement(zone) {
     titre: p.module ? `Module ${p.nom}` : `${p.matiere} — Pdc ${p.pdc}`,
     badge: `Pdc ${p.pdc} · ${p.matiere}`,
     sous: `${p.module ? "module" : `${p.sorte} ${p.nom}`} · ${dimsPlan(p.L, p.W)}${p.fois > 1 ? ` · coupé ${p.fois} fois` : ""}`,
+    apresModification: () => afficherPlansLancement(zone),
   });
   zone.querySelectorAll(".pl-carte").forEach((b) => activerCartePlan(b, () => ouvrirPlanEnGrand(texteDe(plans[Number(b.dataset.i)]))));
   $("choixPlansMatiere").addEventListener("change", (e) => {
@@ -643,12 +602,14 @@ function afficherPlansLancement(zone) {
   $("btnImprimerMatiere").addEventListener("click", () => {
     const m = d.matieres.get(etatPlans.matiere);
     const titre = etatPlans.matiere === "*modules" ? "Modules" : `${etatPlans.matiere}${m && m.desc ? ` — ${m.desc}` : ""}`;
+    const aImprimer = plans.map((p) => planPourPdf(texteDe(p)));
+    const nbModifies = aImprimer.filter((y) => y.marques).length;
     const octets = pdfPlansDeCoupe({
       surtitre: `Plans de coupe · lancement ${d.lancement}`,
       titre,
-      lignes: [`${plans.length} plan(s) · lus dans ${etatPlans.source.bkp.name}`],
-      note: "Les numéros « Pdc » sont ceux de Cut Rite. Cotes finies en mm.",
-      plans: plans.map(texteDe),
+      lignes: [`${plans.length} plan(s) · lus dans ${etatPlans.source.bkp.name}${nbModifies ? ` · ${nbModifies} modifié(s) dans Sentinelle` : ""}`],
+      note: `Les numéros « Pdc » sont ceux de Cut Rite. Cotes finies en mm.${nbModifies ? NOTE_PDF_MODIFIES : ""}`,
+      plans: aImprimer,
       document: `Plans de coupe ${d.lancement} ${etatPlans.matiere === "*modules" ? "modules" : etatPlans.matiere}`,
     });
     telecharger(`Plans_${d.lancement}_${etatPlans.matiere === "*modules" ? "modules" : etatPlans.matiere}.pdf`, octets, "application/pdf");

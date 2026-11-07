@@ -286,6 +286,33 @@ public class PartageTest {
         capturerSiDemande(a, "appli_recherche_plans.png");
     }
 
+    /** Un plan modifié dans Sentinelle sur le PC : l'appli le lit et le dessine modifié (elle ne modifie rien). */
+    @Test
+    public void planModifieSurLePc() throws Exception {
+        String json = "{\"lancement\":\"LAN264801START\",\"noms\":[\"CVC26110041005\",\"CRED12\",\"modifiée : cote finie 480 × 192 → 380 × 192\","
+                + "\"CVC26110064004\",\"retirée — ne pas couper\",\"CVC26119999001\",\"ESSAI\",\"posée dans Sentinelle\"],"
+                + "\"plans\":[[\"SAG10HYBR\",40,1,\"T73\",\"module\",4050,1018,1,\"AGGLO\",[[0,0,425,217,0,1,380,192,\"m\",2],"
+                + "[525,0,675,186,3,1,650,161,\"r\",4],[525,0,500,100,5,6,500,100,\"a\",7],[0,800,300,200,-1]],1]],"
+                + "\"pieces\":{\"CVC26110041005\":{\"g\":\"T73\",\"t\":\"m\",\"d\":\"\",\"s\":\"\",\"n\":1,\"p\":[[0,0,[0]]]}}}";
+        PlansLancement.Piece p = PlansLancement.piece(new org.json.JSONObject(json), "CVC26110041005");
+        PlansLancement.Plan plan = p.plans.get(0).plan;
+        assertTrue(plan.modifie);
+        assertEquals("m", plan.morceaux.get(0).etat);
+        assertEquals("modifiée : cote finie 480 × 192 → 380 × 192", plan.morceaux.get(0).marque);
+        assertEquals("r", plan.morceaux.get(1).etat);
+        assertEquals("a", plan.morceaux.get(2).etat);
+        assertEquals("ESSAI", plan.morceaux.get(2).article);
+        assertTrue(plan.morceaux.get(3).chute);
+        // Le dessin passe (sans erreur) avec les trois états.
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().get();
+        PlanVue v = new PlanVue(a, plan, p.plans.get(0).visees, true);
+        v.measure(View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED));
+        v.layout(0, 0, v.getMeasuredWidth(), v.getMeasuredHeight());
+        Bitmap b = Bitmap.createBitmap(v.getMeasuredWidth(), Math.max(1, v.getMeasuredHeight()), Bitmap.Config.ARGB_8888);
+        v.draw(new Canvas(b));
+        assertEquals(800, b.getWidth());
+    }
+
     /** Le vrai fichier écrit par la page web (semaines 44 à 46) : les quatre écrans, comme sur le PC. */
     @Test
     public void ecransSurLeVraiFichier() throws Exception {

@@ -410,6 +410,8 @@ function plansDeLaPiece(donnees, cle) {
 // Les plans d'un lancement pour le téléphone (fichier partagé), compacts : les noms à part, chaque plan une fois
 // (matière, Pdc, module, panneau, sorte, L, W, fois, désignation, morceaux [x, y, L, W, nom, article, fini L, fini W] ;
 // une chute : [x, y, L, W, -1]), et pour chaque pièce du lancement ses plans et les morceaux à mettre en jaune.
+// Un plan modifié dans Sentinelle part modifié : 11e valeur 1, et chaque morceau changé a en plus son état
+// (« a » posée, « m » modifiée, « r » retirée) et ce qui a changé (index dans les noms).
 function plansPourTelephone(donnees, cles) {
   const noms = [];
   const indexNom = new Map();
@@ -423,14 +425,36 @@ function plansPourTelephone(donnees, cles) {
   const r1 = (v) => Math.round(v * 10) / 10;
   const plans = [];
   const indexPlan = new Map();
+  const version = (plan) => (typeof versionDuPlan === "function" ? versionDuPlan(donnees.lancement, plan) : { plan, etats: null, marques: null, origine: null, rt: null });
+  const CODES = { ajoutee: "a", modifiee: "m", partie: "r" };
   const ajouter = (plan) => {
     if (!indexPlan.has(plan)) {
       const m = donnees.matieres.get(plan.matiere);
-      indexPlan.set(plan, plans.length);
-      plans.push([plan.matiere, plan.pdc, plan.module ? 1 : 0, plan.nom, plan.sorte, r1(plan.L), r1(plan.W), plan.fois, m ? m.desc : "",
-        plan.rects.map((r) => (r.chute ? [r1(r.x), r1(r.y), r1(r.L), r1(r.W), -1] : [r1(r.x), r1(r.y), r1(r.L), r1(r.W), nom(nomMorceauPlan(r)), nom(r.article || ""), r1(r.fini[0]), r1(r.fini[1])]))]);
+      const v = version(plan);
+      indexPlan.set(plan, { i: plans.length, v });
+      const morceaux = v.plan.rects.map((r, idx) => {
+        if (r.chute) return [r1(r.x), r1(r.y), r1(r.L), r1(r.W), -1];
+        const x = [r1(r.x), r1(r.y), r1(r.L), r1(r.W), nom(nomMorceauPlan(r)), nom(r.article || ""), r1(r.fini[0]), r1(r.fini[1])];
+        const etat = v.etats ? CODES[v.etats.get(idx)] : null;
+        if (etat) x.push(etat, nom((v.marques && v.marques.get(idx)) || ""));
+        return x;
+      });
+      plans.push([plan.matiere, plan.pdc, plan.module ? 1 : 0, plan.nom, plan.sorte, r1(plan.L), r1(plan.W), plan.fois, m ? m.desc : "", morceaux, ...(v.rt ? [1] : [])]);
     }
-    return indexPlan.get(plan);
+    return indexPlan.get(plan).i;
+  };
+  // Les morceaux en jaune, dans le plan tel qu'il part (modifié ou non).
+  const visees = (plan, visee, cle) => {
+    const { v } = indexPlan.get(plan);
+    return v.plan.rects
+      .map((r, j) => {
+        if (r.chute) return -1;
+        const o = v.origine ? v.origine[j] : { idx: j };
+        if (!o || o.reste) return -1;
+        if (o.ajout !== undefined) return r.cle === cle ? j : -1;
+        return visee(plan.rects[o.idx]) ? j : -1;
+      })
+      .filter((j) => j >= 0);
   };
   const pieces = {};
   for (const cle of cles) {
@@ -442,8 +466,23 @@ function plansPourTelephone(donnees, cles) {
       d: pp.piece ? pp.piece.dessus : "",
       s: pp.piece ? pp.piece.dessous : "",
       n: donnees.placees.get(cle) || 0,
-      p: pp.plans.map((x) => [ajouter(x.plan), x.rang, x.plan.rects.map((r, i) => (!r.chute && x.visee(r) ? i : -1)).filter((i) => i >= 0)]),
+      p: pp.plans.map((x) => [ajouter(x.plan), x.rang, visees(x.plan, x.visee, cle)]),
     };
+  }
+  // Une pièce du lancement posée dans un plan modifié : ce plan est aussi le sien.
+  const lancees = new Set(cles);
+  for (const m of donnees.matieres.values()) {
+    for (const plan of m.plans) {
+      const rt = typeof retoucheDuPlan === "function" ? retoucheDuPlan(donnees.lancement, plan) : null;
+      if (!rt) continue;
+      for (const a of rt.ajouts || []) {
+        if (!a.cle || !lancees.has(a.cle)) continue;
+        const i = ajouter(plan);
+        if (!pieces[a.cle]) pieces[a.cle] = { g: "", t: "", d: "", s: "", n: donnees.placees.get(a.cle) || 0, p: [] };
+        if (pieces[a.cle].p.some((x) => x[0] === i)) continue;
+        pieces[a.cle].p.push([i, plan.module ? 0 : 1, visees(plan, () => false, a.cle)]);
+      }
+    }
   }
   return { lancement: donnees.lancement, noms, plans, pieces };
 }
@@ -474,8 +513,9 @@ async function controlerPlans(qteAttendueParCle, fichierBkp, qteParCleBkp) {
 
 // ---- Dessin d'un plan (SVG) ----
 // options : { visee(r) → bool, numeros, cote: "fini"|"debit", imprimable, modules (Map nom → plan, pour dessiner leurs
-// pièces dans le panneau, comme Cut Rite), etats (Map index → "ajoutee"|"partie"|"deplacee"|"chute_perdue"),
-// textes (Map index → texte écrit dans une place laissée vide) }
+// pièces dans le panneau, comme Cut Rite), etats (Map index → "ajoutee"|"modifiee"|"partie"|"deplacee"|"chute_perdue"),
+// textes (Map index → texte écrit dans une place laissée vide), cliquable (chaque morceau dans un <g data-idx>, pour
+// le modifier), selection (index du morceau choisi : entouré en bleu) }
 function svgPlan(plan, options = {}) {
   const { L, W } = plan;
   const visee = options.visee || (() => false);
@@ -491,7 +531,7 @@ function svgPlan(plan, options = {}) {
     `<rect x="0" y="0" width="${L.toFixed(0)}" height="${W.toFixed(0)}" fill="${imp ? "#fff" : "#f4f3f1"}" stroke="${imp ? "#22231d" : "#797978"}" stroke-width="${ech(10)}"/>`,
   ];
   let n = 0;
-  plan.rects.forEach((r, idx) => {
+  const morceau = (r, idx) => {
     const etat = options.etats ? options.etats.get(idx) : null;
     const xywh = `x="${r.x.toFixed(0)}" y="${r.y.toFixed(0)}" width="${r.L.toFixed(0)}" height="${r.W.toFixed(0)}"`;
     if (r.chute) {
@@ -512,8 +552,8 @@ function svgPlan(plan, options = {}) {
     const mod = options.modules && MOTIF_NOYAU_PLAN.test(r.nom || "") ? options.modules.get(nom) : null;
     // Un module dessiné avec ses pièces : ses trous restent clairs, seule la pièce visée est en jaune.
     const fondModule = mod && !etat ? (v ? "#fff6d6" : "#fbfaf9") : null;
-    const fond = fondModule || (etat === "ajoutee" ? "#c8e6c9" : etat === "deplacee" ? `url(#${id}r)` : v ? (imp ? `url(#${id}v)` : "#ffd54f") : imp ? "#f1f0ee" : "#eac2b7");
-    const trait = etat === "ajoutee" ? "#2e7d32" : etat === "deplacee" ? "#c62828" : imp ? "#22231d" : "#78140c";
+    const fond = fondModule || (etat === "ajoutee" ? "#c8e6c9" : etat === "modifiee" ? "#bbdefb" : etat === "deplacee" ? `url(#${id}r)` : v ? (imp ? `url(#${id}v)` : "#ffd54f") : imp ? "#f1f0ee" : "#eac2b7");
+    const trait = etat === "ajoutee" ? "#2e7d32" : etat === "modifiee" ? "#1565c0" : etat === "deplacee" ? "#c62828" : imp ? "#22231d" : "#78140c";
     s.push(`<rect ${xywh} fill="${fond}" stroke="${trait}" stroke-width="${ech(v || etat ? 16 : 6)}"/>`);
     if (mod && !etat) {
       for (const q of mod.rects) {
@@ -538,7 +578,15 @@ function svgPlan(plan, options = {}) {
       s.push(`<circle cx="${cx.toFixed(0)}" cy="${cy.toFixed(0)}" r="${rr.toFixed(0)}" fill="${v ? "#22231d" : "#fff"}" stroke="#22231d" stroke-width="${(rr / 7).toFixed(0)}"/>`);
       s.push(`<text x="${cx.toFixed(0)}" y="${(cy + rr * 0.38).toFixed(0)}" font-size="${(rr * 1.1).toFixed(0)}" text-anchor="middle" font-weight="700" fill="${v ? "#fff" : "#22231d"}" font-family="Lato,Arial">${n}</text>`);
     }
+  };
+  plan.rects.forEach((r, idx) => {
+    if (!options.cliquable) return morceau(r, idx);
+    s.push(`<g data-idx="${idx}" class="pl-zone">`);
+    morceau(r, idx);
+    s.push("</g>");
   });
+  const choisi = options.selection !== null && options.selection !== undefined ? plan.rects[options.selection] : null;
+  if (choisi) s.push(`<rect x="${choisi.x.toFixed(0)}" y="${choisi.y.toFixed(0)}" width="${choisi.L.toFixed(0)}" height="${choisi.W.toFixed(0)}" fill="none" stroke="#1565c0" stroke-width="${ech(34)}" stroke-dasharray="${ech(90)} ${ech(50)}" pointer-events="none"/>`);
   s.push("</svg>");
   return s.join("");
 }
