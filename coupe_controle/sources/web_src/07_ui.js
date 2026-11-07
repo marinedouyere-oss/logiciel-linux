@@ -103,9 +103,13 @@ const POSTES_SUPPLEMENTS = ["Feno"];
 // Case du fichier de contrôle Diakonos (son fichier est rangé à la place du lancement).
 const estDiakonos = (p) => POSTES_DIAKONOS.includes(p.poste);
 
+// Un chantier porte le nom de son lancement (« LAN2647AIRDESIGN » → « AIRDESIGN ») ; « Chantier 2 » tant qu'il est vide.
+// (p.label reste le nom de la case dans la mémoire du navigateur.)
+const libelleCase = (p) => (estChantier(p) && p.strat ? nomChantierCompteRendu(p.strat.name.replace(/\.[^.]*$/, "")) : p.label);
+
 function titrePaire(p) {
   if (!caseAjoutee(p)) return p.semaine ? `Semaine ${p.semaine}` : p.label;
-  return p.semaine ? `${p.label} (sem ${p.semaine})` : p.label;
+  return p.semaine ? `${libelleCase(p)} (sem ${p.semaine})` : libelleCase(p);
 }
 
 // Onglet d'un numéro de semaine (« 45 » → impaire, « 47 » → impaire2), null s'il n'y en a pas.
@@ -1134,10 +1138,18 @@ function htmlPlans(p) {
   const n = nbHorsPlans(p);
   const reste = restantsDuControle(p, estControlePlans) ?? n;
   const plans = `${fmtNombre(r.nbPlans)} plans, ${fmtNombre(r.nbModules)} modules`;
-  if (!n) return bandeau(`✔ Plans de coupe : toutes les pièces sont placées (${plans})`, "ok");
-  if (!reste) return bandeau(`✔ Plans de coupe : ${n} pièce(s) hors des plans, validée(s) OK (${plans})`, "ok");
-  if (!r.nonPlacees.length) return bandeau(`⚠ Plans de coupe : les pièces du lancement sont placées ; ${reste} pièce(s) du .bkp hors lancement dans aucun plan, à vérifier (${plans})`, "attention");
-  return bandeau(`⚠ Plans de coupe : ${reste} pièce(s) dans aucun plan — elles ne seront pas coupées (${plans})`, "alerte");
+  if (!n) return bandeau(`✔ Plans de coupe : toutes les pièces du lancement sont dans les plans de Cut Rite (${plans}).`, "ok");
+  if (!reste) return bandeau(`✔ Plans de coupe : ${n} pièce(s) qui ne seront pas coupées, validée(s) OK (${plans}).`, "ok");
+  const liste = (pieces) =>
+    `<ul class="liste-pieces">${pieces.map((x) => `<li><strong>${echapper(x.cle)}</strong>${x.desc ? ` · ${echapper(texteDescription(x.desc))}` : ""}</li>`).join("")}</ul>`;
+  let html = "";
+  if (r.nonPlacees.length)
+    html += bandeau(`⚠ Plans de coupe : ${r.nonPlacees.length} pièce(s) du lancement ne sont dans aucun plan de Cut Rite. Elles ne seront pas coupées : il faut les remettre dans l'optimisation.`, "alerte") + liste(r.nonPlacees);
+  else html += bandeau(`✔ Plans de coupe : toutes les pièces du lancement sont dans les plans de Cut Rite (${plans}).`, "ok");
+  const hors = r.horsLancement || [];
+  if (hors.length)
+    html += bandeau(`⚠ ${hors.length} autre(s) pièce(s) sont encore dans la liste du .bkp, mais plus dans le fichier de lancement. Cut Rite ne les a mises dans aucun plan : elles ne seront pas coupées. Vérifier qu'il ne faut pas les fabriquer.`, "attention") + liste(hors);
+  return html;
 }
 
 // Contrôle des couleurs : chaque coloris du lancement doit avoir été optimisé dans le .bkp.
@@ -1544,7 +1556,7 @@ function lignesRecap(pairesSemaine) {
     lignes.push({
       paire: p,
       semaine: p.semaine,
-      nom: caseAjoutee(p) ? p.label : p.poste,
+      nom: caseAjoutee(p) ? libelleCase(p) : p.poste,
       lancement: nom.includes(".") ? nom.slice(0, nom.lastIndexOf(".")) : nom,
       prevues: r ? r.prevues : null,
       bkp: r ? r.bkp : null,
@@ -1769,7 +1781,7 @@ async function fichierChoisi() {
   if (role === "strat" && caseAjoutee(p)) afficher();
   else rafraichir(p);
   if (role === "bkp") majCompteur();
-  if (deplace) alert(`${p.label} : lancement de la semaine ${p.semaine}, rangé dans l'onglet ${libelleOnglet(p.parite)}.`);
+  if (deplace) alert(`${libelleCase(p)} : lancement de la semaine ${p.semaine}, rangé dans l'onglet ${libelleOnglet(p.parite)}.`);
 }
 
 // ---- Contrôles ----
@@ -1910,6 +1922,12 @@ async function lancerControleScies(p, fin) {
       p.ecartsScies = p.ecartsScies.filter((e) => !horsLancement.includes(e));
       p.plans.horsLancement = horsLancement.map((e) => ({ cle: e.cle, qte: e.trouve }));
     }
+    // Chaque pièce signalée avec sa description (article, longueur × largeur × épaisseur, couleurs, agglo).
+    const signalees = [...p.plans.nonPlacees, ...(p.plans.horsLancement || [])];
+    if (signalees.length) {
+      const desc = descriptionsCtt(await texteCttBkp(p.bkp), signalees.map((x) => x.cle));
+      for (const x of signalees) x.desc = desc.get(x.cle) || null;
+    }
     p.erreurScies = null;
   } catch (erreur) {
     p.ecartsScies = null;
@@ -1939,7 +1957,7 @@ async function reinitialiserSemaine() {
 }
 
 async function retirerChantier(p) {
-  if (!(await demanderConfirmation(`Retirer définitivement « ${p.label} » ?`, "Ses fichiers et résultats seront effacés.", "Oui"))) return;
+  if (!(await demanderConfirmation(`Retirer définitivement « ${libelleCase(p)} » ?`, "Ses fichiers et résultats seront effacés.", "Oui"))) return;
   await effacerMemoire(p);
   paires.splice(paires.indexOf(p), 1);
   afficher();
@@ -2193,7 +2211,7 @@ async function placerFichiersScannes(parite, r) {
       p.codeLancement = identite;
       sauvegarderDansMemoire(p, { semaineParite: g.parite, codeLancement: identite });
     }
-    affectations.push({ cible: g, paire: p, libelle: p.label, copie: false });
+    affectations.push({ cible: g, paire: p, libelle: nomChantierCompteRendu(g.strat.nom.replace(/\.[^.]*$/, "")), copie: false });
   }
   // Un lancement qui a maintenant sa case (ex. le recyclage, chantier dans les versions d'avant) n'est plus un chantier.
   for (const g of r.fixes) {
@@ -2428,13 +2446,15 @@ function remplirProblemes(zone, p) {
   let montres = 0;
   const ligne = (e, valide) => {
     const i = entrees.push(e) - 1;
-    const quoi = [e.article, e.dimensions, e.coloris].filter(Boolean).join(" · ");
+    const [dessus, dessous] = String(e.coloris || "").split(" / ");
+    const couleurs = dessous ? `dessus ${dessus} · dessous ${dessous}` : dessus ? `couleur ${dessus}` : "";
+    const quoi = [e.article, e.dimensions ? `${e.dimensions} mm` : "", couleurs].filter(Boolean).join(" · ");
     const badge = valide
       ? `<span class="badge-probleme ok">✔ Validé le ${echapper(dateValidation(e.validation))}</span>`
       : `<span class="badge-probleme ${e.gravite === GRAVITE.CORRIGER ? "alerte" : "attention"}">${A_FAIRE[e.gravite]}</span>`;
     return `<div class="probleme${valide ? " valide" : ""}">
-      <div class="probleme-textes"><div>${badge} <strong>${echapper(e.cle)}</strong>${valide ? ` · ${echapper(e.type)}` : ""}</div>
-        <div class="probleme-detail">${echapper(e.detail)}${quoi ? ` — ${echapper(quoi)}` : ""}</div></div>
+      <div class="probleme-textes"><div>${badge} <strong>${echapper(e.cle)}</strong>${quoi ? ` · ${echapper(quoi)}` : ""}${valide ? ` · ${echapper(e.type)}` : ""}</div>
+        <div class="probleme-detail">${echapper(e.detail)}</div></div>
       ${valide
         ? `<button type="button" class="texte" data-annuler="${i}">Annuler</button>`
         : `<button type="button" class="contour petit" data-valider="${i}">✔ Valider</button>`}
@@ -2443,6 +2463,9 @@ function remplirProblemes(zone, p) {
   for (const type of ordre) {
     const liste = groupes.get(type);
     html += `<div class="probleme-groupe">${echapper(type)} — ${liste.length} pièce(s)</div>`;
+    // Ce que ça veut dire, et que faire : en clair, sous le titre du groupe.
+    const sens = SENS_PROBLEME.get(type);
+    if (sens) html += `<div class="probleme-explication">${echapper(sens.sens)}${sens.queFaire ? ` <strong>Que faire :</strong> ${echapper(sens.queFaire)}` : ""}</div>`;
     for (const e of liste) {
       if (montres >= MAX_PROBLEMES_ECRAN) break;
       html += ligne(e, false);
@@ -2688,7 +2711,7 @@ function afficherFiches(liste, a, debut) {
 
 function nomSourceRecherche(t) {
   const p = t.source.paire;
-  return p ? (caseAjoutee(p) ? p.label : p.poste) : t.source.nom;
+  return p ? (caseAjoutee(p) ? libelleCase(p) : p.poste) : t.source.nom;
 }
 
 function fiche(f, cleCherchee) {

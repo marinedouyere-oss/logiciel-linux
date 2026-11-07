@@ -8,30 +8,33 @@ const A_FAIRE = { [GRAVITE.CORRIGER]: "À corriger", [GRAVITE.VERIFIER]: "À vé
 
 // Les problèmes, dans l'ordre du rapport : ce qu'ils veulent dire, et que faire.
 const PROBLEMES = [
-  ["Absente de la liste de coupe", "Pièce du lancement introuvable dans la liste de coupe Cut Rite : elle ne sera pas débitée.",
-    "l'ajouter à l'optimisation Cut Rite (ou vérifier qu'elle est débitée ailleurs)."],
-  ["Quantité différente dans la liste de coupe", "La liste de coupe ne prévoit pas le même nombre de pièces que le lancement.", "corriger la quantité dans l'optimisation."],
-  ["Absente du .bkp", "Pièce du lancement introuvable dans l'optimisation (.bkp) : aucun panneau n'est prévu pour elle.", "l'ajouter à l'optimisation."],
-  ["Quantité différente dans le .bkp", "L'optimisation (.bkp) ne prévoit pas le même nombre de pièces que le lancement.", "corriger la quantité dans l'optimisation."],
-  ["Couleur absente du .bkp", "Aucun panneau de ce coloris dans l'optimisation (.bkp) : ces pièces ne sont pas optimisées.", "ajouter un panneau de ce coloris à l'optimisation."],
-  ["Pas dans les plans de coupe", "Pièce prévue dans l'optimisation (.bkp), mais posée sur aucun panneau des plans de coupe : elle ne sera pas coupée.",
-    "relancer l'optimisation Cut Rite (panneau manquant, pièce trop grande…), ou valider si c'est voulu."],
-  ["Dans le .bkp, dans aucun plan", "Pièce de la liste du .bkp qui n'est ni dans le fichier de lancement ni dans aucun plan de coupe : elle ne sera pas coupée (retirée du lancement après l'import ?).",
-    "vérifier qu'elle ne doit pas être fabriquée, ou valider si c'est voulu."],
+  ["Absente de la liste de coupe", "Pièce du fichier de lancement qui n'est pas dans la liste de coupe de Cut Rite : elle ne sera pas coupée.",
+    "l'ajouter dans Cut Rite (ou vérifier qu'elle est coupée dans un autre lancement)."],
+  ["Quantité différente dans la liste de coupe", "La liste de coupe ne coupe pas le même nombre de pièces que le fichier de lancement : il en manquera, ou il y en aura en trop.",
+    "corriger la quantité dans Cut Rite."],
+  ["Absente du .bkp", "Pièce du fichier de lancement qui n'est pas dans la sauvegarde .bkp de Cut Rite : elle ne sera pas coupée.", "l'ajouter dans Cut Rite."],
+  ["Quantité différente dans le .bkp", "La sauvegarde .bkp ne coupe pas le même nombre de pièces que le fichier de lancement : il en manquera, ou il y en aura en trop.",
+    "corriger la quantité dans Cut Rite."],
+  ["Couleur absente du .bkp", "Aucun panneau de cette couleur dans la sauvegarde .bkp : les pièces de cette couleur ne seront pas coupées.",
+    "ajouter un panneau de cette couleur dans Cut Rite."],
+  ["Pas dans les plans de coupe", "Pièce du fichier de lancement que Cut Rite n'a mise dans aucun plan de coupe : elle ne sera pas coupée.",
+    "la remettre dans l'optimisation Cut Rite (souvent : panneau manquant ou pièce trop grande), ou valider si c'est voulu."],
+  ["Plus dans le lancement, pas coupée", "Pièce encore dans la liste du .bkp, mais retirée du fichier de lancement ; Cut Rite ne l'a mise dans aucun plan : elle ne sera pas coupée.",
+    "vérifier qu'elle ne doit pas être fabriquée ; sinon, la remettre dans le fichier de lancement et dans l'optimisation. Valider si c'est voulu."],
   ["Ligne en double", "Deux lignes identiques dans le fichier de lancement : la pièce serait fabriquée deux fois.",
     "supprimer la ligne en trop (bouton « Créer le lancement sans doublons » de Sentinelle)."],
-  ["Lancée deux fois", "La même pièce est aussi dans un autre lancement de la semaine : risque de la fabriquer deux fois.", "la retirer d'un des deux lancements."],
-  ["Débitée, mais pas dans le lancement", "Pièce prévue à la découpe (liste de coupe, .bkp) qui n'est pas dans le fichier de lancement.",
-    "l'ajouter au fichier de lancement si elle est commandée (Diakonos), sinon la retirer de l'optimisation."],
-  ["Débitée ici, lancée ailleurs", "Pièce prévue à la découpe ici (liste de coupe, .bkp) alors qu'elle est dans un autre lancement.",
-    "la retirer de cette optimisation (ou de l'autre lancement)."],
-  ["Commandée, pas lancée (Diakonos)", "Pièce commandée (fichier Diakonos) qui n'est dans aucun des lancements comparés : elle ne sera pas fabriquée.",
+  ["Lancée deux fois", "La même pièce est dans deux lancements de la semaine : elle serait fabriquée deux fois.", "la retirer d'un des deux lancements."],
+  ["Débitée, mais pas dans le lancement", "Pièce qui sera coupée (elle est dans la liste de coupe ou le .bkp), mais qui n'est pas dans le fichier de lancement.",
+    "si elle est commandée (Diakonos), l'ajouter au fichier de lancement ; sinon, la retirer de Cut Rite."],
+  ["Débitée ici, lancée ailleurs", "Pièce coupée dans ce lancement alors qu'elle est lancée dans un autre : elle serait coupée deux fois.",
+    "la retirer de Cut Rite ici (ou de l'autre lancement)."],
+  ["Commandée, pas lancée (Diakonos)", "Pièce commandée (Diakonos) qui n'est dans aucun lancement chargé : elle ne sera pas fabriquée.",
     "l'ajouter à un lancement."],
   ["Couleur en version PF", "Le lancement demande un coloris, le .bkp utilise sa version PF (même décor) : à confirmer.", "vérifier que la version PF convient."],
   ["Commandée ici, lancée ailleurs (Diakonos)", "Pièce commandée pour ces lancements, mais lancée dans un autre : elle sera fabriquée, ailleurs que prévu.",
     "vérifier que c'est voulu."],
   ["Autre semaine de livraison", "Pièce à livrer une autre semaine que le reste du lancement.", "vérifier qu'elle doit bien être fabriquée maintenant."],
-  ["Déjà lancée la semaine d'avant", "La pièce était déjà dans un lancement de l'autre semaine chargée.", "vérifier qu'il faut bien la refaire."],
+  ["Déjà lancée la semaine d'avant", "La pièce était déjà dans un lancement de la semaine d'avant.", "vérifier qu'il faut bien la refaire (casse ?)."],
   ["Casse : relancée", "Pièce de la casse déjà lancée une semaine d'avant (autre onglet ou bibliothèque) : c'est une pièce refaite.", ""],
   ["Casse : rajout", "Pièce de la casse lancée dans aucune des semaines d'avant connues : c'est un rajout.", ""],
 ];
@@ -141,18 +144,21 @@ async function problemesDuLancement(p) {
     const r = p.plans;
     const plans = `${fmtNombre(r.nbPlans)} plans de panneaux et ${fmtNombre(r.nbModules)} modules`;
     const hors = r.horsLancement || [];
-    const texteHors = hors.length ? ` ${hors.length} pièce(s) de la liste du .bkp, hors lancement, dans aucun plan : elles ne seront pas coupées.` : "";
+    const texteHors = hors.length
+      ? ` ${hors.length} autre(s) pièce(s) sont encore dans la liste du .bkp mais plus dans le fichier de lancement : Cut Rite ne les a mises dans aucun plan, elles ne seront pas coupées. Vérifier qu'il ne faut pas les fabriquer.`
+      : "";
     for (const h of hors)
-      dehors({ cle: h.cle, gravite: GRAVITE.VERIFIER, type: "Dans le .bkp, dans aucun plan", quantite: fmtNombre(h.qte),
-        detail: "Dans la liste du .bkp, mais ni dans le fichier de lancement ni dans aucun plan de coupe : elle ne sera pas coupée", controle: ctrlPlans });
+      dehors({ cle: h.cle, gravite: GRAVITE.VERIFIER, type: "Plus dans le lancement, pas coupée", quantite: fmtNombre(h.qte),
+        article: h.desc ? h.desc.article : "", dimensions: dimensionsDescription(h.desc), coloris: colorisDescription(h.desc),
+        detail: `${h.desc && h.desc.agglo ? `Agglo ${h.desc.agglo} · ` : ""}${fmtNombre(h.qte)} pièce(s) dans la liste du .bkp, aucune dans les plans de coupe.`, controle: ctrlPlans });
     if (!r.nonPlacees.length)
-      bilan.push({ statut: hors.length ? "attention" : "ok", controle: ctrlPlans, texte: `Les ${fmtNombre(r.nbPieces)} pièces prévues par le .bkp sont placées dans les plans de coupe (${plans}).${texteHors}` });
+      bilan.push({ statut: hors.length ? "attention" : "ok", controle: ctrlPlans, texte: `Toutes les pièces du lancement sont dans les plans de coupe de Cut Rite (${plans}).${texteHors}` });
     else {
-      bilan.push({ statut: "alerte", controle: ctrlPlans, texte: `${r.nonPlacees.length} pièce(s) du .bkp dans aucun plan de coupe : elles ne seront pas coupées (${plans}).${texteHors}` });
+      bilan.push({ statut: "alerte", controle: ctrlPlans, texte: `${r.nonPlacees.length} pièce(s) du lancement ne sont dans aucun plan de coupe de Cut Rite : elles ne seront pas coupées. Il faut les remettre dans l'optimisation (${plans}).${texteHors}` });
       for (const n of r.nonPlacees)
         ajouter(n.cle, GRAVITE.CORRIGER, "Pas dans les plans de coupe", n.place
-          ? `${fmtNombre(n.attendu)} pièce(s) prévue(s) dans le .bkp, ${fmtNombre(n.place)} seulement dans les plans de coupe`
-          : `${fmtNombre(n.attendu)} pièce(s) prévue(s) dans le .bkp, posée(s) sur aucun panneau`, ctrlPlans);
+          ? `${fmtNombre(n.attendu)} pièce(s) à couper, ${fmtNombre(n.place)} seulement dans les plans de Cut Rite : les autres ne seront pas coupées`
+          : `${fmtNombre(n.attendu)} pièce(s) à couper, dans aucun plan de Cut Rite : elle ne sera pas coupée`, ctrlPlans);
     }
   } else if (p.bkp && !p.erreurScies)
     bilan.push({ statut: "info", controle: ctrlPlans, texte: p.ecartsScies ? "Refaire « Vérifier Scies » pour contrôler les plans de coupe." : "Pas encore fait (bouton Vérifier Scies)." });
@@ -274,6 +280,27 @@ async function problemesDuLancement(p) {
       });
     }
   }
+  // Les pièces qui ne sont pas dans le fichier de lancement : leur description (cote finie, épaisseur, couleurs) lue
+  // dans la liste du .bkp, pour savoir de quelle pièce il s'agit.
+  const sources = [];
+  if (p.bkp) sources.push(async (cles) => descriptionsCtt(await texteCttBkp(p.bkp), cles));
+  if (p.coupe && estFichierPDF(p.coupe)) sources.push(async (cles) => descriptionsRecordsPDF((await sourceCoupeEnCache(p.coupe)).records, cles));
+  for (const source of sources) {
+    const sans = hors.filter((h) => !h.dimensions && !h.diakonos);
+    if (!sans.length) break;
+    try {
+      const desc = await source(sans.map((h) => h.cle));
+      for (const h of sans) {
+        const dd = desc.get(h.cle);
+        if (!dd) continue;
+        h.article = h.article || dd.article;
+        h.dimensions = dimensionsDescription(dd);
+        h.coloris = h.coloris || colorisDescription(dd);
+      }
+    } catch (_e) {
+      // fichier illisible : les pièces restent sans description
+    }
+  }
   for (const h of hors) {
     if (!h.type.startsWith("En trop")) continue;
     for (const o of toutes) {
@@ -301,16 +328,17 @@ function diagnostiquerHors(hors) {
     if (enTrop.length && ailleurs) {
       // Débitée ici alors qu'elle est lancée ailleurs : elle serait débitée deux fois.
       const ou = enTrop.map((h) => h.type.replace("En trop dans ", "")).join(" et ");
-      resultat.push({ ...piece, gravite: GRAVITE.CORRIGER, type: "Débitée ici, lancée ailleurs", detail: `Dans ${ou} de ce lancement, mais lancée dans ${ailleurs} : risque de la débiter deux fois` });
+      resultat.push({ ...piece, gravite: GRAVITE.CORRIGER, type: "Débitée ici, lancée ailleurs", detail: `À couper ici dans ${ou}, mais lancée dans ${ailleurs} : elle serait coupée deux fois.` });
     } else if (enTrop.length) {
-      const ou = enTrop.map((h) => h.type.replace("En trop dans ", "") + (h.quantite ? ` (${h.quantite})` : "")).join(" et ");
+      const ou = enTrop.map((h) => h.type.replace("En trop dans ", "")).join(" et ");
+      const n = Math.max(...enTrop.map((h) => parseFloat(String(h.quantite).replace(",", ".")) || 1));
       resultat.push({
         ...piece,
         gravite: GRAVITE.CORRIGER,
         type: "Débitée, mais pas dans le lancement",
         detail: diakonos
-          ? `Dans ${ou}, et commandée (Diakonos), mais absente du fichier de lancement : le lancement est incomplet`
-          : `Dans ${ou}, mais pas dans le fichier de lancement`,
+          ? `${n} pièce(s) à couper dans ${ou}, commandée dans Diakonos, mais absente du fichier de lancement : il faut l'ajouter au lancement.`
+          : `${n} pièce(s) à couper dans ${ou}, mais absente du fichier de lancement.`,
       });
     } else if (diakonos && diakonos.ailleurs) {
       // Commandée ici, lancée dans un autre lancement de la semaine : bonne (chantier extrait du lancement).

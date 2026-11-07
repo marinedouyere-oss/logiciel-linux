@@ -202,6 +202,34 @@ function extraireChampsDetailPDF(detailTexte) {
   return champs;
 }
 
+// Ce que la liste de coupe (PDF) dit de chaque pièce : article, cote finie, épaisseur, couleurs, agglo (par clé).
+function descriptionsRecordsPDF(records, cles) {
+  const voulues = new Set(cles);
+  const res = new Map();
+  const champ = (t, n, libelle) => {
+    const m = new RegExp(`(?:^|[\\s,])${n}\\.${libelle}\\s+([^,]+)`).exec(t);
+    return m ? m[1].trim() : "";
+  };
+  for (const r of records) {
+    if (!r.cle || !voulues.has(r.cle)) continue;
+    const reelle = estRecordPieceReellePDF(r);
+    if (res.has(r.cle) && (res.get(r.cle).reelle || !reelle)) continue;
+    const t = r.detailTexte;
+    const dim = MOTIF_DIMENSIONS_FINIES_PDF.exec(t);
+    res.set(r.cle, {
+      reelle,
+      article: champ(t, 4, "Code article"),
+      L: dim ? dim[1] : champ(t, 35, "conf_longueur"),
+      W: dim ? dim[2] : champ(t, 36, "conf_largeur"),
+      E: dim ? dim[3] : champ(t, 6, "Epaisseur"),
+      dessus: champ(t, 16, "Strat Haut"),
+      dessous: champ(t, 17, "Strat Bas"),
+      agglo: champ(t, 9, "Support"),
+    });
+  }
+  return res;
+}
+
 function fmtDim(v) {
   return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }

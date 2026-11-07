@@ -7,7 +7,7 @@
 
 const versionSentinelle = () => ((document.querySelector(".badge-version") || {}).textContent || "").trim();
 const semaineDeLaCase = (p) => p.semaine || numeroSemaine(p.parite);
-const nomCasePlans = (p) => (caseAjoutee(p) ? p.label : p.poste);
+const nomCasePlans = (p) => (caseAjoutee(p) ? libelleCase(p) : p.poste);
 const dimsPlan = (L, W) => `${fmtDim(L)} × ${fmtDim(W)}`;
 
 // Ce que montre un plan dans la fiche d'une pièce : titre, numéro Pdc, panneau, et ce qui est en jaune.

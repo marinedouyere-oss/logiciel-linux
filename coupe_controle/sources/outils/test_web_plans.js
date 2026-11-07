@@ -45,7 +45,8 @@ const verifier = (ok, message) => {
     return {
       nbPlans: d.nbPlans, nbModules: d.nbModules, malLus: [...d.matieres.values()].flatMap((m) => m.plans).filter((x) => !x.ok).length,
       plans: p.plans, ecarts: p.ecartsScies.length, bilan: pr.bilan.find((x) => x.controle === "Plans de coupe (.bkp)"),
-      hors: pr.hors.filter((h) => h.type === "Dans le .bkp, dans aucun plan").map((h) => h.cle),
+      hors: pr.hors.filter((h) => h.type === "Plus dans le lancement, pas coupée").map((h) => h.cle),
+      desc: pr.hors.filter((h) => h.cle === "CVC26090536002").map((h) => `${h.article} | ${h.dimensions} | ${h.coloris}`)[0],
       piece: plansDeLaPiece(d, "CVC26110064003").plans.map((x) => `${x.rang}:${x.plan.matiere}:${x.plan.pdc}`),
     };
   }, [fic(path.join(dossier, "LAN264801START.xlsx")), fic(path.join(dossier, "LISTE DE COUPES LAN264801STRAT.pdf")), fic(path.join(dossier, "LAN264801STARTbackup.bkp"))]);
@@ -53,6 +54,7 @@ const verifier = (ok, message) => {
   verifier(r1.plans.nonPlacees.length === 0, "toutes les pièces du lancement sont dans un plan");
   verifier(r1.plans.horsLancement.length === 5 && r1.ecarts === 0, "les 5 pièces de la liste du .bkp hors lancement : à part, plus « en trop »");
   verifier(r1.bilan && r1.bilan.statut === "attention" && r1.hors.length === 5, "bilan Plans de coupe : à vérifier, 5 pièces dans aucun plan");
+  verifier(r1.desc === "TPPVC39651 | 3460 × 670 × 39 | 1047", `pièce hors lancement décrite : article, cote finie, épaisseur, couleur (${r1.desc})`);
   verifier(r1.piece.join(" ") === "0:SAG10HYBR:40 1:SAG10HYBR:12 2:997:1 3:RCB-CRED14:3", `CVC26110064003 : module Pdc 40, agglo Pdc 12, 997 Pdc 1, RCB-CRED14 Pdc 3 (${r1.piece.join(" ")})`);
 
   // 2. Recherche : fiche simple de la pièce, ses plans, le plan en grand, les PDF.

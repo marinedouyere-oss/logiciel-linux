@@ -95,7 +95,7 @@ final class FichePiece {
     }
 
     private static String nomLancement(FichierPartage.Trouvaille t) {
-        return (t.lancement.poste.isEmpty() ? t.lancement.nom : t.lancement.poste) + " · S" + t.semaine.semaine;
+        return PartageVue.titrePoste(t.lancement) + " · S" + t.semaine.semaine;
     }
 
     /** La fiche ; trouvailles : la pièce dans chaque lancement où elle est (la plus récente d'abord). */
@@ -213,7 +213,7 @@ final class FichePiece {
         String texte;
         List<String> aVoir = new ArrayList<>();
         for (FichierPartage.Probleme pb : t0.problemes) if (!"valide".equals(pb.niveau) && !"info".equals(pb.niveau)) aVoir.add(pb.type);
-        String ou = (t0.lancement.poste.isEmpty() ? t0.lancement.nom : t0.lancement.poste) + ", semaine " + t0.semaine.semaine;
+        String ou = PartageVue.titrePoste(t0.lancement) + ", semaine " + t0.semaine.semaine;
         if (memeSemaine.size() > 1) {
             ok = false;
             titre = "Lancée " + memeSemaine.size() + " fois";

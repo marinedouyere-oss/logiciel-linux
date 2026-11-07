@@ -84,7 +84,8 @@ const DEUX_FOIS = ["CVC26100827002", "CVC26100696004", "CVC26100832005"];
   await page.waitForFunction(() => /lancée\(s\) deux fois/.test(document.querySelector("#zoneRecap").innerText), null, { timeout: 120000 });
   let texte = await page.innerText("main");
   verifier(/Sans fichier de lancement.*RETARD6087/.test(texte), "RETARD6087 (liste, .bkp, sommaire sans LAN) : signalé au scan");
-  verifier(/Chantier \d+ \(sem 47\)/.test(texte) && !/\(sem 46\)/.test(texte), "LAN2647CHANTIERSBIS (colonne lancement LAN2646BSR) : semaine 47");
+  // V6.1 : la case chantier porte le nom du lancement (« CHANTIERS BIS »).
+  verifier(/CHANTIERS BIS \(sem 47\)/.test(texte) && !/\(sem 46\)/.test(texte), "LAN2647CHANTIERSBIS (colonne lancement LAN2646BSR) : semaine 47");
   verifier(texte.includes("⚠ 3 pièce(s) lancée(s) deux fois"), "3 pièces lancées deux fois (Recyclage et 2ème tour)");
 
   // 3. Les problèmes de l'Agglo 2ème tour : une ligne, la liste s'ouvre d'un clic.

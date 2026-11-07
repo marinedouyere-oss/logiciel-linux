@@ -650,10 +650,10 @@ final class PartageVue {
         String[] p = t.piece;
         SpannableStringBuilder sb = new SpannableStringBuilder();
         gras(sb, valeur(p, "cle"));
-        sb.append(" ▸ ");
         String dims = dimensions(valeur(p, "longueur"), valeur(p, "largeur"), valeur(p, "epaisseur"));
         String sousFace = valeur(p, "coloris_inf");
         sb.append(joindre(" · ", valeur(p, "article"), dims, valeur(p, "coloris"), sousFace.isEmpty() ? "" : "sous-face " + sousFace, valeur(p, "matiere")));
+        sb.append("  ▸");
         TextView titrePiece = ui.texte(sb, 14, false, Ui.NOIR);
         // Toucher une pièce ouvre sa fiche (avec ses plans de coupe).
         titrePiece.setOnClickListener(v -> {
@@ -1002,10 +1002,10 @@ final class PartageVue {
         return "corriger".equals(niveau) || "verifier".equals(niveau) ? "⚠" : "•";
     }
 
-    /** « Agglo 1er tour », « Casse »… ; un chantier : « Chantier ». */
-    private static String titrePoste(FichierPartage.Lancement l) {
+    /** « Agglo 1er tour », « Casse »… ; un chantier : le nom de son lancement (« LAN2647AIRDESIGN » → « AIRDESIGN »). */
+    static String titrePoste(FichierPartage.Lancement l) {
         if (l.poste.isEmpty()) return l.nom;
-        return "Chantiers".equals(l.poste) ? "Chantier" : l.poste;
+        return "Chantiers".equals(l.poste) ? CompteRendu.nomChantier(l.nom) : l.poste;
     }
 
     /** Une cellule du tableau des lancements : { texte, statut }. */
@@ -1187,7 +1187,10 @@ final class PartageVue {
                 }
                 SpannableStringBuilder sb = new SpannableStringBuilder();
                 gras(sb, p.cle);
-                sb.append(joindre(" · ", p.article, p.dimensions, p.coloris, p.quantite.isEmpty() ? "" : "qté " + p.quantite));
+                // Comme sur le PC : « 3460 × 670 × 39 mm · dessus 1047 · dessous RCB ».
+                String[] faces = p.coloris.split(" / ", 2);
+                String couleurs = faces.length > 1 ? "dessus " + faces[0] + " · dessous " + faces[1] : p.coloris.isEmpty() ? "" : "couleur " + p.coloris;
+                sb.append(joindre(" · ", p.article, p.dimensions.isEmpty() ? "" : p.dimensions + " mm", couleurs, p.quantite.isEmpty() ? "" : "qté " + p.quantite));
                 corps.addView(ui.texte(sb, 13, false, Ui.NOIR), ui.marges(4, 0));
                 String detail = groupeValides ? p.type + " : " + p.detail + " — validé le " + dateLisibleCourte(p.valide) : p.detail;
                 corps.addView(ui.texte(detail + (p.lignes.isEmpty() || "hors lancement".equals(p.lignes) ? "" : " (ligne(s) " + p.lignes + ")"),

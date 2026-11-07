@@ -173,6 +173,26 @@ function couleursCtt(texte) {
   return { dessus, dessous, sansStratifie: dessus.size === 0 && dessous.size === 0 };
 }
 
+// Ce que la liste du .bkp dit de chaque pièce (article, cote finie, épaisseur, couleurs, agglo), par clé.
+function descriptionsCtt(texte, cles) {
+  const voulues = new Set(cles);
+  const res = new Map();
+  const lignes = texte.split(/\r?\n/);
+  for (let i = 0; i + 1 < lignes.length; i++) {
+    if (!lignes[i].startsWith("PNL1,") || !lignes[i + 1].startsWith("PNL2,")) continue;
+    const p2 = lignes[i + 1].split(",");
+    const cle = p2[5];
+    if (!voulues.has(cle) || res.has(cle)) continue;
+    res.set(cle, { article: p2[4] || "", L: p2[35] || "", W: p2[36] || "", E: p2[6] || "", dessus: p2[16] || "", dessous: p2[17] || "", agglo: p2[9] || "" });
+  }
+  return res;
+}
+const dimensionsDescription = (d) => (d && d.L && d.W ? `${d.L} × ${d.W}${d.E ? ` × ${d.E}` : ""}` : "");
+const colorisDescription = (d) => (d ? [d.dessus, d.dessous].filter(Boolean).join(" / ") : "");
+// « TPPVC39651 · 3460 × 670 × 39 mm · dessus 1047 · agglo SAG38HYBL »
+const texteDescription = (d) =>
+  d ? [d.article, dimensionsDescription(d) ? `${dimensionsDescription(d)} mm` : "", d.dessus ? `dessus ${d.dessus}` : "", d.dessous ? `dessous ${d.dessous}` : "", d.agglo ? `agglo ${d.agglo}` : ""].filter(Boolean).join(" · ") : "";
+
 function nomLancementBkp(nomFichier) {
   return nomFichier.replace(/_\d{4}-\d{2}-\d{2}.*$/i, "").replace(/\.bkp$/i, "");
 }

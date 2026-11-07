@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.1.0 — Contrôle de coupe</title>
+<title>Sentinelle V6.1.1 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -517,6 +517,8 @@
   .essai-avertissement strong { margin-right: 4px; }
   .essai-regles { margin: 6px 0 0; padding-left: 20px; line-height: 1.5; font-size: 0.9rem; }
   .case-option { display: flex; gap: 8px; align-items: center; margin: 10px 0 4px; font-size: 0.92rem; }
+  .probleme-explication { font-size: 0.85rem; color: var(--noir); background: var(--saumon-pale); border-radius: 6px; padding: 6px 8px; margin: 4px 0 6px; line-height: 1.4; }
+  .liste-pieces { margin: 4px 0 8px; padding-left: 20px; font-size: 0.88rem; line-height: 1.5; }
 </style>
 </head>
 <body>
@@ -524,7 +526,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.1.0</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.1.1</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -626,7 +628,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.1.0 · Contrôle de coupe</span>
+    <span>Sentinelle V6.1.1 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -1718,6 +1720,34 @@ function extraireChampsDetailPDF(detailTexte) {
   champs.largeurFinie = dim ? toFloatOrNull(dim[2]) : null;
   champs.epaisseurFinie = dim ? toFloatOrNull(dim[3]) : null;
   return champs;
+}
+
+// Ce que la liste de coupe (PDF) dit de chaque pièce : article, cote finie, épaisseur, couleurs, agglo (par clé).
+function descriptionsRecordsPDF(records, cles) {
+  const voulues = new Set(cles);
+  const res = new Map();
+  const champ = (t, n, libelle) => {
+    const m = new RegExp(`(?:^|[\\s,])${n}\\.${libelle}\\s+([^,]+)`).exec(t);
+    return m ? m[1].trim() : "";
+  };
+  for (const r of records) {
+    if (!r.cle || !voulues.has(r.cle)) continue;
+    const reelle = estRecordPieceReellePDF(r);
+    if (res.has(r.cle) && (res.get(r.cle).reelle || !reelle)) continue;
+    const t = r.detailTexte;
+    const dim = MOTIF_DIMENSIONS_FINIES_PDF.exec(t);
+    res.set(r.cle, {
+      reelle,
+      article: champ(t, 4, "Code article"),
+      L: dim ? dim[1] : champ(t, 35, "conf_longueur"),
+      W: dim ? dim[2] : champ(t, 36, "conf_largeur"),
+      E: dim ? dim[3] : champ(t, 6, "Epaisseur"),
+      dessus: champ(t, 16, "Strat Haut"),
+      dessous: champ(t, 17, "Strat Bas"),
+      agglo: champ(t, 9, "Support"),
+    });
+  }
+  return res;
 }
 
 function fmtDim(v) {
@@ -2875,6 +2905,26 @@ function couleursCtt(texte) {
   }
   return { dessus, dessous, sansStratifie: dessus.size === 0 && dessous.size === 0 };
 }
+
+// Ce que la liste du .bkp dit de chaque pièce (article, cote finie, épaisseur, couleurs, agglo), par clé.
+function descriptionsCtt(texte, cles) {
+  const voulues = new Set(cles);
+  const res = new Map();
+  const lignes = texte.split(/\r?\n/);
+  for (let i = 0; i + 1 < lignes.length; i++) {
+    if (!lignes[i].startsWith("PNL1,") || !lignes[i + 1].startsWith("PNL2,")) continue;
+    const p2 = lignes[i + 1].split(",");
+    const cle = p2[5];
+    if (!voulues.has(cle) || res.has(cle)) continue;
+    res.set(cle, { article: p2[4] || "", L: p2[35] || "", W: p2[36] || "", E: p2[6] || "", dessus: p2[16] || "", dessous: p2[17] || "", agglo: p2[9] || "" });
+  }
+  return res;
+}
+const dimensionsDescription = (d) => (d && d.L && d.W ? `${d.L} × ${d.W}${d.E ? ` × ${d.E}` : ""}` : "");
+const colorisDescription = (d) => (d ? [d.dessus, d.dessous].filter(Boolean).join(" / ") : "");
+// « TPPVC39651 · 3460 × 670 × 39 mm · dessus 1047 · agglo SAG38HYBL »
+const texteDescription = (d) =>
+  d ? [d.article, dimensionsDescription(d) ? `${dimensionsDescription(d)} mm` : "", d.dessus ? `dessus ${d.dessus}` : "", d.dessous ? `dessous ${d.dessous}` : "", d.agglo ? `agglo ${d.agglo}` : ""].filter(Boolean).join(" · ") : "";
 
 function nomLancementBkp(nomFichier) {
   return nomFichier.replace(/_\d{4}-\d{2}-\d{2}.*$/i, "").replace(/\.bkp$/i, "");
@@ -8365,9 +8415,13 @@ const POSTES_SUPPLEMENTS = ["Feno"];
 // Case du fichier de contrôle Diakonos (son fichier est rangé à la place du lancement).
 const estDiakonos = (p) => POSTES_DIAKONOS.includes(p.poste);
 
+// Un chantier porte le nom de son lancement (« LAN2647AIRDESIGN » → « AIRDESIGN ») ; « Chantier 2 » tant qu'il est vide.
+// (p.label reste le nom de la case dans la mémoire du navigateur.)
+const libelleCase = (p) => (estChantier(p) && p.strat ? nomChantierCompteRendu(p.strat.name.replace(/\.[^.]*$/, "")) : p.label);
+
 function titrePaire(p) {
   if (!caseAjoutee(p)) return p.semaine ? `Semaine ${p.semaine}` : p.label;
-  return p.semaine ? `${p.label} (sem ${p.semaine})` : p.label;
+  return p.semaine ? `${libelleCase(p)} (sem ${p.semaine})` : libelleCase(p);
 }
 
 // Onglet d'un numéro de semaine (« 45 » → impaire, « 47 » → impaire2), null s'il n'y en a pas.
@@ -9396,10 +9450,18 @@ function htmlPlans(p) {
   const n = nbHorsPlans(p);
   const reste = restantsDuControle(p, estControlePlans) ?? n;
   const plans = `${fmtNombre(r.nbPlans)} plans, ${fmtNombre(r.nbModules)} modules`;
-  if (!n) return bandeau(`✔ Plans de coupe : toutes les pièces sont placées (${plans})`, "ok");
-  if (!reste) return bandeau(`✔ Plans de coupe : ${n} pièce(s) hors des plans, validée(s) OK (${plans})`, "ok");
-  if (!r.nonPlacees.length) return bandeau(`⚠ Plans de coupe : les pièces du lancement sont placées ; ${reste} pièce(s) du .bkp hors lancement dans aucun plan, à vérifier (${plans})`, "attention");
-  return bandeau(`⚠ Plans de coupe : ${reste} pièce(s) dans aucun plan — elles ne seront pas coupées (${plans})`, "alerte");
+  if (!n) return bandeau(`✔ Plans de coupe : toutes les pièces du lancement sont dans les plans de Cut Rite (${plans}).`, "ok");
+  if (!reste) return bandeau(`✔ Plans de coupe : ${n} pièce(s) qui ne seront pas coupées, validée(s) OK (${plans}).`, "ok");
+  const liste = (pieces) =>
+    `<ul class="liste-pieces">${pieces.map((x) => `<li><strong>${echapper(x.cle)}</strong>${x.desc ? ` · ${echapper(texteDescription(x.desc))}` : ""}</li>`).join("")}</ul>`;
+  let html = "";
+  if (r.nonPlacees.length)
+    html += bandeau(`⚠ Plans de coupe : ${r.nonPlacees.length} pièce(s) du lancement ne sont dans aucun plan de Cut Rite. Elles ne seront pas coupées : il faut les remettre dans l'optimisation.`, "alerte") + liste(r.nonPlacees);
+  else html += bandeau(`✔ Plans de coupe : toutes les pièces du lancement sont dans les plans de Cut Rite (${plans}).`, "ok");
+  const hors = r.horsLancement || [];
+  if (hors.length)
+    html += bandeau(`⚠ ${hors.length} autre(s) pièce(s) sont encore dans la liste du .bkp, mais plus dans le fichier de lancement. Cut Rite ne les a mises dans aucun plan : elles ne seront pas coupées. Vérifier qu'il ne faut pas les fabriquer.`, "attention") + liste(hors);
+  return html;
 }
 
 // Contrôle des couleurs : chaque coloris du lancement doit avoir été optimisé dans le .bkp.
@@ -9806,7 +9868,7 @@ function lignesRecap(pairesSemaine) {
     lignes.push({
       paire: p,
       semaine: p.semaine,
-      nom: caseAjoutee(p) ? p.label : p.poste,
+      nom: caseAjoutee(p) ? libelleCase(p) : p.poste,
       lancement: nom.includes(".") ? nom.slice(0, nom.lastIndexOf(".")) : nom,
       prevues: r ? r.prevues : null,
       bkp: r ? r.bkp : null,
@@ -10031,7 +10093,7 @@ async function fichierChoisi() {
   if (role === "strat" && caseAjoutee(p)) afficher();
   else rafraichir(p);
   if (role === "bkp") majCompteur();
-  if (deplace) alert(`${p.label} : lancement de la semaine ${p.semaine}, rangé dans l'onglet ${libelleOnglet(p.parite)}.`);
+  if (deplace) alert(`${libelleCase(p)} : lancement de la semaine ${p.semaine}, rangé dans l'onglet ${libelleOnglet(p.parite)}.`);
 }
 
 // ---- Contrôles ----
@@ -10172,6 +10234,12 @@ async function lancerControleScies(p, fin) {
       p.ecartsScies = p.ecartsScies.filter((e) => !horsLancement.includes(e));
       p.plans.horsLancement = horsLancement.map((e) => ({ cle: e.cle, qte: e.trouve }));
     }
+    // Chaque pièce signalée avec sa description (article, longueur × largeur × épaisseur, couleurs, agglo).
+    const signalees = [...p.plans.nonPlacees, ...(p.plans.horsLancement || [])];
+    if (signalees.length) {
+      const desc = descriptionsCtt(await texteCttBkp(p.bkp), signalees.map((x) => x.cle));
+      for (const x of signalees) x.desc = desc.get(x.cle) || null;
+    }
     p.erreurScies = null;
   } catch (erreur) {
     p.ecartsScies = null;
@@ -10201,7 +10269,7 @@ async function reinitialiserSemaine() {
 }
 
 async function retirerChantier(p) {
-  if (!(await demanderConfirmation(`Retirer définitivement « ${p.label} » ?`, "Ses fichiers et résultats seront effacés.", "Oui"))) return;
+  if (!(await demanderConfirmation(`Retirer définitivement « ${libelleCase(p)} » ?`, "Ses fichiers et résultats seront effacés.", "Oui"))) return;
   await effacerMemoire(p);
   paires.splice(paires.indexOf(p), 1);
   afficher();
@@ -10455,7 +10523,7 @@ async function placerFichiersScannes(parite, r) {
       p.codeLancement = identite;
       sauvegarderDansMemoire(p, { semaineParite: g.parite, codeLancement: identite });
     }
-    affectations.push({ cible: g, paire: p, libelle: p.label, copie: false });
+    affectations.push({ cible: g, paire: p, libelle: nomChantierCompteRendu(g.strat.nom.replace(/\.[^.]*$/, "")), copie: false });
   }
   // Un lancement qui a maintenant sa case (ex. le recyclage, chantier dans les versions d'avant) n'est plus un chantier.
   for (const g of r.fixes) {
@@ -10690,13 +10758,15 @@ function remplirProblemes(zone, p) {
   let montres = 0;
   const ligne = (e, valide) => {
     const i = entrees.push(e) - 1;
-    const quoi = [e.article, e.dimensions, e.coloris].filter(Boolean).join(" · ");
+    const [dessus, dessous] = String(e.coloris || "").split(" / ");
+    const couleurs = dessous ? `dessus ${dessus} · dessous ${dessous}` : dessus ? `couleur ${dessus}` : "";
+    const quoi = [e.article, e.dimensions ? `${e.dimensions} mm` : "", couleurs].filter(Boolean).join(" · ");
     const badge = valide
       ? `<span class="badge-probleme ok">✔ Validé le ${echapper(dateValidation(e.validation))}</span>`
       : `<span class="badge-probleme ${e.gravite === GRAVITE.CORRIGER ? "alerte" : "attention"}">${A_FAIRE[e.gravite]}</span>`;
     return `<div class="probleme${valide ? " valide" : ""}">
-      <div class="probleme-textes"><div>${badge} <strong>${echapper(e.cle)}</strong>${valide ? ` · ${echapper(e.type)}` : ""}</div>
-        <div class="probleme-detail">${echapper(e.detail)}${quoi ? ` — ${echapper(quoi)}` : ""}</div></div>
+      <div class="probleme-textes"><div>${badge} <strong>${echapper(e.cle)}</strong>${quoi ? ` · ${echapper(quoi)}` : ""}${valide ? ` · ${echapper(e.type)}` : ""}</div>
+        <div class="probleme-detail">${echapper(e.detail)}</div></div>
       ${valide
         ? `<button type="button" class="texte" data-annuler="${i}">Annuler</button>`
         : `<button type="button" class="contour petit" data-valider="${i}">✔ Valider</button>`}
@@ -10705,6 +10775,9 @@ function remplirProblemes(zone, p) {
   for (const type of ordre) {
     const liste = groupes.get(type);
     html += `<div class="probleme-groupe">${echapper(type)} — ${liste.length} pièce(s)</div>`;
+    // Ce que ça veut dire, et que faire : en clair, sous le titre du groupe.
+    const sens = SENS_PROBLEME.get(type);
+    if (sens) html += `<div class="probleme-explication">${echapper(sens.sens)}${sens.queFaire ? ` <strong>Que faire :</strong> ${echapper(sens.queFaire)}` : ""}</div>`;
     for (const e of liste) {
       if (montres >= MAX_PROBLEMES_ECRAN) break;
       html += ligne(e, false);
@@ -10950,7 +11023,7 @@ function afficherFiches(liste, a, debut) {
 
 function nomSourceRecherche(t) {
   const p = t.source.paire;
-  return p ? (caseAjoutee(p) ? p.label : p.poste) : t.source.nom;
+  return p ? (caseAjoutee(p) ? libelleCase(p) : p.poste) : t.source.nom;
 }
 
 function fiche(f, cleCherchee) {
@@ -11174,30 +11247,33 @@ const A_FAIRE = { [GRAVITE.CORRIGER]: "À corriger", [GRAVITE.VERIFIER]: "À vé
 
 // Les problèmes, dans l'ordre du rapport : ce qu'ils veulent dire, et que faire.
 const PROBLEMES = [
-  ["Absente de la liste de coupe", "Pièce du lancement introuvable dans la liste de coupe Cut Rite : elle ne sera pas débitée.",
-    "l'ajouter à l'optimisation Cut Rite (ou vérifier qu'elle est débitée ailleurs)."],
-  ["Quantité différente dans la liste de coupe", "La liste de coupe ne prévoit pas le même nombre de pièces que le lancement.", "corriger la quantité dans l'optimisation."],
-  ["Absente du .bkp", "Pièce du lancement introuvable dans l'optimisation (.bkp) : aucun panneau n'est prévu pour elle.", "l'ajouter à l'optimisation."],
-  ["Quantité différente dans le .bkp", "L'optimisation (.bkp) ne prévoit pas le même nombre de pièces que le lancement.", "corriger la quantité dans l'optimisation."],
-  ["Couleur absente du .bkp", "Aucun panneau de ce coloris dans l'optimisation (.bkp) : ces pièces ne sont pas optimisées.", "ajouter un panneau de ce coloris à l'optimisation."],
-  ["Pas dans les plans de coupe", "Pièce prévue dans l'optimisation (.bkp), mais posée sur aucun panneau des plans de coupe : elle ne sera pas coupée.",
-    "relancer l'optimisation Cut Rite (panneau manquant, pièce trop grande…), ou valider si c'est voulu."],
-  ["Dans le .bkp, dans aucun plan", "Pièce de la liste du .bkp qui n'est ni dans le fichier de lancement ni dans aucun plan de coupe : elle ne sera pas coupée (retirée du lancement après l'import ?).",
-    "vérifier qu'elle ne doit pas être fabriquée, ou valider si c'est voulu."],
+  ["Absente de la liste de coupe", "Pièce du fichier de lancement qui n'est pas dans la liste de coupe de Cut Rite : elle ne sera pas coupée.",
+    "l'ajouter dans Cut Rite (ou vérifier qu'elle est coupée dans un autre lancement)."],
+  ["Quantité différente dans la liste de coupe", "La liste de coupe ne coupe pas le même nombre de pièces que le fichier de lancement : il en manquera, ou il y en aura en trop.",
+    "corriger la quantité dans Cut Rite."],
+  ["Absente du .bkp", "Pièce du fichier de lancement qui n'est pas dans la sauvegarde .bkp de Cut Rite : elle ne sera pas coupée.", "l'ajouter dans Cut Rite."],
+  ["Quantité différente dans le .bkp", "La sauvegarde .bkp ne coupe pas le même nombre de pièces que le fichier de lancement : il en manquera, ou il y en aura en trop.",
+    "corriger la quantité dans Cut Rite."],
+  ["Couleur absente du .bkp", "Aucun panneau de cette couleur dans la sauvegarde .bkp : les pièces de cette couleur ne seront pas coupées.",
+    "ajouter un panneau de cette couleur dans Cut Rite."],
+  ["Pas dans les plans de coupe", "Pièce du fichier de lancement que Cut Rite n'a mise dans aucun plan de coupe : elle ne sera pas coupée.",
+    "la remettre dans l'optimisation Cut Rite (souvent : panneau manquant ou pièce trop grande), ou valider si c'est voulu."],
+  ["Plus dans le lancement, pas coupée", "Pièce encore dans la liste du .bkp, mais retirée du fichier de lancement ; Cut Rite ne l'a mise dans aucun plan : elle ne sera pas coupée.",
+    "vérifier qu'elle ne doit pas être fabriquée ; sinon, la remettre dans le fichier de lancement et dans l'optimisation. Valider si c'est voulu."],
   ["Ligne en double", "Deux lignes identiques dans le fichier de lancement : la pièce serait fabriquée deux fois.",
     "supprimer la ligne en trop (bouton « Créer le lancement sans doublons » de Sentinelle)."],
-  ["Lancée deux fois", "La même pièce est aussi dans un autre lancement de la semaine : risque de la fabriquer deux fois.", "la retirer d'un des deux lancements."],
-  ["Débitée, mais pas dans le lancement", "Pièce prévue à la découpe (liste de coupe, .bkp) qui n'est pas dans le fichier de lancement.",
-    "l'ajouter au fichier de lancement si elle est commandée (Diakonos), sinon la retirer de l'optimisation."],
-  ["Débitée ici, lancée ailleurs", "Pièce prévue à la découpe ici (liste de coupe, .bkp) alors qu'elle est dans un autre lancement.",
-    "la retirer de cette optimisation (ou de l'autre lancement)."],
-  ["Commandée, pas lancée (Diakonos)", "Pièce commandée (fichier Diakonos) qui n'est dans aucun des lancements comparés : elle ne sera pas fabriquée.",
+  ["Lancée deux fois", "La même pièce est dans deux lancements de la semaine : elle serait fabriquée deux fois.", "la retirer d'un des deux lancements."],
+  ["Débitée, mais pas dans le lancement", "Pièce qui sera coupée (elle est dans la liste de coupe ou le .bkp), mais qui n'est pas dans le fichier de lancement.",
+    "si elle est commandée (Diakonos), l'ajouter au fichier de lancement ; sinon, la retirer de Cut Rite."],
+  ["Débitée ici, lancée ailleurs", "Pièce coupée dans ce lancement alors qu'elle est lancée dans un autre : elle serait coupée deux fois.",
+    "la retirer de Cut Rite ici (ou de l'autre lancement)."],
+  ["Commandée, pas lancée (Diakonos)", "Pièce commandée (Diakonos) qui n'est dans aucun lancement chargé : elle ne sera pas fabriquée.",
     "l'ajouter à un lancement."],
   ["Couleur en version PF", "Le lancement demande un coloris, le .bkp utilise sa version PF (même décor) : à confirmer.", "vérifier que la version PF convient."],
   ["Commandée ici, lancée ailleurs (Diakonos)", "Pièce commandée pour ces lancements, mais lancée dans un autre : elle sera fabriquée, ailleurs que prévu.",
     "vérifier que c'est voulu."],
   ["Autre semaine de livraison", "Pièce à livrer une autre semaine que le reste du lancement.", "vérifier qu'elle doit bien être fabriquée maintenant."],
-  ["Déjà lancée la semaine d'avant", "La pièce était déjà dans un lancement de l'autre semaine chargée.", "vérifier qu'il faut bien la refaire."],
+  ["Déjà lancée la semaine d'avant", "La pièce était déjà dans un lancement de la semaine d'avant.", "vérifier qu'il faut bien la refaire (casse ?)."],
   ["Casse : relancée", "Pièce de la casse déjà lancée une semaine d'avant (autre onglet ou bibliothèque) : c'est une pièce refaite.", ""],
   ["Casse : rajout", "Pièce de la casse lancée dans aucune des semaines d'avant connues : c'est un rajout.", ""],
 ];
@@ -11307,18 +11383,21 @@ async function problemesDuLancement(p) {
     const r = p.plans;
     const plans = `${fmtNombre(r.nbPlans)} plans de panneaux et ${fmtNombre(r.nbModules)} modules`;
     const hors = r.horsLancement || [];
-    const texteHors = hors.length ? ` ${hors.length} pièce(s) de la liste du .bkp, hors lancement, dans aucun plan : elles ne seront pas coupées.` : "";
+    const texteHors = hors.length
+      ? ` ${hors.length} autre(s) pièce(s) sont encore dans la liste du .bkp mais plus dans le fichier de lancement : Cut Rite ne les a mises dans aucun plan, elles ne seront pas coupées. Vérifier qu'il ne faut pas les fabriquer.`
+      : "";
     for (const h of hors)
-      dehors({ cle: h.cle, gravite: GRAVITE.VERIFIER, type: "Dans le .bkp, dans aucun plan", quantite: fmtNombre(h.qte),
-        detail: "Dans la liste du .bkp, mais ni dans le fichier de lancement ni dans aucun plan de coupe : elle ne sera pas coupée", controle: ctrlPlans });
+      dehors({ cle: h.cle, gravite: GRAVITE.VERIFIER, type: "Plus dans le lancement, pas coupée", quantite: fmtNombre(h.qte),
+        article: h.desc ? h.desc.article : "", dimensions: dimensionsDescription(h.desc), coloris: colorisDescription(h.desc),
+        detail: `${h.desc && h.desc.agglo ? `Agglo ${h.desc.agglo} · ` : ""}${fmtNombre(h.qte)} pièce(s) dans la liste du .bkp, aucune dans les plans de coupe.`, controle: ctrlPlans });
     if (!r.nonPlacees.length)
-      bilan.push({ statut: hors.length ? "attention" : "ok", controle: ctrlPlans, texte: `Les ${fmtNombre(r.nbPieces)} pièces prévues par le .bkp sont placées dans les plans de coupe (${plans}).${texteHors}` });
+      bilan.push({ statut: hors.length ? "attention" : "ok", controle: ctrlPlans, texte: `Toutes les pièces du lancement sont dans les plans de coupe de Cut Rite (${plans}).${texteHors}` });
     else {
-      bilan.push({ statut: "alerte", controle: ctrlPlans, texte: `${r.nonPlacees.length} pièce(s) du .bkp dans aucun plan de coupe : elles ne seront pas coupées (${plans}).${texteHors}` });
+      bilan.push({ statut: "alerte", controle: ctrlPlans, texte: `${r.nonPlacees.length} pièce(s) du lancement ne sont dans aucun plan de coupe de Cut Rite : elles ne seront pas coupées. Il faut les remettre dans l'optimisation (${plans}).${texteHors}` });
       for (const n of r.nonPlacees)
         ajouter(n.cle, GRAVITE.CORRIGER, "Pas dans les plans de coupe", n.place
-          ? `${fmtNombre(n.attendu)} pièce(s) prévue(s) dans le .bkp, ${fmtNombre(n.place)} seulement dans les plans de coupe`
-          : `${fmtNombre(n.attendu)} pièce(s) prévue(s) dans le .bkp, posée(s) sur aucun panneau`, ctrlPlans);
+          ? `${fmtNombre(n.attendu)} pièce(s) à couper, ${fmtNombre(n.place)} seulement dans les plans de Cut Rite : les autres ne seront pas coupées`
+          : `${fmtNombre(n.attendu)} pièce(s) à couper, dans aucun plan de Cut Rite : elle ne sera pas coupée`, ctrlPlans);
     }
   } else if (p.bkp && !p.erreurScies)
     bilan.push({ statut: "info", controle: ctrlPlans, texte: p.ecartsScies ? "Refaire « Vérifier Scies » pour contrôler les plans de coupe." : "Pas encore fait (bouton Vérifier Scies)." });
@@ -11440,6 +11519,27 @@ async function problemesDuLancement(p) {
       });
     }
   }
+  // Les pièces qui ne sont pas dans le fichier de lancement : leur description (cote finie, épaisseur, couleurs) lue
+  // dans la liste du .bkp, pour savoir de quelle pièce il s'agit.
+  const sources = [];
+  if (p.bkp) sources.push(async (cles) => descriptionsCtt(await texteCttBkp(p.bkp), cles));
+  if (p.coupe && estFichierPDF(p.coupe)) sources.push(async (cles) => descriptionsRecordsPDF((await sourceCoupeEnCache(p.coupe)).records, cles));
+  for (const source of sources) {
+    const sans = hors.filter((h) => !h.dimensions && !h.diakonos);
+    if (!sans.length) break;
+    try {
+      const desc = await source(sans.map((h) => h.cle));
+      for (const h of sans) {
+        const dd = desc.get(h.cle);
+        if (!dd) continue;
+        h.article = h.article || dd.article;
+        h.dimensions = dimensionsDescription(dd);
+        h.coloris = h.coloris || colorisDescription(dd);
+      }
+    } catch (_e) {
+      // fichier illisible : les pièces restent sans description
+    }
+  }
   for (const h of hors) {
     if (!h.type.startsWith("En trop")) continue;
     for (const o of toutes) {
@@ -11467,16 +11567,17 @@ function diagnostiquerHors(hors) {
     if (enTrop.length && ailleurs) {
       // Débitée ici alors qu'elle est lancée ailleurs : elle serait débitée deux fois.
       const ou = enTrop.map((h) => h.type.replace("En trop dans ", "")).join(" et ");
-      resultat.push({ ...piece, gravite: GRAVITE.CORRIGER, type: "Débitée ici, lancée ailleurs", detail: `Dans ${ou} de ce lancement, mais lancée dans ${ailleurs} : risque de la débiter deux fois` });
+      resultat.push({ ...piece, gravite: GRAVITE.CORRIGER, type: "Débitée ici, lancée ailleurs", detail: `À couper ici dans ${ou}, mais lancée dans ${ailleurs} : elle serait coupée deux fois.` });
     } else if (enTrop.length) {
-      const ou = enTrop.map((h) => h.type.replace("En trop dans ", "") + (h.quantite ? ` (${h.quantite})` : "")).join(" et ");
+      const ou = enTrop.map((h) => h.type.replace("En trop dans ", "")).join(" et ");
+      const n = Math.max(...enTrop.map((h) => parseFloat(String(h.quantite).replace(",", ".")) || 1));
       resultat.push({
         ...piece,
         gravite: GRAVITE.CORRIGER,
         type: "Débitée, mais pas dans le lancement",
         detail: diakonos
-          ? `Dans ${ou}, et commandée (Diakonos), mais absente du fichier de lancement : le lancement est incomplet`
-          : `Dans ${ou}, mais pas dans le fichier de lancement`,
+          ? `${n} pièce(s) à couper dans ${ou}, commandée dans Diakonos, mais absente du fichier de lancement : il faut l'ajouter au lancement.`
+          : `${n} pièce(s) à couper dans ${ou}, mais absente du fichier de lancement.`,
       });
     } else if (diakonos && diakonos.ailleurs) {
       // Commandée ici, lancée dans un autre lancement de la semaine : bonne (chantier extrait du lancement).
@@ -12504,7 +12605,7 @@ async function exporterCompteRendu(parite) {
 
 const versionSentinelle = () => ((document.querySelector(".badge-version") || {}).textContent || "").trim();
 const semaineDeLaCase = (p) => p.semaine || numeroSemaine(p.parite);
-const nomCasePlans = (p) => (caseAjoutee(p) ? p.label : p.poste);
+const nomCasePlans = (p) => (caseAjoutee(p) ? libelleCase(p) : p.poste);
 const dimsPlan = (L, W) => `${fmtDim(L)} × ${fmtDim(W)}`;
 
 // Ce que montre un plan dans la fiche d'une pièce : titre, numéro Pdc, panneau, et ce qui est en jaune.
