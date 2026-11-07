@@ -667,16 +667,17 @@ function afficherFiltres() {
   const f = etat.filtres;
   const compte = (cle) => {
     const m = new Map();
-    for (const r of a.lignes) m.set(cle(r), (m.get(cle(r)) || 0) + 1);
+    // nombre de lignes du fichier (dans le périmètre choisi), toutes semaines confondues
+    for (const r of a.lignes) if (etat.perimetre === "tout" || r.perimetre === etat.perimetre) m.set(cle(r), (m.get(cle(r)) || 0) + 1);
     return [...m.entries()].sort((x, y) => y[1] - x[1] || String(x[0]).localeCompare(String(y[0])));
   };
   $("filtrePerimetre").innerHTML = Object.entries(PERIMETRES)
     .map(([k, lib]) => `<option value="${k}" ${k === etat.perimetre ? "selected" : ""}>${esc(lib)} — ${fmt(a.totaux[k].lignes)} ligne(s)</option>`)
     .join("");
   $("filtreSemaine").innerHTML = options(colonnesSemaines(a.lignes).map((c) => [c, libelleSemaine(c)]), f.semaine, "Toutes les semaines");
-  $("filtreTransporteur").innerHTML = options(compte((r) => r.transporteur).map(([v, n]) => [v, `${v} (${n})`]), f.transporteur, "Tous les transporteurs");
-  $("filtreCatalogue").innerHTML = options(compte((r) => r.catalogue).map(([v, n]) => [v, `${v} (${n})`]), f.catalogue, "Tous les catalogues");
-  $("filtreGroupement").innerHTML = options(compte((r) => r.groupement).map(([v, n]) => [v, `${v} (${n})`]), f.groupement, "Tous les groupements");
+  $("filtreTransporteur").innerHTML = options(compte((r) => r.transporteur).map(([v, n]) => [v, `${v} — ${n} ligne${n > 1 ? "s" : ""}`]), f.transporteur, "Tous les transporteurs");
+  $("filtreCatalogue").innerHTML = options(compte((r) => r.catalogue).map(([v, n]) => [v, `${v} — ${n} ligne${n > 1 ? "s" : ""}`]), f.catalogue, "Tous les catalogues");
+  $("filtreGroupement").innerHTML = options(compte((r) => r.groupement).map(([v, n]) => [v, `${v} — ${n} ligne${n > 1 ? "s" : ""}`]), f.groupement, "Tous les groupements");
   if ($("filtreTexte").value !== f.texte) $("filtreTexte").value = f.texte;
   const puces = [];
   if (f.coloris) puces.push(["coloris", `Coloris : ${f.coloris}`]);
