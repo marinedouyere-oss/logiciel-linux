@@ -40,6 +40,17 @@ final class LienPc {
         return normaliser(code).length() == 16;
     }
 
+    static final String PREFIXE_QR = "SENTINELLE:";
+
+    /** Le code lu dans le QR code du PC (« SENTINELLE:ABCD-EFGH-JKLM-NPQR »), ou null si ce n'est pas celui de Sentinelle. */
+    static String codeDuQr(String texte) {
+        if (texte == null) return null;
+        String t = texte.trim();
+        if (!t.toUpperCase(Locale.ROOT).startsWith(PREFIXE_QR)) return null;
+        String n = normaliser(t.substring(PREFIXE_QR.length()));
+        return n.length() == 16 && n.matches("[A-HJ-NP-Z2-9]{16}") ? formater(n) : null;
+    }
+
     /** « ABCD-EFGH-JKLM-NPQR ». */
     static String formater(String code) {
         String n = normaliser(code);

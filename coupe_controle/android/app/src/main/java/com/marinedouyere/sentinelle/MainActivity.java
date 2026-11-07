@@ -14,6 +14,8 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.material.snackbar.Snackbar;
+import com.journeyapps.barcodescanner.ScanContract;
+import com.journeyapps.barcodescanner.ScanOptions;
 import com.google.android.material.tabs.TabLayout;
 
 import java.io.OutputStream;
@@ -39,6 +41,7 @@ public class MainActivity extends AppCompatActivity {
     private PartageVue partage;
     private ActivityResultLauncher<String[]> choixPartage;
     private ActivityResultLauncher<String> creationPdf;
+    private ActivityResultLauncher<ScanOptions> lecteurQr;
 
     @Override
     protected void onCreate(Bundle etat) {
@@ -48,6 +51,9 @@ public class MainActivity extends AppCompatActivity {
         if (etat != null) onglet = etat.getString("onglet", ONGLET_SEMAINE);
         choixPartage = registerForActivityResult(new ActivityResultContracts.OpenDocument(), uri -> partage().fichierChoisi(uri));
         creationPdf = registerForActivityResult(new ActivityResultContracts.CreateDocument("application/pdf"), this::emplacementPdfChoisi);
+        lecteurQr = registerForActivityResult(new ScanContract(), r -> {
+            if (r != null && r.getContents() != null) partage().qrScanne(r.getContents());
+        });
 
         LinearLayout racine = ui.colonne();
         racine.setBackgroundColor(ui.couleur(R.color.fond));
@@ -144,6 +150,16 @@ public class MainActivity extends AppCompatActivity {
 
     /** Le fichier partagé vient d'être lu (l'écran est déjà refait). */
     void partageCharge() {}
+
+    /** Ouvre l'appareil photo pour scanner le QR code affiché par Sentinelle sur le PC (Bibliothèque des semaines). */
+    void scannerQrDuPc() {
+        ScanOptions o = new ScanOptions();
+        o.setDesiredBarcodeFormats(ScanOptions.QR_CODE);
+        o.setPrompt("Visez le QR code affiché sur le PC (Bibliothèque des semaines → Téléphone)");
+        o.setBeepEnabled(false);
+        o.setOrientationLocked(false);
+        lecteurQr.launch(o);
+    }
 
     /** Sélecteur d'Android pour choisir le fichier partagé (le Drive du compte de l'appareil y apparaît). */
     void choisirFichierPartage() {

@@ -9,6 +9,8 @@ const SEL_LIEN = "sentinelle-laisne-industrie";
 const ITERATIONS_LIEN = 150000;
 const TAILLE_PARTIE_LIEN = 4 * 1024 * 1024;
 const ALPHABET_CODE_LIEN = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // sans 0/O ni 1/I : se recopie sans erreur
+// Le QR code affiché contient « SENTINELLE:ABCD-EFGH-JKLM-NPQR » : l'appli le scanne (le code tapé marche toujours).
+const PREFIXE_QR_LIEN = "SENTINELLE:";
 
 const lienTelephone = { envoi: null, minuteur: null, reprendre: false, etape: "", essais: 0 };
 // Après un envoi raté : nouvel essai tout seul au bout de 2, 10 puis 30 minutes (ensuite toutes les 30 minutes).
@@ -244,8 +246,20 @@ function htmlLienTelephone() {
         : etat.dernierEnvoi
           ? `✔ Envoyé le ${date(etat.dernierEnvoi)} (${etat.nbSemaines || 0} semaine(s))`
           : "Pas encore envoyé.";
-    html += `<div class="note">Dans l'appli du téléphone : Bibliothèque des semaines → « Relier au PC », puis tapez ce code (une seule fois).</div>
-      <div class="code-lien" id="codeLien">${echapper(etat.code)}</div>
+    let qr = "";
+    try {
+      qr = qrSvg(PREFIXE_QR_LIEN + etat.code, 180);
+    } catch (_e) {
+      qr = "";
+    }
+    html += `<div class="lien-qr">
+        ${qr ? `<div class="qr-cadre" id="qrLien" title="QR code du lien avec le téléphone">${qr}</div>` : ""}
+        <div class="lien-qr-texte">
+          <div class="note">Dans l'appli du téléphone : Bibliothèque des semaines → <strong>« Scanner le QR code du PC »</strong>, et visez ce QR code (une seule fois).</div>
+          <div class="note">Ou tapez le code :</div>
+          <div class="code-lien" id="codeLien">${echapper(etat.code)}</div>
+        </div>
+      </div>
       <div class="compte-rendu ${etat.erreur && !lienTelephone.envoi ? "erreur" : ""}" id="etatLien">${echapper(statut)}</div>
       <div class="boutons-carte">
         <button type="button" id="btnEnvoyerLien" ${lienTelephone.envoi ? "disabled" : ""}>Envoyer maintenant</button>

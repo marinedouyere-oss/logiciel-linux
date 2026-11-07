@@ -495,6 +495,11 @@
   .pl-plus { color: var(--ok-texte); font-weight: 700; }
   .pl-moins { color: #c62828; font-weight: 700; }
   @media (max-width: 900px) { .pl-avap { grid-template-columns: 1fr; } }
+  /* ---- V6.1.3 : QR code du lien avec le téléphone ---- */
+  .lien-qr { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin: 6px 0 4px; }
+  .qr-cadre { background: #fff; border: 1px solid var(--gris-filet); border-radius: 10px; padding: 6px; line-height: 0; }
+  .qr-cadre svg { display: block; width: 180px; height: 180px; }
+  .lien-qr-texte { flex: 1; min-width: 220px; }
   /* ---- V6.1.2 : plan de coupe modifié dans Sentinelle ---- */
   .bouton-plans { margin: 8px 0 4px; }
   .details-piece .fp-plans { margin-top: 6px; }

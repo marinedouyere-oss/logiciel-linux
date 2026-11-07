@@ -194,7 +194,7 @@ public class PartageTest {
             onglet(a, tag);
             String t = ecran(a);
             assertFalse(t, t.contains(".xlsx)"));
-            assertFalse(t, t.contains("Scanner"));
+            assertFalse(t, t.replace("Scanner le QR code du PC", "").contains("Scanner")); // lecteur seulement : pas de scan de dossier
         }
     }
 
@@ -414,6 +414,35 @@ public class PartageTest {
     private static final String PAQUET_PC = "U05UMZzoTZBkl4QqOJMG8pusOC8NJwam7CwHmLOurc3KlPpSR0D9P7TdDyqrPivJF2vd6jxODYSu/0j7ztpgB1+vQfvNDrs2dUx2Yd9Za3rzk1EKwZw3GefPUIjSplxcibDm3yM7B5MMLa+TOCprmihBWG4kJXLOi+j32EQCT1oNIzx9FBp3KJeuML7LK0bv6ZLE4Y5V9dzXArTorzdbafcNQTShbes9px7kEKm/k42F/pSeJkDH1LU5fL8jscIW8QAeauCe/0OnB3HbBPDlDZOrPrblaPJK0EARO4EMEsx67Qs7DS1FgagWn7vtAPDegb/ZJ0nu9uxUyz86dIzrCHllva8mJ2mej4N95uDsnT4cfS6OC9eL3pIBM4p1X9n5eZW47chpRPbeOPMh1SCUug7raB2gVUTg58ydxkbdMqlcw1ilVHVjAXlJnyKo1kCIDVLqTmDp0hPQvTzUsDO9g5MxjUqG00wEFPHNeoSR4iQ7LdQ=";
 
     /** Lien avec le PC : même canal et même clé que le PC ; le paquet du PC se déchiffre ; un autre code est refusé. */
+    /** Le QR code du PC : « SENTINELLE:ABCD-EFGH-JKLM-NPQR » ; un autre QR code est refusé avec un message clair. */
+    @Test
+    public void qrCodeDuPc() throws Exception {
+        assertEquals("ABCD-EFGH-JKLM-NPQR", LienPc.codeDuQr("SENTINELLE:ABCD-EFGH-JKLM-NPQR"));
+        assertEquals("ABCD-EFGH-JKLM-NPQR", LienPc.codeDuQr(" sentinelle:abcdefghjklmnpqr\n"));
+        assertEquals(null, LienPc.codeDuQr("ABCD-EFGH-JKLM-NPQR"));
+        assertEquals(null, LienPc.codeDuQr("https://exemple.fr/SENTINELLE:ABCD-EFGH-JKLM-NPQR"));
+        assertEquals(null, LienPc.codeDuQr("SENTINELLE:ABCD-EFGH"));
+        assertEquals(null, LienPc.codeDuQr("SENTINELLE:ABCD-EFGH-JKLM-NPQ0"));
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
+        onglet(a, MainActivity.ONGLET_BIBLIOTHEQUE);
+        assertTrue(ecran(a).contains("Scanner le QR code du PC"));
+        a.partage().qrScanne("https://www.laisne.fr");
+        ShadowLooper.idleMainLooper();
+        assertTrue(ecran(a), ecran(a).contains("Ce QR code n'est pas celui de Sentinelle"));
+        // Le QR code dessiné par Sentinelle sur le PC (capture de l'écran) se lit avec le lecteur de l'appli (ZXing).
+        String png = System.getProperty("sentinelle.qr_png", "");
+        if (!png.isEmpty()) {
+            Bitmap img = android.graphics.BitmapFactory.decodeFile(png);
+            int[] px = new int[img.getWidth() * img.getHeight()];
+            img.getPixels(px, 0, img.getWidth(), 0, 0, img.getWidth(), img.getHeight());
+            com.google.zxing.BinaryBitmap bb = new com.google.zxing.BinaryBitmap(new com.google.zxing.common.HybridBinarizer(
+                    new com.google.zxing.RGBLuminanceSource(img.getWidth(), img.getHeight(), px)));
+            String lu = new com.google.zxing.qrcode.QRCodeReader().decode(bb).getText();
+            assertTrue(lu, LienPc.codeDuQr(lu) != null);
+            System.out.println("QR du PC lu par ZXing : " + lu);
+        }
+    }
+
     @Test
     public void lienDechiffreLePaquetDuPc() throws Exception {
         assertEquals("TESTTESTTESTTEST", LienPc.normaliser("test-test test-test"));

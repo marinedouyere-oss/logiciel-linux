@@ -50,6 +50,11 @@ async function lireCommeLeTelephone(code) {
   verifier(/^[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(code), `code affiché : ${code}`);
   verifier(/Envoyé le/.test(etat), `état : ${etat.trim()}`);
   fs.writeFileSync(sortieCode, code);
+  // V6.1.3 : le QR code du lien (« SENTINELLE:<code> »), à scanner avec l'appli ; capture pour le test de l'appli (ZXing).
+  verifier(await page.isVisible("#qrLien svg") && (await page.innerText("#carteLienTelephone")).includes("Scanner le QR code du PC"), "QR code affiché, avec « Scanner le QR code du PC »");
+  const contenuQr = await page.evaluate((c) => PREFIXE_QR_LIEN + c, code);
+  verifier(contenuQr === `SENTINELLE:${code}`, `contenu du QR code : ${contenuQr}`);
+  await page.locator("#qrLien").screenshot({ path: sortieCode.replace(/\.txt$/, "") + "_qr.png" });
   let lu = await lireCommeLeTelephone(code);
   const avec = (c) => c.semaines.filter((s) => s.lancements.length).length;
   const nbPc = await page.evaluate(() => [...bibliotheque.semaines.values()].filter((s) => s.lancements.length).length);

@@ -138,10 +138,22 @@ final class PartageVue {
         actualiser();
     }
 
+    /** QR code scanné (lecteur de l'appareil photo) : relie l'appli au PC s'il vient bien de Sentinelle. */
+    void qrScanne(String texte) {
+        String code = LienPc.codeDuQr(texte);
+        if (code == null) {
+            erreur = "Ce QR code n'est pas celui de Sentinelle : sur le PC, ouvrez Bibliothèque des semaines → Téléphone, et scannez le QR code affiché.";
+            construire();
+            return;
+        }
+        erreur = null;
+        relier(code);
+    }
+
     private void delier() {
         new MaterialAlertDialogBuilder(activite)
                 .setTitle("Délier du PC ?")
-                .setMessage("L'appli ne recevra plus les données du PC. Il faudra retaper le code pour la relier.")
+                .setMessage("L'appli ne recevra plus les données du PC. Il faudra rescanner le QR code (ou retaper le code) pour la relier.")
                 .setNegativeButton("Annuler", null)
                 .setPositiveButton("Délier", (d, k) -> {
                     preferences().edit().remove(CLE_CODE).remove(CLE_RECU).apply();
@@ -745,12 +757,16 @@ final class PartageVue {
             corps.addView(boutons, ui.marges(6, 0));
             return carte;
         }
-        corps.addView(ui.texte("Sur le PC : Bibliothèque des semaines → « Activer l'envoi au téléphone », puis tapez ici le code affiché (une seule fois). "
+        corps.addView(ui.texte("Sur le PC : Bibliothèque des semaines → « Activer l'envoi au téléphone », puis scannez le QR code affiché (une seule fois). "
                 + "Les données arrivent ensuite toutes seules, chiffrées.", 14, false, Ui.NOIR), ui.marges(0, 6));
+        MaterialButton scanner = ui.bouton("Scanner le QR code du PC");
+        scanner.setOnClickListener(v -> activite.scannerQrDuPc());
+        corps.addView(scanner, ui.pleineLargeur());
+        corps.addView(ui.texte("Ou tapez le code affiché sous le QR code :", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(10, 4));
         EditText champCode = champ("ABCD-EFGH-JKLM-NPQR", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, "");
         champCode.setTypeface(android.graphics.Typeface.MONOSPACE);
         corps.addView(champCode, ui.pleineLargeur());
-        MaterialButton relier = ui.bouton("Relier au PC");
+        MaterialButton relier = ui.boutonContour("Relier au PC avec ce code");
         relier.setOnClickListener(v -> relier(champCode.getText().toString()));
         corps.addView(relier, ui.marges(4, 0));
         if (erreur != null && uri() == null) corps.addView(ui.bandeau("❌ " + erreur, ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)), ui.marges(6, 6));
