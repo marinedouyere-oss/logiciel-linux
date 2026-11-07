@@ -259,7 +259,8 @@ for r in wb.worksheets[0].iter_rows(values_only=True):
   await page.click("#btnRechercher");
   await page.waitForFunction(() => !document.querySelector("#resultatsRecherche").innerText.includes("Recherche en cours"), null, { timeout: 120000 });
   texte = await page.innerText("#resultatsRecherche");
-  verifier(texte.includes("Commande CVC26100163"), "fiche de la commande");
+  // V6.1 : la fiche simple de la pièce d'abord, la commande repliée dessous.
+  verifier(texte.includes("CVC26100163003 · commande CVC26100163, ligne 3") && texte.includes("Les autres pièces de la commande CVC26100163"), "fiche de la pièce, puis la commande");
   verifier(texte.includes("Agglo 1er tour") && texte.includes("Agglo 2ème tour"), "pièce trouvée dans les deux tours");
   console.log(texte.slice(0, 1500));
   await page.screenshot({ path: `${captures}/web_recherche.png`, fullPage: true });

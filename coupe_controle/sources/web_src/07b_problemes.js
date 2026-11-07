@@ -16,6 +16,8 @@ const PROBLEMES = [
   ["Couleur absente du .bkp", "Aucun panneau de ce coloris dans l'optimisation (.bkp) : ces pièces ne sont pas optimisées.", "ajouter un panneau de ce coloris à l'optimisation."],
   ["Pas dans les plans de coupe", "Pièce prévue dans l'optimisation (.bkp), mais posée sur aucun panneau des plans de coupe : elle ne sera pas coupée.",
     "relancer l'optimisation Cut Rite (panneau manquant, pièce trop grande…), ou valider si c'est voulu."],
+  ["Dans le .bkp, dans aucun plan", "Pièce de la liste du .bkp qui n'est ni dans le fichier de lancement ni dans aucun plan de coupe : elle ne sera pas coupée (retirée du lancement après l'import ?).",
+    "vérifier qu'elle ne doit pas être fabriquée, ou valider si c'est voulu."],
   ["Ligne en double", "Deux lignes identiques dans le fichier de lancement : la pièce serait fabriquée deux fois.",
     "supprimer la ligne en trop (bouton « Créer le lancement sans doublons » de Sentinelle)."],
   ["Lancée deux fois", "La même pièce est aussi dans un autre lancement de la semaine : risque de la fabriquer deux fois.", "la retirer d'un des deux lancements."],
@@ -138,10 +140,15 @@ async function problemesDuLancement(p) {
   if (p.plans) {
     const r = p.plans;
     const plans = `${fmtNombre(r.nbPlans)} plans de panneaux et ${fmtNombre(r.nbModules)} modules`;
+    const hors = r.horsLancement || [];
+    const texteHors = hors.length ? ` ${hors.length} pièce(s) de la liste du .bkp, hors lancement, dans aucun plan : elles ne seront pas coupées.` : "";
+    for (const h of hors)
+      dehors({ cle: h.cle, gravite: GRAVITE.VERIFIER, type: "Dans le .bkp, dans aucun plan", quantite: fmtNombre(h.qte),
+        detail: "Dans la liste du .bkp, mais ni dans le fichier de lancement ni dans aucun plan de coupe : elle ne sera pas coupée", controle: ctrlPlans });
     if (!r.nonPlacees.length)
-      bilan.push({ statut: "ok", controle: ctrlPlans, texte: `Les ${fmtNombre(r.nbPieces)} pièces prévues par le .bkp sont placées dans les plans de coupe (${plans}).` });
+      bilan.push({ statut: hors.length ? "attention" : "ok", controle: ctrlPlans, texte: `Les ${fmtNombre(r.nbPieces)} pièces prévues par le .bkp sont placées dans les plans de coupe (${plans}).${texteHors}` });
     else {
-      bilan.push({ statut: "alerte", controle: ctrlPlans, texte: `${r.nonPlacees.length} pièce(s) du .bkp dans aucun plan de coupe : elles ne seront pas coupées (${plans}).` });
+      bilan.push({ statut: "alerte", controle: ctrlPlans, texte: `${r.nonPlacees.length} pièce(s) du .bkp dans aucun plan de coupe : elles ne seront pas coupées (${plans}).${texteHors}` });
       for (const n of r.nonPlacees)
         ajouter(n.cle, GRAVITE.CORRIGER, "Pas dans les plans de coupe", n.place
           ? `${fmtNombre(n.attendu)} pièce(s) prévue(s) dans le .bkp, ${fmtNombre(n.place)} seulement dans les plans de coupe`
@@ -170,7 +177,7 @@ async function problemesDuLancement(p) {
     : { statut: "ok", controle: "Lignes en double", texte: "Aucune ligne en double dans le fichier de lancement." });
 
   // Pièces aussi dans un autre lancement de la semaine.
-  const autre = p.parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(p.parite);
   const nomDe = (o) => `${titreCase(o)} (${o.strat.name})`;
   const clesDuLancement = (await resume(p.strat, p.bkp)).cles;
   const deuxFois = new Map(); // lancement → nombre de pièces en commun
@@ -834,7 +841,7 @@ async function rapportSemaineXlsx(parite, options = {}) {
     for (const s of p.semainesLivraison) if (s !== principale) nbLivraison += s.nbPieces;
   }
   if (nbLivraison) ligneBilan(`${nbLivraison} pièce(s) à livrer une autre semaine que leur lancement.`, "attention");
-  const autre = parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(parite);
   for (const l of lancements.filter((x) => x.p.poste === "Casse" && !x.erreur)) {
     const r = await calculerCasse(l.p, pairesDeLaSemaine(autre), numeroSemaine(autre));
     const debut = `Casse (${l.base}) : ${nombrePieces(l.prevues)} pièce(s)`;

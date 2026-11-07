@@ -84,7 +84,7 @@ const lister = (dossier, chemin = []) =>
   await page.waitForFunction(
     () => {
       const t = (document.querySelector("#carteDossier") || {}).innerText || "";
-      return onglet === "paire" && /Dossier ouvert : Semaine 46/.test(t) && /gardé\(s\) dans la bibliothèque|Aucun lancement|impossible|illisible|Plusieurs/.test(t);
+      return onglet === ongletDuNumero(46) && /Dossier ouvert : Semaine 46/.test(t) && /gardé\(s\) dans la bibliothèque|Aucun lancement|impossible|illisible|Plusieurs/.test(t);
     },
     null,
     { timeout: 300000 }
@@ -92,7 +92,7 @@ const lister = (dossier, chemin = []) =>
   await page.waitForTimeout(1500);
   const carte = await page.innerText("#carteDossier");
   console.log("CARTE :", carte.replace(/\n/g, " | ").slice(-700));
-  verifier(await page.evaluate(() => onglet === "paire" && document.querySelector('.onglet-btn[data-onglet="paire"]').textContent.includes("Semaine 46")), "onglet de la semaine 46 ouvert tout seul");
+  verifier(await page.evaluate(() => onglet === ongletDuNumero(46) && document.querySelector(`.onglet-btn[data-onglet="${ongletDuNumero(46)}"]`).textContent.includes("Semaine 46")), "onglet de la semaine 46 ouvert tout seul");
   verifier(carte.includes("Dossier ouvert : Semaine 46"), "dossier « Semaine 46 » de 2026 pris (pas celui de 2025)");
   verifier(/✔ Casse : LAN2646CASSE\.xlsx/.test(carte), "la casse de « Semaine 46 / CASSE » est prise en semaine 46");
   verifier(/✔ Agglo 1er tour : LAN264601START\.xlsx/.test(carte) && /✔ Feno : LAN264601FENO\.xlsx/.test(carte), "1er tour et Feno pris dans leurs sous-dossiers");
@@ -102,7 +102,7 @@ const lister = (dossier, chemin = []) =>
   verifier(!biblio.some((s) => s.startsWith("2026-47")), "bibliothèque : rien en semaine 47");
   if (semaine45) {
     const casse = await page.evaluate(() => {
-      const p = pairesDeLaSemaine("paire").find((x) => x.poste === "Casse");
+      const p = pairesDeLaSemaine(ongletDuNumero(46)).find((x) => x.poste === "Casse");
       const s = bibliotheque.semaines.get("2026-46");
       const l = s && s.lancements.find((x) => x.nom === "LAN2646CASSE");
       return { semaine: p && p.semaine, recap: l && l.recap && l.recap.casse };

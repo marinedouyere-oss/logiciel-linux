@@ -512,6 +512,11 @@
   .pl-plus { color: var(--ok-texte); font-weight: 700; }
   .pl-moins { color: #c62828; font-weight: 700; }
   @media (max-width: 900px) { .pl-avap { grid-template-columns: 1fr; } }
+  /* ---- V6.1 : partie expérimentale ---- */
+  .essai-avertissement { background: var(--attention-fond); color: var(--attention-texte); border-left: 6px solid #c98a00; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
+  .essai-avertissement strong { margin-right: 4px; }
+  .essai-regles { margin: 6px 0 0; padding-left: 20px; line-height: 1.5; font-size: 0.9rem; }
+  .case-option { display: flex; gap: 8px; align-items: center; margin: 10px 0 4px; font-size: 0.92rem; }
 </style>
 </head>
 <body>
@@ -540,6 +545,14 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
         <span class="libelle-onglet">Semaine</span>
       </button>
+      <button type="button" class="onglet-btn" data-onglet="paire2">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+        <span class="libelle-onglet">Semaine</span>
+      </button>
+      <button type="button" class="onglet-btn" data-onglet="impaire2">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+        <span class="libelle-onglet">Semaine</span>
+      </button>
       <div class="menu-groupe">Outils</div>
       <button type="button" class="onglet-btn" data-onglet="recherche">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
@@ -552,6 +565,15 @@
       <button type="button" class="onglet-btn" data-onglet="bibliotheque">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 1-2-2z"/><path d="M8 7h6M8 11h6"/></svg>
         <span class="libelle-onglet">Bibliothèque des semaines</span>
+      </button>
+      <div class="menu-groupe">Expérimental</div>
+      <button type="button" class="onglet-btn" data-onglet="liste-opt">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/><path d="M7.5 15h9"/></svg>
+        <span class="libelle-onglet">Générer une liste de coupe</span>
+      </button>
+      <button type="button" class="onglet-btn" data-onglet="woodstore">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="1"/><rect x="3" y="14" width="18" height="6" rx="1"/><path d="M7 7h.01M7 17h.01"/></svg>
+        <span class="libelle-onglet">Connexion woodStore</span>
       </button>
     </nav>
     <div class="menu-dossier" id="menuDossier"></div>
@@ -599,6 +621,8 @@
     <div id="pageBibliotheque" class="inactif"></div>
     <div id="pageReecriture" class="inactif"></div>
     <div id="pagePlans" class="inactif"></div>
+    <div id="pageListeOpt" class="inactif"></div>
+    <div id="pageWoodstore" class="inactif"></div>
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
@@ -2774,6 +2798,12 @@ function trouverEntreeCttMaitre(entrees, nomLancement) {
   if (sansSuffixe.length >= 1) {
     return sansSuffixe.reduce((a, b) => (b.tailleReelle > a.tailleReelle ? b : a));
   }
+  // Nom de lot avec « _ » (liste « LAN264801START_OPT ») : le maître est celui dont les autres .ctt sont les matières
+  // (« LAN264801START_OPT_SAG10HYBR.ctt »).
+  const base = (e) => e.nom.split(/[/\\]/).pop().replace(/\.ctt$/i, "").toLowerCase();
+  const nbMatieres = (e) => candidats.filter((x) => x !== e && base(x).startsWith(`${base(e)}_`)).length;
+  const maitre = candidats.reduce((a, b) => (nbMatieres(b) > nbMatieres(a) ? b : a));
+  if (nbMatieres(maitre) > 0) return maitre;
   throw new Error("Fichier .ctt maître introuvable dans l'archive .bkp (tous les .ctt trouvés ont un suffixe).");
 }
 
@@ -3232,7 +3262,18 @@ function lirePlansBkp(fichier) {
         if (!pct || !ptn) continue;
         matieres.set(mat, { mat, ...lirePlansMatiere(pct, ptn, brd) });
       }
-      return indexerPlans(lancement, matieres);
+      // Pièces sans agglo (faites seulement de stratifié, matière vide dans la liste) : leur stratifié « L0102 » est la
+      // pièce elle-même. On garde, pour chacune, la matière de sa face dessus (où elle est comptée).
+      const seulesStratifie = new Map();
+      const lignes = new TextDecoder("iso-8859-1").decode(await extraireEntreeZip(bytes, maitre)).split(/\r?\n/);
+      for (let i = 0; i + 2 < lignes.length; i++) {
+        if (!lignes[i].startsWith("PNL1,")) continue;
+        const p1 = lignes[i].split(",");
+        const p2 = lignes[i + 1].split(",");
+        const m = /^PNL3,P(\d+):TC:/.exec(lignes[i + 2]);
+        if (m && p1[2] === "" && (p2[16] || p2[17])) seulesStratifie.set(`L${m[1].padStart(4, "0")}`, p2[16] || p2[17]);
+      }
+      return indexerPlans(lancement, matieres, seulesStratifie);
     })();
     lecture.catch(() => cachePlansBkp.delete(fichier));
     cachePlansBkp.set(fichier, lecture);
@@ -3241,7 +3282,7 @@ function lirePlansBkp(fichier) {
 }
 
 // Index : modules par nom, plans par pièce, quantité de chaque pièce placée dans les plans (morceaux « pièce » seulement).
-function indexerPlans(lancement, matieres) {
+function indexerPlans(lancement, matieres, seulesStratifie = new Map()) {
   const modules = new Map();
   const parCle = new Map();
   const placees = new Map();
@@ -3279,7 +3320,8 @@ function indexerPlans(lancement, matieres) {
           const nom = q[1];
           const cle = q[17] || "";
           if (cle) cles.add(cle);
-          if (cle && j < fois && !MOTIF_NOYAU_PLAN.test(nom) && !MOTIF_STRATIFIE_PLAN.test(nom)) placees.set(cle, (placees.get(cle) || 0) + 1);
+          const piece = (!MOTIF_NOYAU_PLAN.test(nom) && !MOTIF_STRATIFIE_PLAN.test(nom)) || seulesStratifie.get(nom) === m.mat;
+          if (cle && j < fois && piece) placees.set(cle, (placees.get(cle) || 0) + 1);
         }
         for (const cle of cles) {
           if (!parCle.has(cle)) parCle.set(cle, []);
@@ -3582,9 +3624,19 @@ function doublonsEntreLancements(clesParLancement) {
   return [...groupes.values()];
 }
 
+// ---- Les quatre onglets semaine ----
+// Une semaine va dans l'onglet de son numéro modulo 4 (48 → « paire », 45 → « impaire », 46 → « paire2 »,
+// 47 → « impaire2 ») : quatre semaines à la fois, sans mélange. Les noms « paire » / « impaire » sont ceux des
+// versions à deux semaines (fichiers et dossiers déjà mémorisés).
+const ONGLETS_SEMAINE = ["paire", "impaire", "paire2", "impaire2"];
+const LIBELLES_ONGLETS_SEMAINE = { paire: "Semaine paire", impaire: "Semaine impaire", paire2: "Semaine paire 2", impaire2: "Semaine impaire 2" };
+const ongletDuNumero = (n) => ONGLETS_SEMAINE[((Math.trunc(n) % 4) + 4) % 4];
+// L'onglet de la semaine d'avant (pièces déjà lancées, casse).
+const ongletPrecedent = (onglet) => ONGLETS_SEMAINE[(ONGLETS_SEMAINE.indexOf(onglet) + 3) % 4];
+
 // ---- Vrai numéro de semaine d'un onglet ----
 function bonneParite(semaine, parite) {
-  return (semaine % 2 === 0) === (parite === "paire");
+  return ongletDuNumero(semaine) === parite;
 }
 
 // Numéro de semaine ISO (comme en France).
@@ -3596,10 +3648,10 @@ function semaineIso(date) {
   return Math.ceil(((d - debutAnnee) / 86400000 + 1) / 7);
 }
 
-// Semaine du calendrier : celle en cours si sa parité convient, sinon la suivante.
+// Semaine du calendrier : celle en cours si elle va dans cet onglet, sinon la première des suivantes qui y va.
 function semaineCalendrier(aujourdHui, parite) {
   const d = new Date(aujourdHui.getTime());
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     const s = semaineIso(d);
     if (bonneParite(s, parite)) return s;
     d.setDate(d.getDate() + 7);
@@ -3610,13 +3662,12 @@ function semaineCalendrier(aujourdHui, parite) {
 // Semaine d'un onglet : la plus fréquente parmi les semaines des lancements
 // chargés qui ont la bonne parité (à égalité, la plus grande) ; sans
 // lancement, celle du calendrier.
+// Des fichiers mis à la main dans un autre onglet que le leur : l'onglet prend quand même leur semaine.
 function semaineAffichee(semainesChargees, parite, aujourdHui = new Date()) {
+  const valables = semainesChargees.map((s) => parseInt(String(s ?? "").trim(), 10)).filter((n) => !Number.isNaN(n) && n >= 1 && n <= 53);
+  const siennes = valables.filter((n) => bonneParite(n, parite));
   const nombre = new Map();
-  for (const s of semainesChargees) {
-    const n = parseInt(String(s ?? "").trim(), 10);
-    if (Number.isNaN(n) || n < 1 || n > 53 || !bonneParite(n, parite)) continue;
-    nombre.set(n, (nombre.get(n) || 0) + 1);
-  }
+  for (const n of siennes.length ? siennes : valables) nombre.set(n, (nombre.get(n) || 0) + 1);
   let meilleure = -1;
   let meilleurNombre = 0;
   for (const [n, c] of nombre) {
@@ -3658,7 +3709,7 @@ function trouverCodeLancement(nomBrut) {
 function pariteDeSemaine(code) {
   const semaine = parseInt(code.slice(2, 4), 10);
   if (Number.isNaN(semaine)) return null;
-  return semaine % 2 === 0 ? "paire" : "impaire";
+  return ongletDuNumero(semaine);
 }
 
 // La casse porte le numéro de la semaine précédente (LAN2644CASSE est
@@ -3668,16 +3719,18 @@ function pariteCasse(code) {
   const semaine = parseInt(code.slice(2, 4), 10);
   if (Number.isNaN(semaine)) return pariteDeSemaine(code);
   const suivante = semaine >= 52 ? 1 : semaine + 1;
-  return suivante % 2 === 0 ? "paire" : "impaire";
+  return ongletDuNumero(suivante);
 }
 
-// Le nom du chantier (ex. "TRIGANO", "EQUI76") : tout ce qui suit le code.
+// Le nom du chantier (ex. "TRIGANO", "EQUI76") : tout ce qui suit le code, espaces compris mais retirés
+// (« LAN2648CHANTIERS BIS.xlsx » et « LISTE DE COUPES LAN2648CHANTIERSBIS.pdf » → « CHANTIERSBIS », à part de
+// « LAN2648CHANTIERS »). Une copie de l'Explorateur (« - Copie », « (2) ») garde le nom de l'original.
 function extraireSuffixeLancement(nomBrut, code) {
-  const nom = nomBrut.replace(MOTIF_DATE_SAUVEGARDE, "");
+  const nom = nomBrut.replace(MOTIF_DATE_SAUVEGARDE, "").replace(/\.[A-Za-z0-9]+$/, "").replace(/\s*-\s*copie.*$|\s*\(\d+\)$/i, "");
   const pos = nom.indexOf(code);
   if (pos === -1) return "";
-  const m = /^[A-Za-zÀ-ÖØ-öø-ÿ0-9-]+/.exec(nom.slice(pos + code.length));
-  return m ? m[0].toUpperCase() : "";
+  const m = /^[A-Za-zÀ-ÖØ-öø-ÿ0-9-]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ0-9-]+)*/.exec(nom.slice(pos + code.length));
+  return m ? m[0].replace(/\s+/g, "").toUpperCase() : "";
 }
 
 function decoderNomFichierPartage(nom) {
@@ -3869,7 +3922,7 @@ function repartirFichiersDossier(fichiersDossier, pariteScan, racine = "") {
   return res;
 }
 
-const pariteDuNumeroSemaine = (semaine) => (parseInt(semaine, 10) % 2 === 0 ? "paire" : "impaire");
+const pariteDuNumeroSemaine = (semaine) => ongletDuNumero(parseInt(semaine, 10));
 
 const nouveauGroupe = (poste, info, dossier) => ({
   poste,
@@ -5014,7 +5067,7 @@ function creerPoigneeDossierAndroid(treeUri, nom) {
 // "Semaine paire" et "Semaine impaire".
 const DB_DOSSIER_PARTAGE_NOM = "sentinelle-dossier-partage";
 const MAGASIN_DOSSIER_PARTAGE = "poignee";
-let dossierPartageHandles = { paire: null, impaire: null };
+let dossierPartageHandles = { paire: null, impaire: null, paire2: null, impaire2: null };
 
 function ouvrirBaseDossierPartage() {
   return new Promise((resolve, reject) => {
@@ -5711,11 +5764,11 @@ async function archiverOnglet(parite, lancementsRapport) {
       const reste = (test, valeur) => (valeur > 0 && restantsDuControle(p, test) === 0 ? 0 : valeur);
       recap.controle = reste(estControleListe, recap.controle);
       recap.scies = sciesRestants(p);
-      recap.horsPlans = p.plans ? reste(estControlePlans, p.plans.nonPlacees.length) : null;
+      recap.horsPlans = p.plans ? reste(estControlePlans, nbHorsPlans(p)) : null;
       recap.couleursAbsentes = reste(estControleCouleurs, recap.couleursAbsentes);
       // Casse : combien de ses pièces étaient déjà lancées, combien de rajouts.
       if (casse) {
-        const autre = parite === "paire" ? "impaire" : "paire";
+        const autre = ongletPrecedent(parite);
         const rc = await calculerCasse(p, pairesDeLaSemaine(autre), numeroSemaine(autre));
         if (!rc.erreur && !rc.autreSemaineChargee)
           recap.casse = {
@@ -7559,6 +7612,588 @@ function brancherLienTelephone(page) {
   b("btnArreterLien", arreterLienTelephone);
 }
 
+// ---- Expérimental : refaire la liste de coupe Cut Rite (.ctt) d'un lancement avec moins de pertes ----
+// - Bandes (modèle « ban ») : règle des 6 cm (même agglo 28 et plus, mêmes couleurs ; largeur commune = celle d'une
+//   des pièces, +60 mm au plus, -2 mm au plus, jamais plus que cote finie + 61 mm ; 3 pièces au plus ; bande <= 4060 mm,
+//   soit somme des débits + 25 mm par pièce). Les pièces de la bande prennent la largeur de la bande.
+// - Modules (modèle « C ») : par agglo + couleur dessus + couleur dessous, pièces rangées serrées (bandes en long,
+//   tronçons, pièces empilées ; trait 5 mm comme dans les modules de Cut Rite), module <= 4060 × 1050 (stratifié
+//   + 10 mm : <= 4070 × 1060). On garde la solution la moins chère (agglo + stratifiés).
+// - Pièces sans modèle, protections : inchangées.
+// La liste est écrite sous un autre nom (« LAN264801START_OPT ») : celle de Cut Rite reste intacte, et le fichier de
+// lancement (LAN) n'est jamais touché. Format des enregistrements recopié de Cut Rite (vérifié sur la 48 01 : les 104
+// bandes et modules et les 185 stratifiés se refont à l'identique avec ces règles ; liste importée dans Cut Rite).
+
+const OPT = { LONGUEUR_BANDE: 4060, PIECES_PAR_BANDE: 3, AJOUT_PAR_PIECE: 25, ECART_BANDE: 60, TOLERANCE_SURCOTE: 2, SURCOTE_MAX: 61, LMAX: 4060, WMAX: 1050, TRAIT: 5, STRAT_EN_PLUS: 10 };
+
+// Comparaison « à la Python » de deux listes de nombres (ordre lexicographique).
+function comparerTuples(a, b) {
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const x = a[i] ?? -Infinity;
+    const y = b[i] ?? -Infinity;
+    if (x < y) return -1;
+    if (x > y) return 1;
+  }
+  return 0;
+}
+const trierPar = (liste, cle) => [...liste].sort((a, b) => comparerTuples([].concat(cle(a)), [].concat(cle(b))));
+const comparerTexte = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+// Lecture d'un .ctt : l'en-tête, puis les enregistrements (PNL1, PNL2, PNL3).
+function lireCttListe(texte) {
+  const lignes = texte.split("\r\n");
+  if (lignes[lignes.length - 1] === "") lignes.pop();
+  const entete = [];
+  const recs = [];
+  for (let i = 0; i < lignes.length; ) {
+    if (lignes[i].startsWith("PNL1,")) {
+      const p3 = lignes[i + 2] || "";
+      const m = /^PNL3,([A-Z]+)(\d+):(T\w):N([^,]+),/.exec(p3);
+      if (!m) throw new Error(`enregistrement illisible : ${p3.slice(0, 40)}`);
+      recs.push({ p1: lignes[i].split(","), p2: (lignes[i + 1] || "").split(","), p3, pref: m[1], num: parseInt(m[2], 10), face: m[3], run: m[4], ordre: recs.length });
+      i += 3;
+    } else {
+      if (recs.length) throw new Error("ligne inattendue au milieu des enregistrements");
+      entete.push(lignes[i]);
+      i++;
+    }
+  }
+  const hdr = entete.find((l) => l.startsWith("PNLHDR1,"));
+  const m = hdr && /^PNLHDR1,0,51,([^,]+),/.exec(hdr);
+  if (!m) throw new Error("en-tête PNLHDR1 introuvable : ce n'est pas une liste de coupe Cut Rite");
+  return { entete, recs, nom: m[1] };
+}
+
+function debitListe(r) {
+  const m = r.p2.length > 51 ? /^(\d+(?:\.\d+)?) X (\d+(?:\.\d+)?)$/.exec(r.p2[51]) : null;
+  return m ? [parseFloat(m[1]), parseFloat(m[2])] : null;
+}
+
+// texte : le .ctt de Cut Rite ; nom : le nom de la nouvelle liste ; retirees : clés à ne pas reprendre.
+function genererListeOptimisee(texte, nom, retirees = new Set()) {
+  const { LONGUEUR_BANDE, PIECES_PAR_BANDE, AJOUT_PAR_PIECE, ECART_BANDE, TOLERANCE_SURCOTE, SURCOTE_MAX, LMAX, WMAX, TRAIT, STRAT_EN_PLUS } = OPT;
+  const { entete, recs, nom: NOM_ORIG } = lireCttListe(texte);
+  const fmt = (x) => x.toFixed(2);
+  const num = (s) => (s === "" || s === undefined || s === null ? null : parseFloat(s));
+
+  // ---------- classement ----------
+  let pieces = recs.filter((r) => r.face === "TC" && (r.p1[10] === "0" || r.p1[10] === "2"));
+  const stratPiece = new Map();
+  for (const r of recs) if (r.pref === "P" && r.face !== "TC") stratPiece.set(r.num, [...(stratPiece.get(r.num) || []), r]);
+  const enlevees = pieces.filter((r) => retirees.has(r.p2[5]));
+  pieces = pieces.filter((r) => !retirees.has(r.p2[5]));
+  for (const r of enlevees) stratPiece.delete(r.num);
+  if (!pieces.every((r) => r.pref === "P")) throw new Error("pièce sans numéro P : format inattendu");
+  // Une pièce coupée en quantité 2 ou 3 entre deux modules (même numéro P) : un seul enregistrement.
+  const parNum = new Map();
+  for (const r of pieces) {
+    if (parNum.has(r.num)) parNum.get(r.num).p1[5] = String(parseInt(parNum.get(r.num).p1[5], 10) + parseInt(r.p1[5], 10));
+    else parNum.set(r.num, { ...r, p1: [...r.p1] });
+  }
+  pieces = [...parNum.values()];
+  const ancienGroupe = new Map();
+  for (const r of pieces) if (r.p1[10] === "2") ancienGroupe.set(r.num, r.p2[18].split(":")[0]);
+  const epaisseur = new Map();
+  const fil = new Map();
+  for (const r of recs) {
+    if (r.face !== "TC") {
+      epaisseur.set(r.p1[2], r.p2[50]);
+      fil.set(r.p1[2], r.p1[8]);
+    }
+  }
+  let prochainId = Math.max(...recs.map((r) => parseInt(r.p1[12], 10))) + 1;
+  let prochainC = Math.max(...recs.map((r) => r.num)) + 1;
+  const nouvelId = () => String(prochainId++);
+
+  const ban = pieces.filter((r) => r.p2[25] === "ban");
+  const cc = pieces.filter((r) => r.p2[25] === "C");
+  const autres = pieces.filter((r) => r.p2[25] !== "ban" && r.p2[25] !== "C");
+  if (!autres.every((r) => r.p1[10] === "0")) throw new Error("une pièce sans modèle est dans une bande ou un module");
+  const faces = (r) => [["TF", r.p2[16]], ["TB", r.p2[17]]].filter(([, col]) => col).map(([f]) => f);
+
+  // ---------- bandes : règle des 6 cm ----------
+  const longU = (L) => L + AJOUT_PAR_PIECE;
+  const nombreBandes = (longueurs) => {
+    const bandes = [];
+    for (const L of [...longueurs].sort((a, b) => b - a)) {
+      const b = bandes.find((x) => x[0] < PIECES_PAR_BANDE && x[1] + longU(L) <= LONGUEUR_BANDE);
+      if (b) {
+        b[0]++;
+        b[1] += longU(L);
+      } else bandes.push([1, longU(L)]);
+    }
+    return bandes.length;
+  };
+  function harmoniser(ps) {
+    const ordre = trierPar(ps.map((_, k) => k), (k) => [ps[k].w, k]);
+    const n = ordre.length;
+    const unites = (p) => Array(p.q).fill(p.L);
+    const seules = (liste) => {
+      const parW = new Map();
+      for (const p of liste) parW.set(p.w, [...(parW.get(p.w) || []), ...unites(p)]);
+      return [...parW.values()].reduce((t, v) => t + nombreBandes(v), 0);
+    };
+    const commune = (membres) => {
+      const mx = membres[membres.length - 1].w;
+      const mn = membres[0].w;
+      let choix = null;
+      for (const w of [...new Set(membres.map((p) => p.w))]) {
+        if (w < mx - TOLERANCE_SURCOTE || w - mn > ECART_BANDE) continue;
+        if (membres.some((p) => p.max !== null && w > p.max && w !== p.w)) continue;
+        const modif = membres.filter((p) => p.w !== w).length;
+        const ajout = membres.reduce((t, p) => t + Math.max(0, w - p.w) * p.q, 0);
+        if (!choix || comparerTuples([modif, ajout], [choix[1], choix[2]]) < 0) choix = [w, modif, ajout];
+      }
+      return choix;
+    };
+    const classe = (a, b) => {
+      const toutes = ordre.slice(a, b).map((k) => ps[k]);
+      let membres = toutes;
+      let ch;
+      for (;;) {
+        ch = commune(membres);
+        if (!ch) return null;
+        const w = ch[0];
+        const gardes = membres.filter((p) => p.w === w || membres.some((q) => q !== p && longU(p.L) + longU(q.L) <= LONGUEUR_BANDE));
+        if (gardes.length === membres.length) break;
+        membres = gardes;
+      }
+      const exclues = toutes.filter((p) => !membres.includes(p));
+      const cible = new Map(membres.map((p) => [p, ch[0]]));
+      return [nombreBandes(membres.flatMap(unites)) + seules(exclues), ch[1], ch[2], cible];
+    };
+    const meilleur = [[0, 0, 0, -1, null]];
+    for (let j = 1; j <= n; j++) {
+      let m = null;
+      for (let i = j - 1; i >= 0; i--) {
+        if (ps[ordre[j - 1]].w - ps[ordre[i]].w > ECART_BANDE + TOLERANCE_SURCOTE) break;
+        const c = classe(i, j);
+        if (!c) continue;
+        const cand = [meilleur[i][0] + c[0], meilleur[i][1] + c[1], meilleur[i][2] + c[2], i, c[3]];
+        if (!m || comparerTuples(cand.slice(0, 3), m.slice(0, 3)) < 0) m = cand;
+      }
+      meilleur.push(m);
+    }
+    const cible = new Map(ps.map((p) => [p, p.w]));
+    for (let j = n; j > 0; j = meilleur[j][3]) for (const [p, w] of meilleur[j][4]) cible.set(p, w);
+    return cible;
+  }
+
+  const groupesBan = new Map();
+  for (const r of ban) {
+    const d = debitListe(r) || [num(r.p1[3]), num(r.p1[4])];
+    const fini = num(r.p2[36]);
+    const cle = `${r.p1[2]}\u0001${r.p2[16]}\u0001${r.p2[17]}`;
+    if (!groupesBan.has(cle)) groupesBan.set(cle, []);
+    groupesBan.get(cle).push({ r, L: d[0], w: d[1], q: parseInt(r.p1[5], 10), max: fini === null ? null : fini + SURCOTE_MAX });
+  }
+  const bandes = []; // [agglo, largeur, items]
+  const seulesBan = [];
+  for (const [cle, ps] of groupesBan) {
+    const agglo = cle.split("\u0001")[0];
+    const m = /^SAG(\d+)/.exec(agglo);
+    const cible = m && parseInt(m[1], 10) >= 28 ? harmoniser(ps) : new Map(ps.map((p) => [p, p.w]));
+    const parW = new Map();
+    for (const p of ps) parW.set(cible.get(p), [...(parW.get(cible.get(p)) || []), p]);
+    for (const [w, items] of parW) {
+      const bs = [];
+      for (const p of trierPar(items, (p) => -p.q * longU(p.L))) {
+        const b = bs.find((x) => x.n + p.q <= PIECES_PAR_BANDE && x.t + p.q * longU(p.L) <= LONGUEUR_BANDE);
+        if (b) {
+          b.n += p.q;
+          b.t += p.q * longU(p.L);
+          b.items.push(p);
+        } else bs.push({ n: p.q, t: p.q * longU(p.L), items: [p] });
+      }
+      for (const b of bs) {
+        if (b.n >= 2) bandes.push([agglo, w, b.items]);
+        else seulesBan.push(...b.items);
+      }
+    }
+  }
+
+  // ---------- modules : rangement serré ----------
+  function ranger(unites, lcap, ordre, wcap = WMAX) {
+    const bm = [];
+    for (const u of trierPar(unites, ordre)) {
+      const [L, W] = u;
+      let best = null;
+      for (const b of bm) {
+        for (const s of b.tr) {
+          if (L <= s.l && s.u + TRAIT + W <= b.w) {
+            const perte = (s.l - L) * W;
+            if (!best || perte < best[0]) best = [perte, "pile", b, s];
+          }
+        }
+        if (b.ul + TRAIT + L <= lcap && W <= b.w) {
+          const perte = (b.w - W) * L;
+          if (!best || perte < best[0]) best = [perte, "troncon", b, null];
+        }
+      }
+      if (!best) {
+        const tot = bm.reduce((t, b) => t + b.w, 0) + TRAIT * bm.length;
+        if (L > lcap || tot + W > wcap) return null;
+        bm.push({ w: W, ul: L, tr: [{ l: L, u: W, items: [u] }] });
+      } else if (best[1] === "pile") {
+        best[3].u += TRAIT + W;
+        best[3].items.push(u);
+      } else {
+        best[2].ul += TRAIT + L;
+        best[2].tr.push({ l: L, u: W, items: [u] });
+      }
+    }
+    return [Math.max(...bm.map((b) => b.ul)), bm.reduce((t, b) => t + b.w, 0) + TRAIT * (bm.length - 1), bm];
+  }
+  const ORDRES = [(u) => [-u[1], -u[0]], (u) => [-u[0], -u[1]], (u) => [-u[0] * u[1]]];
+  const plage = (de, a, pas, fin) => {
+    const v = new Set([fin]);
+    for (let x = de; x <= a; x += pas) v.add(x);
+    return [...v].sort((x, y) => x - y);
+  };
+  const cacheSerrer = new Map();
+  function serrer(unites) {
+    const cle = unites.map((u) => `${u[0]}x${u[1]}#${u[2]}`).join(";");
+    if (cacheSerrer.has(cle)) return cacheSerrer.get(cle);
+    let best = null;
+    const lmin = Math.trunc(Math.max(...unites.map((u) => u[0])));
+    for (const o of ORDRES)
+      for (const cap of plage(lmin, LMAX, 50, LMAX)) {
+        const res = ranger(unites, cap, o);
+        if (res && (!best || res[0] * res[1] < best[0] * best[1] - 1e-6)) best = [...res, "long"];
+      }
+    // d'abord en travers : pièces tournées de 90° dans un module tourné
+    const ut = unites.map((u) => [u[1], u[0], u[2]]);
+    const wmin = Math.trunc(Math.max(...ut.map((u) => u[0])));
+    for (const o of ORDRES)
+      for (const cap of plage(wmin, WMAX, 25, WMAX)) {
+        const res = ranger(ut, cap, o, LMAX);
+        if (res && (!best || res[0] * res[1] < best[0] * best[1] - 1e-6)) best = [res[1], res[0], res[2], "travers"];
+      }
+    cacheSerrer.set(cle, best);
+    return best;
+  }
+  const coutModule = (Lx, Wx, nf) => Lx * Wx + nf * (Lx + STRAT_EN_PLUS) * (Wx + STRAT_EN_PLUS);
+  const unitesDe = (rs) =>
+    rs.flatMap((r) => {
+      const d = debitListe(r);
+      if (!d) throw new Error(`pas de cote de débit pour ${r.p2[5]}`);
+      return Array(parseInt(r.p1[5], 10)).fill([d[0], d[1], r.num]);
+    });
+  const coutSeule = (r, nf) => {
+    const d = debitListe(r);
+    return parseInt(r.p1[5], 10) * (d[0] * d[1] + nf * (d[0] + STRAT_EN_PLUS) * (d[1] + STRAT_EN_PLUS));
+  };
+  const solutionCout = (sol, nf) => sol.reduce((t, m) => t + (m[0].length > 1 || parseInt(m[0][0].p1[5], 10) > 1 ? coutModule(m[1][0], m[1][1], nf) : coutSeule(m[0][0], nf)), 0);
+
+  const groupesC = new Map();
+  for (const r of cc) {
+    const cle = `${r.p1[2]}\u0001${r.p2[16]}\u0001${r.p2[17]}`;
+    if (!groupesC.has(cle)) groupesC.set(cle, []);
+    groupesC.get(cle).push(r);
+  }
+  const modules = []; // [agglo, records, rangement]
+  const seulesC = [];
+  for (const [cle, tous] of groupesC) {
+    const nf = faces(tous[0]).length;
+    const trop = tous.filter((r) => serrer(unitesDe([r])) === null);
+    seulesC.push(...trop);
+    const rs = tous.filter((r) => !trop.includes(r));
+    if (!rs.length) continue;
+    const obligatoires = rs.filter((r) => ancienGroupe.has(r.num)); // déjà en module chez Cut Rite : restent en module
+    const libres = rs.filter((r) => !ancienGroupe.has(r.num)); // seules chez Cut Rite : en module seulement si on gagne
+    const taille = (r) => -parseInt(r.p1[5], 10) * debitListe(r)[0] * debitListe(r)[1];
+    const fusionner = (depart) => {
+      const sol = [...depart];
+      let change = true;
+      while (change) {
+        change = false;
+        for (let a = 0; a < sol.length && !change; a++) {
+          for (let b = a + 1; b < sol.length; b++) {
+            const nl = serrer(unitesDe([...sol[a][0], ...sol[b][0]]));
+            if (!nl) continue;
+            if (coutModule(nl[0], nl[1], nf) < solutionCout([sol[a], sol[b]], nf) - 1) {
+              sol[a] = [[...sol[a][0], ...sol[b][0]], nl];
+              sol.splice(b, 1);
+              change = true;
+              break;
+            }
+          }
+        }
+      }
+      return sol;
+    };
+    const ajouterLibres = (depart) => {
+      const sol = [...depart];
+      const reste = [];
+      for (const r of trierPar(libres, taille)) {
+        let best = null;
+        sol.forEach(([g, lay], k) => {
+          const nl = serrer(unitesDe([...g, r]));
+          if (nl) {
+            const delta = coutModule(nl[0], nl[1], nf) - solutionCout([[g, lay]], nf);
+            if (!best || delta < best[0]) best = [delta, k, nl];
+          }
+        });
+        if (best && best[0] < coutSeule(r, nf) - 1) sol[best[1]] = [[...sol[best[1]][0], r], best[2]];
+        else reste.push([[r], serrer(unitesDe([r]))]);
+      }
+      return fusionner([...sol, ...reste]);
+    };
+    const regrouper = (liste) => {
+      const sol = [];
+      for (const r of trierPar(liste, taille)) {
+        let best = null;
+        sol.forEach(([g, lay], k) => {
+          const nl = serrer(unitesDe([...g, r]));
+          if (nl) {
+            const delta = coutModule(nl[0], nl[1], nf) - coutModule(lay[0], lay[1], nf);
+            if (!best || delta < best[0]) best = [delta, k, nl];
+          }
+        });
+        if (best) sol[best[1]] = [[...sol[best[1]][0], r], best[2]];
+        else sol.push([[r], serrer(unitesDe([r]))]);
+      }
+      return sol;
+    };
+    // 1) modules de Cut Rite (mêmes pièces), resserrés ; 2) modules refaits ; on garde le moins cher
+    const orig = new Map();
+    for (const r of obligatoires) orig.set(ancienGroupe.get(r.num), [...(orig.get(ancienGroupe.get(r.num)) || []), r]);
+    let solO = [];
+    for (const g of orig.values()) {
+      const lay = serrer(unitesDe(g));
+      solO.push(...(lay ? [[g, lay]] : regrouper(g)));
+    }
+    let solN = regrouper(obligatoires);
+    solO = ajouterLibres(fusionner(solO));
+    solN = ajouterLibres(fusionner(solN));
+    const sol = solutionCout(solN, nf) < solutionCout(solO, nf) ? solN : solO;
+    for (const [g, lay] of sol) {
+      if (g.length === 1 && parseInt(g[0].p1[5], 10) === 1) seulesC.push(g[0]);
+      else modules.push([cle.split("\u0001")[0], g, lay]);
+    }
+  }
+
+  // ---------- écriture des enregistrements ----------
+  const sortie = []; // [ordre, p1, p2, p3]
+  const noyauP2 = (membresP2, n, modele) => {
+    const N = Math.max(...membresP2.map((y) => y.length));
+    const p2 = [];
+    for (let k = 0; k < N; k++) {
+      const vals = new Set(membresP2.map((y) => (k < y.length ? y[k] : "")));
+      p2.push(vals.size === 1 ? [...vals][0] : "");
+    }
+    for (const k of [11, 12, 13, 14]) p2[k] = "";
+    p2[18] = `T${n}:0:1`;
+    p2[28] = "1";
+    if (modele === "ban") p2[26] = "";
+    while (p2.length > 51 && p2[p2.length - 1] === "") p2.pop();
+    return p2;
+  };
+  const stratNoyau = (n, c, p1n, p2n, ordre) => {
+    const out = [];
+    for (const [face, col] of [["TF", p2n[16]], ["TB", p2n[17]]]) {
+      if (!col) continue;
+      const q2 = [...p2n];
+      q2[8] = q2[10] = q2[18] = "";
+      q2[50] = epaisseur.get(col);
+      const q1 = ["PNL1", `LT${n}/1`, col, fmt(parseFloat(p1n[3]) + STRAT_EN_PLUS), fmt(parseFloat(p1n[4]) + STRAT_EN_PLUS), p1n[5], "0", "0", fil.get(col), "0000", "0", "0", nouvelId()];
+      out.push([ordre, q1, q2, `PNL3,C${c}:${face}:N${NOM_ORIG}_${col},0,,0,0,0,",37,59,"`]);
+    }
+    return out;
+  };
+  const stratPieceRecs = (r, ordre) => {
+    const out = [];
+    for (const [face, col] of [["TF", r.p2[16]], ["TB", r.p2[17]]]) {
+      if (!col) continue;
+      const q2 = [...r.p2];
+      for (const k of [8, 10, 11, 12, 13, 14]) q2[k] = "";
+      q2[50] = epaisseur.get(col);
+      const q1 = ["PNL1", `L${String(r.num).padStart(4, "0")}`, col, fmt(parseFloat(r.p1[3]) + STRAT_EN_PLUS), fmt(parseFloat(r.p1[4]) + STRAT_EN_PLUS), r.p1[5], "0", "0", fil.get(col), "0000", "0", "0", nouvelId()];
+      out.push([ordre, q1, q2, r.p3.replace(/:TC:N[^,]+,/g, `:${face}:N${NOM_ORIG}_${col},`)]);
+    }
+    return out;
+  };
+  const finP3 = (p3, fin) => p3.replace(/,0,,0,0,0,".*"$/, `,0,,0,0,0,"${fin}"`);
+  const pieceSeule = (r) => {
+    const p1 = [...r.p1];
+    const p2 = [...r.p2];
+    const d = debitListe(r);
+    if (r.p1[10] === "0" && (d === null || (parseFloat(p1[3]) === d[0] && parseFloat(p1[4]) === d[1]))) {
+      sortie.push([r.ordre, p1, p2, r.p3]);
+      for (const s of stratPiece.get(r.num) || []) sortie.push([s.ordre, s.p1, s.p2, s.p3]);
+      return;
+    }
+    p1[3] = fmt(d[0]);
+    p1[4] = fmt(d[1]);
+    p1[10] = "0";
+    p2[18] = "";
+    if (p2[25] === "ban") p2[26] = "";
+    const p3 = finP3(r.p3, ",59,");
+    sortie.push([r.ordre, p1, p2, p3]);
+    sortie.push(...stratPieceRecs({ ...r, p1, p2, p3 }, r.ordre));
+  };
+
+  for (const r of autres) pieceSeule(r);
+  let nT = 0;
+  const elargies = [];
+  for (const [agglo, w, items] of bandes) {
+    nT++;
+    const c = prochainC++;
+    const membres = [];
+    let k = 0;
+    for (const p of trierPar(items, (p) => -p.L)) {
+      const r = p.r;
+      const p1 = [...r.p1];
+      const p2 = [...r.p2];
+      p1[3] = fmt(p.L);
+      p1[4] = fmt(w);
+      p1[8] = "0";
+      p1[10] = "2";
+      const pos = Array.from({ length: p.q }, (_, j) => k + j + 1).join(" ");
+      k += p.q;
+      p2[18] = `T${nT}:${pos}:1`;
+      p2[26] = "1";
+      membres.push([r.ordre, p1, p2, finP3(r.p3, ",35,59,")]);
+      if (w > p.w) elargies.push({ cle: r.p2[5], avant: p.w, apres: w, L: p.L, q: p.q });
+    }
+    const long = items.reduce((t, p) => t + p.q * longU(p.L), 0);
+    if (long > LONGUEUR_BANDE) throw new Error("bande trop longue");
+    const p2n = noyauP2(membres.map((m) => m[2]), nT, "ban");
+    const o = Math.min(...membres.map((m) => m[0]));
+    const p1n = ["PNL1", `T${nT}/1`, agglo, fmt(long), fmt(w), "1", "0", "0", "0", "0000", "1", "0", nouvelId()];
+    sortie.push([o, p1n, p2n, `PNL3,C${c}:TC:N${NOM_ORIG}_${agglo},0,,0,0,0,",37,59,"`]);
+    sortie.push(...stratNoyau(nT, c, p1n, p2n, o));
+    sortie.push(...membres);
+  }
+  for (const p of seulesBan) pieceSeule(p.r);
+  const infosModules = [];
+  for (const [agglo, g, lay] of modules) {
+    nT++;
+    const c = prochainC++;
+    const [Lx, Wx, rangement, sens] = lay;
+    const Lm = Math.ceil(Lx);
+    const Wm = Math.ceil(Wx);
+    if (Lm > LMAX || Wm > WMAX) throw new Error("module trop grand");
+    const pos = new Map();
+    let k = 0;
+    for (const b of rangement) for (const s of b.tr) for (const u of s.items) pos.set(u[2], [...(pos.get(u[2]) || []), ++k]);
+    const membres = [];
+    for (const r of g) {
+      const p1 = [...r.p1];
+      const p2 = [...r.p2];
+      p1[3] = fmt(num(p2[35]));
+      p1[4] = fmt(num(p2[36]));
+      p1[8] = "0";
+      p1[10] = "2";
+      if ((pos.get(r.num) || []).length !== parseInt(p1[5], 10)) throw new Error(`pièce ${r.p2[5]} mal rangée dans son module`);
+      p2[18] = `T${nT}:${pos.get(r.num).join(" ")}:1`;
+      p2[26] = "";
+      membres.push([r.ordre, p1, p2, finP3(r.p3, ",3,4,59,")]);
+    }
+    const p2n = noyauP2(membres.map((m) => m[2]), nT, "C");
+    const o = Math.min(...membres.map((m) => m[0]));
+    const p1n = ["PNL1", `T${nT}/1`, agglo, fmt(Lm), fmt(Wm), "1", "0", "0", "1", "0000", "1", "0", nouvelId()];
+    sortie.push([o, p1n, p2n, `PNL3,C${c}:TC:N${NOM_ORIG}_${agglo},0,,0,0,0,",37,59,"`]);
+    sortie.push(...stratNoyau(nT, c, p1n, p2n, o));
+    sortie.push(...membres);
+    // Plan du module (pour l'écran et le rapport).
+    const placees = [];
+    let y = 0;
+    for (const b of rangement) {
+      let x = 0;
+      for (const s of b.tr) {
+        let yy = y;
+        for (const u of s.items) {
+          placees.push([x, yy, u[0], u[1], u[2]]);
+          yy += u[1] + TRAIT;
+        }
+        x += s.l + TRAIT;
+      }
+      y += b.w + TRAIT;
+    }
+    const cles = new Map(g.map((r) => [r.num, r.p2[5]]));
+    infosModules.push({
+      nom: `T${nT}`,
+      agglo,
+      dessus: g[0].p2[16],
+      dessous: g[0].p2[17],
+      L: Lm,
+      W: Wm,
+      pieces: placees.map(([px, py, pl, pw, t]) => (sens === "travers" ? { x: py, y: px, L: pw, W: pl, cle: cles.get(t) } : { x: px, y: py, L: pl, W: pw, cle: cles.get(t) })),
+    });
+  }
+  for (const r of seulesC) pieceSeule(r);
+
+  // ordre : par matière comme dans l'original, puis ordre d'origine
+  const ordreMat = new Map();
+  for (const r of recs) if (!ordreMat.has(r.p1[2])) ordreMat.set(r.p1[2], ordreMat.size);
+  sortie.sort((a, b) => (ordreMat.get(a[1][2]) ?? 999) - (ordreMat.get(b[1][2]) ?? 999) || a[0] - b[0] || comparerTexte(a[1][1], b[1][1]));
+  const out = entete.map((l) => {
+    if (!l.startsWith("PNLHDR2,")) return l;
+    const ch = l.split(",");
+    ch[ch.length - 1] = String(prochainId - 1);
+    return ch.join(",");
+  });
+  for (const [, p1, p2, p3] of sortie) out.push(p1.join(","), p2.join(","), p3);
+  const resultat = `${out.join("\r\n")}\r\n`.split(NOM_ORIG).join(nom);
+
+  // ---------- contrôles : mêmes pièces, tailles, groupes, identifiants ----------
+  const avant = new Map();
+  for (const r of pieces) avant.set(r.p2[5], (avant.get(r.p2[5]) || 0) + parseInt(r.p1[5], 10));
+  const relu = lireCttListe(resultat).recs;
+  const apres = new Map();
+  const noyaux = new Set();
+  for (const r of relu) {
+    if (r.face === "TC" && (r.p1[10] === "0" || r.p1[10] === "2")) apres.set(r.p2[5], (apres.get(r.p2[5]) || 0) + parseInt(r.p1[5], 10));
+    if (r.face === "TC" && r.p1[10] === "1") {
+      noyaux.add(r.p1[1].split("/")[0]);
+      if (parseFloat(r.p1[3]) > LMAX || parseFloat(r.p1[4]) > WMAX) throw new Error(`noyau trop grand : ${r.p1[1]}`);
+    }
+    if (r.face !== "TC" && r.p1[1].startsWith("LT") && (parseFloat(r.p1[3]) > LMAX + STRAT_EN_PLUS || parseFloat(r.p1[4]) > WMAX + STRAT_EN_PLUS)) throw new Error(`stratifié trop grand : ${r.p1[1]}`);
+  }
+  if (avant.size !== apres.size || [...avant].some(([k, v]) => apres.get(k) !== v)) throw new Error("pièces perdues ou en double : liste non écrite");
+  for (const r of relu) if (r.p1[10] === "2" && !noyaux.has(r.p2[18].split(":")[0])) throw new Error(`pièce ${r.p2[5]} dans un groupe inexistant`);
+  const ids = relu.map((r) => r.p1[12]);
+  if (new Set(ids).size !== ids.length) throw new Error("identifiant en double");
+  for (const k of retirees) if (resultat.includes(k)) throw new Error(`pièce retirée encore présente : ${k}`);
+  return { texte: resultat, nomOrigine: NOM_ORIG, modules: infosModules, elargies, retirees: enlevees.map((r) => r.p2[5]) };
+}
+
+// Mesures d'une liste de coupe : bandes, modules, surfaces d'agglo et de stratifié à débiter, cohérence.
+function mesurerListe(texte, retirees = new Set()) {
+  let R = lireCttListe(texte).recs;
+  if (retirees.size) {
+    const nums = new Set(R.filter((r) => r.face === "TC" && retirees.has(r.p2[5])).map((r) => r.num));
+    R = R.filter((r) => !(r.pref === "P" && nums.has(r.num)));
+  }
+  const A = (r) => (parseFloat(r.p1[3]) * parseFloat(r.p1[4]) * parseInt(r.p1[5], 10)) / 1e6;
+  const deb = (r) => debitListe(r) || [parseFloat(r.p1[3]), parseFloat(r.p1[4])];
+  const tc = R.filter((r) => r.face === "TC");
+  const pieces = tc.filter((r) => r.p1[10] === "0" || r.p1[10] === "2");
+  const noyaux = new Map(tc.filter((r) => r.p1[10] === "1").map((r) => [r.p1[1].split("/")[0], r]));
+  const membres = new Map();
+  for (const r of pieces) if (r.p1[10] === "2") membres.set(r.p2[18].split(":")[0], [...(membres.get(r.p2[18].split(":")[0]) || []), r]);
+  const strat = R.filter((r) => r.face !== "TC");
+  const m = { pieces: pieces.reduce((t, r) => t + parseInt(r.p1[5], 10), 0) };
+  for (const [modele, nom] of [["ban", "bandes"], ["C", "modules"]]) {
+    const ns = [...noyaux].filter(([, r]) => r.p2[25] === modele).map(([n]) => n);
+    m[nom] = ns.length;
+    m[`piecesEn_${nom}`] = ns.reduce((t, n) => t + (membres.get(n) || []).reduce((s, p) => s + parseInt(p.p1[5], 10), 0), 0);
+    m[`surface_${nom}`] = ns.reduce((t, n) => t + A(noyaux.get(n)), 0);
+  }
+  const pmod = [...noyaux].filter(([, r]) => r.p2[25] === "C").reduce((t, [n]) => t + (membres.get(n) || []).reduce((s, p) => s + deb(p)[0] * deb(p)[1] * parseInt(p.p1[5], 10), 0), 0) / 1e6;
+  m.trousModules = m.surface_modules - pmod;
+  m.remplissage = m.surface_modules ? (100 * pmod) / m.surface_modules : 0;
+  const el = [...noyaux].filter(([, r]) => r.p2[25] === "ban").flatMap(([n]) => membres.get(n) || []).filter((p) => parseFloat(p.p1[4]) > deb(p)[1] + 0.01);
+  m.elargies = el.length;
+  m.surfaceElargie = el.reduce((t, p) => t + (parseFloat(p.p1[4]) - deb(p)[1]) * deb(p)[0] * parseInt(p.p1[5], 10), 0) / 1e6;
+  const agglo = tc.filter((r) => r.p1[10] === "0" || r.p1[10] === "1");
+  m.agglo = agglo.reduce((t, r) => t + A(r), 0);
+  m.stratifie = strat.reduce((t, r) => t + A(r), 0);
+  m.cles = new Set(pieces.map((r) => r.p2[5]));
+  return m;
+}
+
 
 // ============================================================
 // Écran (même organisation que l'appli Android V3.4) : deux onglets
@@ -7616,7 +8251,7 @@ let prochainNumeroChantier = 1;
 const paires = [];
 let onglet = "accueil";
 // Onglet d'une semaine (et non Accueil, Recherche, Bibliothèque ou Réécriture).
-const estOngletSemaine = (o = onglet) => o === "paire" || o === "impaire";
+const estOngletSemaine = (o = onglet) => ONGLETS_SEMAINE.includes(o);
 
 function nouvellePaire(poste, label, parite) {
   const p = {
@@ -7669,10 +8304,10 @@ function titrePaire(p) {
   return p.semaine ? `${p.label} (sem ${p.semaine})` : p.label;
 }
 
-// Parité d'un numéro de semaine (« 45 » → impaire), null s'il n'y en a pas.
+// Onglet d'un numéro de semaine (« 45 » → impaire, « 47 » → impaire2), null s'il n'y en a pas.
 function pariteDuNumero(semaine) {
   const n = parseInt(semaine, 10);
-  return Number.isNaN(n) ? null : n % 2 === 0 ? "paire" : "impaire";
+  return Number.isNaN(n) ? null : ongletDuNumero(n);
 }
 
 // Un chantier va dans l'onglet de sa vraie semaine (celle du lancement écrite
@@ -7799,7 +8434,8 @@ async function sauvegarderDansMemoire(p, champs) {
       req.onsuccess = () => resolve(req.result || { cleMemoire: cle });
       req.onerror = () => resolve({ cleMemoire: cle });
     });
-    magasin.put({ ...existant, ...champs, cleMemoire: cle });
+    // quatreSemaines : fiche écrite par une version à quatre semaines (pas à ranger au démarrage).
+    magasin.put({ ...existant, ...champs, cleMemoire: cle, quatreSemaines: 1 });
     await finTransaction(tx);
   } catch (_erreur) {
     // Mémorisation indisponible : sans effet sur le fonctionnement normal.
@@ -7959,6 +8595,7 @@ function restaurer(p, rec) {
   p.erreurScies = rec.erreurScies || null;
   p.couleurs = rec.couleurs || null;
   p.plans = rec.plans || null;
+  p.quatreSemaines = Boolean(rec.quatreSemaines);
 }
 
 async function initialiserPaires() {
@@ -7966,8 +8603,8 @@ async function initialiserPaires() {
   rangerFichiersMemorises(memoires);
   const parCle = new Map(memoires.map((r) => [r.cleMemoire, r]));
   for (const poste of [...POSTES_SEMAINE, ...POSTES_DIAKONOS]) {
-    for (const parite of ["paire", "impaire"]) {
-      const p = nouvellePaire(poste, parite === "paire" ? "Semaine paire" : "Semaine impaire", parite);
+    for (const parite of ONGLETS_SEMAINE) {
+      const p = nouvellePaire(poste, LIBELLES_ONGLETS_SEMAINE[parite], parite);
       const rec = parCle.get(cleMemoire(p));
       if (rec) restaurer(p, rec);
     }
@@ -7994,6 +8631,46 @@ async function initialiserPaires() {
     if (ranger(p)) sauvegarderDansMemoire(p, { semaineParite: p.parite });
   }
   if (!paires.some(estChantier)) ajouterChantier("paire");
+}
+
+// Versions à deux semaines : une semaine gardée dans l'onglet « paire » ou « impaire » qui n'est plus le sien
+// (47 va maintenant dans « impaire2 ») y est déplacée, avec ses fichiers, ses résultats et son dossier.
+const CHAMPS_CASE = ["strat", "coupe", "bkp", "sommaire", "diakonos", "codeLancement", "dossier", "semaineDossier", "semaine", "rapport", "doublons", "semainesLivraison",
+  "nbUnitaires", "nbPiecesTrouvees", "source", "ecartsScies", "totalScies", "erreurScies", "couleurs", "plans"];
+
+async function rangerSemainesMemorisees() {
+  for (const ancien of ["paire", "impaire"]) {
+    const cases = paires.filter((p) => p.parite === ancien && !p.quatreSemaines);
+    const nombre = new Map();
+    for (const p of cases) {
+      const n = parseInt(p.semaineDossier || p.semaine, 10);
+      if (p.strat && !Number.isNaN(n)) nombre.set(n, (nombre.get(n) || 0) + 1);
+    }
+    if (!nombre.size) continue;
+    const semaine = [...nombre].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
+    const nouveau = ongletDuNumero(semaine);
+    if (nouveau === ancien) continue;
+    for (const p of cases) {
+      if (caseAjoutee(p)) {
+        p.parite = nouveau;
+        await sauvegarderDansMemoire(p, { semaineParite: nouveau });
+        continue;
+      }
+      const cible = paires.find((q) => !caseAjoutee(q) && q.poste === p.poste && q.parite === nouveau);
+      if (!cible || cible.strat || !(p.strat || p.diakonos)) continue;
+      for (const champ of CHAMPS_CASE) cible[champ] = p[champ];
+      viderPaire(p);
+      p.codeLancement = null;
+      for (const role of Object.keys(CHAMP_FICHIER)) if (cible[role]) await memoriserFichier(cible, role, cible[role]);
+      await sauvegarderDansMemoire(cible, resultatsAMemoriser(cible));
+      await effacerMemoire(p);
+    }
+    if (dossierPartageHandles[ancien] && !dossierPartageHandles[nouveau]) {
+      dossierPartageHandles[nouveau] = dossierPartageHandles[ancien];
+      dossierPartageHandles[ancien] = null;
+      if (!androidDossierPartageDisponible()) sauvegarderPoigneeDossierPartage(dossierPartageHandles[nouveau], nouveau);
+    }
+  }
 }
 
 function ajouterChantier(parite) {
@@ -8205,18 +8882,22 @@ function afficher() {
   $("pageBibliotheque").classList.toggle("inactif", onglet !== "bibliotheque");
   $("pageReecriture").classList.toggle("inactif", onglet !== "reecriture");
   $("pagePlans").classList.toggle("inactif", onglet !== "plans");
+  $("pageListeOpt").classList.toggle("inactif", onglet !== "liste-opt");
+  $("pageWoodstore").classList.toggle("inactif", onglet !== "woodstore");
   majMenuDossier();
   if (estOngletSemaine()) construireSemaine(onglet);
   else if (onglet === "accueil") afficherAccueil();
   else if (onglet === "bibliotheque") afficherBibliotheque();
   else if (onglet === "reecriture") afficherReecriture();
   else if (onglet === "plans") afficherOutilPlans();
+  else if (onglet === "liste-opt") afficherListeOpt();
+  else if (onglet === "woodstore") afficherWoodstore();
 }
 
 function majOnglets() {
   let change = false;
-  document.querySelectorAll(".onglet-btn").forEach((b) => {
-    if (!estOngletSemaine(b.dataset.onglet)) return;
+  const boutons = [...document.querySelectorAll(".onglet-btn")].filter((b) => estOngletSemaine(b.dataset.onglet));
+  boutons.forEach((b) => {
     const libelle = libelleOnglet(b.dataset.onglet);
     const zone = b.querySelector(".libelle-onglet") || b;
     if (zone.textContent !== libelle) {
@@ -8224,6 +8905,12 @@ function majOnglets() {
       if (b.dataset.onglet === onglet) change = true;
     }
   });
+  // Les quatre semaines dans l'ordre du calendrier.
+  const tries = [...boutons].sort((a, b) => ordreCalendrier(numeroSemaine(a.dataset.onglet)) - ordreCalendrier(numeroSemaine(b.dataset.onglet)));
+  if (tries.some((b, i) => b !== boutons[i])) {
+    const apres = boutons[0].previousElementSibling;
+    tries.reverse().forEach((b) => apres.after(b));
+  }
   return change;
 }
 
@@ -8518,7 +9205,7 @@ function partiesCasse(r, base) {
 }
 
 function remplirCasse(zone, p) {
-  const autre = p.parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(p.parite);
   const autreSemaine = pairesDeLaSemaine(autre);
   const numeroAutre = numeroSemaine(autre);
   const cle = cleCasse(p, autreSemaine, numeroAutre);
@@ -8640,10 +9327,12 @@ function afficherScies(zone, p) {
 function htmlPlans(p) {
   const r = p.plans;
   if (!r) return "";
-  const reste = restantsDuControle(p, estControlePlans) ?? r.nonPlacees.length;
+  const n = nbHorsPlans(p);
+  const reste = restantsDuControle(p, estControlePlans) ?? n;
   const plans = `${fmtNombre(r.nbPlans)} plans, ${fmtNombre(r.nbModules)} modules`;
-  if (!r.nonPlacees.length) return bandeau(`✔ Plans de coupe : toutes les pièces sont placées (${plans})`, "ok");
-  if (!reste) return bandeau(`✔ Plans de coupe : ${r.nonPlacees.length} pièce(s) hors des plans, validée(s) OK (${plans})`, "ok");
+  if (!n) return bandeau(`✔ Plans de coupe : toutes les pièces sont placées (${plans})`, "ok");
+  if (!reste) return bandeau(`✔ Plans de coupe : ${n} pièce(s) hors des plans, validée(s) OK (${plans})`, "ok");
+  if (!r.nonPlacees.length) return bandeau(`⚠ Plans de coupe : les pièces du lancement sont placées ; ${reste} pièce(s) du .bkp hors lancement dans aucun plan, à vérifier (${plans})`, "attention");
   return bandeau(`⚠ Plans de coupe : ${reste} pièce(s) dans aucun plan — elles ne seront pas coupées (${plans})`, "alerte");
 }
 
@@ -8719,7 +9408,7 @@ async function calculerDiakonos(p, semaineOnglet, semaine, toutes) {
 }
 
 async function resultatsDiakonos(parite) {
-  const autre = parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(parite);
   const semaine = pairesDeLaSemaine(parite);
   const toutes = [...semaine, ...pairesDeLaSemaine(autre)];
   const numero = String(numeroSemaine(parite)).padStart(2, "0");
@@ -8736,7 +9425,7 @@ function majDiakonos() {
   if (!estOngletSemaine()) return;
   const parite = onglet;
   remplirDiakonos();
-  const autre = parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(parite);
   const dossiers = groupesDiakonosDeLaSemaine(parite).filter((g) => {
     const e = derniersDiakonosDossier.get(g.porteur.id);
     return !e || e.cle !== cleDiakonosDossier(g);
@@ -8937,7 +9626,7 @@ const diakonosDesCases = (p) => toursDiakonosDeLaCase(p).map((t) => paireFixe(PO
 
 // Une page par liste du sommaire (agglo, strats, couleurs), puis le Diakonos du tour ou, pour la casse, les pièces relancées et les rajouts.
 async function rapportLancement(p) {
-  const autre = p.parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(p.parite);
   const semaine = pairesDeLaSemaine(p.parite);
   const numero = String(numeroSemaine(p.parite)).padStart(2, "0");
   const parties = [];
@@ -9076,7 +9765,7 @@ function majRecap() {
   if (!zone || !estOngletSemaine()) return;
   const parite = onglet;
   const numero = ++zonesRecap.generation;
-  const autre = parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(parite);
   const lignes = lignesRecap(pairesDeLaSemaine(parite));
   const autres = lignesRecap(pairesDeLaSemaine(autre));
   zone.innerHTML = htmlRecap(lignes, autres, libelleOnglet(autre));
@@ -9105,7 +9794,7 @@ function celluleControle(p) {
 }
 
 // Colonne Scies : les écarts lancement / .bkp et les pièces hors des plans de coupe (même bouton Vérifier Scies).
-const nbHorsPlans = (p) => (p.plans ? p.plans.nonPlacees.length : 0);
+const nbHorsPlans = (p) => (p.plans ? p.plans.nonPlacees.length + (p.plans.horsLancement || []).length : 0);
 // Ce qui reste à traiter (les problèmes validés ne comptent plus) ; null si pas fait, -1 si erreur.
 function sciesRestants(p) {
   if (p.erreurScies) return -1;
@@ -9409,6 +10098,14 @@ async function lancerControleScies(p, fin) {
     p.couleurs = controlerCouleurs((await stratEnCache(p.strat)).lignes, await lireCouleursBkp(p.bkp));
     etape = "lecture des plans de coupe";
     p.plans = await controlerPlans(attendues, p.bkp, bkp);
+    // Une pièce de la liste du .bkp qui n'est ni dans le lancement ni dans aucun plan ne sera pas coupée :
+    // ce n'est pas une pièce « en trop », elle est signalée à part (retirée du lancement après l'import ?).
+    const placees = (await lirePlansBkp(p.bkp)).placees;
+    const horsLancement = p.ecartsScies.filter((e) => e.attendu === 0 && !(placees.get(e.cle) > 0));
+    if (horsLancement.length) {
+      p.ecartsScies = p.ecartsScies.filter((e) => !horsLancement.includes(e));
+      p.plans.horsLancement = horsLancement.map((e) => ({ cle: e.cle, qte: e.trouve }));
+    }
     p.erreurScies = null;
   } catch (erreur) {
     p.ecartsScies = null;
@@ -9492,7 +10189,7 @@ async function ouvrirSemaine(pariteActuelle, valeur) {
     compteRendu(pariteActuelle, ["Tapez un numéro de semaine entre 1 et 53."], true);
     return;
   }
-  const parite = n % 2 === 0 ? "paire" : "impaire";
+  const parite = ongletDuNumero(n);
   const libelle = `Semaine ${String(n).padStart(2, "0")}`;
   let racine = typeof reecriture !== "undefined" ? reecriture.racine : null;
   if (!racine) {
@@ -9554,10 +10251,17 @@ async function choisirDossier(parite) {
   }
   try {
     const handle = await window.showDirectoryPicker();
-    dossierPartageHandles[parite] = handle;
-    sauvegarderPoigneeDossierPartage(handle, parite);
-    etatsScan[parite] = null;
-    if (parite === onglet) remplirCarteDossier(parite);
+    // Un dossier « Semaine 46 » va dans l'onglet de la semaine 46, même choisi depuis un autre onglet.
+    const n = parseInt(semaineDuDossier(handle.name), 10);
+    const cible = Number.isNaN(n) ? parite : ongletDuNumero(n);
+    dossierPartageHandles[cible] = handle;
+    sauvegarderPoigneeDossierPartage(handle, cible);
+    etatsScan[cible] = null;
+    if (cible !== parite && estOngletSemaine(onglet)) {
+      onglet = cible;
+      afficher();
+      compteRendu(cible, [`« ${handle.name} » : dossier de la semaine ${n}, ouvert dans son onglet.`], false);
+    } else if (cible === onglet) remplirCarteDossier(cible);
   } catch (_annulation) {
     // Sélection annulée : rien à faire.
   }
@@ -9568,7 +10272,7 @@ async function choisirDossier(parite) {
 async function restaurerDossiersPartages() {
   if (!scanPartageDisponible()) return;
   if (androidDossierPartageDisponible()) {
-    for (const parite of ["paire", "impaire"]) {
+    for (const parite of ONGLETS_SEMAINE) {
       try {
         const brut = window.AndroidDossierPartage.dossierMemorise(parite);
         const memoire = brut && brut !== "null" ? JSON.parse(brut) : null;
@@ -9579,7 +10283,7 @@ async function restaurerDossiersPartages() {
     }
     return;
   }
-  for (const parite of ["paire", "impaire"]) {
+  for (const parite of ONGLETS_SEMAINE) {
     const handle = await chargerPoigneeDossierPartage(parite);
     if (handle) dossierPartageHandles[parite] = handle;
   }
@@ -10290,7 +10994,7 @@ async function lancementsDeLaSemaineRecherche(numero) {
     if (s.semaine !== numero) continue;
     for (const l of s.lancements) lancements.push({ annee: s.annee, semaine: s.semaine, nom: l.nom, poste: l.poste, pieces: l.pieces || [] });
   }
-  for (const parite of ["paire", "impaire"]) {
+  for (const parite of ONGLETS_SEMAINE) {
     if (Number(numeroSemaine(parite)) !== numero) continue;
     for (const p of pairesDeLaSemaine(parite)) {
       if (!p.strat || estDiakonos(p)) continue;
@@ -10383,6 +11087,7 @@ document.querySelectorAll("img[data-logo]").forEach((img) => (img.src = img.data
 (async () => {
   await initialiserPaires();
   await restaurerDossiersPartages();
+  await rangerSemainesMemorisees();
   await chargerBibliotheque();
   await chargerReecriture().catch(() => {});
   afficher();
@@ -10411,6 +11116,8 @@ const PROBLEMES = [
   ["Couleur absente du .bkp", "Aucun panneau de ce coloris dans l'optimisation (.bkp) : ces pièces ne sont pas optimisées.", "ajouter un panneau de ce coloris à l'optimisation."],
   ["Pas dans les plans de coupe", "Pièce prévue dans l'optimisation (.bkp), mais posée sur aucun panneau des plans de coupe : elle ne sera pas coupée.",
     "relancer l'optimisation Cut Rite (panneau manquant, pièce trop grande…), ou valider si c'est voulu."],
+  ["Dans le .bkp, dans aucun plan", "Pièce de la liste du .bkp qui n'est ni dans le fichier de lancement ni dans aucun plan de coupe : elle ne sera pas coupée (retirée du lancement après l'import ?).",
+    "vérifier qu'elle ne doit pas être fabriquée, ou valider si c'est voulu."],
   ["Ligne en double", "Deux lignes identiques dans le fichier de lancement : la pièce serait fabriquée deux fois.",
     "supprimer la ligne en trop (bouton « Créer le lancement sans doublons » de Sentinelle)."],
   ["Lancée deux fois", "La même pièce est aussi dans un autre lancement de la semaine : risque de la fabriquer deux fois.", "la retirer d'un des deux lancements."],
@@ -10533,10 +11240,15 @@ async function problemesDuLancement(p) {
   if (p.plans) {
     const r = p.plans;
     const plans = `${fmtNombre(r.nbPlans)} plans de panneaux et ${fmtNombre(r.nbModules)} modules`;
+    const hors = r.horsLancement || [];
+    const texteHors = hors.length ? ` ${hors.length} pièce(s) de la liste du .bkp, hors lancement, dans aucun plan : elles ne seront pas coupées.` : "";
+    for (const h of hors)
+      dehors({ cle: h.cle, gravite: GRAVITE.VERIFIER, type: "Dans le .bkp, dans aucun plan", quantite: fmtNombre(h.qte),
+        detail: "Dans la liste du .bkp, mais ni dans le fichier de lancement ni dans aucun plan de coupe : elle ne sera pas coupée", controle: ctrlPlans });
     if (!r.nonPlacees.length)
-      bilan.push({ statut: "ok", controle: ctrlPlans, texte: `Les ${fmtNombre(r.nbPieces)} pièces prévues par le .bkp sont placées dans les plans de coupe (${plans}).` });
+      bilan.push({ statut: hors.length ? "attention" : "ok", controle: ctrlPlans, texte: `Les ${fmtNombre(r.nbPieces)} pièces prévues par le .bkp sont placées dans les plans de coupe (${plans}).${texteHors}` });
     else {
-      bilan.push({ statut: "alerte", controle: ctrlPlans, texte: `${r.nonPlacees.length} pièce(s) du .bkp dans aucun plan de coupe : elles ne seront pas coupées (${plans}).` });
+      bilan.push({ statut: "alerte", controle: ctrlPlans, texte: `${r.nonPlacees.length} pièce(s) du .bkp dans aucun plan de coupe : elles ne seront pas coupées (${plans}).${texteHors}` });
       for (const n of r.nonPlacees)
         ajouter(n.cle, GRAVITE.CORRIGER, "Pas dans les plans de coupe", n.place
           ? `${fmtNombre(n.attendu)} pièce(s) prévue(s) dans le .bkp, ${fmtNombre(n.place)} seulement dans les plans de coupe`
@@ -10565,7 +11277,7 @@ async function problemesDuLancement(p) {
     : { statut: "ok", controle: "Lignes en double", texte: "Aucune ligne en double dans le fichier de lancement." });
 
   // Pièces aussi dans un autre lancement de la semaine.
-  const autre = p.parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(p.parite);
   const nomDe = (o) => `${titreCase(o)} (${o.strat.name})`;
   const clesDuLancement = (await resume(p.strat, p.bkp)).cles;
   const deuxFois = new Map(); // lancement → nombre de pièces en commun
@@ -11229,7 +11941,7 @@ async function rapportSemaineXlsx(parite, options = {}) {
     for (const s of p.semainesLivraison) if (s !== principale) nbLivraison += s.nbPieces;
   }
   if (nbLivraison) ligneBilan(`${nbLivraison} pièce(s) à livrer une autre semaine que leur lancement.`, "attention");
-  const autre = parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(parite);
   for (const l of lancements.filter((x) => x.p.poste === "Casse" && !x.erreur)) {
     const r = await calculerCasse(l.p, pairesDeLaSemaine(autre), numeroSemaine(autre));
     const debut = `Casse (${l.base}) : ${nombrePieces(l.prevues)} pièce(s)`;
@@ -11319,6 +12031,9 @@ function anneeDeSemaine(semaine, aujourdHui = new Date()) {
   const a = aujourdHui.getFullYear();
   return [a - 1, a, a + 1].reduce((m, c) => (Math.abs(lundiSemaineIso(c, semaine) - aujourdHui) < Math.abs(lundiSemaineIso(m, semaine) - aujourdHui) ? c : m), a);
 }
+
+// Pour ranger les semaines dans l'ordre du calendrier (la semaine 1 vient après la 52).
+const ordreCalendrier = (n) => anneeDeSemaine(Number(n)) * 100 + Number(n);
 
 function datesSemaine(semaine) {
   const lundi = lundiSemaineIso(anneeDeSemaine(semaine), semaine);
@@ -11481,7 +12196,7 @@ function afficherAccueil() {
   for (const p of cases) if (!p.strat && !caseAjoutee(p)) aRegarder.push({ p, titre: `${titreCase(p)} — pas encore de lancement`, genre: "vide" });
   const nbProblemes = aRegarder.filter((a) => a.genre === "souci").length;
 
-  const semaines = ["paire", "impaire"].map((x) => ({ parite: x, numero: numeroSemaine(x) })).sort((a, b) => a.numero - b.numero);
+  const semaines = ONGLETS_SEMAINE.map((x) => ({ parite: x, numero: numeroSemaine(x) })).sort((a, b) => ordreCalendrier(a.numero) - ordreCalendrier(b.numero));
   const actions = `<div class="choix-semaine" role="group" aria-label="Choisir la semaine">${semaines
     .map((s) => `<button type="button" data-parite="${s.parite}" aria-pressed="${s.parite === parite}" class="${s.parite === parite ? "actif" : ""}">S${s.numero}</button>`)
     .join("")}</div>
@@ -11613,7 +12328,7 @@ async function donneesCompteRendu(parite) {
   lancements.sort((a, b) => a.rang - b.rang);
   // Casse : déjà lancées avant / rajouts, en pièces.
   const lignesCasse = [];
-  const autre = parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(parite);
   for (const c of casses.sort((a, b) => (a.p.poste === "Casse" ? 0 : 1) - (b.p.poste === "Casse" ? 0 : 1))) {
     if (c.p.poste !== "Casse") {
       lignesCasse.push({ libelle: /RECYCLAGE/i.test(c.base) ? "Recyclage casse" : "Casse", base: c.base, pieces: c.pieces, remarque: "" });
@@ -12546,6 +13261,313 @@ function afficherPlansModifies() {
     });
     telecharger(`Plans_modifies_${m.avant.lancement}.pdf`, octets, "application/pdf");
   });
+}
+
+// ---- Partie expérimentale ----
+// 1. Générer une liste de coupe Cut Rite plus économe (06e_liste_coupe.js) : écrite sous un autre nom, la liste de
+//    Cut Rite reste intacte et le fichier de lancement (LAN) n'est jamais touché.
+// 2. Connexion woodStore : le serveur du stock répond-il ? (Sentinelle.exe seulement, lecture seule.)
+
+const etatListeOpt = { source: null, resultat: null, avant: null, apres: null, erreur: null };
+
+const avertissementEssai = (texte) => `<div class="essai-avertissement"><strong>Expérimental.</strong> ${texte}</div>`;
+
+// Les cases avec un .bkp, sources possibles de la liste de coupe de Cut Rite.
+function optionsSourcesListe(source) {
+  const options = casesAvecBkp().map((p) => `<option value="${p.id}" ${source && source.p === p ? "selected" : ""}>${echapper(nomSourcePlans({ p, bkp: p.bkp }))}</option>`);
+  if (source && !source.p) options.unshift(`<option value="" selected>${echapper(source.fichier.name)}</option>`);
+  return options;
+}
+
+function afficherListeOpt() {
+  const page = $("pageListeOpt");
+  if (!etatListeOpt.source) {
+    const p = casesAvecBkp()[0];
+    if (p) etatListeOpt.source = { p, fichier: p.bkp };
+  }
+  const s = etatListeOpt.source;
+  const options = optionsSourcesListe(s);
+  const avecLan = Boolean(s && s.p && s.p.strat);
+  page.innerHTML = `${entetePage("Expérimental", "Générer une liste de coupe", "La liste de coupe de Cut Rite d'un lancement, refaite avec moins de pertes : bandes et modules resserrés.")}
+    ${avertissementEssai("Le fichier de lancement (LAN) n'est jamais modifié. La liste de Cut Rite reste intacte : la nouvelle liste porte un autre nom. À vérifier dans Cut Rite avant toute découpe ; ne pas envoyer à la scie sans contrôle.")}
+    <div class="carte"><div class="carte-titre">Liste de coupe de départ</div>
+      <div class="pl-choix">${options.length ? `<select id="choixSourceListe" aria-label="Lancement">${options.join("")}</select>` : '<span class="note">Aucun .bkp chargé dans les semaines.</span>'}
+        <button type="button" class="contour" id="btnOuvrirListe">Ouvrir un .bkp ou un .ctt…</button></div>
+      <div class="note" style="margin-top:6px">La liste de Cut Rite est lue dans la sauvegarde .bkp (ou dans le .ctt exporté).</div>
+      <div class="ligne-cotes" style="margin-top:12px">
+        <label>Nom de la nouvelle liste<input type="text" id="champNomListe" autocomplete="off" placeholder="LAN…_OPT"></label>
+      </div>
+      <label class="case-option"><input type="checkbox" id="caseRetirerHorsLan" ${avecLan ? "checked" : "disabled"}> Retirer les pièces qui ne sont plus dans le fichier de lancement${avecLan ? "" : " (pas de fichier de lancement pour cette source)"}</label>
+      <details class="donnees"><summary>Les règles</summary><ul class="essai-regles">
+        <li>Bandes : règle des 6 cm (agglo de 28 et plus, mêmes couleurs ; une largeur commune prise parmi celles des pièces, au plus +60 mm et jamais plus que la cote finie + 61 mm ; 3 pièces au plus ; bande de 4060 mm au plus).</li>
+        <li>Modules : regroupés par agglo, couleur dessus et couleur dessous ; pièces rangées serrées (trait de 5 mm) ; au plus 4060 × 1050 en agglo, 4070 × 1060 en stratifié (10 mm de plus).</li>
+        <li>Pièces seules et protections : inchangées. Mêmes pièces, mêmes quantités : sinon la liste n'est pas écrite.</li>
+      </ul></details>
+      <div class="pl-boutons" style="justify-content:flex-start"><button type="button" id="btnGenererListe" ${s ? "" : "disabled"}>Générer la liste</button></div>
+      <div id="zoneListeOpt"></div></div>`;
+  const choix = $("choixSourceListe");
+  if (choix)
+    choix.addEventListener("change", () => {
+      const p = paires.find((x) => String(x.id) === choix.value);
+      if (p) Object.assign(etatListeOpt, { source: { p, fichier: p.bkp }, resultat: null, erreur: null });
+      afficherListeOpt();
+    });
+  $("btnOuvrirListe").addEventListener("click", () => {
+    const champ = document.createElement("input");
+    champ.type = "file";
+    champ.accept = ".bkp,.ctt";
+    champ.addEventListener("change", () => {
+      if (!champ.files || !champ.files[0]) return;
+      Object.assign(etatListeOpt, { source: { p: null, fichier: champ.files[0] }, resultat: null, erreur: null });
+      afficherListeOpt();
+    });
+    champ.click();
+  });
+  $("btnGenererListe").addEventListener("click", genererListeEcran);
+  if (s) texteSourceListe(s).then((t) => {
+    const champ = $("champNomListe");
+    if (champ && !champ.value && etatListeOpt.source === s) champ.value = `${lireCttListe(t).nom}_OPT`;
+  }).catch(() => {});
+  if (etatListeOpt.resultat || etatListeOpt.erreur) afficherResultatListe();
+}
+
+async function texteSourceListe(s) {
+  if (/\.ctt$/i.test(s.fichier.name)) return new TextDecoder("iso-8859-1").decode(await s.fichier.arrayBuffer());
+  return texteCttBkp(s.fichier);
+}
+
+async function genererListeEcran() {
+  const s = etatListeOpt.source;
+  const zone = $("zoneListeOpt");
+  const nom = $("champNomListe").value.trim();
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(nom)) {
+    zone.innerHTML = '<div class="message-alerte">Nom de liste : lettres, chiffres, « _ » ou « - » seulement (40 au plus).</div>';
+    return;
+  }
+  $("btnGenererListe").disabled = true;
+  zone.innerHTML = '<div class="note">Calcul en cours…</div>';
+  await tick();
+  try {
+    const texte = await texteSourceListe(s);
+    if (nom === lireCttListe(texte).nom) throw new Error("choisissez un autre nom que celui de la liste de Cut Rite (elle doit rester intacte)");
+    let retirees = new Set();
+    if ($("caseRetirerHorsLan").checked && s.p && s.p.strat) {
+      const lan = new Set(lireQuantitesAttenduesScies(await classeurEnCache(s.p.strat)).keys());
+      retirees = new Set(lireCttListe(texte).recs.filter((r) => r.face === "TC" && r.p2[5] && !lan.has(r.p2[5])).map((r) => r.p2[5]));
+    }
+    const resultat = genererListeOptimisee(texte, nom, retirees);
+    Object.assign(etatListeOpt, { resultat, avant: mesurerListe(texte, retirees), apres: mesurerListe(resultat.texte), erreur: null, nom, sourceNom: s.fichier.name });
+  } catch (e) {
+    Object.assign(etatListeOpt, { resultat: null, erreur: e && e.message ? e.message : String(e) });
+  }
+  afficherResultatListe();
+}
+
+const m2 = (v) => `${v < -0.05 ? "−" : ""}${Math.abs(v).toFixed(1).replace(".", ",")} m²`;
+const ecartPourcent = (a, b) => (a ? `${b - a <= 0 ? "−" : "+"}${Math.abs((100 * (b - a)) / a).toFixed(1).replace(".", ",")} %` : "");
+
+// Un module de la nouvelle liste, dessiné (pièces à leur place).
+function svgModuleListe(m) {
+  const rects = m.pieces
+    .map((p) => `<rect x="${p.x.toFixed(0)}" y="${p.y.toFixed(0)}" width="${p.L.toFixed(0)}" height="${p.W.toFixed(0)}" fill="#eac2b7" stroke="#78140c" stroke-width="5"/>
+      ${p.L > m.L * 0.18 && p.W > 90 ? `<text x="${(p.x + p.L / 2).toFixed(0)}" y="${(p.y + p.W / 2 + 22).toFixed(0)}" font-size="${Math.min(70, p.W * 0.4).toFixed(0)}" text-anchor="middle" font-family="Lato,Arial" fill="#22231d">${echapper(String(p.cle).replace(/^[A-Z]+/, ""))}</text>` : ""}`)
+    .join("");
+  return `<svg class="svg-plan" viewBox="0 0 ${m.L} ${m.W}" xmlns="http://www.w3.org/2000/svg"><rect width="${m.L}" height="${m.W}" fill="#f4f3f1" stroke="#797978" stroke-width="10"/>${rects}</svg>`;
+}
+
+const remplissageModule = (m) => (100 * m.pieces.reduce((t, p) => t + p.L * p.W, 0)) / (m.L * m.W);
+
+function afficherResultatListe() {
+  const zone = $("zoneListeOpt");
+  if (!zone) return;
+  const btn = $("btnGenererListe");
+  if (btn) btn.disabled = false;
+  if (etatListeOpt.erreur) {
+    zone.innerHTML = `<div class="message-alerte">Liste non écrite : ${echapper(etatListeOpt.erreur)}</div>`;
+    return;
+  }
+  const { resultat: r, avant: a, apres: b, nom } = etatListeOpt;
+  const lignes = [
+    ["Bandes", `${a.bandes} (${a.piecesEn_bandes} pièces)`, `${b.bandes} (${b.piecesEn_bandes} pièces)`],
+    ["Modules", `${a.modules} · ${m2(a.trousModules)} de trous`, `${b.modules} · ${m2(b.trousModules)} de trous`],
+    ["Remplissage des modules", `${a.remplissage.toFixed(0)} %`, `${b.remplissage.toFixed(0)} %`],
+    ["Agglo à débiter", m2(a.agglo), m2(b.agglo)],
+    ["Stratifié à débiter", m2(a.stratifie), m2(b.stratifie)],
+    ["Pièces élargies en bande", `${a.elargies}`, `${b.elargies} (+${m2(b.surfaceElargie)})`],
+  ];
+  zone.innerHTML = `
+    <div class="pl-puces" style="margin-top:12px">
+      <span class="pl-puce bon">${m2(b.agglo - a.agglo).replace(/^/, b.agglo <= a.agglo ? "" : "+")} d'agglo (${ecartPourcent(a.agglo, b.agglo)})</span>
+      <span class="pl-puce bon">${m2(b.stratifie - a.stratifie).replace(/^/, b.stratifie <= a.stratifie ? "" : "+")} de stratifié (${ecartPourcent(a.stratifie, b.stratifie)})</span>
+      <span class="pl-puce">modules remplis ${a.remplissage.toFixed(0)} → ${b.remplissage.toFixed(0)} %</span>
+      <span class="pl-puce">${b.pieces} pièces, les mêmes</span>
+    </div>
+    ${r.retirees.length ? `<div class="note">${r.retirees.length} pièce(s) retirée(s) : plus dans le fichier de lancement (${r.retirees.map(echapper).join(", ")}).</div>` : ""}
+    <div class="defilement"><table class="fp-table"><thead><tr><th></th><th class="c">Cut Rite</th><th class="c">${echapper(nom)}</th></tr></thead>
+      <tbody>${lignes.map(([t, x, y]) => `<tr><td>${t}</td><td class="c">${x}</td><td class="c">${y}</td></tr>`).join("")}</tbody></table></div>
+    <div class="pl-boutons" style="justify-content:flex-start">
+      <button type="button" id="btnEnregistrerListe">Enregistrer ${echapper(nom)}.ctt</button>
+      <button type="button" class="contour" id="btnRapportListe">Rapport (PDF)</button>
+    </div>
+    <div class="note">Dans Cut Rite : importer ${echapper(nom)}.ctt comme une liste de coupe, puis l'optimiser. Après l'optimisation, la sauvegarde .bkp se contrôle dans Sentinelle comme d'habitude (pièces placées dans les plans).</div>
+    <details class="donnees"><summary>Les ${r.modules.length} modules de la nouvelle liste</summary>
+      <div class="pl-grille">${r.modules
+        .map((m) => `<div class="pl-carte"><div class="pl-titre"><span>${echapper(m.nom)} · ${echapper(m.agglo)}</span><span class="pl-pdc">${remplissageModule(m).toFixed(0)} %</span></div>
+          <div class="pl-sous">${dimsPlan(m.L, m.W)} · dessus ${echapper(m.dessus || "—")} · dessous ${echapper(m.dessous || "—")}</div>${svgModuleListe(m)}</div>`)
+        .join("")}</div></details>`;
+  $("btnEnregistrerListe").addEventListener("click", () => telecharger(`${nom}.ctt`, octetsLatin1(r.texte), "application/octet-stream"));
+  $("btnRapportListe").addEventListener("click", () => telecharger(`Rapport_liste_de_coupe_${nom}.pdf`, rapportListePdf(), "application/pdf"));
+}
+
+// Rapport PDF : les chiffres, le tableau Cut Rite / nouvelle liste, puis chaque module dessiné.
+function rapportListePdf() {
+  const { resultat: r, avant: a, apres: b, nom, sourceNom } = etatListeOpt;
+  const titre = `Liste de coupe ${nom}`;
+  const pdf = new PdfSimple(titre);
+  const M = RAPPORT_MARGE;
+  const U = RAPPORT_UTILE;
+  bandeauPdf(pdf);
+  const hLogo = pdf.logo(PDF_LARGEUR - M - 30 * PDF_MM, RAPPORT_BANDEAU + 6 * PDF_MM, 30 * PDF_MM);
+  let y = RAPPORT_BANDEAU + 6 * PDF_MM + 6;
+  pdf.texte(M, y, "EXPÉRIMENTAL · LISTE DE COUPE REFAITE PAR SENTINELLE", 7.5, POLICE.GRAS, CHARTE.GRIS, 0.8);
+  y += 26;
+  pdf.texte(M, y, titre, 17, POLICE.TITRE, CHARTE.NOIR);
+  y += 16;
+  pdf.texte(M, y, `Comparée à la liste de Cut Rite ${r.nomOrigine} (${sourceNom}) · fichier de lancement non modifié`, 8.5, POLICE.TEXTE, CHARTE.NOIR);
+  y = Math.max(y + 14, RAPPORT_BANDEAU + 6 * PDF_MM + hLogo + 8);
+  let x = chiffreClePdf(pdf, M, y, m2(b.agglo - a.agglo).replace(",", ","), `Agglo à débiter (${ecartPourcent(a.agglo, b.agglo)})`, null);
+  x = chiffreClePdf(pdf, x, y, m2(b.stratifie - a.stratifie), `Stratifié à débiter (${ecartPourcent(a.stratifie, b.stratifie)})`, null);
+  y += 15 * PDF_MM + 10;
+  chiffreClePdf(pdf, M, y, `${a.remplissage.toFixed(0)} → ${b.remplissage.toFixed(0)} %`, "Remplissage des modules", null);
+  chiffreClePdf(pdf, M + 54 * PDF_MM + 5 * PDF_MM, y, String(b.pieces), "Pièces, les mêmes", null);
+  y += 15 * PDF_MM + 14;
+  const lignes = [
+    ["", "Cut Rite", nom],
+    ["Bandes", `${a.bandes} (${a.piecesEn_bandes} pièces)`, `${b.bandes} (${b.piecesEn_bandes} pièces)`],
+    ["Modules", `${a.modules} · ${m2(a.trousModules)} de trous`, `${b.modules} · ${m2(b.trousModules)} de trous`],
+    ["Agglo à débiter", m2(a.agglo), m2(b.agglo)],
+    ["Stratifié à débiter", m2(a.stratifie), m2(b.stratifie)],
+    ["Pièces élargies en bande", String(a.elargies), `${b.elargies} (+${m2(b.surfaceElargie)})`],
+  ];
+  for (const [k, ligne] of lignes.entries()) {
+    const police = k === 0 ? POLICE.GRAS : POLICE.TEXTE;
+    pdf.texte(M, y, ligne[0], 9, police, CHARTE.NOIR);
+    pdf.texte(M + U * 0.4, y, ligne[1], 9, police, CHARTE.NOIR);
+    pdf.texte(M + U * 0.7, y, ligne[2], 9, police, CHARTE.NOIR);
+    pdf.filet(M, M + U, y + 4, k === 0 ? CHARTE.NOIR : CHARTE.GRIS_FILET, k === 0 ? 0.6 : 0.4);
+    y += 15;
+  }
+  if (r.retirees.length) {
+    y += 6;
+    for (const t of couperTextePdf(`${r.retirees.length} pièce(s) retirée(s) (plus dans le fichier de lancement) : ${r.retirees.join(", ")}`, U, 8, POLICE.ITALIQUE)) {
+      pdf.texte(M, y, t, 8, POLICE.ITALIQUE, CHARTE.GRIS);
+      y += 11;
+    }
+  }
+  y += 10;
+  pdf.texte(M, y, "Modules de la nouvelle liste", 11, POLICE.TITRE, CHARTE.BORDEAUX);
+  y += 14;
+  for (const m of r.modules) {
+    const ech = Math.min(U / m.L, (40 * PDF_MM) / m.W);
+    if (y + 14 + m.W * ech > RAPPORT_BAS) {
+      pdf.nouvellePage();
+      bandeauPdf(pdf);
+      y = RAPPORT_BANDEAU + 9 * PDF_MM;
+    }
+    pdf.texte(M, y, `${m.nom} · ${m.agglo} · dessus ${m.dessus || "—"} · dessous ${m.dessous || "—"} · ${dimsPlan(m.L, m.W)} · rempli ${remplissageModule(m).toFixed(0)} %`, 8, POLICE.GRAS, CHARTE.NOIR);
+    y += 5;
+    pdf.rectangle(M, y, m.L * ech, m.W * ech, CHARTE.GRIS_CLAIR, CHARTE.NOIR, 0.6);
+    for (const p of m.pieces) {
+      pdf.rectangle(M + p.x * ech, y + p.y * ech, p.L * ech, p.W * ech, CHARTE.SAUMON, CHARTE.NOIR, 0.4);
+      const t = String(p.cle).replace(/^[A-Z]+/, "");
+      if (p.L * ech > 50 && p.W * ech > 8) texteCentrePdf(pdf, M + (p.x + p.L / 2) * ech, y + (p.y + p.W / 2) * ech + 2.5, t, Math.min(7, p.W * ech * 0.45), POLICE.TEXTE, CHARTE.NOIR);
+    }
+    y += m.W * ech + 12;
+  }
+  piedsDePagePdf(pdf, `${titre} — Sentinelle ${versionSentinelle()} (expérimental)`);
+  return pdf.octets();
+}
+
+// ---- Connexion woodStore ----
+
+const CLE_WOODSTORE = "sentinelle-woodstore";
+const PORTS_WOODSTORE = [
+  [1433, "base de données SQL Server"],
+  [80, "page web (http)"],
+  [443, "page web sécurisée (https)"],
+];
+const lireReglagesWoodstore = () => {
+  try {
+    return { hote: "10.101.50.1", ...JSON.parse(localStorage.getItem(CLE_WOODSTORE) || "{}") };
+  } catch (_e) {
+    return { hote: "10.101.50.1" };
+  }
+};
+// Le test passe par Sentinelle.exe (une page web seule ne peut pas ouvrir de connexion réseau).
+const dansSentinelleExe = () => location.protocol === "http:" && /^(127\.0\.0\.1|localhost)$/.test(location.hostname) && location.port === "47815";
+
+function afficherWoodstore() {
+  const page = $("pageWoodstore");
+  const r = lireReglagesWoodstore();
+  page.innerHTML = `${entetePage("Expérimental", "Connexion woodStore", "Relier Sentinelle au stock de panneaux et de chutes (woodStore), par l'adresse IP du serveur, comme dans Cut Rite.")}
+    ${avertissementEssai("Lecture seule : Sentinelle n'écrit jamais dans woodStore (pas de réservation, pas de mise à jour du stock). Aujourd'hui, seul le test de connexion est fait : aucune donnée n'est lue.")}
+    <div class="carte"><div class="carte-titre">Serveur woodStore</div>
+      <div class="note">Dans Cut Rite : Paramètres du système › Mise à jour du stock › woodStore › « Nom de l'hôte ou adresse IP serveur ».</div>
+      <div class="ligne-cotes" style="margin-top:10px">
+        <label>Nom de l'hôte ou adresse IP<input type="text" id="champHoteWoodstore" autocomplete="off" value="${echapper(r.hote)}"></label>
+        <button type="button" id="btnTesterWoodstore">Tester la connexion</button>
+      </div>
+      <div id="zoneWoodstore"></div>
+    </div>
+    <div class="carte"><div class="carte-titre">La suite</div>
+      <ul class="essai-regles">
+        <li>But : avant l'optimisation, voir dans Sentinelle si les panneaux et les chutes prévus existent en stock (et le stock d'une couleur depuis la recherche).</li>
+        <li>Pour lire le stock, il faut l'accord du service informatique et savoir comment woodStore donne ses données (base SQL Server, service web, ou export de fichier). Les identifiants restent à eux : Sentinelle ne les lit pas dans Cut Rite.</li>
+      </ul></div>`;
+  $("btnTesterWoodstore").addEventListener("click", testerWoodstore);
+  $("champHoteWoodstore").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") testerWoodstore();
+  });
+}
+
+async function testerWoodstore() {
+  const zone = $("zoneWoodstore");
+  const hote = $("champHoteWoodstore").value.trim();
+  if (!/^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$/.test(hote)) {
+    zone.innerHTML = '<div class="message-alerte">Adresse illisible (exemple : 10.101.50.1).</div>';
+    return;
+  }
+  try {
+    localStorage.setItem(CLE_WOODSTORE, JSON.stringify({ hote }));
+  } catch (_e) {
+    // réglage non gardé
+  }
+  if (!dansSentinelleExe()) {
+    zone.innerHTML = '<div class="message-alerte">Le test se fait dans Sentinelle.exe, sur un PC du réseau de l\'atelier (une page ouverte dans le navigateur ne peut pas se connecter à un serveur).</div>';
+    return;
+  }
+  $("btnTesterWoodstore").disabled = true;
+  zone.innerHTML = `<div class="note">Test de ${echapper(hote)}…</div>`;
+  try {
+    const rep = await fetch("/sentinelle/reseau/tester", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Sentinelle": "reseau" },
+      body: JSON.stringify({ hote, ports: PORTS_WOODSTORE.map(([p]) => p) }),
+    });
+    if (!rep.ok) throw new Error((await rep.text()).trim() || `réponse ${rep.status}`);
+    const res = await rep.json();
+    const service = new Map(PORTS_WOODSTORE);
+    const unOk = res.some((x) => x.repond);
+    zone.innerHTML = `<div class="pl-puces" style="margin-top:10px"><span class="pl-puce ${unOk ? "bon" : "alerte"}">${unOk ? `✔ Le serveur ${echapper(hote)} répond` : `⚠ Le serveur ${echapper(hote)} ne répond pas`}</span></div>
+      <div class="defilement"><table class="fp-table"><thead><tr><th>Port</th><th>Service habituel</th><th>Réponse</th></tr></thead><tbody>${res
+        .map((x) => `<tr><td>${x.port}</td><td>${echapper(service.get(x.port) || "")}</td><td class="${x.repond ? "ok" : "alerte"}">${x.repond ? `✔ répond (${x.ms} ms)` : "✗ ne répond pas"}</td></tr>`)
+        .join("")}</tbody></table></div>
+      <div class="note">Seule une connexion est ouverte puis refermée : rien n'est lu ni écrit.</div>`;
+  } catch (e) {
+    zone.innerHTML = `<div class="message-alerte">Test impossible : ${echapper(e && e.message ? e.message : String(e))}</div>`;
+  } finally {
+    $("btnTesterWoodstore").disabled = false;
+  }
 }
 
 </script>

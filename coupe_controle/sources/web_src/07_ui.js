@@ -55,7 +55,7 @@ let prochainNumeroChantier = 1;
 const paires = [];
 let onglet = "accueil";
 // Onglet d'une semaine (et non Accueil, Recherche, Bibliothèque ou Réécriture).
-const estOngletSemaine = (o = onglet) => o === "paire" || o === "impaire";
+const estOngletSemaine = (o = onglet) => ONGLETS_SEMAINE.includes(o);
 
 function nouvellePaire(poste, label, parite) {
   const p = {
@@ -108,10 +108,10 @@ function titrePaire(p) {
   return p.semaine ? `${p.label} (sem ${p.semaine})` : p.label;
 }
 
-// Parité d'un numéro de semaine (« 45 » → impaire), null s'il n'y en a pas.
+// Onglet d'un numéro de semaine (« 45 » → impaire, « 47 » → impaire2), null s'il n'y en a pas.
 function pariteDuNumero(semaine) {
   const n = parseInt(semaine, 10);
-  return Number.isNaN(n) ? null : n % 2 === 0 ? "paire" : "impaire";
+  return Number.isNaN(n) ? null : ongletDuNumero(n);
 }
 
 // Un chantier va dans l'onglet de sa vraie semaine (celle du lancement écrite
@@ -238,7 +238,8 @@ async function sauvegarderDansMemoire(p, champs) {
       req.onsuccess = () => resolve(req.result || { cleMemoire: cle });
       req.onerror = () => resolve({ cleMemoire: cle });
     });
-    magasin.put({ ...existant, ...champs, cleMemoire: cle });
+    // quatreSemaines : fiche écrite par une version à quatre semaines (pas à ranger au démarrage).
+    magasin.put({ ...existant, ...champs, cleMemoire: cle, quatreSemaines: 1 });
     await finTransaction(tx);
   } catch (_erreur) {
     // Mémorisation indisponible : sans effet sur le fonctionnement normal.
@@ -398,6 +399,7 @@ function restaurer(p, rec) {
   p.erreurScies = rec.erreurScies || null;
   p.couleurs = rec.couleurs || null;
   p.plans = rec.plans || null;
+  p.quatreSemaines = Boolean(rec.quatreSemaines);
 }
 
 async function initialiserPaires() {
@@ -405,8 +407,8 @@ async function initialiserPaires() {
   rangerFichiersMemorises(memoires);
   const parCle = new Map(memoires.map((r) => [r.cleMemoire, r]));
   for (const poste of [...POSTES_SEMAINE, ...POSTES_DIAKONOS]) {
-    for (const parite of ["paire", "impaire"]) {
-      const p = nouvellePaire(poste, parite === "paire" ? "Semaine paire" : "Semaine impaire", parite);
+    for (const parite of ONGLETS_SEMAINE) {
+      const p = nouvellePaire(poste, LIBELLES_ONGLETS_SEMAINE[parite], parite);
       const rec = parCle.get(cleMemoire(p));
       if (rec) restaurer(p, rec);
     }
@@ -433,6 +435,46 @@ async function initialiserPaires() {
     if (ranger(p)) sauvegarderDansMemoire(p, { semaineParite: p.parite });
   }
   if (!paires.some(estChantier)) ajouterChantier("paire");
+}
+
+// Versions à deux semaines : une semaine gardée dans l'onglet « paire » ou « impaire » qui n'est plus le sien
+// (47 va maintenant dans « impaire2 ») y est déplacée, avec ses fichiers, ses résultats et son dossier.
+const CHAMPS_CASE = ["strat", "coupe", "bkp", "sommaire", "diakonos", "codeLancement", "dossier", "semaineDossier", "semaine", "rapport", "doublons", "semainesLivraison",
+  "nbUnitaires", "nbPiecesTrouvees", "source", "ecartsScies", "totalScies", "erreurScies", "couleurs", "plans"];
+
+async function rangerSemainesMemorisees() {
+  for (const ancien of ["paire", "impaire"]) {
+    const cases = paires.filter((p) => p.parite === ancien && !p.quatreSemaines);
+    const nombre = new Map();
+    for (const p of cases) {
+      const n = parseInt(p.semaineDossier || p.semaine, 10);
+      if (p.strat && !Number.isNaN(n)) nombre.set(n, (nombre.get(n) || 0) + 1);
+    }
+    if (!nombre.size) continue;
+    const semaine = [...nombre].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0][0];
+    const nouveau = ongletDuNumero(semaine);
+    if (nouveau === ancien) continue;
+    for (const p of cases) {
+      if (caseAjoutee(p)) {
+        p.parite = nouveau;
+        await sauvegarderDansMemoire(p, { semaineParite: nouveau });
+        continue;
+      }
+      const cible = paires.find((q) => !caseAjoutee(q) && q.poste === p.poste && q.parite === nouveau);
+      if (!cible || cible.strat || !(p.strat || p.diakonos)) continue;
+      for (const champ of CHAMPS_CASE) cible[champ] = p[champ];
+      viderPaire(p);
+      p.codeLancement = null;
+      for (const role of Object.keys(CHAMP_FICHIER)) if (cible[role]) await memoriserFichier(cible, role, cible[role]);
+      await sauvegarderDansMemoire(cible, resultatsAMemoriser(cible));
+      await effacerMemoire(p);
+    }
+    if (dossierPartageHandles[ancien] && !dossierPartageHandles[nouveau]) {
+      dossierPartageHandles[nouveau] = dossierPartageHandles[ancien];
+      dossierPartageHandles[ancien] = null;
+      if (!androidDossierPartageDisponible()) sauvegarderPoigneeDossierPartage(dossierPartageHandles[nouveau], nouveau);
+    }
+  }
 }
 
 function ajouterChantier(parite) {
@@ -644,18 +686,22 @@ function afficher() {
   $("pageBibliotheque").classList.toggle("inactif", onglet !== "bibliotheque");
   $("pageReecriture").classList.toggle("inactif", onglet !== "reecriture");
   $("pagePlans").classList.toggle("inactif", onglet !== "plans");
+  $("pageListeOpt").classList.toggle("inactif", onglet !== "liste-opt");
+  $("pageWoodstore").classList.toggle("inactif", onglet !== "woodstore");
   majMenuDossier();
   if (estOngletSemaine()) construireSemaine(onglet);
   else if (onglet === "accueil") afficherAccueil();
   else if (onglet === "bibliotheque") afficherBibliotheque();
   else if (onglet === "reecriture") afficherReecriture();
   else if (onglet === "plans") afficherOutilPlans();
+  else if (onglet === "liste-opt") afficherListeOpt();
+  else if (onglet === "woodstore") afficherWoodstore();
 }
 
 function majOnglets() {
   let change = false;
-  document.querySelectorAll(".onglet-btn").forEach((b) => {
-    if (!estOngletSemaine(b.dataset.onglet)) return;
+  const boutons = [...document.querySelectorAll(".onglet-btn")].filter((b) => estOngletSemaine(b.dataset.onglet));
+  boutons.forEach((b) => {
     const libelle = libelleOnglet(b.dataset.onglet);
     const zone = b.querySelector(".libelle-onglet") || b;
     if (zone.textContent !== libelle) {
@@ -663,6 +709,12 @@ function majOnglets() {
       if (b.dataset.onglet === onglet) change = true;
     }
   });
+  // Les quatre semaines dans l'ordre du calendrier.
+  const tries = [...boutons].sort((a, b) => ordreCalendrier(numeroSemaine(a.dataset.onglet)) - ordreCalendrier(numeroSemaine(b.dataset.onglet)));
+  if (tries.some((b, i) => b !== boutons[i])) {
+    const apres = boutons[0].previousElementSibling;
+    tries.reverse().forEach((b) => apres.after(b));
+  }
   return change;
 }
 
@@ -957,7 +1009,7 @@ function partiesCasse(r, base) {
 }
 
 function remplirCasse(zone, p) {
-  const autre = p.parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(p.parite);
   const autreSemaine = pairesDeLaSemaine(autre);
   const numeroAutre = numeroSemaine(autre);
   const cle = cleCasse(p, autreSemaine, numeroAutre);
@@ -1079,10 +1131,12 @@ function afficherScies(zone, p) {
 function htmlPlans(p) {
   const r = p.plans;
   if (!r) return "";
-  const reste = restantsDuControle(p, estControlePlans) ?? r.nonPlacees.length;
+  const n = nbHorsPlans(p);
+  const reste = restantsDuControle(p, estControlePlans) ?? n;
   const plans = `${fmtNombre(r.nbPlans)} plans, ${fmtNombre(r.nbModules)} modules`;
-  if (!r.nonPlacees.length) return bandeau(`✔ Plans de coupe : toutes les pièces sont placées (${plans})`, "ok");
-  if (!reste) return bandeau(`✔ Plans de coupe : ${r.nonPlacees.length} pièce(s) hors des plans, validée(s) OK (${plans})`, "ok");
+  if (!n) return bandeau(`✔ Plans de coupe : toutes les pièces sont placées (${plans})`, "ok");
+  if (!reste) return bandeau(`✔ Plans de coupe : ${n} pièce(s) hors des plans, validée(s) OK (${plans})`, "ok");
+  if (!r.nonPlacees.length) return bandeau(`⚠ Plans de coupe : les pièces du lancement sont placées ; ${reste} pièce(s) du .bkp hors lancement dans aucun plan, à vérifier (${plans})`, "attention");
   return bandeau(`⚠ Plans de coupe : ${reste} pièce(s) dans aucun plan — elles ne seront pas coupées (${plans})`, "alerte");
 }
 
@@ -1158,7 +1212,7 @@ async function calculerDiakonos(p, semaineOnglet, semaine, toutes) {
 }
 
 async function resultatsDiakonos(parite) {
-  const autre = parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(parite);
   const semaine = pairesDeLaSemaine(parite);
   const toutes = [...semaine, ...pairesDeLaSemaine(autre)];
   const numero = String(numeroSemaine(parite)).padStart(2, "0");
@@ -1175,7 +1229,7 @@ function majDiakonos() {
   if (!estOngletSemaine()) return;
   const parite = onglet;
   remplirDiakonos();
-  const autre = parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(parite);
   const dossiers = groupesDiakonosDeLaSemaine(parite).filter((g) => {
     const e = derniersDiakonosDossier.get(g.porteur.id);
     return !e || e.cle !== cleDiakonosDossier(g);
@@ -1376,7 +1430,7 @@ const diakonosDesCases = (p) => toursDiakonosDeLaCase(p).map((t) => paireFixe(PO
 
 // Une page par liste du sommaire (agglo, strats, couleurs), puis le Diakonos du tour ou, pour la casse, les pièces relancées et les rajouts.
 async function rapportLancement(p) {
-  const autre = p.parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(p.parite);
   const semaine = pairesDeLaSemaine(p.parite);
   const numero = String(numeroSemaine(p.parite)).padStart(2, "0");
   const parties = [];
@@ -1515,7 +1569,7 @@ function majRecap() {
   if (!zone || !estOngletSemaine()) return;
   const parite = onglet;
   const numero = ++zonesRecap.generation;
-  const autre = parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(parite);
   const lignes = lignesRecap(pairesDeLaSemaine(parite));
   const autres = lignesRecap(pairesDeLaSemaine(autre));
   zone.innerHTML = htmlRecap(lignes, autres, libelleOnglet(autre));
@@ -1544,7 +1598,7 @@ function celluleControle(p) {
 }
 
 // Colonne Scies : les écarts lancement / .bkp et les pièces hors des plans de coupe (même bouton Vérifier Scies).
-const nbHorsPlans = (p) => (p.plans ? p.plans.nonPlacees.length : 0);
+const nbHorsPlans = (p) => (p.plans ? p.plans.nonPlacees.length + (p.plans.horsLancement || []).length : 0);
 // Ce qui reste à traiter (les problèmes validés ne comptent plus) ; null si pas fait, -1 si erreur.
 function sciesRestants(p) {
   if (p.erreurScies) return -1;
@@ -1848,6 +1902,14 @@ async function lancerControleScies(p, fin) {
     p.couleurs = controlerCouleurs((await stratEnCache(p.strat)).lignes, await lireCouleursBkp(p.bkp));
     etape = "lecture des plans de coupe";
     p.plans = await controlerPlans(attendues, p.bkp, bkp);
+    // Une pièce de la liste du .bkp qui n'est ni dans le lancement ni dans aucun plan ne sera pas coupée :
+    // ce n'est pas une pièce « en trop », elle est signalée à part (retirée du lancement après l'import ?).
+    const placees = (await lirePlansBkp(p.bkp)).placees;
+    const horsLancement = p.ecartsScies.filter((e) => e.attendu === 0 && !(placees.get(e.cle) > 0));
+    if (horsLancement.length) {
+      p.ecartsScies = p.ecartsScies.filter((e) => !horsLancement.includes(e));
+      p.plans.horsLancement = horsLancement.map((e) => ({ cle: e.cle, qte: e.trouve }));
+    }
     p.erreurScies = null;
   } catch (erreur) {
     p.ecartsScies = null;
@@ -1931,7 +1993,7 @@ async function ouvrirSemaine(pariteActuelle, valeur) {
     compteRendu(pariteActuelle, ["Tapez un numéro de semaine entre 1 et 53."], true);
     return;
   }
-  const parite = n % 2 === 0 ? "paire" : "impaire";
+  const parite = ongletDuNumero(n);
   const libelle = `Semaine ${String(n).padStart(2, "0")}`;
   let racine = typeof reecriture !== "undefined" ? reecriture.racine : null;
   if (!racine) {
@@ -1993,10 +2055,17 @@ async function choisirDossier(parite) {
   }
   try {
     const handle = await window.showDirectoryPicker();
-    dossierPartageHandles[parite] = handle;
-    sauvegarderPoigneeDossierPartage(handle, parite);
-    etatsScan[parite] = null;
-    if (parite === onglet) remplirCarteDossier(parite);
+    // Un dossier « Semaine 46 » va dans l'onglet de la semaine 46, même choisi depuis un autre onglet.
+    const n = parseInt(semaineDuDossier(handle.name), 10);
+    const cible = Number.isNaN(n) ? parite : ongletDuNumero(n);
+    dossierPartageHandles[cible] = handle;
+    sauvegarderPoigneeDossierPartage(handle, cible);
+    etatsScan[cible] = null;
+    if (cible !== parite && estOngletSemaine(onglet)) {
+      onglet = cible;
+      afficher();
+      compteRendu(cible, [`« ${handle.name} » : dossier de la semaine ${n}, ouvert dans son onglet.`], false);
+    } else if (cible === onglet) remplirCarteDossier(cible);
   } catch (_annulation) {
     // Sélection annulée : rien à faire.
   }
@@ -2007,7 +2076,7 @@ async function choisirDossier(parite) {
 async function restaurerDossiersPartages() {
   if (!scanPartageDisponible()) return;
   if (androidDossierPartageDisponible()) {
-    for (const parite of ["paire", "impaire"]) {
+    for (const parite of ONGLETS_SEMAINE) {
       try {
         const brut = window.AndroidDossierPartage.dossierMemorise(parite);
         const memoire = brut && brut !== "null" ? JSON.parse(brut) : null;
@@ -2018,7 +2087,7 @@ async function restaurerDossiersPartages() {
     }
     return;
   }
-  for (const parite of ["paire", "impaire"]) {
+  for (const parite of ONGLETS_SEMAINE) {
     const handle = await chargerPoigneeDossierPartage(parite);
     if (handle) dossierPartageHandles[parite] = handle;
   }
@@ -2729,7 +2798,7 @@ async function lancementsDeLaSemaineRecherche(numero) {
     if (s.semaine !== numero) continue;
     for (const l of s.lancements) lancements.push({ annee: s.annee, semaine: s.semaine, nom: l.nom, poste: l.poste, pieces: l.pieces || [] });
   }
-  for (const parite of ["paire", "impaire"]) {
+  for (const parite of ONGLETS_SEMAINE) {
     if (Number(numeroSemaine(parite)) !== numero) continue;
     for (const p of pairesDeLaSemaine(parite)) {
       if (!p.strat || estDiakonos(p)) continue;
@@ -2822,6 +2891,7 @@ document.querySelectorAll("img[data-logo]").forEach((img) => (img.src = img.data
 (async () => {
   await initialiserPaires();
   await restaurerDossiersPartages();
+  await rangerSemainesMemorisees();
   await chargerBibliotheque();
   await chargerReecriture().catch(() => {});
   afficher();

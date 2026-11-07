@@ -77,9 +77,19 @@ function doublonsEntreLancements(clesParLancement) {
   return [...groupes.values()];
 }
 
+// ---- Les quatre onglets semaine ----
+// Une semaine va dans l'onglet de son numéro modulo 4 (48 → « paire », 45 → « impaire », 46 → « paire2 »,
+// 47 → « impaire2 ») : quatre semaines à la fois, sans mélange. Les noms « paire » / « impaire » sont ceux des
+// versions à deux semaines (fichiers et dossiers déjà mémorisés).
+const ONGLETS_SEMAINE = ["paire", "impaire", "paire2", "impaire2"];
+const LIBELLES_ONGLETS_SEMAINE = { paire: "Semaine paire", impaire: "Semaine impaire", paire2: "Semaine paire 2", impaire2: "Semaine impaire 2" };
+const ongletDuNumero = (n) => ONGLETS_SEMAINE[((Math.trunc(n) % 4) + 4) % 4];
+// L'onglet de la semaine d'avant (pièces déjà lancées, casse).
+const ongletPrecedent = (onglet) => ONGLETS_SEMAINE[(ONGLETS_SEMAINE.indexOf(onglet) + 3) % 4];
+
 // ---- Vrai numéro de semaine d'un onglet ----
 function bonneParite(semaine, parite) {
-  return (semaine % 2 === 0) === (parite === "paire");
+  return ongletDuNumero(semaine) === parite;
 }
 
 // Numéro de semaine ISO (comme en France).
@@ -91,10 +101,10 @@ function semaineIso(date) {
   return Math.ceil(((d - debutAnnee) / 86400000 + 1) / 7);
 }
 
-// Semaine du calendrier : celle en cours si sa parité convient, sinon la suivante.
+// Semaine du calendrier : celle en cours si elle va dans cet onglet, sinon la première des suivantes qui y va.
 function semaineCalendrier(aujourdHui, parite) {
   const d = new Date(aujourdHui.getTime());
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     const s = semaineIso(d);
     if (bonneParite(s, parite)) return s;
     d.setDate(d.getDate() + 7);
@@ -105,13 +115,12 @@ function semaineCalendrier(aujourdHui, parite) {
 // Semaine d'un onglet : la plus fréquente parmi les semaines des lancements
 // chargés qui ont la bonne parité (à égalité, la plus grande) ; sans
 // lancement, celle du calendrier.
+// Des fichiers mis à la main dans un autre onglet que le leur : l'onglet prend quand même leur semaine.
 function semaineAffichee(semainesChargees, parite, aujourdHui = new Date()) {
+  const valables = semainesChargees.map((s) => parseInt(String(s ?? "").trim(), 10)).filter((n) => !Number.isNaN(n) && n >= 1 && n <= 53);
+  const siennes = valables.filter((n) => bonneParite(n, parite));
   const nombre = new Map();
-  for (const s of semainesChargees) {
-    const n = parseInt(String(s ?? "").trim(), 10);
-    if (Number.isNaN(n) || n < 1 || n > 53 || !bonneParite(n, parite)) continue;
-    nombre.set(n, (nombre.get(n) || 0) + 1);
-  }
+  for (const n of siennes.length ? siennes : valables) nombre.set(n, (nombre.get(n) || 0) + 1);
   let meilleure = -1;
   let meilleurNombre = 0;
   for (const [n, c] of nombre) {

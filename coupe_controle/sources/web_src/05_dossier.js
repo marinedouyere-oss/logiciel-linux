@@ -64,7 +64,7 @@ function creerPoigneeDossierAndroid(treeUri, nom) {
 // "Semaine paire" et "Semaine impaire".
 const DB_DOSSIER_PARTAGE_NOM = "sentinelle-dossier-partage";
 const MAGASIN_DOSSIER_PARTAGE = "poignee";
-let dossierPartageHandles = { paire: null, impaire: null };
+let dossierPartageHandles = { paire: null, impaire: null, paire2: null, impaire2: null };
 
 function ouvrirBaseDossierPartage() {
   return new Promise((resolve, reject) => {

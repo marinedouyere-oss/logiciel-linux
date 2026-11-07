@@ -74,7 +74,7 @@ const DEUX_FOIS = ["CVC26100827002", "CVC26100696004", "CVC26100832005"];
   verifier(semaines.sansColonne && semaines.sansColonne.semaine === 44, "colonne vide : semaine du code lancement");
 
   // 2. Scan de la semaine 47.
-  await page.click('.onglet-btn[data-onglet="impaire"]');
+  await page.click('.onglet-btn[data-onglet="impaire2"]'); // V6.1 : semaine 47 = onglet « impaire2 » (47 modulo 4 = 3)
   await page.waitForSelector("#btnChoisirDossier");
   await page.click("#btnChoisirDossier");
   await page.waitForSelector("#btnScanner:not([disabled])");
@@ -123,7 +123,7 @@ const DEUX_FOIS = ["CVC26100827002", "CVC26100696004", "CVC26100832005"];
 
   // 5. Rapport Excel du lancement : validés à part, plus comptés.
   const rapport = await page.evaluate(async () => {
-    const p = pairesDeLaSemaine("impaire").find((x) => x.strat && x.strat.name === "LAN264702START.xlsx");
+    const p = pairesDeLaSemaine("impaire2").find((x) => x.strat && x.strat.name === "LAN264702START.xlsx");
     const r = await feuilleRapportLancement(new ExcelJS.Workbook(), p, "Rapport");
     return { nbValides: r.nbValides, lancees: r.problemes.filter((e) => e.id.endsWith("|Lancée deux fois")).length };
   });
@@ -131,7 +131,7 @@ const DEUX_FOIS = ["CVC26100827002", "CVC26100696004", "CVC26100832005"];
 
   // 6. Après rechargement : les validations restent.
   await page.reload();
-  await page.click('.onglet-btn[data-onglet="impaire"]');
+  await page.click('.onglet-btn[data-onglet="impaire2"]'); // V6.1 : semaine 47 = onglet « impaire2 » (47 modulo 4 = 3)
   await page.waitForSelector(".carte-paire");
   const zoneApres = page.locator(".carte-paire", { hasText: "✓ LAN264702START.xlsx" }).first().locator(".zone-problemes");
   // Les problèmes sont relus en fond à l'ouverture de la semaine (sinon : bouton « Voir les problèmes »).

@@ -141,11 +141,12 @@ async function attendreFin(page, maxMs = 600000) {
   };
   const tout = ["Diakonos", "LAN", "Liste", ".bkp"];
   let r = await chercher("26100810001", tout);
-  verifier(r.includes("Diakonos 1er tour (commandée)") && !r.includes("introuvable"), "recherche sans CVC : trouvée dans Diakonos");
+  // V6.1 : fiche simple de la pièce (« Commandée : oui, dans Diakonos (…) »), la commande repliée dessous.
+  verifier(r.includes("dans Diakonos (Diakonos 1er tour)") && !r.includes("introuvable"), "recherche sans CVC : trouvée dans Diakonos");
   r = await chercher("26100557001", tout);
-  verifier(r.includes("Recyclage LAN ×1") && r.includes("Diakonos 1er tour (commandée)"), "recherche : lancement et Diakonos");
+  verifier(/Recyclage · S\d+ · LAN264601RECYCLAGE\s+✔ 1/.test(r) && r.includes("dans Diakonos (Diakonos 1er tour)"), "recherche : lancement et Diakonos");
   r = await chercher("26100557001", ["Diakonos"]);
-  verifier(r.includes("Diakonos 1er tour (commandée)") && !r.includes("Chantier 2 LAN"), "recherche : Diakonos seulement");
+  verifier(r.includes("dans Diakonos (Diakonos 1er tour)") && !r.includes("Fichier LAN"), "recherche : Diakonos seulement");
   r = await chercher("26100810001", ["LAN"]);
   verifier(r.includes("introuvable"), "recherche : LAN seulement, pièce absente des lancements");
   r = await chercher("CVC26100810001", []);
@@ -154,9 +155,9 @@ async function attendreFin(page, maxMs = 600000) {
   await page.screenshot({ path: `${captures}/web_recherche_bases.png`, fullPage: true });
   await page.click('.onglet-btn[data-onglet="paire"]');
 
-  // Rechargement : le fichier Diakonos est retrouvé.
+  // Rechargement : le fichier Diakonos est retrouvé (V6.1 : dans l'onglet de la semaine 46, quatre semaines).
   await page.reload();
-  await page.click('.onglet-btn[data-onglet="paire"]');
+  await page.click('.onglet-btn:has-text("Semaine 46")');
   await page.waitForSelector("#btnChoisirDossier");
   await page.waitForFunction(() => (document.querySelector(".zone-diakonos") || { innerText: "" }).innerText.includes("Comparé à"), null, { timeout: 60000 });
   verifier((await page.innerText(".zone-diakonos")).includes("3 pièce(s) Diakonos dans aucun lancement"), "retrouvé après rechargement");

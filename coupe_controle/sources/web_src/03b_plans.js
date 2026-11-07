@@ -283,7 +283,18 @@ function lirePlansBkp(fichier) {
         if (!pct || !ptn) continue;
         matieres.set(mat, { mat, ...lirePlansMatiere(pct, ptn, brd) });
       }
-      return indexerPlans(lancement, matieres);
+      // Pièces sans agglo (faites seulement de stratifié, matière vide dans la liste) : leur stratifié « L0102 » est la
+      // pièce elle-même. On garde, pour chacune, la matière de sa face dessus (où elle est comptée).
+      const seulesStratifie = new Map();
+      const lignes = new TextDecoder("iso-8859-1").decode(await extraireEntreeZip(bytes, maitre)).split(/\r?\n/);
+      for (let i = 0; i + 2 < lignes.length; i++) {
+        if (!lignes[i].startsWith("PNL1,")) continue;
+        const p1 = lignes[i].split(",");
+        const p2 = lignes[i + 1].split(",");
+        const m = /^PNL3,P(\d+):TC:/.exec(lignes[i + 2]);
+        if (m && p1[2] === "" && (p2[16] || p2[17])) seulesStratifie.set(`L${m[1].padStart(4, "0")}`, p2[16] || p2[17]);
+      }
+      return indexerPlans(lancement, matieres, seulesStratifie);
     })();
     lecture.catch(() => cachePlansBkp.delete(fichier));
     cachePlansBkp.set(fichier, lecture);
@@ -292,7 +303,7 @@ function lirePlansBkp(fichier) {
 }
 
 // Index : modules par nom, plans par pièce, quantité de chaque pièce placée dans les plans (morceaux « pièce » seulement).
-function indexerPlans(lancement, matieres) {
+function indexerPlans(lancement, matieres, seulesStratifie = new Map()) {
   const modules = new Map();
   const parCle = new Map();
   const placees = new Map();
@@ -330,7 +341,8 @@ function indexerPlans(lancement, matieres) {
           const nom = q[1];
           const cle = q[17] || "";
           if (cle) cles.add(cle);
-          if (cle && j < fois && !MOTIF_NOYAU_PLAN.test(nom) && !MOTIF_STRATIFIE_PLAN.test(nom)) placees.set(cle, (placees.get(cle) || 0) + 1);
+          const piece = (!MOTIF_NOYAU_PLAN.test(nom) && !MOTIF_STRATIFIE_PLAN.test(nom)) || seulesStratifie.get(nom) === m.mat;
+          if (cle && j < fois && piece) placees.set(cle, (placees.get(cle) || 0) + 1);
         }
         for (const cle of cles) {
           if (!parCle.has(cle)) parCle.set(cle, []);

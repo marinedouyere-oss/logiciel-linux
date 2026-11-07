@@ -133,6 +133,9 @@ func servir(w http.ResponseWriter, r *http.Request) {
 		signe()
 		w.WriteHeader(http.StatusNoContent)
 		return
+	case testerReseau:
+		servirTestReseau(w, r)
+		return
 	case quiEstLa:
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		io.WriteString(w, version)

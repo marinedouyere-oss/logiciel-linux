@@ -342,11 +342,11 @@ async function archiverOnglet(parite, lancementsRapport) {
       const reste = (test, valeur) => (valeur > 0 && restantsDuControle(p, test) === 0 ? 0 : valeur);
       recap.controle = reste(estControleListe, recap.controle);
       recap.scies = sciesRestants(p);
-      recap.horsPlans = p.plans ? reste(estControlePlans, p.plans.nonPlacees.length) : null;
+      recap.horsPlans = p.plans ? reste(estControlePlans, nbHorsPlans(p)) : null;
       recap.couleursAbsentes = reste(estControleCouleurs, recap.couleursAbsentes);
       // Casse : combien de ses pièces étaient déjà lancées, combien de rajouts.
       if (casse) {
-        const autre = parite === "paire" ? "impaire" : "paire";
+        const autre = ongletPrecedent(parite);
         const rc = await calculerCasse(p, pairesDeLaSemaine(autre), numeroSemaine(autre));
         if (!rc.erreur && !rc.autreSemaineChargee)
           recap.casse = {

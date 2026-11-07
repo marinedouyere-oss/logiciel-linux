@@ -26,6 +26,9 @@ function anneeDeSemaine(semaine, aujourdHui = new Date()) {
   return [a - 1, a, a + 1].reduce((m, c) => (Math.abs(lundiSemaineIso(c, semaine) - aujourdHui) < Math.abs(lundiSemaineIso(m, semaine) - aujourdHui) ? c : m), a);
 }
 
+// Pour ranger les semaines dans l'ordre du calendrier (la semaine 1 vient après la 52).
+const ordreCalendrier = (n) => anneeDeSemaine(Number(n)) * 100 + Number(n);
+
 function datesSemaine(semaine) {
   const lundi = lundiSemaineIso(anneeDeSemaine(semaine), semaine);
   const vendredi = new Date(lundi);
@@ -187,7 +190,7 @@ function afficherAccueil() {
   for (const p of cases) if (!p.strat && !caseAjoutee(p)) aRegarder.push({ p, titre: `${titreCase(p)} — pas encore de lancement`, genre: "vide" });
   const nbProblemes = aRegarder.filter((a) => a.genre === "souci").length;
 
-  const semaines = ["paire", "impaire"].map((x) => ({ parite: x, numero: numeroSemaine(x) })).sort((a, b) => a.numero - b.numero);
+  const semaines = ONGLETS_SEMAINE.map((x) => ({ parite: x, numero: numeroSemaine(x) })).sort((a, b) => ordreCalendrier(a.numero) - ordreCalendrier(b.numero));
   const actions = `<div class="choix-semaine" role="group" aria-label="Choisir la semaine">${semaines
     .map((s) => `<button type="button" data-parite="${s.parite}" aria-pressed="${s.parite === parite}" class="${s.parite === parite ? "actif" : ""}">S${s.numero}</button>`)
     .join("")}</div>

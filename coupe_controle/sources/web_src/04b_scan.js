@@ -28,7 +28,7 @@ function trouverCodeLancement(nomBrut) {
 function pariteDeSemaine(code) {
   const semaine = parseInt(code.slice(2, 4), 10);
   if (Number.isNaN(semaine)) return null;
-  return semaine % 2 === 0 ? "paire" : "impaire";
+  return ongletDuNumero(semaine);
 }
 
 // La casse porte le numéro de la semaine précédente (LAN2644CASSE est
@@ -38,16 +38,18 @@ function pariteCasse(code) {
   const semaine = parseInt(code.slice(2, 4), 10);
   if (Number.isNaN(semaine)) return pariteDeSemaine(code);
   const suivante = semaine >= 52 ? 1 : semaine + 1;
-  return suivante % 2 === 0 ? "paire" : "impaire";
+  return ongletDuNumero(suivante);
 }
 
-// Le nom du chantier (ex. "TRIGANO", "EQUI76") : tout ce qui suit le code.
+// Le nom du chantier (ex. "TRIGANO", "EQUI76") : tout ce qui suit le code, espaces compris mais retirés
+// (« LAN2648CHANTIERS BIS.xlsx » et « LISTE DE COUPES LAN2648CHANTIERSBIS.pdf » → « CHANTIERSBIS », à part de
+// « LAN2648CHANTIERS »). Une copie de l'Explorateur (« - Copie », « (2) ») garde le nom de l'original.
 function extraireSuffixeLancement(nomBrut, code) {
-  const nom = nomBrut.replace(MOTIF_DATE_SAUVEGARDE, "");
+  const nom = nomBrut.replace(MOTIF_DATE_SAUVEGARDE, "").replace(/\.[A-Za-z0-9]+$/, "").replace(/\s*-\s*copie.*$|\s*\(\d+\)$/i, "");
   const pos = nom.indexOf(code);
   if (pos === -1) return "";
-  const m = /^[A-Za-zÀ-ÖØ-öø-ÿ0-9-]+/.exec(nom.slice(pos + code.length));
-  return m ? m[0].toUpperCase() : "";
+  const m = /^[A-Za-zÀ-ÖØ-öø-ÿ0-9-]+(?:\s+[A-Za-zÀ-ÖØ-öø-ÿ0-9-]+)*/.exec(nom.slice(pos + code.length));
+  return m ? m[0].replace(/\s+/g, "").toUpperCase() : "";
 }
 
 function decoderNomFichierPartage(nom) {
@@ -239,7 +241,7 @@ function repartirFichiersDossier(fichiersDossier, pariteScan, racine = "") {
   return res;
 }
 
-const pariteDuNumeroSemaine = (semaine) => (parseInt(semaine, 10) % 2 === 0 ? "paire" : "impaire");
+const pariteDuNumeroSemaine = (semaine) => ongletDuNumero(parseInt(semaine, 10));
 
 const nouveauGroupe = (poste, info, dossier) => ({
   poste,

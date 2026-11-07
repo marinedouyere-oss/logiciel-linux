@@ -37,7 +37,7 @@ async function donneesCompteRendu(parite) {
   lancements.sort((a, b) => a.rang - b.rang);
   // Casse : déjà lancées avant / rajouts, en pièces.
   const lignesCasse = [];
-  const autre = parite === "paire" ? "impaire" : "paire";
+  const autre = ongletPrecedent(parite);
   for (const c of casses.sort((a, b) => (a.p.poste === "Casse" ? 0 : 1) - (b.p.poste === "Casse" ? 0 : 1))) {
     if (c.p.poste !== "Casse") {
       lignesCasse.push({ libelle: /RECYCLAGE/i.test(c.base) ? "Recyclage casse" : "Casse", base: c.base, pieces: c.pieces, remarque: "" });

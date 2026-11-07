@@ -99,7 +99,9 @@ function lister(dossier, chemin = []) {
   };
   const avant = await ligneRecap();
   console.log("AVANT", avant);
-  verifier(avant && avant[3] === "✔ OK" && avant[4] === "✔ OK", "1er tour contrôlé (contrôle et scies OK)");
+  // V6.1 : la colonne Scies compte aussi les pièces dans aucun plan de coupe ; sur la 46 01, 2 pièces de la liste
+  // (CVC26090679001, CVC26100393002) ne sont dans aucune optimisation de Cut Rite.
+  verifier(avant && avant[3] === "✔ OK" && avant[4] === "⚠ 2", "1er tour contrôlé (contrôle OK, 2 pièces dans aucun plan de coupe)");
   const deuxieme = path.join(site, "s46g", "Semaine 46", "2EME TOUR AGGLO");
   await changer("bkp", path.join(deuxieme, "LAN264602START 2backup.bkp"));
   const apresBkp = await ligneRecap();

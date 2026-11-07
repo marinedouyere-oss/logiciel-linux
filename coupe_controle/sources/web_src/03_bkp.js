@@ -95,6 +95,12 @@ function trouverEntreeCttMaitre(entrees, nomLancement) {
   if (sansSuffixe.length >= 1) {
     return sansSuffixe.reduce((a, b) => (b.tailleReelle > a.tailleReelle ? b : a));
   }
+  // Nom de lot avec « _ » (liste « LAN264801START_OPT ») : le maître est celui dont les autres .ctt sont les matières
+  // (« LAN264801START_OPT_SAG10HYBR.ctt »).
+  const base = (e) => e.nom.split(/[/\\]/).pop().replace(/\.ctt$/i, "").toLowerCase();
+  const nbMatieres = (e) => candidats.filter((x) => x !== e && base(x).startsWith(`${base(e)}_`)).length;
+  const maitre = candidats.reduce((a, b) => (nbMatieres(b) > nbMatieres(a) ? b : a));
+  if (nbMatieres(maitre) > 0) return maitre;
   throw new Error("Fichier .ctt maître introuvable dans l'archive .bkp (tous les .ctt trouvés ont un suffixe).");
 }
 
