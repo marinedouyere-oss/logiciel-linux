@@ -211,6 +211,9 @@ function semaineLivraisonDuLancement(semaines) {
 // du dossier « Semaine NN » où il est rangé, sinon celle du code de la colonne lancement, sinon du nom du fichier.
 // La casse se fabrique la semaine d'après (casse 46 en semaine 47), sauf rangée dans un dossier de semaine.
 function semaineDuLancement(lignes, casse, nomFichier, semaineDossier = null, semainesLivraison = null) {
+  // Semaine choisie à la main (dérogation) : elle passe avant tout le reste.
+  const derogation = typeof derogationDe === "function" ? derogationDe(nomFichier) : null;
+  if (derogation) return { annee: derogation.annee || new Date().getFullYear(), semaine: derogation.semaine };
   const livraison = semaineLivraisonDuLancement(semainesLivraison);
   if (livraison) {
     let n = livraison.semaine;
@@ -413,7 +416,7 @@ function texteArchivage(a) {
 // couleurs), controle (bilan de chaque contrôle), problemes (pièce par pièce), pieces (une ligne par pièce).
 // L'appli Android se branche dessus (elle le lit) ; les PC qui choisissent le même dossier le complètent tour à tour.
 
-const signatureSemaine = (s) => (s ? JSON.stringify([s.supprimeeLe || "", ...s.lancements.map((l) => `${cleNomLancement(l.nom)}@${l.maj}`).sort()]) : "");
+const signatureSemaine = (s) => (s ? JSON.stringify([s.supprimeeLe || "", ...s.lancements.map((l) => `${cleNomLancement(l.nom)}@${l.maj}`).sort(), JSON.stringify(s.retraits || {})]) : "");
 const signatureDesSemaines = (liste) => liste.map((s) => `${s.id}:${signatureSemaine(s)}`).sort().join("|");
 
 // Deux versions d'une semaine : lancement par lancement, le plus récent ; un retrait efface ce qui est plus ancien.
@@ -421,14 +424,19 @@ function fusionnerSemaines(a, b) {
   if (!a) return b;
   if (!b) return a;
   const supprimeeLe = [a.supprimeeLe, b.supprimeeLe].filter(Boolean).sort().pop() || null;
+  // Lancements retirés d'une semaine (déplacés dans une autre) : la date du retrait la plus récente.
+  const retraits = { ...(a.retraits || {}) };
+  for (const [k, v] of Object.entries(b.retraits || {})) if (!retraits[k] || v > retraits[k]) retraits[k] = v;
   const parNom = new Map();
   for (const l of [...a.lancements, ...b.lancements]) {
     const k = cleNomLancement(l.nom);
     const x = parNom.get(k);
     if (!x || l.maj > x.maj) parNom.set(k, l);
   }
-  const lancements = [...parNom.values()].filter((l) => !supprimeeLe || l.maj > supprimeeLe).sort((x, y) => x.nom.localeCompare(y.nom));
-  return { ...a, colonnesPieces: a.colonnesPieces || b.colonnesPieces, maj: a.maj > b.maj ? a.maj : b.maj, supprimeeLe, lancements };
+  const lancements = [...parNom.values()]
+    .filter((l) => (!supprimeeLe || l.maj > supprimeeLe) && !(retraits[cleNomLancement(l.nom)] && l.maj <= retraits[cleNomLancement(l.nom)]))
+    .sort((x, y) => x.nom.localeCompare(y.nom));
+  return { ...a, colonnesPieces: a.colonnesPieces || b.colonnesPieces, maj: a.maj > b.maj ? a.maj : b.maj, supprimeeLe, retraits, lancements };
 }
 
 async function compresserJson(objet) {
@@ -682,6 +690,24 @@ async function importerSemainesBibliotheque() {
 }
 
 // Retirer une semaine (partout : la date du retrait part aussi dans le fichier partagé).
+// Un lancement rangé dans une autre semaine (dérogation) : retiré des autres semaines de la bibliothèque (le retrait
+// est daté, pour qu'une ancienne copie du fichier partagé ne le fasse pas revenir).
+async function retirerLancementDesAutresSemaines(nomFichier, idGarde) {
+  const k = cleNomLancement(String(nomFichier).replace(/\.[^.]*$/, ""));
+  const maintenant = new Date().toISOString();
+  let touche = false;
+  for (const s of [...bibliotheque.semaines.values()]) {
+    if (s.id === idGarde || !s.lancements.some((l) => cleNomLancement(l.nom) === k)) continue;
+    await enregistrerSemaineLocale({ ...s, lancements: s.lancements.filter((l) => cleNomLancement(l.nom) !== k), retraits: { ...(s.retraits || {}), [k]: maintenant }, maj: maintenant });
+    touche = true;
+  }
+  if (!touche) return false;
+  changementBibliotheque();
+  if (bibliotheque.dossier) await synchroniserBibliotheque(false);
+  rafraichirBibliotheque();
+  return true;
+}
+
 async function retirerSemaineBibliotheque(id) {
   const s = bibliotheque.semaines.get(id);
   if (!s) return;

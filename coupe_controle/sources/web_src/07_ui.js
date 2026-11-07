@@ -583,8 +583,11 @@ function lignesStratEnCache(fichier) {
   return stratEnCache(fichier).then((r) => r.lignes);
 }
 
-async function detecterSemaine(p) {
+async function detecterSemaine(p, sansDerogation = false) {
   if (!p.strat) return null;
+  // Semaine choisie à la main pour ce lancement (dérogation à la règle des semaines).
+  const derogation = sansDerogation ? null : derogationDe(p.strat.name);
+  if (derogation) return String(derogation.semaine).padStart(2, "0");
   try {
     const { lignes, semaines } = await stratEnCache(p.strat);
     // La semaine écrite dans le fichier (colonne com_livsem) : LAN2646BSR livré en semaine 47 est de la 47 ;
@@ -838,9 +841,11 @@ function remplirCarte(carte, p) {
     <div class="entete-carte">
       ${numeroCase(p) ? `<span class="pastille">${String(numeroCase(p)).padStart(2, "0")}</span>` : ""}
       <span class="titre-carte">${echapper(titreCase(p))}</span>
+      ${p.strat && !estDiakonos(p) ? '<button type="button" class="texte" data-action="semaine" title="Ranger ce lancement dans une autre semaine (dérogation)">⇄ Semaine</button>' : ""}
       ${caseAjoutee(p) ? '<button type="button" class="texte alerte" data-action="retirer">✕ Retirer</button>' : ""}
       <button type="button" class="texte" data-action="reinitialiser">↺ Réinitialiser</button>
     </div>
+    <div class="zone-semaine"></div>
     ${zonesDiakonosHtml(p)}
     ${lignesFichiers}
     <div class="boutons-carte">
@@ -894,6 +899,14 @@ function remplirCarte(carte, p) {
   });
   const retirer = carte.querySelector('[data-action="retirer"]');
   if (retirer) retirer.addEventListener("click", () => retirerChantier(p));
+  const zoneSemaine = carte.querySelector(".zone-semaine");
+  remplirZoneSemaine(zoneSemaine, p);
+  const boutonSemaine = carte.querySelector('[data-action="semaine"]');
+  if (boutonSemaine)
+    boutonSemaine.addEventListener("click", () => {
+      zoneSemaine.dataset.ouvert = "1";
+      remplirZoneSemaine(zoneSemaine, p);
+    });
   remplirProblemes(carte.querySelector(".zone-problemes"), p);
   if (p.rapport) afficherRapport(carte.querySelector(".zone-rapport"), p);
   if (p.ecartsScies || p.erreurScies) afficherScies(carte.querySelector(".zone-scies"), p);
@@ -1990,8 +2003,20 @@ function remplirCarteDossier(parite) {
       <button type="button" class="contour" id="btnChoisirDossier">${handle ? "Choisir un autre dossier" : "Choisir le dossier à la main"}</button>
       <button type="button" id="btnScanner" ${handle && !scansEnCours.has(parite) ? "" : "disabled"}>Scanner</button>
     </div>
-    ${etat ? `<div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes.map(echapper).join("<br>")}</div>` : ""}
+    ${etat ? `<div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes
+      .map((l) => (typeof l === "string" ? echapper(l) : `${echapper(l.texte)} <button type="button" class="contour petit" data-deroger-case="${l.derogation.id}" data-semaine="${l.derogation.semaine}">Le garder en semaine ${l.derogation.semaine}</button>`))
+      .join("<br>")}</div>` : ""}
   `;
+  carte.querySelectorAll("[data-deroger-case]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const p = paires.find((x) => String(x.id) === b.dataset.derogerCase);
+      const n = Number(b.dataset.semaine);
+      if (!p || !(await derogerSemaine(p, n))) return;
+      const e = etatsScan[parite];
+      if (e) e.lignes = e.lignes.map((l) => (typeof l === "object" && String(l.derogation.id) === b.dataset.derogerCase ? `${l.texte} → gardé en semaine ${n} (dérogation)` : l));
+      afficher();
+    })
+  );
   $("btnChoisirDossier").addEventListener("click", () => choisirDossier(parite));
   $("btnScanner").addEventListener("click", () => scannerDossier(parite));
   const ouvrir = $("btnOuvrirSemaine");
@@ -2273,7 +2298,11 @@ async function placerFichiersScannes(parite, r) {
       }
       enregistrer(p);
       a.copie = true;
-      lignes.push(`✔ ${a.libelle} : ${g.strat.nom}${suffixe}${g.dossier ? ` (dossier ${g.dossier})` : ""}${deplace ? ` → semaine ${p.semaine}` : ""}`);
+      const texte = `✔ ${a.libelle} : ${g.strat.nom}${suffixe}${g.dossier ? ` (dossier ${g.dossier})` : ""}${deplace ? ` → semaine ${p.semaine}` : ""}`;
+      // Lancement d'une autre semaine (en retard, le plus souvent) trouvé dans ce dossier : on peut l'y garder.
+      const semaineDuScan = parseInt(g.semaineDossier || numeroSemaine(parite), 10);
+      const autre = p.poste !== "Casse" && p.semaine && parseInt(p.semaine, 10) !== semaineDuScan && ongletAffichant(semaineDuScan);
+      lignes.push(autre ? { texte: `${texte} — le fichier dit semaine ${parseInt(p.semaine, 10)}`, derogation: { id: p.id, semaine: semaineDuScan } } : texte);
     } catch (erreur) {
       enregistrer(p);
       lignes.push(`❌ ${a.libelle} : ${erreur && erreur.message ? erreur.message : erreur}`);
@@ -2302,7 +2331,7 @@ async function placerFichiersScannes(parite, r) {
     };
     for (const p of [...pairesDeLaSemaine(parite), ...diakonosDeLaSemaine(parite)]) {
       if (placees.has(p) || !p.strat || deLaSemaine(p)) continue;
-      const ancienne = `${titreCase(p)} : ${p.strat.name} (semaine ${p.semaine}) retiré, ce n'est pas la semaine ${semaineScan}`;
+      const ancienne = `${titreCase(p)} : ${p.strat.name} (semaine ${p.semaine}) retiré, ce n'est pas la semaine ${semaineScan} (⇄ « Semaine » sur la case pour déroger avant de scanner)`;
       if (caseAjoutee(p)) {
         await effacerMemoire(p);
         paires.splice(paires.indexOf(p), 1);

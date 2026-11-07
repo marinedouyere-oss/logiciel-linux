@@ -495,6 +495,10 @@
   .pl-plus { color: var(--ok-texte); font-weight: 700; }
   .pl-moins { color: #c62828; font-weight: 700; }
   @media (max-width: 900px) { .pl-avap { grid-template-columns: 1fr; } }
+  /* ---- V6.1.4 : dérogation à la règle des semaines ---- */
+  .derogation { margin: 6px 0 8px; padding: 8px 12px; border-radius: 8px; background: #e3eefc; color: #104281; font-size: 0.9rem; }
+  .derogation.choix select { margin: 0 6px; padding: 4px 8px; border: 1px solid #d9d4cf; border-radius: 6px; font: inherit; }
+  .derogation .note { color: #104281; opacity: 0.85; margin-top: 4px; }
   /* ---- V6.1.3 : QR code du lien avec le téléphone ---- */
   .lien-qr { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin: 6px 0 4px; }
   .qr-cadre { background: #fff; border: 1px solid var(--gris-filet); border-radius: 10px; padding: 6px; line-height: 0; }

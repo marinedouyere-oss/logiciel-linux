@@ -11,7 +11,7 @@ import (
 	"unsafe"
 )
 
-// Sentinelle dans la barre des tâches : la fenêtre Edge ouverte par le .exe prend l'icône Laisné et sa
+// Sentinelle dans la barre des tâches : la fenêtre Chrome (ou Edge) ouverte par le .exe prend l'icône Laisné et sa
 // propre identité (« LaisneIndustrie.Sentinelle »), pas celles d'Edge. Épinglée, elle relance ce .exe
 // avec l'icône Laisné. Edge peut remettre son icône : elle est reposée toutes les 2 secondes si besoin.
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.1.3 — Contrôle de coupe</title>
+<title>Sentinelle V6.1.4 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -513,6 +513,10 @@
   .pl-plus { color: var(--ok-texte); font-weight: 700; }
   .pl-moins { color: #c62828; font-weight: 700; }
   @media (max-width: 900px) { .pl-avap { grid-template-columns: 1fr; } }
+  /* ---- V6.1.4 : dérogation à la règle des semaines ---- */
+  .derogation { margin: 6px 0 8px; padding: 8px 12px; border-radius: 8px; background: #e3eefc; color: #104281; font-size: 0.9rem; }
+  .derogation.choix select { margin: 0 6px; padding: 4px 8px; border: 1px solid #d9d4cf; border-radius: 6px; font: inherit; }
+  .derogation .note { color: #104281; opacity: 0.85; margin-top: 4px; }
   /* ---- V6.1.3 : QR code du lien avec le téléphone ---- */
   .lien-qr { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin: 6px 0 4px; }
   .qr-cadre { background: #fff; border: 1px solid var(--gris-filet); border-radius: 10px; padding: 6px; line-height: 0; }
@@ -561,7 +565,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.1.3</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.1.4</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -663,7 +667,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.1.3 · Contrôle de coupe</span>
+    <span>Sentinelle V6.1.4 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -5814,6 +5818,9 @@ function semaineLivraisonDuLancement(semaines) {
 // du dossier « Semaine NN » où il est rangé, sinon celle du code de la colonne lancement, sinon du nom du fichier.
 // La casse se fabrique la semaine d'après (casse 46 en semaine 47), sauf rangée dans un dossier de semaine.
 function semaineDuLancement(lignes, casse, nomFichier, semaineDossier = null, semainesLivraison = null) {
+  // Semaine choisie à la main (dérogation) : elle passe avant tout le reste.
+  const derogation = typeof derogationDe === "function" ? derogationDe(nomFichier) : null;
+  if (derogation) return { annee: derogation.annee || new Date().getFullYear(), semaine: derogation.semaine };
   const livraison = semaineLivraisonDuLancement(semainesLivraison);
   if (livraison) {
     let n = livraison.semaine;
@@ -6016,7 +6023,7 @@ function texteArchivage(a) {
 // couleurs), controle (bilan de chaque contrôle), problemes (pièce par pièce), pieces (une ligne par pièce).
 // L'appli Android se branche dessus (elle le lit) ; les PC qui choisissent le même dossier le complètent tour à tour.
 
-const signatureSemaine = (s) => (s ? JSON.stringify([s.supprimeeLe || "", ...s.lancements.map((l) => `${cleNomLancement(l.nom)}@${l.maj}`).sort()]) : "");
+const signatureSemaine = (s) => (s ? JSON.stringify([s.supprimeeLe || "", ...s.lancements.map((l) => `${cleNomLancement(l.nom)}@${l.maj}`).sort(), JSON.stringify(s.retraits || {})]) : "");
 const signatureDesSemaines = (liste) => liste.map((s) => `${s.id}:${signatureSemaine(s)}`).sort().join("|");
 
 // Deux versions d'une semaine : lancement par lancement, le plus récent ; un retrait efface ce qui est plus ancien.
@@ -6024,14 +6031,19 @@ function fusionnerSemaines(a, b) {
   if (!a) return b;
   if (!b) return a;
   const supprimeeLe = [a.supprimeeLe, b.supprimeeLe].filter(Boolean).sort().pop() || null;
+  // Lancements retirés d'une semaine (déplacés dans une autre) : la date du retrait la plus récente.
+  const retraits = { ...(a.retraits || {}) };
+  for (const [k, v] of Object.entries(b.retraits || {})) if (!retraits[k] || v > retraits[k]) retraits[k] = v;
   const parNom = new Map();
   for (const l of [...a.lancements, ...b.lancements]) {
     const k = cleNomLancement(l.nom);
     const x = parNom.get(k);
     if (!x || l.maj > x.maj) parNom.set(k, l);
   }
-  const lancements = [...parNom.values()].filter((l) => !supprimeeLe || l.maj > supprimeeLe).sort((x, y) => x.nom.localeCompare(y.nom));
-  return { ...a, colonnesPieces: a.colonnesPieces || b.colonnesPieces, maj: a.maj > b.maj ? a.maj : b.maj, supprimeeLe, lancements };
+  const lancements = [...parNom.values()]
+    .filter((l) => (!supprimeeLe || l.maj > supprimeeLe) && !(retraits[cleNomLancement(l.nom)] && l.maj <= retraits[cleNomLancement(l.nom)]))
+    .sort((x, y) => x.nom.localeCompare(y.nom));
+  return { ...a, colonnesPieces: a.colonnesPieces || b.colonnesPieces, maj: a.maj > b.maj ? a.maj : b.maj, supprimeeLe, retraits, lancements };
 }
 
 async function compresserJson(objet) {
@@ -6285,6 +6297,24 @@ async function importerSemainesBibliotheque() {
 }
 
 // Retirer une semaine (partout : la date du retrait part aussi dans le fichier partagé).
+// Un lancement rangé dans une autre semaine (dérogation) : retiré des autres semaines de la bibliothèque (le retrait
+// est daté, pour qu'une ancienne copie du fichier partagé ne le fasse pas revenir).
+async function retirerLancementDesAutresSemaines(nomFichier, idGarde) {
+  const k = cleNomLancement(String(nomFichier).replace(/\.[^.]*$/, ""));
+  const maintenant = new Date().toISOString();
+  let touche = false;
+  for (const s of [...bibliotheque.semaines.values()]) {
+    if (s.id === idGarde || !s.lancements.some((l) => cleNomLancement(l.nom) === k)) continue;
+    await enregistrerSemaineLocale({ ...s, lancements: s.lancements.filter((l) => cleNomLancement(l.nom) !== k), retraits: { ...(s.retraits || {}), [k]: maintenant }, maj: maintenant });
+    touche = true;
+  }
+  if (!touche) return false;
+  changementBibliotheque();
+  if (bibliotheque.dossier) await synchroniserBibliotheque(false);
+  rafraichirBibliotheque();
+  return true;
+}
+
 async function retirerSemaineBibliotheque(id) {
   const s = bibliotheque.semaines.get(id);
   if (!s) return;
@@ -7274,15 +7304,21 @@ async function lancerReecriture() {
     const ss = String(r.semaine).padStart(2, "0");
     // Le dossier choisi peut être directement celui de la semaine : on range dedans.
     const numeroRacine = numeroDossierSemaine(racine.name);
+    // Le dossier choisi est celui d'une autre semaine : on peut y ranger quand même le lancement (dérogation : ex.
+    // une FENO en retard de la semaine 46 fabriquée en semaine 47). Sinon, rien n'est enregistré.
+    let derogation = false;
     if (numeroRacine !== null && numeroRacine !== Number(ss)) {
-      await afficherBlocage(
+      derogation = await demanderConfirmation(
         "Le dossier choisi est une autre semaine",
-        `Le dossier des semaines choisi est « ${racine.name} ».\n\nPour ranger un lancement de la semaine ${Number(ss)}, choisissez le dossier qui contient toutes les semaines (bouton « Changer »). Rien n'a été enregistré.`
+        `Le lancement est de la semaine ${Number(ss)}, le dossier choisi est « ${racine.name} » (semaine ${numeroRacine}).\n\nLe ranger quand même en semaine ${numeroRacine} (dérogation) ? Le nom et le contenu du fichier ne changent pas ; Sentinelle le contrôlera en semaine ${numeroRacine}.`,
+        `Ranger en semaine ${numeroRacine}`
       );
-      etat(["Rien n'a été enregistré : le dossier choisi est une autre semaine."], true);
-      return;
+      if (!derogation) {
+        etat(["Rien n'a été enregistré : le dossier choisi est une autre semaine."], true);
+        return;
+      }
     }
-    const semaines = numeroRacine === Number(ss) ? [{ dossier: racine, chemin: [] }] : await chercherDossiersSemaine(racine, ss);
+    const semaines = numeroRacine === Number(ss) || derogation ? [{ dossier: racine, chemin: [] }] : await chercherDossiersSemaine(racine, ss);
     let dossierSemaine;
     let cheminSemaine;
     if (semaines.length > 1) {
@@ -7320,7 +7356,9 @@ async function lancerReecriture() {
     await w.write(octets);
     await w.close();
     ajouterAuJournal(existant || nom, chemin);
-    etat([`✔ Enregistré${existant ? " (ancien fichier remplacé)" : ""} : ${chemin} / ${existant || nom}`, resumeCorrections(plan, type)]);
+    // Dérogation : « Contrôler la coupe » rangera ce lancement dans la semaine de son dossier.
+    if (derogation) enregistrerDerogation(existant || nom, numeroRacine);
+    etat([`✔ Enregistré${existant ? " (ancien fichier remplacé)" : ""} : ${chemin} / ${existant || nom}${derogation ? ` — rangé en semaine ${numeroRacine} (dérogation)` : ""}`, resumeCorrections(plan, type)]);
   } catch (erreur) {
     etat([`Réécriture impossible : ${erreur && erreur.message ? erreur.message : erreur}. Rien n'a été enregistré.`], true);
   } finally {
@@ -9242,8 +9280,11 @@ function lignesStratEnCache(fichier) {
   return stratEnCache(fichier).then((r) => r.lignes);
 }
 
-async function detecterSemaine(p) {
+async function detecterSemaine(p, sansDerogation = false) {
   if (!p.strat) return null;
+  // Semaine choisie à la main pour ce lancement (dérogation à la règle des semaines).
+  const derogation = sansDerogation ? null : derogationDe(p.strat.name);
+  if (derogation) return String(derogation.semaine).padStart(2, "0");
   try {
     const { lignes, semaines } = await stratEnCache(p.strat);
     // La semaine écrite dans le fichier (colonne com_livsem) : LAN2646BSR livré en semaine 47 est de la 47 ;
@@ -9497,9 +9538,11 @@ function remplirCarte(carte, p) {
     <div class="entete-carte">
       ${numeroCase(p) ? `<span class="pastille">${String(numeroCase(p)).padStart(2, "0")}</span>` : ""}
       <span class="titre-carte">${echapper(titreCase(p))}</span>
+      ${p.strat && !estDiakonos(p) ? '<button type="button" class="texte" data-action="semaine" title="Ranger ce lancement dans une autre semaine (dérogation)">⇄ Semaine</button>' : ""}
       ${caseAjoutee(p) ? '<button type="button" class="texte alerte" data-action="retirer">✕ Retirer</button>' : ""}
       <button type="button" class="texte" data-action="reinitialiser">↺ Réinitialiser</button>
     </div>
+    <div class="zone-semaine"></div>
     ${zonesDiakonosHtml(p)}
     ${lignesFichiers}
     <div class="boutons-carte">
@@ -9553,6 +9596,14 @@ function remplirCarte(carte, p) {
   });
   const retirer = carte.querySelector('[data-action="retirer"]');
   if (retirer) retirer.addEventListener("click", () => retirerChantier(p));
+  const zoneSemaine = carte.querySelector(".zone-semaine");
+  remplirZoneSemaine(zoneSemaine, p);
+  const boutonSemaine = carte.querySelector('[data-action="semaine"]');
+  if (boutonSemaine)
+    boutonSemaine.addEventListener("click", () => {
+      zoneSemaine.dataset.ouvert = "1";
+      remplirZoneSemaine(zoneSemaine, p);
+    });
   remplirProblemes(carte.querySelector(".zone-problemes"), p);
   if (p.rapport) afficherRapport(carte.querySelector(".zone-rapport"), p);
   if (p.ecartsScies || p.erreurScies) afficherScies(carte.querySelector(".zone-scies"), p);
@@ -10649,8 +10700,20 @@ function remplirCarteDossier(parite) {
       <button type="button" class="contour" id="btnChoisirDossier">${handle ? "Choisir un autre dossier" : "Choisir le dossier à la main"}</button>
       <button type="button" id="btnScanner" ${handle && !scansEnCours.has(parite) ? "" : "disabled"}>Scanner</button>
     </div>
-    ${etat ? `<div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes.map(echapper).join("<br>")}</div>` : ""}
+    ${etat ? `<div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes
+      .map((l) => (typeof l === "string" ? echapper(l) : `${echapper(l.texte)} <button type="button" class="contour petit" data-deroger-case="${l.derogation.id}" data-semaine="${l.derogation.semaine}">Le garder en semaine ${l.derogation.semaine}</button>`))
+      .join("<br>")}</div>` : ""}
   `;
+  carte.querySelectorAll("[data-deroger-case]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      const p = paires.find((x) => String(x.id) === b.dataset.derogerCase);
+      const n = Number(b.dataset.semaine);
+      if (!p || !(await derogerSemaine(p, n))) return;
+      const e = etatsScan[parite];
+      if (e) e.lignes = e.lignes.map((l) => (typeof l === "object" && String(l.derogation.id) === b.dataset.derogerCase ? `${l.texte} → gardé en semaine ${n} (dérogation)` : l));
+      afficher();
+    })
+  );
   $("btnChoisirDossier").addEventListener("click", () => choisirDossier(parite));
   $("btnScanner").addEventListener("click", () => scannerDossier(parite));
   const ouvrir = $("btnOuvrirSemaine");
@@ -10932,7 +10995,11 @@ async function placerFichiersScannes(parite, r) {
       }
       enregistrer(p);
       a.copie = true;
-      lignes.push(`✔ ${a.libelle} : ${g.strat.nom}${suffixe}${g.dossier ? ` (dossier ${g.dossier})` : ""}${deplace ? ` → semaine ${p.semaine}` : ""}`);
+      const texte = `✔ ${a.libelle} : ${g.strat.nom}${suffixe}${g.dossier ? ` (dossier ${g.dossier})` : ""}${deplace ? ` → semaine ${p.semaine}` : ""}`;
+      // Lancement d'une autre semaine (en retard, le plus souvent) trouvé dans ce dossier : on peut l'y garder.
+      const semaineDuScan = parseInt(g.semaineDossier || numeroSemaine(parite), 10);
+      const autre = p.poste !== "Casse" && p.semaine && parseInt(p.semaine, 10) !== semaineDuScan && ongletAffichant(semaineDuScan);
+      lignes.push(autre ? { texte: `${texte} — le fichier dit semaine ${parseInt(p.semaine, 10)}`, derogation: { id: p.id, semaine: semaineDuScan } } : texte);
     } catch (erreur) {
       enregistrer(p);
       lignes.push(`❌ ${a.libelle} : ${erreur && erreur.message ? erreur.message : erreur}`);
@@ -10961,7 +11028,7 @@ async function placerFichiersScannes(parite, r) {
     };
     for (const p of [...pairesDeLaSemaine(parite), ...diakonosDeLaSemaine(parite)]) {
       if (placees.has(p) || !p.strat || deLaSemaine(p)) continue;
-      const ancienne = `${titreCase(p)} : ${p.strat.name} (semaine ${p.semaine}) retiré, ce n'est pas la semaine ${semaineScan}`;
+      const ancienne = `${titreCase(p)} : ${p.strat.name} (semaine ${p.semaine}) retiré, ce n'est pas la semaine ${semaineScan} (⇄ « Semaine » sur la case pour déroger avant de scanner)`;
       if (caseAjoutee(p)) {
         await effacerMemoire(p);
         paires.splice(paires.indexOf(p), 1);
@@ -14638,6 +14705,160 @@ function imprimerPlanEnGrand(x, quoi) {
     document: `Plan de coupe ${plan.matiere} Pdc ${plan.pdc}${avecModif ? " (modifié)" : ""}`,
   });
   telecharger(`Plan_${donnees.lancement}_${plan.module ? `module_${plan.nom}` : `${plan.matiere}_Pdc${plan.pdc}`}${suffixe}.pdf`, octets, "application/pdf");
+}
+
+// ---- Déroger à la règle des semaines ----
+// Normalement, un lancement est rangé dans la semaine écrite dans son fichier (colonne com_livsem), sinon celle de son
+// dossier « Semaine NN ». On peut décider autrement : une FENO en retard (semaine 46) fabriquée en semaine 47.
+// La dérogation est retenue par nom de lancement : elle tient aux scans suivants, dans la bibliothèque et sur le
+// téléphone. Le fichier de lancement, lui, n'est jamais modifié.
+
+const CLE_DEROGATIONS = "sentinelle-derogations-semaine";
+
+function lireDerogations() {
+  try {
+    const d = JSON.parse(localStorage.getItem(CLE_DEROGATIONS) || "{}");
+    return d && typeof d === "object" ? d : {};
+  } catch (_e) {
+    return {};
+  }
+}
+
+function ecrireDerogations(d) {
+  try {
+    localStorage.setItem(CLE_DEROGATIONS, JSON.stringify(d));
+  } catch (_e) {
+    // sans stockage : la dérogation dure le temps de la page
+  }
+}
+
+const cleDerogation = (nomFichier) => cleNomLancement(String(nomFichier || "").replace(/\.[^.]*$/, ""));
+
+// { annee, semaine } choisie à la main pour ce lancement, ou null.
+function derogationDe(nomFichier) {
+  if (!nomFichier) return null;
+  const d = lireDerogations()[cleDerogation(nomFichier)];
+  return d && d.semaine >= 1 && d.semaine <= 53 ? d : null;
+}
+
+function enregistrerDerogation(nomFichier, semaine, annee) {
+  const d = lireDerogations();
+  d[cleDerogation(nomFichier)] = { semaine: Number(semaine), annee: annee || anneeDeSemaine(Number(semaine)), date: new Date().toISOString(), nom: String(nomFichier).replace(/\.[^.]*$/, "") };
+  ecrireDerogations(d);
+}
+
+function supprimerDerogation(nomFichier) {
+  const d = lireDerogations();
+  delete d[cleDerogation(nomFichier)];
+  ecrireDerogations(d);
+}
+
+// L'onglet qui affiche cette semaine (une des 4 semaines de « Contrôler la coupe »), ou null.
+const ongletAffichant = (n) => ONGLETS_SEMAINE.find((o) => Number(numeroSemaine(o)) === Number(n)) || null;
+
+// Les fichiers et résultats d'une case passent dans une autre (même poste, autre semaine).
+async function deplacerCase(a, b) {
+  for (const role of ["strat", "coupe", "bkp", "sommaire", "diakonos"]) {
+    if (!a[role]) continue;
+    b[role] = a[role];
+    await memoriserFichier(b, role, a[role]);
+  }
+  const garder = resultatsAMemoriser(a);
+  delete garder.semaineParite;
+  Object.assign(b, garder);
+  await reinitialiser(a);
+}
+
+// Range le lancement de la case p en semaine n (dérogation retenue si avecDerogation). Rend la case où il est
+// maintenant (ou null).
+async function derogerSemaine(p, n, avecDerogation = true) {
+  if (!p || !p.strat) return null;
+  const nom = p.strat.name;
+  const cible = ongletAffichant(n);
+  if (!cible) {
+    alert(`La semaine ${n} n'est pas affichée dans « Contrôler la coupe » (semaines ${ONGLETS_SEMAINE.map(numeroSemaine).join(", ")}).`);
+    return null;
+  }
+  let q = p;
+  if (cible !== p.parite) {
+    if (caseAjoutee(p)) p.parite = cible;
+    else {
+      const fixe = paireFixe(p.poste, cible);
+      if (fixe && !fixe.strat) q = fixe;
+      else if (POSTES_SUPPLEMENTS.includes(p.poste)) q = ajouterSupplement(p.poste, cible);
+      else {
+        alert(`La case « ${p.poste} » de la semaine ${n} a déjà un lancement (${fixe.strat.name}) : videz-la d'abord (↺ Réinitialiser), puis recommencez.`);
+        return null;
+      }
+      await deplacerCase(p, q);
+    }
+  }
+  if (avecDerogation) enregistrerDerogation(nom, n);
+  else supprimerDerogation(nom);
+  q.semaine = String(n).padStart(2, "0");
+  enregistrer(q);
+  // Bibliothèque (et téléphone) : retiré des autres semaines, rangé dans la semaine choisie.
+  await retirerLancementDesAutresSemaines(nom, idSemaine(anneeDeSemaine(Number(n)), Number(n)));
+  try {
+    await archiverOnglet(cible, null);
+  } catch (_e) {
+    // la bibliothèque sera mise à jour au prochain contrôle
+  }
+  afficher();
+  return q;
+}
+
+// Retour à la règle normale : la semaine du fichier (ou de son dossier).
+async function remettreSemaineDuFichier(p) {
+  if (!p || !p.strat) return;
+  supprimerDerogation(p.strat.name);
+  const n = Number(await detecterSemaine(p, true));
+  // La semaine du fichier est affichée : le lancement y retourne (même case que d'habitude) ; sinon il reste là.
+  if (n && ongletAffichant(n)) {
+    await derogerSemaine(p, n, false);
+    return;
+  }
+  p.semaine = n ? String(n).padStart(2, "0") : null;
+  enregistrer(p);
+  afficher();
+}
+
+// La zone « semaine » d'une case : la dérogation en cours, ou le choix d'une autre semaine.
+async function remplirZoneSemaine(zone, p) {
+  if (!zone || !p.strat || estDiakonos(p)) {
+    if (zone) zone.innerHTML = "";
+    return;
+  }
+  const d = derogationDe(p.strat.name);
+  const fichier = await detecterSemaine(p, true);
+  if (d) {
+    zone.innerHTML = `<div class="derogation">⇄ <strong>Semaine ${d.semaine} choisie à la main</strong>${fichier ? ` (le fichier dit semaine ${Number(fichier)})` : ""}.
+      <button type="button" class="texte" data-remettre-semaine>Remettre la semaine du fichier</button></div>`;
+    zone.querySelector("[data-remettre-semaine]").addEventListener("click", () => remettreSemaineDuFichier(p));
+    return;
+  }
+  if (!zone.dataset.ouvert) {
+    zone.innerHTML = "";
+    return;
+  }
+  const semaines = ONGLETS_SEMAINE.map((o) => Number(numeroSemaine(o))).sort((a, b) => a - b);
+  zone.innerHTML = `<div class="derogation choix">Ranger ce lancement en semaine
+      <select data-semaine-cible>${semaines.map((s) => `<option value="${s}" ${s === Number(p.semaine) ? "selected" : ""}>${s}</option>`).join("")}</select>
+      <button type="button" data-deroger>Déroger</button> <button type="button" class="texte" data-annuler>Annuler</button>
+      <div class="note">Semaine du fichier : ${fichier ? Number(fichier) : "?"}. Le fichier de lancement n'est pas modifié ; le choix tient aux prochains scans, dans la bibliothèque et sur le téléphone.</div></div>`;
+  zone.querySelector("[data-annuler]").addEventListener("click", () => {
+    delete zone.dataset.ouvert;
+    zone.innerHTML = "";
+  });
+  zone.querySelector("[data-deroger]").addEventListener("click", async () => {
+    const n = Number(zone.querySelector("[data-semaine-cible]").value);
+    if (n === Number(fichier) && !d) {
+      delete zone.dataset.ouvert;
+      zone.innerHTML = "";
+      return;
+    }
+    await derogerSemaine(p, n);
+  });
 }
 
 </script>

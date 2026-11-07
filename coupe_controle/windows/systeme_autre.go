@@ -19,3 +19,6 @@ func ouvrirParDefaut(url string) error {
 
 // Hors Windows : pas de barre des tâches à habiller.
 func habillerFenetres() {}
+
+// Hors Windows : pas de registre.
+func cheminChromeRegistre() string { return "" }

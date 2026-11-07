@@ -3,8 +3,8 @@
 // Le programme garde la page Sentinelle à l'intérieur de lui-même, la sert
 // sur cet ordinateur seulement (http://127.0.0.1, port fixe : la mémoire de
 // Sentinelle reste attachée à cette adresse) et l'ouvre dans sa propre
-// fenêtre Edge (mode application, profil à part dans
-// %LOCALAPPDATA%\Sentinelle). Aucun autre ordinateur ni téléphone ne peut s'y
+// fenêtre Chrome (mode application, profil à part dans
+// %LOCALAPPDATA%\Sentinelle ; Edge seulement si Chrome n'est pas installé). Aucun autre ordinateur ni téléphone ne peut s'y
 // connecter. Il s'arrête tout seul quelques minutes après la fermeture de la
 // fenêtre.
 package main
@@ -205,36 +205,98 @@ func demanderArret() {
 	}
 }
 
-// Ouvre Sentinelle dans sa propre fenêtre : Edge (sinon Chrome) en mode application,
-// avec un profil à part ; à défaut, le navigateur par défaut.
+// Ouvre Sentinelle dans sa propre fenêtre : Chrome (sinon Edge) en mode application, avec un profil à part pour
+// chaque navigateur ; à défaut, le navigateur par défaut.
 func ouvrirFenetre(url string) {
-	profil := filepath.Join(os.Getenv("LOCALAPPDATA"), nomLogiciel, "Navigateur")
+	dossier := filepath.Join(os.Getenv("LOCALAPPDATA"), nomLogiciel)
 	for _, nav := range navigateurs() {
-		if _, err := os.Stat(nav); err != nil {
+		if _, err := os.Stat(nav.chemin); err != nil {
 			continue
 		}
-		cmd := exec.Command(nav, "--app="+url, "--user-data-dir="+profil, "--no-first-run", "--no-default-browser-check", "--start-maximized")
+		profil := filepath.Join(dossier, nav.profil)
+		if nav.profil == profilChrome {
+			reprendreMemoireEdge(filepath.Join(dossier, profilEdge), profil)
+		}
+		cmd := exec.Command(nav.chemin, "--app="+url, "--user-data-dir="+profil, "--no-first-run", "--no-default-browser-check", "--start-maximized")
 		if cmd.Start() == nil {
 			go cmd.Wait()
 			return
 		}
 	}
 	if err := ouvrirParDefaut(url); err != nil {
-		message(nomLogiciel, "Impossible d'ouvrir la fenêtre de "+nomLogiciel+".\n\nOuvrez Edge ou Chrome à cette adresse :\n"+url)
+		message(nomLogiciel, "Impossible d'ouvrir la fenêtre de "+nomLogiciel+".\n\nOuvrez Chrome à cette adresse :\n"+url)
 	}
 }
 
-func navigateurs() []string {
-	var liste []string
-	for _, base := range []string{os.Getenv("ProgramFiles(x86)"), os.Getenv("ProgramFiles"), os.Getenv("LOCALAPPDATA")} {
-		if base != "" {
-			liste = append(liste, filepath.Join(base, "Microsoft", "Edge", "Application", "msedge.exe"))
-		}
-	}
+const (
+	profilChrome = "Chrome"
+	profilEdge   = "Navigateur" // profil des versions d'avant (Edge)
+)
+
+type navigateur struct{ chemin, profil string }
+
+// Chrome d'abord (emplacements habituels, puis le registre de Windows), Edge ensuite.
+func navigateurs() []navigateur {
+	var liste []navigateur
 	for _, base := range []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)"), os.Getenv("LOCALAPPDATA")} {
 		if base != "" {
-			liste = append(liste, filepath.Join(base, "Google", "Chrome", "Application", "chrome.exe"))
+			liste = append(liste, navigateur{filepath.Join(base, "Google", "Chrome", "Application", "chrome.exe"), profilChrome})
+		}
+	}
+	if c := cheminChromeRegistre(); c != "" {
+		liste = append(liste, navigateur{c, profilChrome})
+	}
+	for _, base := range []string{os.Getenv("ProgramFiles(x86)"), os.Getenv("ProgramFiles"), os.Getenv("LOCALAPPDATA")} {
+		if base != "" {
+			liste = append(liste, navigateur{filepath.Join(base, "Microsoft", "Edge", "Application", "msedge.exe"), profilEdge})
 		}
 	}
 	return liste
+}
+
+// Premier lancement dans Chrome : la mémoire de Sentinelle (cases, bibliothèque, lien du téléphone, plans
+// modifiés…) est recopiée depuis le profil Edge des versions d'avant. Le profil Edge n'est pas touché ; si la copie
+// échoue, Chrome démarre simplement à vide.
+func reprendreMemoireEdge(edge, chrome string) {
+	if _, err := os.Stat(chrome); err == nil {
+		return // Chrome déjà utilisé : rien à reprendre
+	}
+	if _, err := os.Stat(edge); err != nil {
+		return // pas d'ancien profil
+	}
+	for _, sous := range []string{"IndexedDB", "Local Storage", "File System"} {
+		source := filepath.Join(edge, "Default", sous)
+		if _, err := os.Stat(source); err != nil {
+			continue
+		}
+		_ = copierDossier(source, filepath.Join(chrome, "Default", sous))
+	}
+}
+
+func copierDossier(source, cible string) error {
+	return filepath.Walk(source, func(chemin string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil // fichier verrouillé ou disparu : on continue
+		}
+		rel, _ := filepath.Rel(source, chemin)
+		dest := filepath.Join(cible, rel)
+		if info.IsDir() {
+			return os.MkdirAll(dest, 0o755)
+		}
+		if strings.EqualFold(info.Name(), "LOCK") {
+			return nil
+		}
+		entree, err := os.Open(chemin)
+		if err != nil {
+			return nil
+		}
+		defer entree.Close()
+		sortie, err := os.Create(dest)
+		if err != nil {
+			return nil
+		}
+		defer sortie.Close()
+		_, _ = io.Copy(sortie, entree)
+		return nil
+	})
 }

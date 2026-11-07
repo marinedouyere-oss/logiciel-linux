@@ -915,15 +915,21 @@ async function lancerReecriture() {
     const ss = String(r.semaine).padStart(2, "0");
     // Le dossier choisi peut être directement celui de la semaine : on range dedans.
     const numeroRacine = numeroDossierSemaine(racine.name);
+    // Le dossier choisi est celui d'une autre semaine : on peut y ranger quand même le lancement (dérogation : ex.
+    // une FENO en retard de la semaine 46 fabriquée en semaine 47). Sinon, rien n'est enregistré.
+    let derogation = false;
     if (numeroRacine !== null && numeroRacine !== Number(ss)) {
-      await afficherBlocage(
+      derogation = await demanderConfirmation(
         "Le dossier choisi est une autre semaine",
-        `Le dossier des semaines choisi est « ${racine.name} ».\n\nPour ranger un lancement de la semaine ${Number(ss)}, choisissez le dossier qui contient toutes les semaines (bouton « Changer »). Rien n'a été enregistré.`
+        `Le lancement est de la semaine ${Number(ss)}, le dossier choisi est « ${racine.name} » (semaine ${numeroRacine}).\n\nLe ranger quand même en semaine ${numeroRacine} (dérogation) ? Le nom et le contenu du fichier ne changent pas ; Sentinelle le contrôlera en semaine ${numeroRacine}.`,
+        `Ranger en semaine ${numeroRacine}`
       );
-      etat(["Rien n'a été enregistré : le dossier choisi est une autre semaine."], true);
-      return;
+      if (!derogation) {
+        etat(["Rien n'a été enregistré : le dossier choisi est une autre semaine."], true);
+        return;
+      }
     }
-    const semaines = numeroRacine === Number(ss) ? [{ dossier: racine, chemin: [] }] : await chercherDossiersSemaine(racine, ss);
+    const semaines = numeroRacine === Number(ss) || derogation ? [{ dossier: racine, chemin: [] }] : await chercherDossiersSemaine(racine, ss);
     let dossierSemaine;
     let cheminSemaine;
     if (semaines.length > 1) {
@@ -961,7 +967,9 @@ async function lancerReecriture() {
     await w.write(octets);
     await w.close();
     ajouterAuJournal(existant || nom, chemin);
-    etat([`✔ Enregistré${existant ? " (ancien fichier remplacé)" : ""} : ${chemin} / ${existant || nom}`, resumeCorrections(plan, type)]);
+    // Dérogation : « Contrôler la coupe » rangera ce lancement dans la semaine de son dossier.
+    if (derogation) enregistrerDerogation(existant || nom, numeroRacine);
+    etat([`✔ Enregistré${existant ? " (ancien fichier remplacé)" : ""} : ${chemin} / ${existant || nom}${derogation ? ` — rangé en semaine ${numeroRacine} (dérogation)` : ""}`, resumeCorrections(plan, type)]);
   } catch (erreur) {
     etat([`Réécriture impossible : ${erreur && erreur.message ? erreur.message : erreur}. Rien n'a été enregistré.`], true);
   } finally {

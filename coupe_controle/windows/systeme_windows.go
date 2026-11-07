@@ -3,7 +3,10 @@
 package main
 
 import (
+	"os"
 	"os/exec"
+	"regexp"
+	"strings"
 	"syscall"
 	"unsafe"
 )
@@ -23,4 +26,29 @@ func message(titre, texte string) {
 
 func ouvrirParDefaut(url string) error {
 	return exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+}
+
+// Chemin de chrome.exe déclaré à Windows (installation hors des dossiers habituels) ; "" s'il n'y en a pas.
+func cheminChromeRegistre() string {
+	for _, cle := range []string{
+		`HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe`,
+		`HKCU\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe`,
+		`HKLM\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\App Paths\chrome.exe`,
+	} {
+		cmd := exec.Command("reg", "query", cle, "/ve")
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+		sortie, err := cmd.Output()
+		if err != nil {
+			continue
+		}
+		m := regexp.MustCompile(`REG_(?:EXPAND_)?SZ\s+(.+)`).FindStringSubmatch(string(sortie))
+		if m == nil {
+			continue
+		}
+		chemin := strings.Trim(strings.TrimSpace(os.ExpandEnv(strings.ReplaceAll(m[1], "%", "$"))), `"`)
+		if _, err := os.Stat(chemin); err == nil {
+			return chemin
+		}
+	}
+	return ""
 }

@@ -167,12 +167,24 @@ const verifier = (ok, texte) => {
   });
   verifier(!doublon, "pas de « Semaine 46 » dans « Semaine 46 »");
 
-  // 7) Le dossier choisi est une autre semaine : message bloquant.
+  // 7) Le dossier choisi est une autre semaine : on demande (Annuler : rien n'est enregistré ; sinon rangé quand même,
+  //    dérogation retenue pour « Contrôler la coupe »).
   await page.fill("#reecSemaine", "47");
   await page.click("#btnReecrire");
   await page.waitForSelector("#modaleConfirmation:not(.masquee)");
-  verifier((await page.innerText("#modaleConfirmationTitre")) === "Le dossier choisi est une autre semaine", "autre semaine : bloquant");
+  verifier((await page.innerText("#modaleConfirmationTitre")) === "Le dossier choisi est une autre semaine", "autre semaine : on demande");
+  await page.click("#modaleConfirmationAnnuler");
+  await page.waitForFunction(() => /Rien n'a été enregistré/.test((document.querySelector("#reecEtat") || {}).innerText || ""));
+  verifier((await page.innerText("#reecEtat")).includes("le dossier choisi est une autre semaine"), "autre semaine, Annuler : rien n'est enregistré");
+  await page.click("#btnReecrire");
+  await page.waitForSelector("#modaleConfirmation:not(.masquee)");
+  verifier((await page.innerText("#modaleConfirmationOk")) === "Ranger en semaine 46", "bouton « Ranger en semaine 46 »");
   await page.click("#modaleConfirmationOk");
+  await page.waitForFunction(() => /Enregistré|impossible/.test((document.querySelector("#reecEtat") || {}).innerText || ""), null, { timeout: 60000 });
+  const etat7 = await page.innerText("#reecEtat");
+  const derog = await page.evaluate(() => (derogationDe("LAN2647CASSE.xlsx") || {}).semaine);
+  verifier(etat7.includes("LAN2647CASSE.xlsx — rangé en semaine 46 (dérogation)") && derog === 46, `autre semaine, Ranger quand même : enregistré, dérogation semaine 46 retenue (${derog})`);
+  await page.evaluate(() => supprimerDerogation("LAN2647CASSE.xlsx"));
 
   // 8) Dossier de semaine nommé autrement (« SEMAINE 49 - 2026 ») : retrouvé.
   await page.evaluate(async () => {
