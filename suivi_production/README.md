@@ -1,5 +1,9 @@
 # Suivi de production (maquette, hors Sentinelle)
 
+> Depuis Sentinelle V6.2, le suivi est aussi **dans Sentinelle** (onglet « Suivi de production ») : une barre
+> d'avancement par lancement de la bibliothèque, l'évolution d'une extraction à l'autre, et le même écran sur le
+> téléphone. Cette maquette reste l'outil de tableau de bord détaillé (filtres, export CSV).
+
 Tableau de bord de la production à partir de l'extraction **« Suivi production » de Diakonos** (.xlsx).
 
 - Ouvrir `Suivi_production.html` (un seul fichier, marche sans internet) dans Chrome ou Edge.

@@ -693,6 +693,7 @@ function afficher() {
   $("pageBibliotheque").classList.toggle("inactif", onglet !== "bibliotheque");
   $("pageReecriture").classList.toggle("inactif", onglet !== "reecriture");
   $("pagePlans").classList.toggle("inactif", onglet !== "plans");
+  $("pageSuivi").classList.toggle("inactif", onglet !== "suivi");
   $("pageListeOpt").classList.toggle("inactif", onglet !== "liste-opt");
   $("pageWoodstore").classList.toggle("inactif", onglet !== "woodstore");
   majMenuDossier();
@@ -701,6 +702,7 @@ function afficher() {
   else if (onglet === "bibliotheque") afficherBibliotheque();
   else if (onglet === "reecriture") afficherReecriture();
   else if (onglet === "plans") afficherOutilPlans();
+  else if (onglet === "suivi") afficherSuiviProduction();
   else if (onglet === "liste-opt") afficherListeOpt();
   else if (onglet === "woodstore") afficherWoodstore();
 }
@@ -2966,6 +2968,8 @@ document.querySelectorAll("img[data-logo]").forEach((img) => (img.src = img.data
   await chargerBibliotheque();
   await chargerReecriture().catch(() => {});
   afficher();
+  // Suivi de production : les extractions gardées, puis les nouvelles du dossier (sans attendre).
+  SUIVI.demarrer().catch(() => {});
 })();
 
 // N'a d'effet que servi en http(s)/localhost (ex. server/lancer_sentinelle.bat).

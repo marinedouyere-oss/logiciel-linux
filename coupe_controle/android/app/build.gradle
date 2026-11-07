@@ -10,8 +10,8 @@ android {
         applicationId "com.marinedouyere.sentinelle"
         minSdk 24
         targetSdk 34
-        versionCode 41
-        versionName "6.1.4"
+        versionCode 42
+        versionName "6.2.0"
     }
 
     // Clé de signature gardée dans le projet : chaque nouvelle version
@@ -55,6 +55,7 @@ android {
                 systemProperty "sentinelle.partage_plans", System.getenv("SENTINELLE_PARTAGE_PLANS") ?: ""
                 systemProperty "sentinelle.lien_code", System.getenv("SENTINELLE_LIEN_CODE") ?: ""
                 systemProperty "sentinelle.qr_png", System.getenv("SENTINELLE_QR_PNG") ?: ""
+                systemProperty "sentinelle.partage_suivi", System.getenv("SENTINELLE_PARTAGE_SUIVI") ?: ""
                 maxHeapSize = "3g"
                 testLogging {
                     events "failed", "skipped"

@@ -31,6 +31,7 @@ public class MainActivity extends AppCompatActivity {
     static final String ONGLET_CONTROLE = "controle";
     static final String ONGLET_RECHERCHE = "recherche";
     static final String ONGLET_BIBLIOTHEQUE = "bibliotheque";
+    static final String ONGLET_SUIVI = "suivi";
 
     private SentinelleApp app;
     private Ui ui;
@@ -62,14 +63,15 @@ public class MainActivity extends AppCompatActivity {
         // Le menu de Sentinelle sur le PC (Préparer un lancement reste sur le PC : les modifications ne se font que là).
         onglets = new TabLayout(this);
         onglets.setBackgroundColor(0xFFFFFFFF);
-        onglets.setTabMode(TabLayout.MODE_FIXED);
-        onglets.setTabGravity(TabLayout.GRAVITY_FILL);
+        // Cinq onglets : ils défilent si l'écran est trop étroit.
+        onglets.setTabMode(TabLayout.MODE_SCROLLABLE);
         onglets.setSelectedTabIndicatorColor(Ui.BORDEAUX);
         onglets.setTabTextColors(Ui.GRIS, Ui.BORDEAUX);
         onglets.addTab(onglets.newTab().setText("La semaine").setTag(ONGLET_SEMAINE));
         onglets.addTab(onglets.newTab().setText("Contrôler la coupe").setTag(ONGLET_CONTROLE));
         onglets.addTab(onglets.newTab().setText("Rechercher une pièce").setTag(ONGLET_RECHERCHE));
         onglets.addTab(onglets.newTab().setText("Bibliothèque des semaines").setTag(ONGLET_BIBLIOTHEQUE));
+        onglets.addTab(onglets.newTab().setText("Suivi de production").setTag(ONGLET_SUIVI));
         racine.addView(onglets, ui.pleineLargeur());
 
         defilement = new ScrollView(this);
@@ -174,6 +176,8 @@ public class MainActivity extends AppCompatActivity {
                 return PartageVue.Ecran.RECHERCHE;
             case ONGLET_BIBLIOTHEQUE:
                 return PartageVue.Ecran.BIBLIOTHEQUE;
+            case ONGLET_SUIVI:
+                return PartageVue.Ecran.SUIVI;
             default:
                 return PartageVue.Ecran.SEMAINE;
         }

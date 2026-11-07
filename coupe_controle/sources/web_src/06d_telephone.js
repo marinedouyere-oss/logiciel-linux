@@ -158,7 +158,7 @@ function envoyerAuTelephone(forcer = false) {
     return lienTelephone.envoi;
   }
   // Rien n'a changé depuis le dernier envoi réussi : rien à faire (et surtout rien qui reste « en cours »).
-  const signature = signatureDesSemaines([...bibliotheque.semaines.values()]);
+  const signature = signaturePartage([...bibliotheque.semaines.values()], typeof suiviPourPartage === "function" ? suiviPourPartage() : null);
   if (!forcer && etat.signature === signature && !etat.erreur) return Promise.resolve({ ok: true, inchange: true });
   clearTimeout(lienTelephone.relance);
   const envoi = (async () => {

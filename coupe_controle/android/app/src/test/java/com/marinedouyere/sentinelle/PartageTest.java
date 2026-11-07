@@ -184,13 +184,13 @@ public class PartageTest {
         MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
         ShadowLooper.idleMainLooper();
         TabLayout onglets = chercherVue(a.getWindow().getDecorView(), TabLayout.class);
-        assertEquals(4, onglets.getTabCount());
-        String[] attendus = {"La semaine", "Contrôler la coupe", "Rechercher une pièce", "Bibliothèque des semaines"};
+        assertEquals(5, onglets.getTabCount());
+        String[] attendus = {"La semaine", "Contrôler la coupe", "Rechercher une pièce", "Bibliothèque des semaines", "Suivi de production"};
         for (int i = 0; i < attendus.length; i++) assertEquals(attendus[i], String.valueOf(onglets.getTabAt(i).getText()));
         String texte = ecran(a);
         assertTrue(texte, texte.contains("Contrôle de coupe · V"));
         assertTrue("sans données : relier au PC (code), ou choisir le fichier du Drive", texte.contains("Relier au PC") && texte.contains("choisissez le fichier"));
-        for (String tag : new String[] {MainActivity.ONGLET_CONTROLE, MainActivity.ONGLET_RECHERCHE, MainActivity.ONGLET_BIBLIOTHEQUE}) {
+        for (String tag : new String[] {MainActivity.ONGLET_CONTROLE, MainActivity.ONGLET_RECHERCHE, MainActivity.ONGLET_BIBLIOTHEQUE, MainActivity.ONGLET_SUIVI}) {
             onglet(a, tag);
             String t = ecran(a);
             assertFalse(t, t.contains(".xlsx)"));
@@ -483,5 +483,94 @@ public class PartageTest {
         capturerSiDemande(a, "appli_lien.png");
         // Sans réseau, la dernière version reçue reste lisible (gardée chiffrée sur le téléphone).
         assertTrue(new File(a.getFilesDir(), "lien_partage.bin").exists());
+    }
+
+    /** V6.2 : Suivi de production, lu dans le fichier partagé (résumé calculé par le PC). */
+    private static final String SUIVI = "{\"format\":\"sentinelle-partage-1\",\"colonnesPieces\":[\"cle\"],\"semaines\":["
+            + "{\"id\":\"2026-47\",\"annee\":2026,\"semaine\":47,\"lancements\":[{\"nom\":\"LAN264702START\",\"poste\":\"Agglo 2ème tour\",\"pieces\":[[\"CVC26119999001\"]]}]}],"
+            + "\"suiviProduction\":{\"version\":1,\"jour\":\"2026-11-10\",\"semaine\":46,\"annee\":2026,\"fichiers\":[\"suivi_production_10112026.xlsx\"],"
+            + "\"precedente\":\"2026-11-07\",\"nbExtractions\":2,\"totaux\":{\"lancements\":2,\"faites\":101,\"restantes\":64,\"retard\":0,\"depuis\":101},"
+            + "\"semaines\":[{\"id\":\"2026-47\",\"annee\":2026,\"semaine\":47,\"f\":101,\"r\":64,\"h\":0,\"e\":\"en_cours\",\"lancements\":["
+            + "{\"cle\":\"LAN264702START\",\"nom\":\"LAN264702START\",\"poste\":\"Agglo 2ème tour\",\"f\":101,\"r\":64,\"h\":0,\"e\":\"en_cours\",\"d\":101,"
+            + "\"p\":[[\"2026-11-07\",0],[\"2026-11-10\",61]],\"c\":[[\"CVC26119999\",\"TRANSPORTEUR A\",\"VILLE A\",2,\"S47\"]]}]},"
+            + "{\"id\":\"2026-48\",\"annee\":2026,\"semaine\":48,\"f\":0,\"r\":0,\"h\":492,\"e\":\"attente\",\"lancements\":["
+            + "{\"cle\":\"LAN264801START\",\"nom\":\"LAN264801START\",\"poste\":\"Agglo 1er tour\",\"f\":0,\"r\":0,\"h\":492,\"e\":\"attente\",\"d\":null,\"p\":[],\"c\":[]}]}],"
+            + "\"anciennes\":1,\"hors\":[[\"En retard\",45.93,70,26]],\"tableau\":{\"colonnes\":[\"En retard\",\"S46\",\"Total\"],\"lignes\":[[\"TRANSPORTEUR B\",1.51,3,4.51]]}}}";
+
+    @Test
+    public void suiviDeProduction() throws Exception {
+        FichierPartage f = FichierPartage.lire(new ByteArrayInputStream(gzip(SUIVI)));
+        assertNotNull(f.suivi);
+        assertEquals("2026-11-10", f.suivi.jour);
+        assertEquals(2, f.suivi.semaines.size());
+        FichierPartage.LancementSuivi l = f.suivi.semaines.get(0).lancements.get(0);
+        assertEquals(101, l.f, 0);
+        assertEquals(64, l.r, 0);
+        assertEquals(Double.valueOf(101), l.d);
+        assertEquals(Integer.valueOf(61), PartageVue.pctSuivi(l.f, l.r));
+        assertEquals("+101 pièces depuis le 07/11", PartageVue.evolutionSuivi(l, f.suivi.precedente));
+        assertEquals("Pas encore dans Diakonos", PartageVue.libelleEtatSuivi("attente", 0));
+        assertEquals(null, f.suivi.semaines.get(1).lancements.get(0).d);
+        // Sans résumé : pas de suivi (fichier d'une version d'avant).
+        assertEquals(null, FichierPartage.lire(new ByteArrayInputStream(gzip(EXEMPLE))).suivi);
+
+        MainActivity a = avecFichier(gzip(SUIVI));
+        onglet(a, MainActivity.ONGLET_SUIVI);
+        String texte = ecran(a);
+        assertTrue(texte, texte.contains("Dernière extraction : 10/11/2026 (semaine 46)"));
+        assertTrue(texte, texte.contains("Semaine 47"));
+        assertTrue(texte, texte.contains("Du lundi 16 au vendredi 20 novembre"));
+        assertTrue(texte, texte.contains("61 %"));
+        assertTrue(texte, texte.contains("101 faites · 64 à faire"));
+        assertTrue(texte, texte.contains("+101 pièces depuis le 07/11"));
+        assertTrue(texte, texte.contains("Pas encore dans Diakonos"));
+        assertTrue(texte, texte.contains("Dans Diakonos, dans aucun lancement"));
+        assertTrue(texte, texte.contains("Pièces à faire par transporteur et par semaine"));
+        assertTrue(texte, texte.contains("1 semaine plus ancienne : finie."));
+        assertFalse("commandes cachées avant le clic", texte.contains("CVC26119999"));
+        // Un appui sur le lancement : ses commandes encore à faire.
+        View bloc = vueAvecTexte(a.getWindow().getDecorView(), "LAN264702START");
+        while (bloc != null && !bloc.isClickable()) bloc = (View) bloc.getParent();
+        assertNotNull(bloc);
+        bloc.performClick();
+        ShadowLooper.idleMainLooper();
+        texte = ecran(a);
+        assertTrue(texte, texte.contains("CVC26119999"));
+        assertTrue(texte, texte.contains("TRANSPORTEUR A · VILLE A · S47"));
+        capturerSiDemande(a, "appli_suivi.png");
+    }
+
+    /** Le vrai fichier écrit par la page web après la lecture de deux extractions Diakonos (test_web_suivi.js). */
+    @Test
+    public void suiviSurLeVraiFichier() throws Exception {
+        String chemin = System.getProperty("sentinelle.partage_suivi", "");
+        assumeTrue(!chemin.isEmpty());
+        byte[] json = java.nio.file.Files.readAllBytes(new File(chemin).toPath());
+        FichierPartage f = FichierPartage.lire(new ByteArrayInputStream(json));
+        assertNotNull(f.suivi);
+        FichierPartage.LancementSuivi lan = null;
+        for (FichierPartage.SemaineSuivi s : f.suivi.semaines)
+            for (FichierPartage.LancementSuivi l : s.lancements) if ("LAN264702START".equals(l.nom)) lan = l;
+        assertNotNull(lan);
+        assertEquals(101, lan.f, 0);
+        assertEquals(64, lan.r, 0);
+        MainActivity a = avecFichier(gzip(new String(json, StandardCharsets.UTF_8)));
+        onglet(a, MainActivity.ONGLET_SUIVI);
+        String texte = ecran(a);
+        assertTrue(texte, texte.contains("Dernière extraction : 10/11/2026 (semaine 46)"));
+        assertTrue(texte, texte.contains("LAN264702START"));
+        assertTrue(texte, texte.contains("61 %"));
+        assertTrue(texte, texte.contains("LAN264801START"));
+        capturerSiDemande(a, "appli_suivi_vrai.png");
+    }
+
+    private static View vueAvecTexte(View v, String texte) {
+        if (v instanceof TextView && texte.contentEquals(((TextView) v).getText())) return v;
+        if (v instanceof ViewGroup)
+            for (int i = 0; i < ((ViewGroup) v).getChildCount(); i++) {
+                View t = vueAvecTexte(((ViewGroup) v).getChildAt(i), texte);
+                if (t != null) return t;
+            }
+        return null;
     }
 }

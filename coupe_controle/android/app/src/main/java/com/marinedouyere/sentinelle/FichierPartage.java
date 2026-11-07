@@ -94,8 +94,59 @@ final class FichierPartage {
         }
     }
 
+    /** V6.2 : avancement des lancements d'après l'extraction Diakonos (onglet Suivi de production du PC). */
+    static final class Suivi {
+        String jour; // « 2026-11-10 »
+        int semaine;
+        int annee;
+        String precedente; // jour de l'extraction d'avant (vide sinon)
+        int nbExtractions;
+        final List<String> fichiers = new ArrayList<>();
+        int lancements;
+        int retard;
+        double faites;
+        double restantes;
+        Double depuis;
+        final List<SemaineSuivi> semaines = new ArrayList<>();
+        int anciennes;
+        /** Dans Diakonos, dans aucun lancement : semaine, pièces à faire, lignes, commandes. */
+        final List<String[]> hors = new ArrayList<>();
+        /** Pièces à faire par transporteur et par semaine : colonnes (semaines puis « Total »), lignes (transporteur, valeurs…). */
+        final List<String> colonnes = new ArrayList<>();
+        final List<String[]> tableau = new ArrayList<>();
+    }
+
+    static final class SemaineSuivi {
+        String id;
+        int annee;
+        int semaine;
+        double f;
+        double r;
+        double h;
+        String e;
+        final List<LancementSuivi> lancements = new ArrayList<>();
+    }
+
+    static final class LancementSuivi {
+        String cle;
+        String nom;
+        String poste;
+        /** État : termine, absent (plus rien dans Diakonos), attente (pas encore dans Diakonos), retard, en_cours. */
+        String e;
+        double f; // pièces faites
+        double r; // pièces à faire
+        double h; // pièces jamais vues dans Diakonos (pas comptées)
+        Double d; // pièces faites depuis l'extraction d'avant (null : pas d'extraction d'avant)
+        final List<String> joursCourbe = new ArrayList<>();
+        final List<Integer> pctCourbe = new ArrayList<>();
+        /** Commandes encore à faire : commande, transporteur, ville, pièces à faire, semaine Diakonos. */
+        final List<String[]> commandes = new ArrayList<>();
+    }
+
     String genere;
     String par;
+    /** null : aucune extraction Diakonos lue sur le PC. */
+    Suivi suivi;
     final List<String> colonnes = new ArrayList<>();
     /** Type de problème → { ce qu'il veut dire, que faire }. */
     final Map<String, String[]> explications = new HashMap<>();
@@ -178,7 +229,85 @@ final class FichierPartage {
             f.semaines.add(s);
         }
         Collections.sort(f.semaines, (a, b) -> Integer.compare(b.annee * 100 + b.semaine, a.annee * 100 + a.semaine));
+        f.suivi = suivi(racine.optJSONObject("suiviProduction"));
         return f;
+    }
+
+    private static String[] textes(JSONArray a) {
+        if (a == null) return new String[0];
+        String[] t = new String[a.length()];
+        for (int i = 0; i < a.length(); i++) t[i] = a.isNull(i) ? "" : a.optString(i, "");
+        return t;
+    }
+
+    static Suivi suivi(JSONObject js) {
+        if (js == null || js.optInt("version") < 1 || texte(js, "jour").isEmpty()) return null;
+        Suivi s = new Suivi();
+        s.jour = texte(js, "jour");
+        s.semaine = js.optInt("semaine");
+        s.annee = js.optInt("annee");
+        s.precedente = texte(js, "precedente");
+        s.nbExtractions = js.optInt("nbExtractions");
+        for (String n : textes(js.optJSONArray("fichiers"))) s.fichiers.add(n);
+        JSONObject t = js.optJSONObject("totaux");
+        if (t != null) {
+            s.lancements = t.optInt("lancements");
+            s.retard = t.optInt("retard");
+            s.faites = t.optDouble("faites", 0);
+            s.restantes = t.optDouble("restantes", 0);
+            s.depuis = nombre(t, "depuis");
+        }
+        s.anciennes = js.optInt("anciennes");
+        JSONArray semaines = js.optJSONArray("semaines");
+        if (semaines != null)
+            for (int i = 0; i < semaines.length(); i++) {
+                JSONObject jsem = semaines.optJSONObject(i);
+                if (jsem == null) continue;
+                SemaineSuivi sem = new SemaineSuivi();
+                sem.id = texte(jsem, "id");
+                sem.annee = jsem.optInt("annee");
+                sem.semaine = jsem.optInt("semaine");
+                sem.f = jsem.optDouble("f", 0);
+                sem.r = jsem.optDouble("r", 0);
+                sem.h = jsem.optDouble("h", 0);
+                sem.e = texte(jsem, "e");
+                JSONArray lancements = jsem.optJSONArray("lancements");
+                if (lancements != null)
+                    for (int j = 0; j < lancements.length(); j++) {
+                        JSONObject jl = lancements.optJSONObject(j);
+                        if (jl == null) continue;
+                        LancementSuivi l = new LancementSuivi();
+                        l.cle = texte(jl, "cle");
+                        l.nom = texte(jl, "nom");
+                        l.poste = texte(jl, "poste");
+                        l.e = texte(jl, "e");
+                        l.f = jl.optDouble("f", 0);
+                        l.r = jl.optDouble("r", 0);
+                        l.h = jl.optDouble("h", 0);
+                        l.d = nombre(jl, "d");
+                        JSONArray p = jl.optJSONArray("p");
+                        if (p != null)
+                            for (int k = 0; k < p.length(); k++) {
+                                JSONArray pt = p.optJSONArray(k);
+                                if (pt == null || pt.length() < 2) continue;
+                                l.joursCourbe.add(pt.optString(0));
+                                l.pctCourbe.add(pt.optInt(1));
+                            }
+                        JSONArray c = jl.optJSONArray("c");
+                        if (c != null) for (int k = 0; k < c.length(); k++) l.commandes.add(textes(c.optJSONArray(k)));
+                        sem.lancements.add(l);
+                    }
+                s.semaines.add(sem);
+            }
+        JSONArray hors = js.optJSONArray("hors");
+        if (hors != null) for (int i = 0; i < hors.length(); i++) s.hors.add(textes(hors.optJSONArray(i)));
+        JSONObject tableau = js.optJSONObject("tableau");
+        if (tableau != null) {
+            for (String c : textes(tableau.optJSONArray("colonnes"))) s.colonnes.add(c);
+            JSONArray lignes = tableau.optJSONArray("lignes");
+            if (lignes != null) for (int i = 0; i < lignes.length(); i++) s.tableau.add(textes(lignes.optJSONArray(i)));
+        }
+        return s;
     }
 
     private static final List<String> ORDRE_POSTES = java.util.Arrays.asList("Agglo 1er tour", "Recyclage", "Feno", "Casse", "Agglo 2ème tour");

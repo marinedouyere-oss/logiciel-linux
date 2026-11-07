@@ -465,8 +465,13 @@ function contenuFichierPartage() {
     colonnesPieces: COLONNES_PIECES_BIBLIOTHEQUE,
     explications: Object.fromEntries(PROBLEMES.map(([type, sens, queFaire]) => [type, { sens, queFaire }])),
     semaines,
+    // V6.2 : avancement des lancements d'après l'extraction Diakonos (onglet Suivi de production).
+    suiviProduction: typeof suiviPourPartage === "function" ? suiviPourPartage() : null,
   };
 }
+
+// Signature du fichier partagé : les semaines et le suivi de production.
+const signaturePartage = (semaines, suivi) => `${signatureDesSemaines(semaines)}|suivi:${typeof signatureSuivi === "function" ? signatureSuivi(suivi) : ""}`;
 
 async function ecrireFichierPartage() {
   const octets = await compresserJson(contenuFichierPartage());
@@ -547,7 +552,9 @@ function synchroniserBibliotheque(interactif) {
           const contenu = await lireJsonCompresse(f);
           if (!contenu || !Array.isArray(contenu.semaines)) throw new Error(`${NOM_FICHIER_PARTAGE} n'est pas un fichier Sentinelle`);
           distantes = contenu.semaines;
-          signatureFichier = signatureDesSemaines(distantes);
+          // Suivi de production écrit par un autre PC : gardé s'il vient d'une extraction plus récente.
+          if (typeof SUIVI !== "undefined") SUIVI.recevoir(contenu.suiviProduction);
+          signatureFichier = signaturePartage(distantes, contenu.suiviProduction);
         }
       } else distantes = await semainesDesAnciensFichiers();
       for (const d of distantes || []) {
@@ -559,7 +566,7 @@ function synchroniserBibliotheque(interactif) {
           r.recues++;
         }
       }
-      const signatureLocale = signatureDesSemaines([...bibliotheque.semaines.values()]);
+      const signatureLocale = signaturePartage([...bibliotheque.semaines.values()], typeof suiviPourPartage === "function" ? suiviPourPartage() : null);
       if (!fh || signatureLocale !== signatureFichier) {
         await enregistrerFichierConnu({ ...(await ecrireFichierPartage()), signature: signatureLocale });
         r.ecrit = true;

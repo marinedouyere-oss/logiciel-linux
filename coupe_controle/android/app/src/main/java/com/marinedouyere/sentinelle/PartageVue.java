@@ -44,7 +44,7 @@ import java.util.TimeZone;
  */
 final class PartageVue {
 
-    enum Ecran { SEMAINE, CONTROLE, RECHERCHE, BIBLIOTHEQUE }
+    enum Ecran { SEMAINE, CONTROLE, RECHERCHE, BIBLIOTHEQUE, SUIVI }
 
     private static final String PREFERENCES = "sentinelle_partage";
     private static final String CLE_URI = "uri";
@@ -293,6 +293,9 @@ final class PartageVue {
                 break;
             case BIBLIOTHEQUE:
                 ecranBibliotheque();
+                break;
+            case SUIVI:
+                ecranSuivi();
                 break;
             default:
                 ecranSemaine();
@@ -822,6 +825,285 @@ final class PartageVue {
         } catch (java.text.ParseException e) {
             return "";
         }
+    }
+
+    // ---- Suivi de production (V6.2) : comme l'onglet du PC, lu dans le fichier partagé ----
+
+    private final java.util.Set<String> suiviOuverts = new java.util.HashSet<>();
+    private static final int BLEU = 0xFF2A78D6;
+    private static final int BLEU_TEXTE = 0xFF1B5FAE;
+    private static final int VERT = 0xFF2E7D32;
+    private static final int VERT_PALE = 0xFFA5D6A7;
+    private static final int GRIS_BARRE = 0xFFE9E7E3;
+
+    /** Le libellé de l'état, comme sur le PC. */
+    static String libelleEtatSuivi(String e, double faites) {
+        switch (e == null ? "" : e) {
+            case "termine":
+                return "Terminé";
+            case "absent":
+                return "Plus rien dans Diakonos";
+            case "attente":
+                return "Pas encore dans Diakonos";
+            case "retard":
+                return "En retard";
+            default:
+                return faites > 0 ? "En cours" : "À faire";
+        }
+    }
+
+    private static int couleurBarre(String e) {
+        if ("termine".equals(e)) return VERT;
+        if ("absent".equals(e)) return VERT_PALE;
+        if ("retard".equals(e)) return Ui.BORDEAUX;
+        return BLEU;
+    }
+
+    private static int couleurTexteEtat(String e) {
+        if ("termine".equals(e) || "absent".equals(e)) return VERT;
+        if ("retard".equals(e)) return Ui.BORDEAUX;
+        if ("attente".equals(e)) return Ui.GRIS;
+        return BLEU_TEXTE;
+    }
+
+    static Integer pctSuivi(double f, double r) {
+        return f + r > 0 ? (int) Math.round(100 * f / (f + r)) : null;
+    }
+
+    /** Nombre écrit comme la page web (« 1 234 », « 45,93 »). */
+    static String fmtSuivi(double v) {
+        java.text.NumberFormat n = java.text.NumberFormat.getInstance(Locale.FRANCE);
+        n.setMaximumFractionDigits(2);
+        return n.format(v);
+    }
+
+    private static String fmtSuivi(String v) {
+        try {
+            return fmtSuivi(Double.parseDouble(v));
+        } catch (NumberFormatException e) {
+            return v;
+        }
+    }
+
+    /** « 2026-11-10 » → « 10/11/2026 ». */
+    static String jourLisible(String jour) {
+        return jour == null || jour.length() < 10 ? "" : jour.substring(8, 10) + "/" + jour.substring(5, 7) + "/" + jour.substring(0, 4);
+    }
+
+    /** « 2026-11-10 » → « 10/11 ». */
+    static String jourCourt(String jour) {
+        return jour == null || jour.length() < 10 ? "" : jour.substring(8, 10) + "/" + jour.substring(5, 7);
+    }
+
+    private View barreSuivi(double f, double r, String e) {
+        LinearLayout b = new LinearLayout(activite);
+        b.setOrientation(LinearLayout.HORIZONTAL);
+        android.graphics.drawable.GradientDrawable fond = new android.graphics.drawable.GradientDrawable();
+        fond.setColor(GRIS_BARRE);
+        fond.setCornerRadius(ui.dp(5));
+        b.setBackground(fond);
+        Integer p = pctSuivi(f, r);
+        int largeur = "absent".equals(e) ? 100 : p == null ? 0 : p;
+        View plein = new View(activite);
+        android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+        g.setColor(couleurBarre(e));
+        g.setCornerRadius(ui.dp(5));
+        plein.setBackground(g);
+        b.addView(plein, new LinearLayout.LayoutParams(0, ui.dp(10), largeur));
+        b.addView(new View(activite), new LinearLayout.LayoutParams(0, ui.dp(10), 100 - largeur));
+        b.setContentDescription("Avancement " + (p == null ? 0 : p) + " %");
+        return b;
+    }
+
+    private static String chiffresSuivi(FichierPartage.LancementSuivi l) {
+        if (l.f + l.r == 0)
+            return fmtSuivi(l.h) + (l.h > 1 ? " pièces" : " pièce") + ("absent".equals(l.e) ? " · aucune dans l'extraction" : " · pas encore dans l'extraction");
+        return fmtSuivi(l.f) + (l.f > 1 ? " faites" : " faite") + " · " + fmtSuivi(l.r) + " à faire" + (l.h > 0 ? " · " + fmtSuivi(l.h) + " pas dans Diakonos" : "");
+    }
+
+    /** « +101 pièces depuis le 07/11 » (vide sans extraction d'avant). */
+    static String evolutionSuivi(FichierPartage.LancementSuivi l, String precedente) {
+        if (l.d == null || precedente == null || precedente.isEmpty()) return "";
+        if (l.d == 0) return "= depuis le " + jourCourt(precedente);
+        double a = Math.abs(l.d);
+        return (l.d > 0 ? "+" : "−") + fmtSuivi(a) + (a > 1 ? " pièces" : " pièce") + " depuis le " + jourCourt(precedente);
+    }
+
+    private void ecranSuivi() {
+        entete("Outils", "Suivi de production", "L'avancement de chaque lancement, d'après l'extraction « Suivi production » de Diakonos.");
+        if (donnees == null) {
+            sansDonnees();
+            return;
+        }
+        FichierPartage.Suivi s = donnees.suivi;
+        if (s == null) {
+            MaterialCardView carte = ui.carte();
+            LinearLayout corps = corpsDe(carte);
+            corps.addView(ui.titre("Extraction Diakonos", 17, Ui.BORDEAUX));
+            corps.addView(ui.filetSaumon());
+            corps.addView(ui.texte("Aucune extraction Diakonos lue sur le PC pour l'instant. Sur le PC : Suivi de production → « Choisir le dossier des extractions… ».", 14, false, Ui.NOIR));
+            racine.addView(carte);
+            return;
+        }
+        MaterialCardView carte = ui.carte();
+        LinearLayout corps = corpsDe(carte);
+        corps.addView(ui.titre("Extraction Diakonos", 17, Ui.BORDEAUX));
+        corps.addView(ui.filetSaumon());
+        corps.addView(ui.texte("Dernière extraction : " + jourLisible(s.jour) + " (semaine " + s.semaine + ")", 14, true, Ui.NOIR));
+        corps.addView(ui.texte(android.text.TextUtils.join(" + ", s.fichiers) + (s.nbExtractions > 1 ? " · " + s.nbExtractions + " extractions gardées pour l'évolution" : ""), 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 0));
+        racine.addView(carte);
+
+        LinearLayout haut = ui.rangee();
+        haut.addView(tuile(fmtSuivi(s.lancements), "Lancements suivis", false), ui.poids(1));
+        haut.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
+        String depuis = s.depuis != null && !s.precedente.isEmpty() ? " · " + (s.depuis >= 0 ? "+" : "−") + fmtSuivi(Math.abs(s.depuis)) + " depuis le " + jourCourt(s.precedente) : "";
+        haut.addView(tuile(fmtSuivi(s.faites), "Pièces faites" + depuis, false), ui.poids(1));
+        racine.addView(haut, ui.pleineLargeur());
+        LinearLayout bas = ui.rangee();
+        bas.addView(tuile(fmtSuivi(s.restantes), "Pièces à faire", false), ui.poids(1));
+        bas.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
+        bas.addView(tuile(fmtSuivi(s.retard), "Lancements en retard", s.retard > 0), ui.poids(1));
+        racine.addView(bas, ui.pleineLargeur());
+
+        racine.addView(ui.titre("Avancement par lancement", 17, Ui.NOIR), ui.marges(10, 2));
+        racine.addView(ui.texte("Une pièce du lancement encore dans l'extraction est à faire ; sortie de l'extraction, elle est faite. Les pièces jamais vues dans les extractions (bandes, casse, rajouts…) ne comptent pas dans la barre. Touchez un lancement : les commandes encore à faire.",
+                13, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 4));
+        if (s.semaines.isEmpty())
+            racine.addView(ui.texte("Aucun lancement dans la bibliothèque des semaines autour de cette extraction.", 14, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 4));
+        for (FichierPartage.SemaineSuivi sem : s.semaines) racine.addView(carteSemaineSuivi(sem, s));
+        if (s.anciennes > 0)
+            racine.addView(ui.texte(s.anciennes + (s.anciennes > 1 ? " semaines plus anciennes : finies." : " semaine plus ancienne : finie."), 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 6));
+
+        if (!s.hors.isEmpty()) {
+            MaterialCardView ch = ui.carte();
+            LinearLayout c = corpsDe(ch);
+            c.addView(ui.titre("Dans Diakonos, dans aucun lancement", 16, Ui.BORDEAUX));
+            c.addView(ui.filetSaumon());
+            c.addView(ui.texte("Pièces de l'extraction qui ne sont dans aucun lancement de la bibliothèque (pas encore lancées, ou lancement pas scanné).", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 4));
+            for (String[] h : s.hors) {
+                if (h.length < 4) continue;
+                LinearLayout r = ui.rangee();
+                r.addView(ui.texte(h[0], 14, true, Ui.NOIR), ui.poids(1));
+                r.addView(ui.texte(fmtSuivi(h[1]) + " à faire · " + fmtSuivi(h[2]) + " lignes · " + fmtSuivi(h[3]) + " commandes", 13, false, Ui.NOIR));
+                c.addView(r, ui.marges(3, 3));
+            }
+            racine.addView(ch);
+        }
+        if (!s.tableau.isEmpty()) racine.addView(carteTableauSuivi(s));
+    }
+
+    private View carteSemaineSuivi(FichierPartage.SemaineSuivi sem, FichierPartage.Suivi s) {
+        MaterialCardView carte = ui.carte();
+        LinearLayout corps = corpsDe(carte);
+        boolean courante = sem.annee == s.annee && sem.semaine == s.semaine;
+        corps.addView(ui.titre("Semaine " + sem.semaine + (courante ? " · en cours" : ""), 17, Ui.BORDEAUX));
+        corps.addView(ui.texte(CompteRendu.datesSemaine(sem.annee, sem.semaine), 13, false, ui.couleur(R.color.gris_texte)));
+        LinearLayout tete = ui.rangee();
+        tete.addView(barreSuivi(sem.f, sem.r, sem.e), new LinearLayout.LayoutParams(0, ui.dp(10), 1));
+        Integer p = pctSuivi(sem.f, sem.r);
+        TextView pct = ui.titre(p == null ? libelleEtatSuivi(sem.e, sem.f) : p + " %", p == null ? 12 : 16, couleurTexteEtat(sem.e));
+        pct.setPadding(ui.dp(10), 0, 0, 0);
+        tete.addView(pct);
+        corps.addView(tete, ui.marges(6, 4));
+        corps.addView(ui.filetSaumon());
+        for (FichierPartage.LancementSuivi l : sem.lancements) corps.addView(blocLancementSuivi(l, s));
+        return carte;
+    }
+
+    private View blocLancementSuivi(FichierPartage.LancementSuivi l, FichierPartage.Suivi s) {
+        LinearLayout bloc = ui.colonne();
+        bloc.setPadding(0, ui.dp(8), 0, ui.dp(8));
+        LinearLayout tete = ui.rangee();
+        LinearLayout noms = ui.colonne();
+        noms.addView(ui.texte(l.poste.isEmpty() ? "Lancement" : l.poste, 15, true, Ui.NOIR));
+        noms.addView(ui.texte(l.nom, 12, false, ui.couleur(R.color.gris_texte)));
+        tete.addView(noms, ui.poids(1));
+        Integer p = pctSuivi(l.f, l.r);
+        LinearLayout droite = ui.colonne();
+        droite.setGravity(Gravity.END);
+        droite.addView(ui.titre(p == null ? libelleEtatSuivi(l.e, l.f) : p + " %", p == null ? 12 : 17, couleurTexteEtat(l.e)));
+        if (p != null) droite.addView(ui.texte(libelleEtatSuivi(l.e, l.f).toUpperCase(Locale.FRANCE), 10, true, couleurTexteEtat(l.e)));
+        tete.addView(droite);
+        bloc.addView(tete);
+        bloc.addView(barreSuivi(l.f, l.r, l.e), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(10)));
+        ((LinearLayout.LayoutParams) bloc.getChildAt(1).getLayoutParams()).setMargins(0, ui.dp(6), 0, ui.dp(4));
+        bloc.addView(ui.texte(chiffresSuivi(l), 13, false, Ui.NOIR));
+        String evo = evolutionSuivi(l, s.precedente);
+        if (!evo.isEmpty()) bloc.addView(ui.texte(evo, 12, l.d != null && l.d != 0, l.d != null && l.d > 0 ? VERT : l.d != null && l.d < 0 ? Ui.BORDEAUX : Ui.GRIS));
+        if (suiviOuverts.contains(l.cle)) {
+            if (l.commandes.isEmpty())
+                bloc.addView(ui.texte("Plus aucune pièce de ce lancement dans l'extraction du " + jourLisible(s.jour) + ".", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 0));
+            else {
+                bloc.addView(ui.texte("Commandes encore à faire", 13, true, Ui.BORDEAUX), ui.marges(8, 2));
+                for (String[] c : l.commandes) {
+                    if (c.length < 5) continue;
+                    LinearLayout r = ui.rangee();
+                    LinearLayout g = ui.colonne();
+                    g.addView(ui.texte(c[0], 13, true, Ui.NOIR));
+                    g.addView(ui.texte(joindre(" · ", c[1], c[2], c[4]).replaceFirst("^ · ", ""), 12, false, ui.couleur(R.color.gris_texte)));
+                    r.addView(g, ui.poids(1));
+                    r.addView(ui.texte(fmtSuivi(c[3]) + " à faire", 13, true, Ui.NOIR));
+                    r.setPadding(0, ui.dp(3), 0, ui.dp(3));
+                    bloc.addView(r);
+                }
+            }
+            if (l.h > 0 && l.f + l.r > 0)
+                bloc.addView(ui.texte(fmtSuivi(l.h) + (l.h > 1 ? " pièces du lancement n'ont jamais été vues" : " pièce du lancement n'a jamais été vue") + " dans les extractions lues (pas comptée" + (l.h > 1 ? "s" : "") + " dans la barre).",
+                        12, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
+        }
+        bloc.setOnClickListener(v -> {
+            if (!suiviOuverts.remove(l.cle)) suiviOuverts.add(l.cle);
+            construire();
+        });
+        bloc.setClickable(true);
+        LinearLayout avecFilet = ui.colonne();
+        avecFilet.addView(bloc);
+        avecFilet.addView(ui.separateur());
+        return avecFilet;
+    }
+
+    private View carteTableauSuivi(FichierPartage.Suivi s) {
+        MaterialCardView carte = ui.carte();
+        LinearLayout corps = corpsDe(carte);
+        corps.addView(ui.titre("Pièces à faire par transporteur et par semaine", 16, Ui.BORDEAUX));
+        corps.addView(ui.filetSaumon());
+        android.widget.HorizontalScrollView defile = new android.widget.HorizontalScrollView(activite);
+        android.widget.TableLayout t = new android.widget.TableLayout(activite);
+        android.widget.TableRow tete = new android.widget.TableRow(activite);
+        tete.addView(celluleSuivi("Transporteur", true, false));
+        for (String c : s.colonnes) tete.addView(celluleSuivi(c, true, true));
+        t.addView(tete);
+        double[] totaux = new double[s.colonnes.size()];
+        for (String[] l : s.tableau) {
+            android.widget.TableRow r = new android.widget.TableRow(activite);
+            r.addView(celluleSuivi(l.length > 0 ? l[0] : "", false, false));
+            for (int i = 1; i < l.length && i - 1 < totaux.length; i++) {
+                double v;
+                try {
+                    v = Double.parseDouble(l[i]);
+                } catch (NumberFormatException e) {
+                    v = 0;
+                }
+                totaux[i - 1] += v;
+                r.addView(celluleSuivi(v == 0 ? "" : fmtSuivi(v), i == l.length - 1, true));
+            }
+            t.addView(r);
+        }
+        android.widget.TableRow total = new android.widget.TableRow(activite);
+        total.addView(celluleSuivi("Total", true, false));
+        for (double v : totaux) total.addView(celluleSuivi(fmtSuivi(v), true, true));
+        t.addView(total);
+        defile.addView(t);
+        corps.addView(defile);
+        corps.addView(ui.texte("« Qté en cours » de l'extraction du " + jourLisible(s.jour) + ", comme dans Excel.", 12, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 0));
+        return carte;
+    }
+
+    private TextView celluleSuivi(String texte, boolean gras, boolean nombre) {
+        TextView v = ui.texte(texte, 12, gras, Ui.NOIR);
+        v.setPadding(ui.dp(6), ui.dp(4), ui.dp(6), ui.dp(4));
+        if (nombre) v.setGravity(Gravity.END);
+        return v;
     }
 
     // ---- recherche ----
