@@ -1,0 +1,11 @@
+# Mini-site de Sentinelle : il garde le fichier partagé CHIFFRÉ (le PC l'envoie, le téléphone le lit).
+[build]
+  publish = "public"
+
+[functions]
+  directory = "netlify/functions"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Robots-Tag = "noindex, nofollow"

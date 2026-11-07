@@ -1,0 +1,4 @@
+# Copie de la page faite par fabriquer.sh, ressources Windows générées, .exe fabriqués.
+page/
+*.syso
+*.exe

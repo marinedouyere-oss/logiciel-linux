@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Suivi de production — Laisné Industrie</title>
+<style>
+/*POLICES*/
+/*STYLE*/
+</style>
+</head>
+<body>
+<header class="bandeau">
+  <img class="logo" src="%LOGO_BLANC%" alt="LAISNÉ INDUSTRIE">
+  <div class="titre-app">
+    <div class="nom">Suivi de production <span class="badge">MAQUETTE</span></div>
+    <div class="sous">Extraction Diakonos « Suivi production »</div>
+  </div>
+  <div class="actions-bandeau">
+    <button type="button" class="blanc" id="btnDossier">Dossier des extractions…</button>
+    <button type="button" class="blanc" id="btnActualiser" hidden>↻ Actualiser</button>
+    <button type="button" class="contour-blanc" data-ouvrir>Charger un fichier…</button>
+  </div>
+</header>
+<input type="file" id="champFichier" accept=".xlsx,.xlsm" multiple hidden>
+
+<main>
+  <div id="infoDossier" class="info-dossier" hidden></div>
+  <div id="message" class="message" hidden></div>
+
+  <section id="vide" class="carte vide">
+    <div class="depot-icone" aria-hidden="true">⇩</div>
+    <h1>Déposez ici l'extraction Diakonos</h1>
+    <p>Le fichier <strong>suivi_production_JJMMAAAA.xlsx</strong> exporté de Diakonos. Tout est calculé à chaque nouveau fichier : il suffit de redéposer l'extraction du jour pour mettre le tableau à jour.</p>
+    <p>Plusieurs extractions (ex. production + fournitures) : choisissez-les ensemble, ou ajoutez-les ensuite. Une ligne présente dans deux fichiers n'est comptée qu'une fois.</p>
+    <p class="pale">Le fichier est lu sur ce PC : rien n'est envoyé sur internet.</p>
+    <p><strong>Le plus simple :</strong> choisissez une fois le dossier où arrivent les extractions. L'outil y lira tout seul la dernière version à chaque ouverture.</p>
+    <button type="button" id="btnDossierVide">Choisir le dossier des extractions…</button>
+    <button type="button" class="contour" data-ouvrir>Ou charger un fichier…</button>
+  </section>
+
+  <div id="tableauBord" hidden>
+    <div class="source" id="source"></div>
+
+    <div class="inclus" id="choixInclus" role="group" aria-label="Ce qui est compté"></div>
+    <div class="filtres" role="search" aria-label="Filtres">
+      <select id="filtreSemaine" aria-label="Semaine"></select>
+      <select id="filtreTransporteur" aria-label="Transporteur"></select>
+      <select id="filtreCatalogue" aria-label="Catalogue"></select>
+      <select id="filtreGroupement" aria-label="Groupement"></select>
+      <input id="filtreTexte" type="search" placeholder="Commande, ville, article, coloris…" aria-label="Rechercher">
+      <span id="pucesFiltres"></span>
+      <button type="button" class="texte" id="btnEffacer" hidden>Effacer les filtres</button>
+    </div>
+    <div class="bande-filtre" id="bandeFiltre" hidden></div>
+
+    <section class="indicateurs" id="indicateurs" aria-label="Chiffres clés"></section>
+
+    <section class="carte">
+      <div class="entete-carte">
+        <h2>Tableau de contrôle</h2>
+        <div class="choix" role="group" aria-label="Lignes du tableau">
+          <button type="button" data-vue="transporteur">Transporteur</button>
+          <button type="button" data-vue="catalogue">Catalogue</button>
+          <button type="button" data-vue="groupement">Groupement</button>
+          <button type="button" data-vue="coloris">Coloris</button>
+          <button type="button" data-vue="departement">Département</button>
+        </div>
+        <div class="choix" role="group" aria-label="Ce qu'on compte">
+          <button type="button" data-mesure="cours">Qté en cours</button>
+          <button type="button" data-mesure="lanc">Qté lancement</button>
+          <button type="button" data-mesure="lignes">Lignes</button>
+          <button type="button" data-mesure="commandes">Commandes</button>
+        </div>
+      </div>
+      <div class="defile" id="tableauControle"></div>
+      <div class="note" id="noteTableau"></div>
+    </section>
+
+    <section class="carte" id="carteCommandes">
+      <div class="entete-carte"><h2 id="titreCommandes">Commandes</h2></div>
+      <div id="commandes"></div>
+    </section>
+
+    <section class="carte">
+      <div class="entete-carte"><h2 id="titreGraphique">Charge par semaine</h2></div>
+      <div class="legende" id="legendeGraphique"></div>
+      <div id="graphique" class="graphique"></div>
+      <div class="note">Par semaine et par catalogue (une commande peut avoir plusieurs catalogues : en « Commandes », le graphique compte les lignes). Le détail chiffré est dans le tableau de contrôle, vue « Catalogue ». Un clic sur une semaine filtre toute la page.</div>
+    </section>
+
+    <section class="carte" id="carteRetards">
+      <div class="entete-carte"><h2 id="titreRetards">Commandes en retard</h2></div>
+      <div id="retards"></div>
+    </section>
+
+    <section class="carte" id="carteDetail">
+      <div class="entete-carte">
+        <h2 id="titreDetail">Détail des lignes</h2>
+        <div class="boutons">
+          <button type="button" class="contour" id="btnExporter">Exporter vers Excel (CSV)</button>
+          <button type="button" class="contour" id="btnImprimer">Imprimer</button>
+        </div>
+      </div>
+      <div id="detail"></div>
+    </section>
+
+    <section class="carte">
+      <div class="entete-carte"><h2>Évolution depuis l'extraction précédente</h2></div>
+      <div id="evolution"></div>
+    </section>
+
+    <section class="carte">
+      <div class="entete-carte"><h2>Contrôle : ce que l'outil a lu</h2></div>
+      <div id="controle"></div>
+    </section>
+  </div>
+</main>
+<div id="bulle" class="bulle" role="tooltip" hidden></div>
+<footer class="pied">Suivi de production · maquette · Laisné Industrie — l'extraction Diakonos n'est jamais modifiée.</footer>
+<script>
+/*SCRIPT*/
+</script>
+</body>
+</html>
