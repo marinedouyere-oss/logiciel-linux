@@ -11,6 +11,9 @@ Tableau de bord de la production à partir de l'extraction **« Suivi production
 - Tout est recalculé à chaque nouveau fichier : chiffres clés, tableau de contrôle par transporteur / catalogue /
   groupement / coloris / département et par semaine, charge par semaine, commandes en retard, détail filtrable,
   export CSV, et ce qui est sorti / arrivé depuis l'extraction précédente (gardée dans le navigateur).
+- Comptage : une ligne de commande = commande + n° de ligne (Diakonos la répète à chaque n° de lancement, avec la
+  même quantité : elle compte une fois). La résine (Méganite) est en m², le reste en pièces : jamais additionnés.
+- Panneau « Contrôle » : lignes et sommes brutes (comme dans Excel) à côté de ce qui est compté.
 - Le fichier est lu sur le PC : rien n'est envoyé, l'extraction n'est jamais modifiée.
 - Les extractions Diakonos (données clients) ne vont jamais dans ce dépôt.
 

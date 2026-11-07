@@ -61,21 +61,26 @@
           <button type="button" data-vue="departement">Département</button>
         </div>
         <div class="choix" role="group" aria-label="Ce qu'on compte">
-          <button type="button" data-mesure="lignes">Lignes</button>
           <button type="button" data-mesure="commandes">Commandes</button>
-          <button type="button" data-mesure="qte">Qté en cours</button>
-          <button type="button" data-mesure="m2">m²</button>
+          <button type="button" data-mesure="lignes">Lignes</button>
+          <button type="button" data-mesure="pieces">Pièces</button>
+          <button type="button" data-mesure="m2">Résine m²</button>
         </div>
       </div>
       <div class="defile" id="tableauControle"></div>
       <div class="note" id="noteTableau"></div>
     </section>
 
+    <section class="carte" id="carteCommandes">
+      <div class="entete-carte"><h2 id="titreCommandes">Commandes</h2></div>
+      <div id="commandes"></div>
+    </section>
+
     <section class="carte">
       <div class="entete-carte"><h2 id="titreGraphique">Charge par semaine</h2></div>
       <div class="legende" id="legendeGraphique"></div>
       <div id="graphique" class="graphique"></div>
-      <div class="note">Le détail chiffré de ce graphique est dans le tableau de contrôle, vue « Catalogue ». Un clic sur une semaine filtre toute la page.</div>
+      <div class="note">Lignes de commande par semaine (une commande peut avoir plusieurs catalogues). Le détail chiffré est dans le tableau de contrôle, vue « Catalogue ». Un clic sur une semaine filtre toute la page.</div>
     </section>
 
     <section class="carte" id="carteRetards">
@@ -97,6 +102,11 @@
     <section class="carte">
       <div class="entete-carte"><h2>Évolution depuis l'extraction précédente</h2></div>
       <div id="evolution"></div>
+    </section>
+
+    <section class="carte">
+      <div class="entete-carte"><h2>Contrôle : ce que l'outil a lu</h2></div>
+      <div id="controle"></div>
     </section>
   </div>
 </main>
