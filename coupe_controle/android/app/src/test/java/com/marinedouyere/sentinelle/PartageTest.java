@@ -257,6 +257,35 @@ public class PartageTest {
         capturer(a, new File(dossier, nom));
     }
 
+    /** V6.1 : fichier partagé avec les plans de coupe (48 01) — la recherche d'une pièce montre sa fiche et ses plans. */
+    @Test
+    public void rechercheAvecPlans() throws Exception {
+        String chemin = System.getProperty("sentinelle.partage_plans", "");
+        assumeTrue(!chemin.isEmpty());
+        MainActivity a = avecFichier(java.nio.file.Files.readAllBytes(new File(chemin).toPath()));
+        FichierPartage f = ((SentinelleApp) a.getApplication()).partage;
+        PlansLancement.Piece p = PlansLancement.piece(f.semaines.get(0).lancements.get(0).plans, "CVC26110064003");
+        assertEquals("T73", p.groupe);
+        assertEquals(4, p.plans.size());
+        assertEquals(40, p.plans.get(0).plan.pdc);
+        assertEquals(12, p.plans.get(1).plan.pdc);
+        assertEquals("SAG10HYBR", p.plans.get(1).plan.matiere);
+        onglet(a, MainActivity.ONGLET_RECHERCHE);
+        android.widget.EditText champ = chercherVue(a.getWindow().getDecorView(), android.widget.EditText.class);
+        champ.setText("26110064003");
+        bouton(a.getWindow().getDecorView(), "Chercher").performClick();
+        ShadowLooper.idleMainLooper();
+        String ecran = ecran(a);
+        assertTrue(ecran, ecran.contains("Crédence 3592 × 161 × 14 mm"));
+        assertTrue(ecran.contains("Lancée et placée — Agglo 1er tour, semaine 48"));
+        assertTrue(ecran.contains("Dans le module T73"));
+        assertTrue(ecran.contains("Pdc 40"));
+        assertTrue(ecran.contains("Agglo SAG10HYBR"));
+        assertTrue(ecran.contains("Stratifié dessus 997"));
+        assertTrue(ecran.contains("✔ placée · Pdc 40 (module T73)"));
+        capturerSiDemande(a, "appli_recherche_plans.png");
+    }
+
     /** Le vrai fichier écrit par la page web (semaines 44 à 46) : les quatre écrans, comme sur le PC. */
     @Test
     public void ecransSurLeVraiFichier() throws Exception {

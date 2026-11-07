@@ -407,6 +407,47 @@ function plansDeLaPiece(donnees, cle) {
   return { piece, groupe, bande, module: groupe && donnees.modules.has(groupe), plans: resultat };
 }
 
+// Les plans d'un lancement pour le téléphone (fichier partagé), compacts : les noms à part, chaque plan une fois
+// (matière, Pdc, module, panneau, sorte, L, W, fois, désignation, morceaux [x, y, L, W, nom, article, fini L, fini W] ;
+// une chute : [x, y, L, W, -1]), et pour chaque pièce du lancement ses plans et les morceaux à mettre en jaune.
+function plansPourTelephone(donnees, cles) {
+  const noms = [];
+  const indexNom = new Map();
+  const nom = (t) => {
+    if (!indexNom.has(t)) {
+      indexNom.set(t, noms.length);
+      noms.push(t);
+    }
+    return indexNom.get(t);
+  };
+  const r1 = (v) => Math.round(v * 10) / 10;
+  const plans = [];
+  const indexPlan = new Map();
+  const ajouter = (plan) => {
+    if (!indexPlan.has(plan)) {
+      const m = donnees.matieres.get(plan.matiere);
+      indexPlan.set(plan, plans.length);
+      plans.push([plan.matiere, plan.pdc, plan.module ? 1 : 0, plan.nom, plan.sorte, r1(plan.L), r1(plan.W), plan.fois, m ? m.desc : "",
+        plan.rects.map((r) => (r.chute ? [r1(r.x), r1(r.y), r1(r.L), r1(r.W), -1] : [r1(r.x), r1(r.y), r1(r.L), r1(r.W), nom(nomMorceauPlan(r)), nom(r.article || ""), r1(r.fini[0]), r1(r.fini[1])]))]);
+    }
+    return indexPlan.get(plan);
+  };
+  const pieces = {};
+  for (const cle of cles) {
+    const pp = plansDeLaPiece(donnees, cle);
+    if (!pp.plans.length) continue;
+    pieces[cle] = {
+      g: pp.groupe || "",
+      t: pp.module ? "m" : pp.bande ? "b" : "",
+      d: pp.piece ? pp.piece.dessus : "",
+      s: pp.piece ? pp.piece.dessous : "",
+      n: donnees.placees.get(cle) || 0,
+      p: pp.plans.map((x) => [ajouter(x.plan), x.rang, x.plan.rects.map((r, i) => (!r.chute && x.visee(r) ? i : -1)).filter((i) => i >= 0)]),
+    };
+  }
+  return { lancement: donnees.lancement, noms, plans, pieces };
+}
+
 // Pièces du fichier de lancement absentes des plans (ou en nombre insuffisant) : elles ne seront pas coupées.
 function piecesNonPlacees(qteAttendueParCle, donnees) {
   const manquantes = [];

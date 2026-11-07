@@ -22,6 +22,20 @@ Ce dossier garde ce qui sert à fabriquer Sentinelle (aucune donnée client).
 - APK : `cd coupe_controle/android && gradle :app:assembleRelease`.
 - Lien téléphone : `coupe_controle/lien_telephone` (site Netlify, fichier partagé chiffré).
 
+## V6.1 : plans de coupe, quatre semaines, partie expérimentale
+
+- `web_src/03b_plans.js` : lecture des plans de Cut Rite dans le .bkp (`.pct`, `.ptn`, `.brd` de chaque matière),
+  mêmes numéros « Pdc » que Cut Rite ; contrôle des pièces placées ; dessin SVG ; comparaison de deux .bkp ;
+  plans compacts pour le téléphone (fichier partagé, 4 semaines les plus récentes).
+- `web_src/07e_plans_ui.js` : fiche simple d'une pièce (recherche), plan en grand, PDF des plans, outil
+  « Plans de coupe » et plan modifié à la scie.
+- `web_src/06e_liste_coupe.js` + `07f_experimental.js` : liste de coupe Cut Rite refaite (expérimental, nom à part,
+  le LAN n'est jamais modifié) et test de connexion woodStore (`windows/reseau.go`, lecture seule).
+- Onglets semaine : numéro de semaine modulo 4 (`ONGLETS_SEMAINE` dans `04_controles.js`).
+- Test : `node sources/outils/test_web_plans.js web/index.html "<Semaine 48>/1ER TOUR AGGLO" [<.bkp modifié>] [captures]`.
+- Appli : `FichePiece.java`, `PlansLancement.java`, `PlanVue.java`, `SchemaVue.java` (moteur : schéma de la commande) ;
+  test Robolectric `rechercheAvecPlans` (variable `SENTINELLE_PARTAGE_PLANS`).
+
 ## Claustra (logiciel à part)
 
 Prépare le fichier de lancement des claustras (LAN…CLAUSTRA.xlsx, les 37 colonnes d'un lancement normal)

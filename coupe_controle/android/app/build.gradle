@@ -10,8 +10,8 @@ android {
         applicationId "com.marinedouyere.sentinelle"
         minSdk 24
         targetSdk 34
-        versionCode 36
-        versionName "6.0.13"
+        versionCode 37
+        versionName "6.1.0"
     }
 
     // Clé de signature gardée dans le projet : chaque nouvelle version
@@ -52,6 +52,7 @@ android {
                 systemProperty "sentinelle.semaine46", System.getenv("SENTINELLE_SEMAINE46") ?: ""
                 systemProperty "sentinelle.sommaire", System.getenv("SENTINELLE_SOMMAIRE") ?: ""
                 systemProperty "sentinelle.partage", System.getenv("SENTINELLE_PARTAGE") ?: ""
+                systemProperty "sentinelle.partage_plans", System.getenv("SENTINELLE_PARTAGE_PLANS") ?: ""
                 systemProperty "sentinelle.lien_code", System.getenv("SENTINELLE_LIEN_CODE") ?: ""
                 maxHeapSize = "3g"
                 testLogging {
@@ -74,6 +75,8 @@ android {
 }
 
 dependencies {
+    // Moteur (Java pur) : dessin du schéma de la commande dans la recherche, comme sur le PC.
+    implementation project(":moteur")
     implementation "com.google.android.material:material:1.12.0"
     implementation "androidx.appcompat:appcompat:1.7.0"
     implementation "androidx.documentfile:documentfile:1.0.1"

@@ -12,7 +12,12 @@ const FORMAT_PARTAGE = "sentinelle-partage-1";
 const NOM_FICHIER_PARTAGE = "sentinelle_partage.json.gz";
 const ID_FICHIER_CONNU = "__fichier_partage"; // dernier état connu du fichier partagé (dans IndexedDB)
 // Une pièce = un tableau dans cet ordre (le fichier redonne l'ordre dans « colonnesPieces »).
-const COLONNES_PIECES_BIBLIOTHEQUE = ["cle", "commande", "ligne", "article", "pieces", "longueur", "largeur", "epaisseur", "coloris", "coloris_inf", "matiere", "livraison"];
+// V6.1 : de quoi redessiner la commande sur le téléphone (assemblage, découpes, chants, angles, commentaire), client et référence.
+const COLONNES_PIECES_BIBLIOTHEQUE = ["cle", "commande", "ligne", "article", "pieces", "longueur", "largeur", "epaisseur", "coloris", "coloris_inf", "matiere", "livraison",
+  "assemblage", "info3", "chants", "angles", "commentaire", "client", "reference"];
+const ANGLES_BIBLIOTHEQUE = [["ARG", "Usinage angle arrière gauche"], ["ARD", "Usinage angle arrière droit"], ["AVD", "Usinage angle avant droit"], ["AVG", "Usinage angle avant gauche"]];
+// Les plans de coupe ne vont dans le fichier partagé que pour les semaines les plus récentes (taille du fichier).
+const SEMAINES_AVEC_PLANS = 4;
 const DB_BIBLIOTHEQUE = "sentinelle-bibliotheque";
 const MAGASIN_SEMAINES = "semaines";
 // Un fichier par semaine : rangement de la V5.2, repris une fois.
@@ -263,7 +268,10 @@ function ficheLancementBibliotheque(nomFichier, strat, infos) {
   const pieces = strat.lignes.map((l) => {
     const d = l.toutesDonnees || {};
     return [l.cle, texte(l.commande), texte(l.ligne), texte(l.article), l.pieces, l.longueurFinie ?? "", l.largeurFinie ?? "", l.epaisseurFinie ?? "",
-      texte(colorisDeLaPiece(l)), texte(d.coloris_inf), texte(d[COL_AGGLO]), livraison.get(l.cle) || ""];
+      texte(colorisDeLaPiece(l)), texte(d.coloris_inf), texte(d[COL_AGGLO]), livraison.get(l.cle) || "",
+      texte(l.assemblage || d["info atelier assemblage"]), texte(d["info 3 atelier"]),
+      ["conf_chantavant", "conf_chantarriere", "conf_chantgauche", "conf_chantdroit"].map((k) => (d[k] ? "1" : "0")).join(""),
+      ANGLES_BIBLIOTHEQUE.filter(([, k]) => d[k]).map(([c, k]) => `${c}:${d[k]}`).join(";"), texte(d.commentaire), texte(d.com_clientcom), texte(d.com_reference)];
   });
   return {
     nom: nomFichier.replace(/\.[^.]*$/, ""),
@@ -275,6 +283,7 @@ function ficheLancementBibliotheque(nomFichier, strat, infos) {
     recap: infos.recap || null,
     controle: infos.controle || null,
     problemes: infos.problemes || [],
+    plans: infos.plans || null,
     nbPieces: strat.lignes.reduce((t, l) => t + (l.pieces || 0), 0),
     pieces,
   };
@@ -298,6 +307,7 @@ async function archiverLancements(items) {
     const k = cleNomLancement(lancement.nom);
     s.lancements = s.lancements.filter((l) => cleNomLancement(l.nom) !== k);
     s.lancements.push({ ...lancement, maj });
+    s.colonnesPieces = COLONNES_PIECES_BIBLIOTHEQUE; // les colonnes d'avant en sont le début : les anciennes lignes restent lisibles
     s.lancements.sort((a, b) => a.nom.localeCompare(b.nom));
     s.maj = maj;
   }
@@ -366,6 +376,7 @@ async function archiverOnglet(parite, lancementsRapport) {
           controle: c ? { nbCorriger: c.nbCorriger, nbVerifier: c.nbVerifier, bilan: c.bilan.map(({ statut, controle, texte }) => ({ statut, controle, texte })) } : null,
           problemes: c && c.details ? c.details : [],
           recap,
+          plans: await plansDuLancementPourTelephone(p, strat),
         }),
       });
     } catch (_erreur) {
@@ -375,6 +386,16 @@ async function archiverOnglet(parite, lancementsRapport) {
   if (!items.length) return null;
   const r = await archiverLancements(items);
   return { ...r, nbLancements: items.length };
+}
+
+// Les plans de coupe du lancement pour le téléphone (null sans .bkp lisible).
+async function plansDuLancementPourTelephone(p, strat) {
+  if (!p.bkp) return null;
+  try {
+    return plansPourTelephone(await lirePlansBkp(p.bkp), [...new Set(strat.lignes.map((l) => l.cle))]);
+  } catch (_e) {
+    return null;
+  }
 }
 
 // Une ligne pour le compte rendu du scan.
@@ -425,6 +446,10 @@ function contenuFichierPartage() {
   const semaines = [...bibliotheque.semaines.values()]
     .map(({ drive: _drive, ...s }) => s)
     .sort((a, b) => ordreSemaine(a.annee, a.semaine) - ordreSemaine(b.annee, b.semaine));
+  // Plans de coupe : seulement les semaines les plus récentes.
+  const avecPlans = new Set(semaines.filter((s) => !s.supprimeeLe && s.lancements.length).slice(-SEMAINES_AVEC_PLANS).map((s) => s.id));
+  for (let i = 0; i < semaines.length; i++)
+    if (!avecPlans.has(semaines[i].id) && semaines[i].lancements.some((l) => l.plans)) semaines[i] = { ...semaines[i], lancements: semaines[i].lancements.map(({ plans: _p, ...l }) => l) };
   return {
     format: FORMAT_PARTAGE,
     genere: new Date().toISOString(),

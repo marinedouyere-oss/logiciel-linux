@@ -61,7 +61,10 @@ final class FichierPartage {
         Double bkp;
         String source;
         Integer controle; // pièces à vérifier dans la liste de coupe (ou le .bkp)
-        Integer scies; // pièces différentes ; -1 : contrôle impossible
+        Integer scies; // pièces différentes (et pièces dans aucun plan de coupe) ; -1 : contrôle impossible
+        Integer horsPlans; // pièces dans aucun plan de coupe du .bkp (null : pas contrôlé)
+        /** Plans de coupe du lancement (lus par le PC dans le .bkp), tels quels ; null si absents. */
+        JSONObject plans;
         Integer couleursAbsentes;
         Integer couleursPf;
         /** Casse : pièces déjà lancées une semaine d'avant, rajouts (null : pas compté). */
@@ -207,6 +210,7 @@ final class FichierPartage {
             l.source = texte(recap, "source");
             l.controle = entier(recap, "controle");
             l.scies = entier(recap, "scies");
+            l.horsPlans = entier(recap, "horsPlans");
             l.couleursAbsentes = entier(recap, "couleursAbsentes");
             l.couleursPf = entier(recap, "couleursPf");
             JSONObject casse = recap.optJSONObject("casse");
@@ -253,6 +257,7 @@ final class FichierPartage {
                 if (!p.valide.isEmpty()) p.niveau = "valide";
                 l.problemes.add(p);
             }
+        l.plans = jl.optJSONObject("plans");
         JSONArray pieces = jl.optJSONArray("pieces");
         if (pieces != null)
             for (int k = 0; k < pieces.length(); k++) {

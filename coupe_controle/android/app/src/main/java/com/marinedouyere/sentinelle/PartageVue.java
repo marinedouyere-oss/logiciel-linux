@@ -326,7 +326,12 @@ final class PartageVue {
         for (FichierPartage.Bilan b : l.bilan)
             if ("Lignes en double".equals(b.controle) && "alerte".equals(b.statut)) res.add("pièce(s) en double dans le lancement");
         if (l.scies != null && l.scies < 0) res.add("Scies : contrôle impossible");
-        else if (l.scies != null && l.scies > 0) res.add("Scies : " + l.scies + " pièce(s) différente(s)");
+        else if (l.scies != null && l.scies > 0) {
+            int hors = l.horsPlans == null ? 0 : l.horsPlans;
+            int ecarts = l.scies - hors;
+            if (ecarts > 0) res.add("Scies : " + ecarts + " pièce(s) différente(s)");
+            if (hors > 0) res.add("Plans de coupe : " + hors + " pièce(s) dans aucun plan");
+        }
         if (l.couleursAbsentes != null && l.couleursAbsentes > 0) res.add("Couleurs : " + l.couleursAbsentes + " couleur(s) absente(s) du .bkp");
         return res;
     }
@@ -645,10 +650,17 @@ final class PartageVue {
         String[] p = t.piece;
         SpannableStringBuilder sb = new SpannableStringBuilder();
         gras(sb, valeur(p, "cle"));
+        sb.append(" ▸ ");
         String dims = dimensions(valeur(p, "longueur"), valeur(p, "largeur"), valeur(p, "epaisseur"));
         String sousFace = valeur(p, "coloris_inf");
         sb.append(joindre(" · ", valeur(p, "article"), dims, valeur(p, "coloris"), sousFace.isEmpty() ? "" : "sous-face " + sousFace, valeur(p, "matiere")));
-        corps.addView(ui.texte(sb, 14, false, Ui.NOIR), ui.marges(6, 0));
+        TextView titrePiece = ui.texte(sb, 14, false, Ui.NOIR);
+        // Toucher une pièce ouvre sa fiche (avec ses plans de coupe).
+        titrePiece.setOnClickListener(v -> {
+            requete = valeur(p, "cle");
+            construire();
+        });
+        corps.addView(titrePiece, ui.marges(6, 0));
         String quantite = valeur(p, "pieces");
         corps.addView(ui.texte(t.semaine.libelle() + " · " + t.semaine.annee + " · " + t.lancement.nom + (t.lancement.poste.isEmpty() ? "" : " (" + t.lancement.poste + ")")
                 + (quantite.isEmpty() ? "" : " · " + nombre(quantite) + " pièce(s)"), 13, false, ui.couleur(R.color.gris_texte)));
@@ -849,6 +861,17 @@ final class PartageVue {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
         List<FichierPartage.Trouvaille> res = donnees.chercher(requete);
+        // Une seule pièce, cherchée par sa clé : sa fiche simple (comme sur le PC), avec ses plans de coupe.
+        java.util.Set<String> cles = new java.util.LinkedHashSet<>();
+        for (FichierPartage.Trouvaille t : res) cles.add(valeur(t.piece, "cle"));
+        if (cles.size() == 1 && FichierPartage.correspond(cles.iterator().next(), requete) && cles.iterator().next().replaceFirst("^[A-Z]+", "").length() >= requete.replaceFirst("^[A-Z]+", "").length()
+                && requete.replaceFirst("^[A-Z]+", "").length() >= 11) {
+            try {
+                return new FichePiece(activite, ui, donnees).carte(res);
+            } catch (RuntimeException e) {
+                // fiche impossible : la liste simple ci-dessous
+            }
+        }
         corps.addView(ui.titre(res.isEmpty() ? "« " + requete + " » introuvable" : res.size() + " résultat(s) pour « " + requete + " »", 15, Ui.BORDEAUX));
         corps.addView(ui.filetSaumon());
         int n = 0;
