@@ -161,6 +161,10 @@ table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nu
 .badge-relance { display: inline-block; background: #eef0f3; color: #52514e; border-radius: 999px; padding: 0 6px; font-size: 0.72rem; font-weight: 700; }
 .liste tfoot th, .liste tfoot td { border-top: 1px solid var(--axe); border-bottom: 0; }
 .total-controle td { font-weight: 700; background: #f7fbff; }
+.filtres select.perimetre { font-weight: 700; border-color: var(--bordeaux); color: var(--bordeaux); max-width: 420px; }
+.tuile.principale { border-left: 6px solid var(--bordeaux); }
+.tuile-valeur .unite { font-size: 0.9rem; font-weight: 400; color: var(--gris); margin-left: 6px; }
+.tuile.hors .lien { display: block; padding: 4px 0 0; }
 
 </style>
 </head>
@@ -193,6 +197,7 @@ table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nu
     <div class="source" id="source"></div>
 
     <div class="filtres" role="search" aria-label="Filtres">
+      <select id="filtrePerimetre" aria-label="Périmètre" class="perimetre"></select>
       <select id="filtreSemaine" aria-label="Semaine"></select>
       <select id="filtreTransporteur" aria-label="Transporteur"></select>
       <select id="filtreCatalogue" aria-label="Catalogue"></select>
@@ -216,10 +221,10 @@ table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nu
           <button type="button" data-vue="departement">Département</button>
         </div>
         <div class="choix" role="group" aria-label="Ce qu'on compte">
-          <button type="button" data-mesure="commandes">Commandes</button>
+          <button type="button" data-mesure="cours">Qté en cours</button>
+          <button type="button" data-mesure="lanc">Qté lancement</button>
           <button type="button" data-mesure="lignes">Lignes</button>
-          <button type="button" data-mesure="pieces">Pièces</button>
-          <button type="button" data-mesure="m2">Résine m²</button>
+          <button type="button" data-mesure="commandes">Commandes</button>
         </div>
       </div>
       <div class="defile" id="tableauControle"></div>
@@ -235,7 +240,7 @@ table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nu
       <div class="entete-carte"><h2 id="titreGraphique">Charge par semaine</h2></div>
       <div class="legende" id="legendeGraphique"></div>
       <div id="graphique" class="graphique"></div>
-      <div class="note">Lignes de commande par semaine (une commande peut avoir plusieurs catalogues). Le détail chiffré est dans le tableau de contrôle, vue « Catalogue ». Un clic sur une semaine filtre toute la page.</div>
+      <div class="note">Par semaine et par catalogue (une commande peut avoir plusieurs catalogues : en « Commandes », le graphique compte les lignes). Le détail chiffré est dans le tableau de contrôle, vue « Catalogue ». Un clic sur une semaine filtre toute la page.</div>
     </section>
 
     <section class="carte" id="carteRetards">
@@ -501,46 +506,39 @@ function analyser(feuilles, fichier, dateReference) {
       r.retard = sem ? ecartSemaines({ annee, semaine: sem.semaine }, courante) : 0; // > 0 : semaine dépassée
       r.cleSemaine = !sem ? "sans" : r.retard > 0 ? "retard" : `${annee}-${String(sem.semaine).padStart(2, "0")}`;
       r.departement = /^\d{5}$/.test(r.cp) ? (r.cp.startsWith("20") ? "2A/2B" : r.cp.slice(0, 2)) : /^\d{4}$/.test(r.cp) ? `0${r.cp[0]}` : r.cp ? "Étranger / autre" : "(sans CP)";
-      // Unité de la quantité : la résine (Méganite) est en m² (0,17 · 1,71…), le reste en pièces.
-      r.unite = /r[ée]sine/i.test(r.catalogue) ? "m2" : "piece";
-      r.pieces = r.unite === "piece" ? r.qteCours : 0;
-      r.m2 = r.unite === "m2" ? r.qteCours : 0;
+      // Périmètre : la production de l'atelier (Stratifié, Crédences, Compact, Portes…), les fournitures & Dibond
+      // (suivies à part), la résine (Méganite, quantités en m²).
+      r.perimetre = /r[ée]sine/i.test(r.catalogue) ? "resine" : /fourniture|dibond/i.test(r.catalogue) ? "fournitures" : "production";
+      r.unite = r.perimetre === "resine" ? "m2" : "piece";
       r.cle = "";
       lignes.push(r);
     }
   }
   if (!lues.length) throw new Error("colonnes « Semaine » et « Commande » introuvables : est-ce bien l'extraction « Suivi production » de Diakonos ?");
-  // Une ligne de commande = commande + n° de ligne. Diakonos la répète une fois par lancement (« Lancement » 1, 2…
-  // jusqu'à 11 pour une résine) avec les mêmes quantités : elle ne compte qu'une fois (celle du dernier lancement),
-  // et garde la liste de ses lancements.
-  const parLigne = new Map();
-  const uniques = [];
-  lignes.forEach((r, i) => {
-    const base = r.ligne ? `${r.commande}|${r.ligne}` : `${r.commande}|?${i}`;
-    const x = parLigne.get(base);
-    if (!x) {
-      r.cle = base;
-      r.lancements = r.lancement ? [r.lancement] : [];
-      r.repetitions = 1;
-      parLigne.set(base, r);
-      uniques.push(r);
-      return;
-    }
-    x.repetitions++;
-    if (r.lancement && !x.lancements.includes(r.lancement)) x.lancements.push(r.lancement);
-    if ((Number(r.lancement) || 0) > (Number(x.lancement) || 0)) {
-      const garder = { cle: x.cle, lancements: x.lancements, repetitions: x.repetitions };
-      Object.assign(x, r, garder);
-    }
-  });
-  for (const r of uniques) r.lancements.sort((a, b) => Number(a) - Number(b));
-  const somme = (liste, k) => liste.reduce((t, r) => t + (r[k] || 0), 0);
+  // Chaque ligne du fichier compte, comme dans Excel (les sommes de « Qte Lancement » et « Qte en cours » sont celles
+  // d'Excel). Une même ligne de commande lancée plusieurs fois (n° de lancement 1, 2…) est signalée « relancée ».
+  const parBase = new Map();
+  for (const r of lignes) {
+    const base = `${r.commande}|${r.ligne}`;
+    if (!parBase.has(base)) parBase.set(base, []);
+    parBase.get(base).push(r);
+  }
+  const vues = new Map();
+  for (const r of lignes) {
+    const freres = parBase.get(`${r.commande}|${r.ligne}`);
+    r.lancements = [...new Set(freres.map((x) => x.lancement).filter(Boolean))].sort((x, y) => Number(x) - Number(y));
+    r.repetitions = freres.length;
+    const cle = `${r.commande}|${r.ligne}|${r.lancement}`;
+    const n = (vues.get(cle) || 0) + 1;
+    vues.set(cle, n);
+    r.cle = n > 1 ? `${cle}#${n}` : cle;
+  }
+  const totaux = (liste) => ({ lignes: liste.length, commandes: new Set(liste.map((r) => r.commande)).size, lanc: liste.reduce((t, r) => t + r.qteLanc, 0), cours: liste.reduce((t, r) => t + r.qteCours, 0) });
   return {
-    fichier: fichier.name, taille: fichier.size, date, courante, lignes: uniques, nbLignesFichier, feuilles: lues,
-    relancees: uniques.filter((r) => r.repetitions > 1).length,
-    // Totaux bruts (toutes les lignes du fichier, comme une somme dans Excel) et après regroupement : pour contrôler.
-    brut: { lignes: lignes.length, pieces: somme(lignes, "pieces"), m2: somme(lignes, "m2") },
-    sansSemaine: uniques.filter((r) => r.cleSemaine === "sans").length,
+    fichier: fichier.name, taille: fichier.size, date, courante, lignes, nbLignesFichier, feuilles: lues,
+    relancees: [...parBase.values()].filter((l) => l.length > 1).length,
+    totaux: Object.fromEntries(["production", "fournitures", "resine"].map((k) => [k, totaux(lignes.filter((r) => r.perimetre === k))]).concat([["tout", totaux(lignes)]])),
+    sansSemaine: lignes.filter((r) => r.cleSemaine === "sans").length,
     sansTitre: sansTitreLettres, colonnesManquantes: manquantes || [],
   };
 }
@@ -549,19 +547,25 @@ function analyser(feuilles, fichier, dateReference) {
 
 const MESURES = {
   commandes: { nom: "Commandes", court: "commande(s)", f: (g) => g.commandes.size },
-  lignes: { nom: "Lignes de commande", court: "ligne(s) de commande", f: (g) => g.lignes },
-  pieces: { nom: "Pièces", court: "pièce(s)", f: (g) => g.pieces },
-  m2: { nom: "Résine (m²)", court: "m² de résine", f: (g) => g.m2 },
+  lignes: { nom: "Lignes", court: "ligne(s)", f: (g) => g.lignes },
+  lanc: { nom: "Qté lancement", court: "qté lancement", f: (g) => g.lanc },
+  cours: { nom: "Qté en cours", court: "qté en cours", f: (g) => g.cours },
 };
-const nouveauGroupe = () => ({ lignes: 0, commandes: new Set(), pieces: 0, m2: 0 });
+const nouveauGroupe = () => ({ lignes: 0, commandes: new Set(), lanc: 0, cours: 0 });
 function ajouter(g, r) {
   g.lignes++;
   g.commandes.add(r.commande);
-  g.pieces += r.pieces;
-  g.m2 += r.m2;
+  g.lanc += r.qteLanc;
+  g.cours += r.qteCours;
 }
 const fmt = (v, dec = 0) => Number(v).toLocaleString("fr-FR", { maximumFractionDigits: dec, minimumFractionDigits: 0 });
-const fmtMesure = (m, v) => (m === "m2" ? fmt(v, 2) : fmt(v, 2));
+const fmtMesure = (m, v) => fmt(v, 2);
+const PERIMETRES = {
+  production: "Production (Stratifié, Crédences, Compact, Portes…)",
+  fournitures: "Fournitures & Dibond",
+  resine: "Résine (m²)",
+  tout: "Tout le fichier",
+};
 
 const VUES = {
   transporteur: { nom: "Transporteur", cle: (r) => r.transporteur },
@@ -581,7 +585,8 @@ const GRIS_AUTRES = "#a3a29d";
 const etat = {
   analyse: null,
   vue: "transporteur",
-  mesure: "commandes",
+  mesure: "cours",
+  perimetre: "production",
   filtres: { semaine: "", transporteur: "", catalogue: "", groupement: "", coloris: "", departement: "", texte: "" },
   limiteDetail: 2000,
   evolution: null,
@@ -607,6 +612,7 @@ function lignesFiltrees() {
   const t = sansAccents(f.texte);
   return etat.analyse.lignes.filter(
     (r) =>
+      (etat.perimetre === "tout" || r.perimetre === etat.perimetre) &&
       (!f.semaine || r.cleSemaine === f.semaine) &&
       (!f.transporteur || r.transporteur === f.transporteur) &&
       (!f.catalogue || r.catalogue === f.catalogue) &&
@@ -664,6 +670,9 @@ function afficherFiltres() {
     for (const r of a.lignes) m.set(cle(r), (m.get(cle(r)) || 0) + 1);
     return [...m.entries()].sort((x, y) => y[1] - x[1] || String(x[0]).localeCompare(String(y[0])));
   };
+  $("filtrePerimetre").innerHTML = Object.entries(PERIMETRES)
+    .map(([k, lib]) => `<option value="${k}" ${k === etat.perimetre ? "selected" : ""}>${esc(lib)} — ${fmt(a.totaux[k].lignes)} ligne(s)</option>`)
+    .join("");
   $("filtreSemaine").innerHTML = options(colonnesSemaines(a.lignes).map((c) => [c, libelleSemaine(c)]), f.semaine, "Toutes les semaines");
   $("filtreTransporteur").innerHTML = options(compte((r) => r.transporteur).map(([v, n]) => [v, `${v} (${n})`]), f.transporteur, "Tous les transporteurs");
   $("filtreCatalogue").innerHTML = options(compte((r) => r.catalogue).map(([v, n]) => [v, `${v} (${n})`]), f.catalogue, "Tous les catalogues");
@@ -684,37 +693,47 @@ function afficherFiltres() {
 
 function afficherIndicateurs(lignes) {
   const a = etat.analyse;
+  const m2 = etat.perimetre === "resine" ? " m²" : "";
   const tout = nouveauGroupe();
   const retard = nouveauGroupe();
-  const retardResine = nouveauGroupe();
   const sansSem = nouveauGroupe();
   const parSem = new Map();
   for (const r of lignes) {
     ajouter(tout, r);
-    if (r.retard > 0) {
-      ajouter(retard, r);
-      if (r.unite === "m2") ajouter(retardResine, r);
-    } else if (r.cleSemaine === "sans") ajouter(sansSem, r);
+    if (r.retard > 0) ajouter(retard, r);
+    else if (r.cleSemaine === "sans") ajouter(sansSem, r);
     else {
       if (!parSem.has(r.retard)) parSem.set(r.retard, nouveauGroupe());
       ajouter(parSem.get(r.retard), r);
     }
   }
-  const qte = (g) => [g.pieces ? `${fmt(g.pieces, 2)} pièce(s)` : "", g.m2 ? `${fmt(g.m2, 2)} m² résine` : ""].filter(Boolean).join(" · ") || "—";
+  const qte = (g) => `lancement ${fmt(g.lanc, 2)}${m2} · en cours ${fmt(g.cours, 2)}${m2}`;
   const semaine = (ecart) => {
     const g = parSem.get(-ecart) || nouveauGroupe();
     const ws = semaineIso(new Date(lundiIso(a.courante.annee, a.courante.semaine).getTime() + ecart * 7 * 86400000 + 3 * 86400000));
     return `<div class="tuile"><div class="tuile-titre">S${ws.semaine} · ${ecart === 0 ? "cette semaine" : ecart === 1 ? "semaine prochaine" : `dans ${ecart} semaines`}</div>
-      <div class="tuile-valeur">${fmt(g.commandes.size)}</div><div class="tuile-sous">commande(s) · ${fmt(g.lignes)} ligne(s)<br>${qte(g)}</div></div>`;
+      <div class="tuile-valeur">${fmt(g.cours, 2)}</div><div class="tuile-sous">qté en cours${m2} · ${fmt(g.commandes.size)} commande(s) · ${fmt(g.lignes)} ligne(s)</div></div>`;
   };
-  const autresRetard = retard.commandes.size - retardResine.commandes.size;
+  const hors = ["production", "fournitures", "resine"].filter((k) => k !== etat.perimetre && a.totaux[k].lignes);
   $("indicateurs").innerHTML = `
-    <div class="tuile"><div class="tuile-titre">En production</div><div class="tuile-valeur">${fmt(tout.commandes.size)}</div>
-      <div class="tuile-sous">commande(s) · ${fmt(tout.lignes)} ligne(s) de commande<br>${qte(tout)}</div></div>
-    <div class="tuile ${retard.lignes ? "alerte" : "bon"}"><div class="tuile-titre">${retard.lignes ? "⚠ Semaine passée" : "✔ Aucun retard"}</div>
-      <div class="tuile-valeur">${fmt(retard.commandes.size)}</div><div class="tuile-sous">${retard.lignes ? `commande(s) · ${fmt(retard.lignes)} ligne(s)<br>dont résine : ${fmt(retardResine.commandes.size)} commande(s) (${fmt(retardResine.m2, 2)} m²)${autresRetard > 0 ? ` · autres : ${fmt(autresRetard)}` : ""}` : "toutes les semaines sont à venir"}</div></div>
+    <div class="tuile principale"><div class="tuile-titre">${esc(PERIMETRES[etat.perimetre])}</div>
+      <div class="tuile-valeur">${fmt(tout.cours, 2)}<span class="unite">${m2 || " "}en cours</span></div>
+      <div class="tuile-sous">Qté lancement ${fmt(tout.lanc, 2)}${m2} · ${fmt(tout.commandes.size)} commande(s) · ${fmt(tout.lignes)} ligne(s)</div></div>
+    <div class="tuile ${retard.lignes ? "alerte" : "bon"}"><div class="tuile-titre">${retard.lignes ? "⚠ Semaine passée" : "✔ Aucune semaine passée"}</div>
+      <div class="tuile-valeur">${fmt(retard.cours, 2)}</div><div class="tuile-sous">${retard.lignes ? `qté en cours${m2} · ${fmt(retard.commandes.size)} commande(s) · ${fmt(retard.lignes)} ligne(s)` : "toutes les semaines sont à venir"}</div></div>
     ${semaine(0)}${semaine(1)}${semaine(2)}
-    ${sansSem.lignes ? `<div class="tuile attention"><div class="tuile-titre">⚠ Sans semaine</div><div class="tuile-valeur">${fmt(sansSem.commandes.size)}</div><div class="tuile-sous">commande(s) · ${fmt(sansSem.lignes)} ligne(s) · semaine vide ou à 0 dans Diakonos</div></div>` : ""}`;
+    ${sansSem.lignes ? `<div class="tuile attention"><div class="tuile-titre">⚠ Sans semaine</div><div class="tuile-valeur">${fmt(sansSem.cours, 2)}</div><div class="tuile-sous">qté en cours · ${fmt(sansSem.lignes)} ligne(s) · semaine vide ou à 0</div></div>` : ""}
+    ${hors.length ? `<div class="tuile hors"><div class="tuile-titre">Pas compté ici</div>${hors
+      .map((k) => `<button type="button" class="lien" data-perimetre="${k}">${esc(PERIMETRES[k])}</button><div class="tuile-sous">${fmt(a.totaux[k].lignes)} ligne(s) · ${qte(a.totaux[k])}${k === "resine" ? " m²" : ""}</div>`)
+      .join("")}</div>` : ""}`;
+  $("indicateurs").querySelectorAll("[data-perimetre]").forEach((b) => b.addEventListener("click", () => changerPerimetre(b.dataset.perimetre)));
+}
+
+function changerPerimetre(k) {
+  etat.perimetre = k;
+  etat.filtres.catalogue = "";
+  etat.limiteDetail = 2000;
+  afficher();
 }
 
 // ---------- Graphique : charge par semaine, par catalogue ----------
@@ -912,31 +931,30 @@ function afficherTableau(lignes) {
 function afficherCommandes(lignes) {
   const parCommande = new Map();
   for (const r of lignes) {
-    if (!parCommande.has(r.commande)) parCommande.set(r.commande, { r, lignes: 0, pieces: 0, m2: 0, catalogues: new Set(), semaines: new Set(), retard: 0, relancees: 0 });
+    if (!parCommande.has(r.commande)) parCommande.set(r.commande, { r, lignes: 0, lanc: 0, cours: 0, catalogues: new Set(), semaines: new Set(), retard: 0, relancees: 0 });
     const x = parCommande.get(r.commande);
     x.lignes++;
-    x.pieces += r.pieces;
-    x.m2 += r.m2;
+    x.lanc += r.qteLanc;
+    x.cours += r.qteCours;
     x.catalogues.add(r.catalogue);
     x.semaines.add(r.semaine ? `S${r.semaine}` : "sans sem.");
     x.retard = Math.max(x.retard, r.retard);
     if (r.repetitions > 1) x.relancees++;
   }
-  const ordre = (x) => (x.retard > 0 ? -1e6 + -x.retard : (x.r.annee || 9999) * 100 + (x.r.semaine || 99));
+  const ordre = (x) => (x.retard > 0 ? -1e6 - x.retard : (x.r.annee || 9999) * 100 + (x.r.semaine || 99));
   const liste = [...parCommande.values()].sort((a, b) => ordre(a) - ordre(b) || a.r.transporteur.localeCompare(b.r.transporteur) || a.r.commande.localeCompare(b.r.commande));
   const f = etat.filtres;
   const quoi = [f.transporteur, f.catalogue, f.groupement, f.coloris, f.departement && `département ${f.departement}`, f.semaine && libelleSemaine(f.semaine), f.texte && `« ${f.texte} »`].filter(Boolean).join(" · ");
   $("titreCommandes").textContent = `Commandes${quoi ? ` — ${quoi}` : ""} (${fmt(liste.length)})`;
-  const tot = liste.reduce((t, x) => ({ lignes: t.lignes + x.lignes, pieces: t.pieces + x.pieces, m2: t.m2 + x.m2 }), { lignes: 0, pieces: 0, m2: 0 });
+  const tot = liste.reduce((t, x) => ({ lignes: t.lignes + x.lignes, lanc: t.lanc + x.lanc, cours: t.cours + x.cours }), { lignes: 0, lanc: 0, cours: 0 });
   $("commandes").innerHTML = liste.length
-    ? `<div class="defile"><table class="liste"><thead><tr><th>Commande</th><th>Semaine</th><th>Transporteur</th><th>Groupement</th><th>Livraison</th><th>Catalogue(s)</th><th class="d">Lignes</th><th class="d">Pièces</th><th class="d">Résine (m²)</th></tr></thead><tbody>${liste
+    ? `<div class="defile"><table class="liste"><thead><tr><th>Commande</th><th>Semaine</th><th>Transporteur</th><th>Groupement</th><th>Livraison</th><th>Catalogue(s)</th><th class="d">Lignes</th><th class="d">Qté lancement</th><th class="d">Qté en cours</th></tr></thead><tbody>${liste
         .slice(0, 400)
         .map((x) => `<tr class="${x.retard > 0 ? "en-retard" : ""}"><td><button type="button" class="lien" data-commande="${esc(x.r.commande)}">${esc(x.r.commande)}</button></td>
           <td>${esc([...x.semaines].join(", "))}${x.retard > 0 ? ` <span class="badge-retard">passée de ${x.retard} sem.</span>` : ""}</td><td>${esc(x.r.transporteur)}</td><td>${esc(x.r.groupement)}</td><td>${esc(x.r.cp)} ${esc(x.r.ville)}</td>
-          <td>${esc([...x.catalogues].join(", "))}</td><td class="d">${x.lignes}${x.relancees ? ` <span class="pale" title="dont ${x.relancees} ligne(s) répétée(s) par Diakonos (plusieurs n° de lancement), comptée(s) une fois">*</span>` : ""}</td>
-          <td class="d">${x.pieces ? fmt(x.pieces, 2) : ""}</td><td class="d">${x.m2 ? fmt(x.m2, 2) : ""}</td></tr>`)
-        .join("")}</tbody><tfoot><tr><th colspan="6">Total</th><td class="d"><strong>${fmt(tot.lignes)}</strong></td><td class="d"><strong>${fmt(tot.pieces, 2)}</strong></td><td class="d"><strong>${fmt(tot.m2, 2)}</strong></td></tr></tfoot></table></div>
-      ${liste.length > 400 ? `<div class="note">Les 400 premières affichées : filtrez (transporteur, semaine…) pour voir les autres.</div>` : ""}`
+          <td>${esc([...x.catalogues].join(", "))}</td><td class="d">${x.lignes}</td><td class="d">${fmt(x.lanc, 2)}</td><td class="d">${fmt(x.cours, 2)}</td></tr>`)
+        .join("")}</tbody><tfoot><tr><th colspan="6">Total</th><td class="d"><strong>${fmt(tot.lignes)}</strong></td><td class="d"><strong>${fmt(tot.lanc, 2)}</strong></td><td class="d"><strong>${fmt(tot.cours, 2)}</strong></td></tr></tfoot></table></div>
+      ${liste.length > 400 ? '<div class="note">Les 400 premières affichées : filtrez (transporteur, semaine…) pour voir les autres.</div>' : ""}`
     : '<div class="note">Aucune commande avec ces filtres.</div>';
   $("commandes").querySelectorAll("[data-commande]").forEach((b) => b.addEventListener("click", () => {
     filtrer({ texte: b.dataset.commande });
@@ -948,12 +966,12 @@ function afficherCommandes(lignes) {
 
 function afficherControle() {
   const a = etat.analyse;
-  const compte = { pieces: a.lignes.reduce((t, r) => t + r.pieces, 0), m2: a.lignes.reduce((t, r) => t + r.m2, 0) };
-  $("controle").innerHTML = `<div class="defile"><table class="liste"><thead><tr><th>Fichier</th><th class="d">Lignes dans Excel</th><th class="d">Lignes de commande</th><th class="d">Répétées (lancements)</th><th class="d">Somme « Qte en cours » pièces</th><th class="d">Somme « Qte en cours » résine (m²)</th></tr></thead><tbody>
-    ${a.fichiers.map((f) => `<tr><td>${esc(f.nom)}${f.feuilles.length > 1 ? ` <span class="pale">(${f.feuilles.map((x) => `${esc(x.nom)} : ${x.lignes}`).join(", ")})</span>` : ""}</td><td class="d">${fmt(f.brut.lignes)}</td><td class="d">${fmt(f.lignes)}</td><td class="d">${fmt(f.relancees)}</td><td class="d">${fmt(f.brut.pieces, 2)}</td><td class="d">${fmt(f.brut.m2, 2)}</td></tr>`).join("")}
-    <tr class="total-controle"><td>Compté dans le tableau de bord</td><td class="d">—</td><td class="d">${fmt(a.lignes.length)}</td><td class="d">—</td><td class="d">${fmt(compte.pieces, 2)}</td><td class="d">${fmt(compte.m2, 2)}</td></tr>
+  $("controle").innerHTML = `<div class="defile"><table class="liste"><thead><tr><th>Périmètre</th><th class="d">Lignes</th><th class="d">Commandes</th><th class="d">Somme « Qte Lancement »</th><th class="d">Somme « Qte en cours »</th></tr></thead><tbody>
+    ${Object.entries(PERIMETRES)
+      .map(([k, lib]) => `<tr class="${k === etat.perimetre ? "total-controle" : ""}"><td>${esc(lib)}</td><td class="d">${fmt(a.totaux[k].lignes)}</td><td class="d">${fmt(a.totaux[k].commandes)}</td><td class="d">${fmt(a.totaux[k].lanc, 2)}</td><td class="d">${fmt(a.totaux[k].cours, 2)}</td></tr>`)
+      .join("")}
     </tbody></table></div>
-    <div class="note">« Lignes dans Excel » et les sommes brutes sont celles qu'on obtient dans Excel (nombre de lignes, SOMME de la colonne « Qte en cours »). Le tableau de bord compte chaque ligne de commande (commande + n° de ligne) une seule fois : Diakonos répète une ligne à chaque lancement (jusqu'à 11 fois pour une résine) avec la même quantité. La résine est en m², le reste en pièces.</div>`;
+    <div class="note">Mêmes chiffres que dans Excel : nombre de lignes et SOMME des colonnes « Qte Lancement » et « Qte en cours », par catalogue (Production = Stratifié, Crédences, Compact, Portes et les autres catalogues de l'atelier). ${a.relancees ? `${fmt(a.relancees)} ligne(s) de commande apparaissent plusieurs fois (n° de lancement 1, 2…) : marquées « relancée » dans le détail.` : ""} ${a.fichiers.length > 1 ? `Fichiers : ${a.fichiers.map((f) => `${esc(f.nom)} (${fmt(f.lignesFichier)} lignes${f.doublons ? `, ${fmt(f.doublons)} déjà dans un autre fichier` : ""})`).join(" · ")}.` : ""}</div>`;
 }
 
 // ---------- Retards ----------
@@ -962,11 +980,10 @@ function afficherRetards(lignes) {
   const parCommande = new Map();
   for (const r of lignes) {
     if (r.retard <= 0) continue;
-    if (!parCommande.has(r.commande)) parCommande.set(r.commande, { r, lignes: 0, pieces: 0, m2: 0, catalogues: new Set(), retard: 0 });
+    if (!parCommande.has(r.commande)) parCommande.set(r.commande, { r, lignes: 0, cours: 0, catalogues: new Set(), retard: 0 });
     const x = parCommande.get(r.commande);
     x.lignes++;
-    x.pieces += r.pieces;
-    x.m2 += r.m2;
+    x.cours += r.qteCours;
     x.catalogues.add(r.catalogue);
     x.retard = Math.max(x.retard, r.retard);
   }
@@ -974,9 +991,9 @@ function afficherRetards(lignes) {
   $("titreRetards").textContent = liste.length ? `⚠ Commandes en retard (${liste.length})` : "✔ Aucune commande en retard";
   $("carteRetards").classList.toggle("bon", !liste.length);
   $("retards").innerHTML = liste.length
-    ? `<div class="defile"><table class="liste"><thead><tr><th>Commande</th><th>Semaine prévue</th><th class="d">Retard</th><th>Groupement</th><th>Livraison</th><th>Transporteur</th><th>Catalogue(s)</th><th class="d">Lignes</th><th class="d">Reste à faire</th></tr></thead><tbody>${liste
+    ? `<div class="defile"><table class="liste"><thead><tr><th>Commande</th><th>Semaine prévue</th><th class="d">Retard</th><th>Groupement</th><th>Livraison</th><th>Transporteur</th><th>Catalogue(s)</th><th class="d">Lignes</th><th class="d">Qté en cours</th></tr></thead><tbody>${liste
         .map((x) => `<tr><td><button type="button" class="lien" data-commande="${esc(x.r.commande)}">${esc(x.r.commande)}</button></td><td>S${x.r.semaine}${x.r.annee !== etat.analyse.courante.annee ? ` ${x.r.annee}` : ""}</td>
-          <td class="d"><span class="badge-retard">${x.retard} sem.</span></td><td>${esc(x.r.groupement)}</td><td>${esc(x.r.cp)} ${esc(x.r.ville)}</td><td>${esc(x.r.transporteur)}</td><td>${esc([...x.catalogues].join(", "))}</td><td class="d">${x.lignes}</td><td class="d">${[x.pieces ? `${fmt(x.pieces, 2)} p.` : "", x.m2 ? `${fmt(x.m2, 2)} m²` : ""].filter(Boolean).join(" · ")}</td></tr>`)
+          <td class="d"><span class="badge-retard">${x.retard} sem.</span></td><td>${esc(x.r.groupement)}</td><td>${esc(x.r.cp)} ${esc(x.r.ville)}</td><td>${esc(x.r.transporteur)}</td><td>${esc([...x.catalogues].join(", "))}</td><td class="d">${x.lignes}</td><td class="d">${fmt(x.cours, 2)}${x.r.unite === "m2" ? " m²" : ""}</td></tr>`)
         .join("")}</tbody></table></div>`
     : '<div class="note">Toutes les lignes affichées sont prévues cette semaine ou plus tard.</div>';
   $("retards").querySelectorAll("[data-commande]").forEach((b) => b.addEventListener("click", () => {
@@ -994,7 +1011,7 @@ function afficherDetail(lignes) {
   const autres = etat.analyse.sansTitre;
   $("titreDetail").textContent = `Détail des lignes (${fmt(tri.length)})`;
   const dims = (r) => (r.L || r.W ? `${fmt(r.L)} × ${fmt(r.W)}${r.E ? ` × ${fmt(r.E)}` : ""}` : r.E ? `ép. ${fmt(r.E)}` : "");
-  $("detail").innerHTML = `<div class="defile"><table class="liste detail"><thead><tr><th>Sem.</th><th>Commande</th><th class="d">Ligne</th><th>Catalogue</th><th>Article</th><th>Désignation</th><th class="d">Dimensions (mm)</th><th>Coloris</th><th class="d">Reste à faire</th><th>Livraison</th><th>Transporteur</th><th>Groupement</th><th class="d">Lanc.</th>${autres.map((l) => `<th class="d" title="Colonne ${l} du fichier, sans titre">Col. ${l}</th>`).join("")}</tr></thead>
+  $("detail").innerHTML = `<div class="defile"><table class="liste detail"><thead><tr><th>Sem.</th><th>Commande</th><th class="d">Ligne</th><th>Catalogue</th><th>Article</th><th>Désignation</th><th class="d">Dimensions (mm)</th><th>Coloris</th><th class="d">Qté en cours / lancement</th><th>Livraison</th><th>Transporteur</th><th>Groupement</th><th class="d">Lanc.</th>${autres.map((l) => `<th class="d" title="Colonne ${l} du fichier, sans titre">Col. ${l}</th>`).join("")}</tr></thead>
     <tbody>${tri
       .slice(0, n)
       .map((r) => `<tr class="${r.retard > 0 ? "en-retard" : ""}"><td>${r.retard > 0 ? `<span class="badge-retard" title="Semaine dépassée de ${r.retard} semaine(s)">S${r.semaine}</span>` : r.semaine ? `S${r.semaine}` : `<span class="badge-sans" title="Semaine dans Diakonos : « ${esc(r.semaineBrute || "vide")} »">—</span>`}</td><td>${esc(r.commande)}</td><td class="d">${esc(r.ligne)}</td>
@@ -1033,7 +1050,7 @@ function exporterCsv() {
 
 // ---------- Évolution entre deux extractions ----------
 
-const CLE_HISTORIQUE = "suivi-production-historique-2"; // clé = commande + ligne
+const CLE_HISTORIQUE = "suivi-production-historique-3"; // clé = commande + ligne + n° de lancement
 function lireHistorique() {
   try {
     const h = JSON.parse(localStorage.getItem(CLE_HISTORIQUE) || "null");
@@ -1082,7 +1099,7 @@ function afficherEvolution() {
     return;
   }
   const jourFr = (j) => new Date(`${j}T12:00:00`).toLocaleDateString("fr-FR");
-  const histo = `<div class="fp-h3">Extractions gardées</div><div class="defile"><table class="liste"><thead><tr><th>Extraction</th><th>Semaine</th><th class="d">Lignes de commande</th><th class="d">Commandes</th><th class="d">Commandes semaine passée</th></tr></thead><tbody>${[...e.historique]
+  const histo = `<div class="fp-h3">Extractions gardées</div><div class="defile"><table class="liste"><thead><tr><th>Extraction</th><th>Semaine</th><th class="d">Lignes</th><th class="d">Commandes</th><th class="d">Commandes semaine passée</th></tr></thead><tbody>${[...e.historique]
     .reverse()
     .map((x) => `<tr><td>${esc(jourFr(x.jour))}</td><td>S${x.semaine}</td><td class="d">${fmt(x.lignes)}</td><td class="d">${fmt(x.commandes)}</td><td class="d">${x.retard ? `<span class="badge-retard">${fmt(x.retard)}</span>` : "0"}</td></tr>`)
     .join("")}</tbody></table></div>`;
@@ -1101,7 +1118,7 @@ function afficherEvolution() {
   const sorties = parCommande(e.sorties, (x) => ({ commande: x[1], semaine: x[3], transporteur: x[4] }));
   const nouvelles = parCommande(e.nouvelles, (r) => ({ commande: r.commande, semaine: r.semaine, transporteur: r.transporteur }));
   const liste = (items) => (items.length ? `<ul class="puces">${items.slice(0, 40).map((x) => `<li><strong>${esc(x.commande)}</strong> · S${x.semaine} · ${esc(x.transporteur)} · ${x.n} ligne(s)</li>`).join("")}${items.length > 40 ? `<li class="pale">… et ${items.length - 40} autre(s) commande(s)</li>` : ""}</ul>` : '<div class="note">Aucune.</div>');
-  z.innerHTML = `<div class="note">Comparaison avec l'extraction du <strong>${esc(jourFr(e.jourAvant))}</strong> (une ligne = commande + n° de ligne).</div>
+  z.innerHTML = `<div class="note">Comparaison avec l'extraction du <strong>${esc(jourFr(e.jourAvant))}</strong> (une ligne = commande + n° de ligne + n° de lancement).</div>
     <div class="evo-grille">
       <div class="evo"><div class="evo-chiffre bon">✔ ${fmt(e.sorties.length)}</div><div class="evo-titre">ligne(s) sortie(s) — terminées ou expédiées</div>${liste(sorties)}</div>
       <div class="evo"><div class="evo-chiffre">+ ${fmt(e.nouvelles.length)}</div><div class="evo-titre">ligne(s) nouvelle(s) en production</div>${liste(nouvelles)}</div>
@@ -1165,12 +1182,12 @@ function recalculer(quoi, erreurs = []) {
         lignes.push(r);
       }
       doublons += d;
-      fichiers.push({ nom: x.fichier.name, lignes: a.lignes.length, lignesFichier: a.nbLignesFichier, doublons: d, feuilles: a.feuilles, relancees: a.relancees, brut: a.brut });
+      fichiers.push({ nom: x.fichier.name, lignes: a.lignes.length, lignesFichier: a.nbLignesFichier, doublons: d, feuilles: a.feuilles });
     }
     const a0 = analyses[0].a;
     const fusion = {
       fichier: fichiers.map((f) => f.nom).join(" + "), date: dateRef, courante: semaineIso(dateRef), lignes, fichiers, doublons,
-      brut: { lignes: fichiers.reduce((t, f) => t + f.brut.lignes, 0), pieces: fichiers.reduce((t, f) => t + f.brut.pieces, 0), m2: fichiers.reduce((t, f) => t + f.brut.m2, 0) },
+      relancees: analyses.reduce((t, y) => t + y.a.relancees, 0),
       nbLignesFichier: fichiers.reduce((t, f) => t + f.lignesFichier, 0), sansSemaine: lignes.filter((r) => r.cleSemaine === "sans").length,
       sansTitre: a0.sansTitre, colonnesManquantes: analyses.map((y) => y.a.colonnesManquantes).reduce((acc, c) => acc.filter((k) => c.includes(k))),
     };
@@ -1182,12 +1199,17 @@ function recalculer(quoi, erreurs = []) {
     const compte = new Map();
     for (const r of fusion.lignes) compte.set(r.catalogue, (compte.get(r.catalogue) || 0) + 1);
     etat.catalogues = [...ORDRE_CATALOGUES.filter((c) => compte.has(c)), ...[...compte.keys()].filter((c) => !ORDRE_CATALOGUES.includes(c)).sort((x, y) => compte.get(y) - compte.get(x))];
+    const tot = (liste) => ({ lignes: liste.length, commandes: new Set(liste.map((r) => r.commande)).size, lanc: liste.reduce((s2, r) => s2 + r.qteLanc, 0), cours: liste.reduce((s2, r) => s2 + r.qteCours, 0) });
+    fusion.totaux = Object.fromEntries(["production", "fournitures", "resine"].map((k) => [k, tot(lignes.filter((r) => r.perimetre === k))]).concat([["tout", tot(lignes)]]));
+    if (!fusion.totaux[etat.perimetre] || (!fusion.totaux[etat.perimetre].lignes && etat.perimetre !== "tout")) etat.perimetre = fusion.totaux.production.lignes ? "production" : "tout";
     etat.evolution = memoriserEtComparer(fusion);
     // Contrôle : toutes les lignes des fichiers sont prises en compte (à comparer avec Diakonos).
     const lues = fusion.nbLignesFichier;
-    const relancees = fichiers.reduce((t, f) => t + f.relancees, 0);
-    const infos = [`${fmt(lues)} ligne(s) lue(s)${fichiers.length > 1 ? ` dans ${fichiers.length} fichiers` : ""} = ${fmt(fusion.lignes.length)} ligne(s) de commande, ${fmt(new Set(fusion.lignes.map((r) => r.commande)).size)} commande(s)`];
-    if (relancees) infos.push(`${fmt(relancees)} ligne(s) de commande répétée(s) par Diakonos (une fois par n° de lancement), comptée(s) une fois`);
+    const t = fusion.totaux;
+    const infos = [`${fmt(fusion.lignes.length)} ligne(s) lue(s)${fichiers.length > 1 ? ` dans ${fichiers.length} fichiers` : ""}`,
+      `Production : ${fmt(t.production.lignes)} ligne(s), Qté lancement ${fmt(t.production.lanc, 2)}, Qté en cours ${fmt(t.production.cours, 2)}`];
+    if (t.fournitures.lignes) infos.push(`Fournitures & Dibond : ${fmt(t.fournitures.lignes)} ligne(s) (à part)`);
+    if (t.resine.lignes) infos.push(`Résine : ${fmt(t.resine.lignes)} ligne(s) (à part, en m²)`);
     if (doublons) infos.push(`${fmt(doublons)} ligne(s) présente(s) dans deux fichiers, comptée(s) une fois`);
     if (fusion.sansSemaine) infos.push(`${fmt(fusion.sansSemaine)} sans semaine (gardée(s), colonne « Sans sem. »)`);
     const feuilles = fichiers.flatMap((f) => f.feuilles);

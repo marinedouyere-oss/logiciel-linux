@@ -149,3 +149,7 @@ table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nu
 .badge-relance { display: inline-block; background: #eef0f3; color: #52514e; border-radius: 999px; padding: 0 6px; font-size: 0.72rem; font-weight: 700; }
 .liste tfoot th, .liste tfoot td { border-top: 1px solid var(--axe); border-bottom: 0; }
 .total-controle td { font-weight: 700; background: #f7fbff; }
+.filtres select.perimetre { font-weight: 700; border-color: var(--bordeaux); color: var(--bordeaux); max-width: 420px; }
+.tuile.principale { border-left: 6px solid var(--bordeaux); }
+.tuile-valeur .unite { font-size: 0.9rem; font-weight: 400; color: var(--gris); margin-left: 6px; }
+.tuile.hors .lien { display: block; padding: 4px 0 0; }
