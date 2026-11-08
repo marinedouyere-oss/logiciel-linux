@@ -204,16 +204,25 @@ function htmlBandeauValidations() {
   const n = Object.keys(validations.faites || {}).length;
   const postes = Object.entries(validations.postes || {}).sort(([a], [b]) => a.localeCompare(b));
   if (n === 0 && !postes.length && !validations.erreur) return "";
+  // Fonctions internes au module Suivi (fmt, jourCourt) non accessibles ici : on reste autonome.
+  const nombre = (v) => Number(v || 0).toLocaleString("fr-FR");
+  const quand = (iso) => {
+    try {
+      return new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    } catch (_e) {
+      return "—";
+    }
+  };
   const err = validations.erreur ? `<div class="note sv-t-retard">${echapper(validations.erreur)}</div>` : "";
   const mot = n > 1 ? "pièces faites reçues en direct" : "pièce faite reçue en direct";
   // Activité par poste.
   const lignes = postes
-    .map(([, p]) => `<tr><td>${echapper(p.nom || "")}</td><td class="nombre">${fmt(p.nb || 0)}</td><td>${p.dernier ? echapper(jourCourt(p.dernier.slice(0, 10)) + " " + p.dernier.slice(11, 16)) : "—"}</td></tr>`)
+    .map(([, p]) => `<tr><td>${echapper(p.nom || "")}</td><td class="nombre">${nombre(p.nb || 0)}</td><td>${p.dernier ? echapper(quand(p.dernier)) : "—"}</td></tr>`)
     .join("");
   const table = postes.length
     ? `<table class="sv-table" style="margin-top:6px"><thead><tr><th>Poste</th><th class="nombre">Pièces faites</th><th>Dernière</th></tr></thead><tbody>${lignes}</tbody></table>`
     : "";
-  return `<div class="sv-direct">⚡ <strong>${fmt(n)}</strong> ${mot} des postes de validation (étiquette imprimée = pièce faite)
+  return `<div class="sv-direct">⚡ <strong>${nombre(n)}</strong> ${mot} des postes de validation (étiquette imprimée = pièce faite)
     <button type="button" class="texte" id="svReinitValidations" style="margin-left:10px">Réinitialiser</button>
     ${table}${err}</div>`;
 }

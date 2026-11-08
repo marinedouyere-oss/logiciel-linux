@@ -62,6 +62,20 @@ function fabriquerEtiquette(cvc, ligne) {
     verifier(r && r.cle === "CVC26050839001", `vraie étiquette : ${r && r.cle} (attendu CVC26050839001)`);
   }
 
+  // 5. L'écran Suivi s'affiche bien quand le lien est branché (bandeau + activité par poste + Réinitialiser),
+  //    sans erreur JS (régression 6.4.1 : la page devenait blanche).
+  const ecran = await page.evaluate(() => {
+    lienTelephone.memoire = { code: "ABCD-EFGH-JKLM-NPQR" };
+    validations.faites = { CVC26050839001: { poste: "1", nom: "Crédences" } };
+    validations.traitees = {};
+    validations.postes = { "1": { nom: "Crédences", nb: 1, dernier: new Date().toISOString() } };
+    onglet = "suivi";
+    afficher();
+    const t = document.getElementById("pageSuivi").innerText;
+    return { vide: t.trim().length < 50, bandeau: /re[çc]ue? en direct/i.test(t), poste: /Crédences/.test(t), reinit: /Réinitialiser/.test(t) };
+  });
+  verifier(!ecran.vide && ecran.bandeau && ecran.poste && ecran.reinit, `écran Suivi (lien branché) : bandeau + activité par poste + Réinitialiser, pas de page blanche`);
+
   await nav.close();
   console.log(echecs ? `${echecs} échec(s)` : "TOUT EST OK");
   process.exit(echecs ? 1 : 0);
