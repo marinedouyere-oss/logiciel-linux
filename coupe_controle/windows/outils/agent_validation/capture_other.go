@@ -11,3 +11,5 @@ func lancerAgent(code, poste string) error {
 
 func reglerImprimante(garder bool) {}
 func setupWindows(poste string)    {}
+
+func pauseConsole() {}

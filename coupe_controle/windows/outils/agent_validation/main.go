@@ -14,11 +14,24 @@ import (
 	"time"
 )
 
+const versionAgent = "6.4.0"
+
 func main() {
+	// Même en cas de pépin, la fenêtre reste ouverte (pas de « flash »).
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Println("\n⚠ Problème :", r)
+		}
+	}()
 	args := os.Args[1:]
 	cmd := ""
 	if len(args) > 0 {
 		cmd = args[0]
+	}
+	if cmd != "run" { // le mode « run » (tâche planifiée, en fond) n'affiche pas d'en-tête
+		fmt.Println("===========================================================")
+		fmt.Println("  Agent de validation Sentinelle (Laisné) — v" + versionAgent)
+		fmt.Println("===========================================================")
 	}
 	switch cmd {
 	case "test-envoyer":
@@ -112,6 +125,6 @@ func main() {
 }
 
 func attendreEntree() {
-	fmt.Print("\nAppuyez sur Entrée pour fermer… ")
-	fmt.Scanln()
+	// Garde la fenêtre ouverte de façon fiable (même si l'entrée clavier est capricieuse).
+	pauseConsole()
 }

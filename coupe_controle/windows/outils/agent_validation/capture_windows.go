@@ -208,3 +208,15 @@ func setupWindows(poste string) {
 		fmt.Println("Démarrage automatique réglé (tâche « SentinelleValidation », à l'ouverture de session).")
 	}
 }
+
+// Garde la fenêtre ouverte jusqu'à une touche (fiable même quand l'entrée clavier n'est pas branchée).
+func pauseConsole() {
+	fmt.Println()
+	c := exec.Command("cmd", "/c", "pause")
+	c.Stdin = os.Stdin
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	if c.Run() != nil {
+		time.Sleep(60 * time.Second) // à défaut, on laisse 1 minute pour lire
+	}
+}
