@@ -137,7 +137,10 @@ final class FichierPartage {
         String e;
         double f; // pièces faites
         double r; // pièces à faire
-        double h; // pièces jamais vues dans Diakonos (pas comptées)
+        double h; // pièces pas comptées (sa semaine n'est pas dans l'extraction)
+        /** Pièces relancées dans un lancement plus récent (casse, retard) : déduites d'ici, comptées là-bas. */
+        double x;
+        String xd = "";
         Double d; // pièces faites depuis l'extraction d'avant (null : pas d'extraction d'avant)
         final List<String> joursCourbe = new ArrayList<>();
         final List<Integer> pctCourbe = new ArrayList<>();
@@ -297,6 +300,8 @@ final class FichierPartage {
                         l.f = jl.optDouble("f", 0);
                         l.r = jl.optDouble("r", 0);
                         l.h = jl.optDouble("h", 0);
+                        l.x = jl.optDouble("x", 0);
+                        l.xd = texte(jl, "xd");
                         l.d = nombre(jl, "d");
                         JSONArray p = jl.optJSONArray("p");
                         if (p != null)

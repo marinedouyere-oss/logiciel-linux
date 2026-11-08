@@ -4,9 +4,10 @@
 //   - un CVC du lancement qui n'est plus dans l'extraction : la pièce est faite ;
 //   - un CVC encore dans l'extraction : il reste « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 :
 //     8 à faire, 2 faites).
-// Exceptions : un lancement d'une semaine que l'extraction ne contient pas du tout (ex. la 48 dans une extraction qui
-// s'arrête à la 47) n'est pas compté (« pas dans cette extraction ») ; la casse n'est pas suivie par Diakonos (la
-// commande est déjà sortie) : seules ses pièces encore dans l'extraction comptent.
+// Une pièce relancée (casse, retard repris dans un lancement suivant ; Diakonos lui donne un n° de lancement 2, 3…) ne
+// compte que dans le lancement le plus récent qui l'a : elle est déduite du lancement d'origine.
+// Un lancement d'une semaine que l'extraction ne contient pas du tout (ex. la 48 dans une extraction qui s'arrête à la
+// 47) n'est pas compté (« pas dans cette extraction »).
 // Les extractions sont lues sur ce PC (le dossier choisi une fois, ou un fichier chargé) et gardées dans le navigateur
 // pour suivre l'évolution. Le résumé va dans le fichier partagé et au téléphone. L'extraction n'est jamais modifiée.
 
@@ -427,7 +428,7 @@ const SUIVI = (() => {
           pieces.set(k, (pieces.get(k) || 0) + Math.max(0, Number(p[iQ]) || 0));
         }
         lancements.push({ cle: cleNomLancement(l.nom), nom: l.nom, poste: l.poste || "", casse: Boolean(l.casse), id: s.id, annee: s.annee, semaine: Number(s.semaine),
-          ordre: ordreSemaine(s.annee, Number(s.semaine)), pieces, vus: new Set(), histo: [], presents: null, f: 0, r: 0, h: 0, fPrec: null, couvert: false });
+          ordre: ordreSemaine(s.annee, Number(s.semaine)), pieces, deduites: new Map(), vus: new Set(), histo: [], presents: null, f: 0, r: 0, h: 0, fPrec: null, couvert: false });
       }
     }
     lancements.sort((a, b) => a.ordre - b.ordre || rangPoste(a.poste) - rangPoste(b.poste) || a.nom.localeCompare(b.nom));
@@ -439,17 +440,30 @@ const SUIVI = (() => {
         index.get(k).push(i);
       }
     });
-    // Extraction après extraction : une pièce présente va aux lancements de la première semaine qui la contient à
-    // partir de celle de l'extraction (une pièce cassée puis relancée va à la casse ; une pièce d'une semaine à venir
-    // attend dans Diakonos). Deux lancements de cette même semaine qui ont la pièce la comptent tous les deux.
+    // Une pièce relancée (casse, retard repris dans un lancement suivant) ne compte que dans le lancement le plus
+    // récent qui l'a : elle est déduite du lancement d'origine (règle de l'atelier). Deux lancements de la même semaine
+    // qui ont la pièce la gardent tous les deux.
+    const proprietaires = new Map();
+    for (const [k, liste] of index) {
+      const plusRecent = Math.max(...liste.map((i) => lancements[i].ordre));
+      const garde = liste.filter((i) => lancements[i].ordre === plusRecent);
+      proprietaires.set(k, garde);
+      if (garde.length === liste.length) continue;
+      const ou = [...new Set(garde.map((i) => lancements[i].nom))].join(", ");
+      for (const i of liste) {
+        if (garde.includes(i)) continue;
+        const L = lancements[i];
+        L.deduites.set(ou, (L.deduites.get(ou) || 0) + L.pieces.get(k));
+        L.pieces.delete(k);
+      }
+    }
+    // Extraction après extraction : une pièce encore dans l'extraction va au lancement le plus récent qui l'a.
     ex.forEach((e, n) => {
       const presents = new Map();
       for (const [k, v] of e.parCle) {
-        const liste = index.get(k);
-        if (!liste) continue;
-        const premier = liste.find((x) => lancements[x].ordre >= e.ordre) ?? liste[liste.length - 1];
-        for (const i of liste) {
-          if (lancements[i].ordre !== lancements[premier].ordre) continue;
+        const garde = proprietaires.get(k);
+        if (!garde) continue;
+        for (const i of garde) {
           if (!presents.has(i)) presents.set(i, new Map());
           presents.get(i).set(k, v);
           lancements[i].vus.add(k);
@@ -471,7 +485,7 @@ const SUIVI = (() => {
               // Encore dans l'extraction : « Qte en cours » à faire, le reste du lancement est fait.
               rk = Math.min(q, Math.max(0, v.cours));
               fk = q - rk;
-            } else if (!L.casse) fk = q; // le CVC n'est plus dans l'extraction : la pièce est faite
+            } else fk = q; // le CVC n'est plus dans l'extraction : la pièce est faite (casse comprise)
             f += fk;
             r += rk;
             if (detail && (fk || rk)) detail.set(k, [fk, rk]);
@@ -491,7 +505,11 @@ const SUIVI = (() => {
       });
     });
     const total = (L) => [...L.pieces.values()].reduce((t, q) => t + q, 0);
-    for (const L of lancements) L.h = Math.max(0, total(L) - L.f - L.r);
+    for (const L of lancements) {
+      L.h = Math.max(0, total(L) - L.f - L.r);
+      L.x = [...L.deduites.values()].reduce((t, q) => t + q, 0);
+      L.xd = [...L.deduites.keys()].join(", ");
+    }
     // Les commandes encore à faire d'un lancement.
     const commandes = (L) => {
       const par = new Map();
@@ -530,7 +548,7 @@ const SUIVI = (() => {
       semaines.push({
         id: s.id, annee: s.annee, semaine: s.semaine, f, r, h, e: etatLancement(f, r, s.ordre, der.ordre, couverte, s.lancements.every((L) => L.casse)),
         lancements: s.lancements.map((L) => ({
-          cle: L.cle, nom: L.nom, poste: L.poste, f: L.f, r: L.r, h: L.h, e: etatLancement(L.f, L.r, L.ordre, der.ordre, L.couvert, L.casse),
+          cle: L.cle, nom: L.nom, poste: L.poste, f: L.f, r: L.r, h: L.h, x: L.x, xd: L.xd, e: etatLancement(L.f, L.r, L.ordre, der.ordre, L.couvert, L.casse),
           d: L.fPrec === null ? null : L.f - L.fPrec, p: L.histo.slice(-10), c: commandes(L),
         })),
       });
@@ -814,8 +832,9 @@ const SUIVI = (() => {
   function texteChiffres(L, resume) {
     if (L.e === "hors_extraction")
       return `${pluriel(L.h, "pièce", "pièces")} · sa semaine n'est pas dans l'extraction du ${echapper(jourCourt(resume.jour))}${resume.semaineMax ? ` (elle va jusqu'à la semaine ${resume.semaineMax})` : ""}`;
-    if (L.f + L.r === 0) return `${pluriel(L.h, "pièce", "pièces")} · ${L.e === "casse" ? "aucune dans l'extraction (la casse n'est pas suivie par Diakonos)" : "rien à suivre"}`;
-    return `<strong>${fmt(L.f)}</strong> faite${L.f > 1 ? "s" : ""} · <strong>${fmt(L.r)}</strong> à faire${L.h ? ` <span class="pale">· ${fmt(L.h)} pas dans Diakonos (casse)</span>` : ""}`;
+    const relancees = L.x ? ` <span class="pale">· ${pluriel(L.x, "pièce relancée", "pièces relancées")} dans ${echapper(L.xd)} (comptée${L.x > 1 ? "s" : ""} là-bas)</span>` : "";
+    if (L.f + L.r === 0) return `rien à suivre${relancees}`;
+    return `<strong>${fmt(L.f)}</strong> faite${L.f > 1 ? "s" : ""} · <strong>${fmt(L.r)}</strong> à faire${relancees}`;
   }
 
   function texteEvolution(L, resume) {
@@ -948,7 +967,7 @@ const SUIVI = (() => {
     if (resume) {
       html += htmlTuiles(resume);
       html += `<div class="carte"><div class="carte-titre">Avancement par lancement</div>
-        <div class="note">L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Un clic sur un lancement : les commandes encore à faire.</div>
+        <div class="note">L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Une pièce relancée (casse, retard) compte dans le lancement le plus récent, et elle est déduite du lancement d'origine. Un clic sur un lancement : les commandes encore à faire.</div>
         <div class="sv-legende"><span><i class="sv-l-en_cours"></i>En cours</span><span><i class="sv-l-termine"></i>Terminé</span><span><i class="sv-l-retard"></i>En retard (semaine passée)</span><span><i class="sv-l-attente"></i>Pas dans cette extraction</span></div>
         ${resume.semaines.length ? resume.semaines.map((s) => htmlSemaine(s, resume)).join("") : '<div class="note">Aucun lancement dans la bibliothèque des semaines autour de cette extraction : scannez les semaines dans « Contrôler la coupe ».</div>'}
         ${resume.anciennes ? `<div class="note">${pluriel(resume.anciennes, "semaine plus ancienne : finie", "semaines plus anciennes : finies")}.</div>` : ""}</div>`;

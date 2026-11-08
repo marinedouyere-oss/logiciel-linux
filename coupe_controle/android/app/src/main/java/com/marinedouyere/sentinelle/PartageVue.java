@@ -1068,8 +1068,9 @@ final class PartageVue {
         if ("hors_extraction".equals(l.e))
             return pieces + " · sa semaine n'est pas dans l'extraction du " + jourCourt(s.jour) + (s.semaineMax > 0 ? " (elle va jusqu'à la semaine " + s.semaineMax + ")" : "");
         if ("attente".equals(l.e)) return pieces + " · pas encore dans l'extraction";
-        if (l.f + l.r == 0) return pieces + ("casse".equals(l.e) ? " · aucune dans l'extraction (la casse n'est pas suivie par Diakonos)" : " · rien à suivre");
-        return fmtSuivi(l.f) + (l.f > 1 ? " faites" : " faite") + " · " + fmtSuivi(l.r) + " à faire" + (l.h > 0 ? " · " + fmtSuivi(l.h) + " pas dans Diakonos (casse)" : "");
+        String relancees = l.x > 0 ? " · " + fmtSuivi(l.x) + (l.x > 1 ? " pièces relancées dans " : " pièce relancée dans ") + l.xd + (l.x > 1 ? " (comptées là-bas)" : " (comptée là-bas)") : "";
+        if (l.f + l.r == 0) return "rien à suivre" + relancees;
+        return fmtSuivi(l.f) + (l.f > 1 ? " faites" : " faite") + " · " + fmtSuivi(l.r) + " à faire" + relancees;
     }
 
     /** L'avancement est celui du jour de l'extraction : si elle date, on le dit. */
@@ -1121,7 +1122,7 @@ final class PartageVue {
                 new String[] {fmtSuivi(s.restantes), "Pièces à faire"}, new String[] {fmtSuivi(s.retard), "En retard", s.retard > 0 ? "souci" : null}));
 
         racine.addView(ui.texte("Avancement par lancement", 15, true, Ui.NOIR), ui.marges(8, 0));
-        racine.addView(ui.texte("L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Touchez un lancement : les commandes encore à faire.",
+        racine.addView(ui.texte("L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Une pièce relancée (casse, retard) compte dans le lancement le plus récent, et elle est déduite du lancement d'origine. Touchez un lancement : les commandes encore à faire.",
                 13, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 4));
         if (s.semaines.isEmpty())
             racine.addView(ui.texte("Aucun lancement dans la bibliothèque des semaines autour de cette extraction.", 14, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 4));

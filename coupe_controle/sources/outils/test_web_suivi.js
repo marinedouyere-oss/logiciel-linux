@@ -79,13 +79,14 @@ const LANS_S47 = [
   if (dossierS46) {
     const a = lan(r1, "LAN264601START");
     const b = lan(r1, "LAN264602START");
-    console.log(JSON.stringify({ s46_1: [a.f, a.r, a.h, a.e], s46_2: [b.f, b.r, b.h, b.e] }));
-    verifier(a.f + a.r === 340 && a.r <= 5 && a.h === 0 && Math.round((100 * a.f) / 340) >= 98, `LAN264601START (semaine 46) : presque fini le 07/11 (${a.f} faites, ${a.r} à faire)`);
-    verifier(b.f + b.r === 340 && b.h === 0 && b.f > b.r, `LAN264602START (semaine 46) : ${b.f} faites, ${b.r} à faire`);
+    console.log(JSON.stringify({ s46_1: [a.f, a.r, a.x, a.xd, a.e], s46_2: [b.f, b.r, b.x, b.xd, b.e] }));
+    verifier(a.f + a.r + a.x === 340 && a.r <= 5 && a.x > 0 && /LAN2646CASSE/.test(a.xd) && Math.round((100 * a.f) / (a.f + a.r)) >= 98,
+      `LAN264601START (semaine 46) : presque fini le 07/11 (${a.f} faites, ${a.r} à faire), ${a.x} pièces relancées dans la casse déduites`);
+    verifier(b.f + b.r + b.x === 340 && b.f > b.r, `LAN264602START (semaine 46) : ${b.f} faites, ${b.r} à faire, ${b.x} relancées ailleurs (déduites)`);
   }
-  // La casse n'est pas suivie par Diakonos : seules ses pièces encore dans l'extraction comptent (sa seule pièce présente
-  // est aussi dans le lancement de la semaine 46 : elle compte pour lui quand il est là).
-  verifier(casse.f === 0 && casse.r + casse.h === 77 && (dossierS46 ? casse.e === "casse" && casse.r === 0 : casse.r === 1), `LAN2646CASSE : rien compté « fait » (casse pas suivie par Diakonos) (${casse.r} à faire, ${casse.h} pas dans Diakonos)`);
+  // La casse : ses pièces comptent chez elle (le lancement le plus récent), la pièce relancée encore en cours
+  // (CVC26100261001, « Lancement 2 » dans Diakonos) est à faire, les autres sont faites.
+  verifier(casse.r === 1 && casse.f + casse.r === 77 && casse.e === "en_cours", `LAN2646CASSE : ${casse.f} faites, ${casse.r} à faire (la pièce relancée encore dans Diakonos)`);
   // Le tableau des transporteurs : la somme de « Qte en cours » du fichier, comme Excel.
   const ref = JSON.parse(fs.readFileSync(ref07, "utf8"));
   const sommeExcel = ref.slice(1).reduce((t, r) => t + (r && typeof r[8] === "number" ? r[8] : 0), 0);

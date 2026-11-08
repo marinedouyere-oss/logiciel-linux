@@ -531,7 +531,7 @@ public class PartageTest {
             + "\"suiviProduction\":{\"version\":1,\"jour\":\"2026-11-10\",\"semaine\":46,\"annee\":2026,\"fichiers\":[\"suivi_production_10112026.xlsx\"],"
             + "\"precedente\":\"2026-11-07\",\"nbExtractions\":2,\"totaux\":{\"lancements\":2,\"faites\":101,\"restantes\":64,\"retard\":0,\"depuis\":101},"
             + "\"semaineMax\":47,\"semaines\":[{\"id\":\"2026-47\",\"annee\":2026,\"semaine\":47,\"f\":101,\"r\":64,\"h\":0,\"e\":\"en_cours\",\"lancements\":["
-            + "{\"cle\":\"LAN264702START\",\"nom\":\"LAN264702START\",\"poste\":\"Agglo 2ème tour\",\"f\":101,\"r\":64,\"h\":0,\"e\":\"en_cours\",\"d\":101,"
+            + "{\"cle\":\"LAN264702START\",\"nom\":\"LAN264702START\",\"poste\":\"Agglo 2ème tour\",\"f\":101,\"r\":64,\"h\":0,\"x\":2,\"xd\":\"LAN2647CASSE\",\"e\":\"en_cours\",\"d\":101,"
             + "\"p\":[[\"2026-11-07\",0],[\"2026-11-10\",61]],\"c\":[[\"CVC26119999\",\"TRANSPORTEUR A\",\"VILLE A\",2,\"S47\"]]}]},"
             + "{\"id\":\"2026-48\",\"annee\":2026,\"semaine\":48,\"f\":0,\"r\":0,\"h\":492,\"e\":\"hors_extraction\",\"lancements\":["
             + "{\"cle\":\"LAN264801START\",\"nom\":\"LAN264801START\",\"poste\":\"Agglo 1er tour\",\"f\":0,\"r\":0,\"h\":492,\"e\":\"hors_extraction\",\"d\":null,\"p\":[],\"c\":[]}]}],"
@@ -564,7 +564,7 @@ public class PartageTest {
         assertTrue(texte, texte.contains("Semaine 47"));
         assertTrue(texte, texte.contains("Du lundi 16 au vendredi 20 novembre"));
         assertTrue(texte, texte.contains("61 %"));
-        assertTrue(texte, texte.contains("101 faites · 64 à faire"));
+        assertTrue(texte, texte.contains("101 faites · 64 à faire · 2 pièces relancées dans LAN2647CASSE (comptées là-bas)"));
         assertTrue(texte, texte.contains("+101 pièces depuis le 07/11"));
         assertTrue(texte, texte.contains("Pas dans cette extraction"));
         assertTrue(texte, texte.contains("elle va jusqu'à la semaine 47"));
