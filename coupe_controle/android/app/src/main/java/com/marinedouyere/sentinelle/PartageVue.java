@@ -302,15 +302,15 @@ final class PartageVue {
         }
     }
 
-    /** En-tête de page comme sur le PC : surtitre, titre, chapeau. */
+    /** En-tête de page comme sur le PC : surtitre, titre, chapeau (V6.2.1 : plus compact). */
     private void entete(String surtitre, String titre, String chapeau) {
         LinearLayout e = ui.colonne();
-        e.setPadding(ui.dp(2), ui.dp(4), ui.dp(2), ui.dp(8));
-        TextView sur = ui.texte(surtitre.toUpperCase(Locale.FRANCE), 11, true, Ui.GRIS);
+        e.setPadding(ui.dp(2), ui.dp(2), ui.dp(2), ui.dp(6));
+        TextView sur = ui.texte(surtitre.toUpperCase(Locale.FRANCE), 10.5f, true, Ui.GRIS);
         sur.setLetterSpacing(0.12f);
         e.addView(sur);
-        e.addView(ui.titre(titre, 24, Ui.BORDEAUX), ui.marges(2, 2));
-        if (chapeau != null && !chapeau.isEmpty()) e.addView(ui.texte(chapeau, 14, false, ui.couleur(R.color.gris_texte)));
+        e.addView(ui.titre(titre, 22, Ui.BORDEAUX), ui.marges(1, 1));
+        if (chapeau != null && !chapeau.isEmpty()) e.addView(ui.texte(chapeau, 13, false, ui.couleur(R.color.gris_texte)));
         racine.addView(e, ui.pleineLargeur());
     }
 
@@ -399,13 +399,36 @@ final class PartageVue {
         return v;
     }
 
-    private View tuile(String valeur, String legende, boolean souci) {
+    /** Les chiffres clés dans une seule carte : { valeur, légende, "souci" ou null } par colonne. */
+    private View bandeChiffres(String[]... chiffres) {
         MaterialCardView carte = ui.carte();
-        LinearLayout corps = ui.colonne();
-        corps.setPadding(ui.dp(10), ui.dp(8), ui.dp(10), ui.dp(10));
-        carte.addView(corps);
-        corps.addView(ui.texte(legende, 11, false, ui.couleur(R.color.gris_texte)));
-        corps.addView(ui.titre(valeur, 20, souci ? ui.couleur(R.color.alerte_texte) : Ui.BORDEAUX));
+        LinearLayout r = ui.rangee();
+        r.setPadding(ui.dp(4), ui.dp(10), ui.dp(4), ui.dp(10));
+        r.setGravity(Gravity.TOP);
+        for (int i = 0; i < chiffres.length; i++) {
+            if (i > 0) {
+                View f = new View(activite);
+                f.setBackgroundColor(ui.couleur(R.color.bordure));
+                r.addView(f, new LinearLayout.LayoutParams(Math.max(1, ui.dp(1)), ViewGroup.LayoutParams.MATCH_PARENT));
+            }
+            LinearLayout c = ui.colonne();
+            c.setGravity(Gravity.CENTER_HORIZONTAL);
+            c.setPadding(ui.dp(4), 0, ui.dp(4), 0);
+            TextView legende = ui.texte(chiffres[i][1], 11, false, ui.couleur(R.color.gris_texte));
+            legende.setGravity(Gravity.CENTER_HORIZONTAL);
+            c.addView(legende);
+            boolean souci = chiffres[i].length > 2 && chiffres[i][2] != null;
+            TextView valeur = ui.titre(chiffres[i][0], 19, souci ? ui.couleur(R.color.alerte_texte) : Ui.NOIR);
+            valeur.setGravity(Gravity.CENTER_HORIZONTAL);
+            c.addView(valeur);
+            if (chiffres[i].length > 3 && chiffres[i][3] != null) {
+                TextView plus = ui.texte(chiffres[i][3], 10.5f, true, ui.couleur(R.color.ok_texte));
+                plus.setGravity(Gravity.CENTER_HORIZONTAL);
+                c.addView(plus);
+            }
+            r.addView(c, ui.poids(1));
+        }
+        carte.addView(r);
         return carte;
     }
 
@@ -417,68 +440,51 @@ final class PartageVue {
         }
         FichierPartage.Semaine s = semaine();
         entete(semaineEnCours(s) ? "Semaine en cours" : "Semaine", titreSemaine(s), CompteRendu.datesSemaine(s.annee, s.semaine));
-        racine.addView(choixSemaines(s), ui.marges(0, 6));
+        racine.addView(choixSemaines(s), ui.marges(2, 4));
         int controles = 0;
         int nbProblemes = 0;
+        double pieces = 0;
         for (FichierPartage.Lancement l : s.lancements) {
             if (controle(l)) controles++;
             nbProblemes += aRegarder(l).size();
+            pieces += piecesDe(l);
         }
-        double pieces = 0;
-        for (FichierPartage.Lancement l : s.lancements) pieces += piecesDe(l);
-        // Comme sur le PC : lancements, pièces, contrôles faits, à regarder (deux par ligne).
-        LinearLayout haut = ui.rangee();
-        haut.addView(tuile(String.valueOf(s.lancements.size()), "Lancements", false), ui.poids(1));
-        haut.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
-        haut.addView(tuile(nombre(pieces), "Pièces", false), ui.poids(1));
-        racine.addView(haut, ui.pleineLargeur());
-        LinearLayout bas = ui.rangee();
-        bas.addView(tuile(controles + " sur " + s.lancements.size(), "Contrôles faits", false), ui.poids(1));
-        bas.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
-        bas.addView(tuile(String.valueOf(nbProblemes), "À regarder", nbProblemes > 0), ui.poids(1));
-        racine.addView(bas, ui.pleineLargeur());
+        // Comme sur le PC : lancements, pièces, contrôles faits, à regarder.
+        racine.addView(bandeChiffres(new String[] {String.valueOf(s.lancements.size()), "Lancements"}, new String[] {nombre(pieces), "Pièces"},
+                new String[] {controles + " sur " + s.lancements.size(), "Contrôles faits"},
+                new String[] {String.valueOf(nbProblemes), "À regarder", nbProblemes > 0 ? "souci" : null}));
 
-        racine.addView(ui.titre("Les lancements de la semaine", 17, Ui.NOIR), ui.marges(10, 4));
-        int numero = 1;
-        for (FichierPartage.Lancement l : s.lancements) {
+        // Ce qu'il faut regarder d'abord.
+        if (nbProblemes > 0) {
             MaterialCardView carte = ui.carte();
+            carte.setStrokeColor(Ui.SAUMON);
             LinearLayout corps = corpsDe(carte);
-            LinearLayout tete = ui.rangee();
-            tete.addView(ui.pastille(numero++));
-            TextView titre = ui.titre(titrePoste(l), 16, Ui.NOIR);
-            titre.setPadding(ui.dp(10), 0, 0, 0);
-            tete.addView(titre, ui.poids(1));
-            corps.addView(tete);
-            corps.addView(ui.texte(l.fichier.isEmpty() ? l.nom : l.fichier, 13, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 6));
-            String[][] etats = {{"Lancement", "Chargé", "bon"}, {"Pièces", nombre(piecesDe(l)), null}, {"Coupe", etatCoupe(l)[0], etatCoupe(l)[1]},
-                    {"Contrôle", etatControle(l)[0], etatControle(l)[1]}};
-            for (String[] e : etats) {
-                LinearLayout r = ui.rangee();
-                r.addView(ui.texte(e[0], 13, false, ui.couleur(R.color.gris_texte)), ui.poids(1));
-                if (e[2] == null) r.addView(ui.texte(e[1], 14, true, Ui.NOIR));
-                else r.addView(etiquette(new String[] {e[1], e[2]}));
-                corps.addView(r, ui.marges(2, 2));
-            }
-            MaterialButton voir = ui.boutonContour("Voir le contrôle");
-            voir.setOnClickListener(v -> voirControle(l));
-            corps.addView(voir, ui.marges(6, 0));
+            corps.addView(ui.titreCarte("À regarder"));
+            for (FichierPartage.Lancement l : s.lancements)
+                for (String t : aRegarder(l)) {
+                    corps.addView(ui.filet());
+                    TextView pt = ui.texte("●", 12, false, ui.couleur(R.color.alerte_texte));
+                    corps.addView(ui.ligne(pt, titrePoste(l), t, null, "›", v -> voirControle(l)));
+                }
             racine.addView(carte);
         }
 
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
-        corps.addView(ui.titre("À regarder", 16, Ui.BORDEAUX));
-        corps.addView(ui.filetSaumon());
-        boolean rien = true;
-        for (FichierPartage.Lancement l : s.lancements)
-            for (String t : aRegarder(l)) {
-                rien = false;
-                TextView ligne = ui.texte("●  " + titrePoste(l) + " — " + t, 14, false, Ui.NOIR);
-                ligne.setPadding(0, ui.dp(5), 0, ui.dp(5));
-                ligne.setOnClickListener(v -> voirControle(l));
-                corps.addView(ligne);
-            }
-        if (rien) corps.addView(ui.texte("Rien à signaler pour l'instant.", 14, false, ui.couleur(R.color.gris_texte)));
+        corps.addView(ui.titreCarte("Les lancements de la semaine"));
+        corps.addView(ui.note("Touchez un lancement pour voir son contrôle."));
+        int numero = 1;
+        for (FichierPartage.Lancement l : s.lancements) {
+            corps.addView(ui.filet(), ui.marges(8, 0));
+            LinearLayout droite = ui.colonne();
+            droite.setGravity(Gravity.END);
+            droite.addView(ui.texte(nombre(piecesDe(l)) + " pièces", 13, true, Ui.NOIR));
+            String[] e = etatControle(l);
+            droite.addView(etiquette(e), ui.marges(3, 0));
+            String coupe = etatCoupe(l)[0];
+            corps.addView(ui.ligne(ui.pastille(numero++), titrePoste(l), (l.fichier.isEmpty() ? l.nom : l.fichier) + ("—".equals(coupe) ? "" : " · " + coupe), droite, "›",
+                    v -> voirControle(l)));
+        }
         racine.addView(carte);
     }
 
@@ -498,12 +504,15 @@ final class PartageVue {
         FichierPartage.Semaine s = semaine();
         String quand = dateLisible(s.maj);
         entete("Contrôler la coupe", titreSemaine(s), "Les contrôles faits par Sentinelle sur le PC" + (quand.isEmpty() ? "." : ", mis à jour le " + quand + "."));
-        racine.addView(choixSemaines(s), ui.marges(0, 6));
-        MaterialButton compteRendu = ui.bouton(pdfEnCours ? "Compte rendu en cours…" : "Compte rendu de la semaine (.pdf)");
+        racine.addView(choixSemaines(s), ui.marges(2, 4));
+        MaterialButton compteRendu = ui.boutonContour(pdfEnCours ? "Compte rendu en cours…" : "Compte rendu de la semaine (.pdf)");
         compteRendu.setEnabled(!pdfEnCours);
         compteRendu.setOnClickListener(v -> compteRendu(s));
-        racine.addView(compteRendu, ui.marges(0, 4));
+        racine.addView(compteRendu, ui.marges(0, 2));
+        if (lancementAMontrer != null) controlesOuverts.add(lancementAMontrer);
         racine.addView(carteTableau(s));
+        racine.addView(ui.texte("Détail par lancement", 15, true, Ui.NOIR), ui.marges(8, 0));
+        racine.addView(ui.note("Touchez un lancement pour ouvrir son bilan et ses pièces."), ui.marges(0, 2));
         int numero = 1;
         View aMontrer = null;
         for (FichierPartage.Lancement l : s.lancements) {
@@ -560,6 +569,11 @@ final class PartageVue {
         e.setInputType(type);
         e.setText(valeur);
         e.setTypeface(ui.lato());
+        e.setTextSize(15);
+        android.graphics.drawable.GradientDrawable fond = ui.fondRond(0xFFFFFFFF, 10);
+        fond.setStroke(Math.max(1, ui.dp(1)), 0xFFD9D4CF);
+        e.setBackground(fond);
+        e.setPadding(ui.dp(12), ui.dp(10), ui.dp(12), ui.dp(10));
         return e;
     }
 
@@ -573,8 +587,7 @@ final class PartageVue {
     private MaterialCardView carteSansEtiquette() {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
-        corps.addView(ui.titre("Pièce sans étiquette", 17, Ui.BORDEAUX));
-        corps.addView(ui.filetSaumon());
+        corps.addView(ui.titreCarte("Pièce sans étiquette"));
         corps.addView(ui.texte("Cote finie mesurée sur la pièce : la première mesure est le sens du fil. À 2 mm près.", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 6));
         String[] v = sansEtiquette != null ? sansEtiquette : new String[] {"", "", "", ""};
         int nombre = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL;
@@ -647,8 +660,7 @@ final class PartageVue {
         if (longueur != null) quoi.append("longueur ").append(CompteRendu.fmt(longueur));
         if (largeur != null) quoi.append(quoi.length() > 0 ? " · " : "").append("largeur ").append(CompteRendu.fmt(largeur));
         if (!v[2].isEmpty()) quoi.append(quoi.length() > 0 ? " · " : "").append("couleur ").append(v[2]);
-        corps.addView(ui.titre(res.size() + " pièce(s) — " + quoi + " (± 2 mm), semaine " + semaine, 15, Ui.BORDEAUX));
-        corps.addView(ui.filetSaumon());
+        corps.addView(ui.titreCarte(res.size() + " pièce(s) — " + quoi + " (± 2 mm), semaine " + semaine));
         int n = 0;
         for (FichierPartage.Trouvaille t : res) {
             if (n++ >= MAX_RESULTATS) {
@@ -697,29 +709,27 @@ final class PartageVue {
         }
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
-        corps.addView(ui.titre(donnees.semaines.size() + " semaine(s)", 17, Ui.BORDEAUX));
-        corps.addView(ui.filetSaumon());
-        int i = 0;
+        corps.addView(ui.titreCarte(donnees.semaines.size() + " semaine(s)"));
+        corps.addView(ui.note("Touchez une semaine pour l'ouvrir dans Contrôler la coupe."));
         for (FichierPartage.Semaine s : donnees.semaines) {
-            LinearLayout r = ui.colonne();
-            r.setPadding(ui.dp(8), ui.dp(8), ui.dp(8), ui.dp(8));
-            if (i++ % 2 == 1) r.setBackgroundColor(Ui.GRIS_CLAIR);
             double pieces = 0;
             List<String> noms = new ArrayList<>();
             for (FichierPartage.Lancement l : s.lancements) {
                 pieces += Math.floor(l.nbPieces);
                 noms.add(l.nom);
             }
-            r.addView(ui.texte(titreSemaine(s), 15, true, Ui.NOIR));
             String quand = dateLisible(s.maj);
-            r.addView(ui.texte(s.lancements.size() + " lancement(s) · " + nombre(pieces) + " pièces" + (quand.isEmpty() ? "" : " · mis à jour le " + quand),
-                    13, false, ui.couleur(R.color.gris_texte)));
-            r.addView(ui.texte(String.join(", ", noms), 12, false, ui.couleur(R.color.gris_texte)));
-            r.setOnClickListener(v -> {
-                semaineChoisie = s.id;
-                activite.allerA(MainActivity.ONGLET_CONTROLE);
-            });
-            corps.addView(r, ui.pleineLargeur());
+            corps.addView(ui.filet(), ui.marges(8, 0));
+            LinearLayout r = ui.ligne(null, titreSemaine(s), s.lancements.size() + " lancement(s) · " + nombre(pieces) + " pièces" + (quand.isEmpty() ? "" : " · mis à jour le " + quand),
+                    null, "›", v -> {
+                        semaineChoisie = s.id;
+                        activite.allerA(MainActivity.ONGLET_CONTROLE);
+                    });
+            TextView lances = ui.texte(String.join(", ", noms), 11.5f, false, ui.couleur(R.color.gris_texte));
+            lances.setMaxLines(2);
+            lances.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            ((LinearLayout) r.getChildAt(0)).addView(lances);
+            corps.addView(r);
         }
         racine.addView(carte);
     }
@@ -734,18 +744,19 @@ final class PartageVue {
     private MaterialCardView carteFichier() {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
-        corps.addView(ui.titre("Lien avec le PC", 17, Ui.BORDEAUX));
-        corps.addView(ui.filetSaumon());
+        corps.addView(ui.titreCarte("Lien avec le PC"));
         String code = codeLien();
         if (code != null) {
-            corps.addView(ui.texte("✔ Relié au PC", 15, true, ui.couleur(R.color.ok_texte)));
-            corps.addView(ui.texte("Code " + code, 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 2));
+            TextView point = ui.texte("●", 14, false, enLecture ? Ui.GRIS : erreur != null ? ui.couleur(R.color.alerte_texte) : ui.couleur(R.color.ok_texte));
+            String sous = "Code " + code;
             if (donnees != null) {
                 String quand = dateLisible(donnees.genere);
-                corps.addView(ui.texte("Données du PC du " + (quand.isEmpty() ? "?" : quand) + (donnees.par.isEmpty() ? "" : " · " + donnees.par)
-                        + " · " + donnees.semaines.size() + " semaine(s)", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 4));
+                sous = "Données du PC du " + (quand.isEmpty() ? "?" : quand) + " · " + donnees.semaines.size() + " semaine(s)\n" + sous
+                        + (donnees.par.isEmpty() ? "" : " · " + donnees.par);
             }
-            if (enLecture) corps.addView(ui.texte("Lecture des données du PC…", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 4));
+            LinearLayout etat = ui.ligne(point, enLecture ? "Lecture des données du PC…" : "✔ Relié au PC", sous, null, null, null);
+            etat.setPadding(0, ui.dp(4), 0, ui.dp(4));
+            corps.addView(etat);
             if (avertissement != null) corps.addView(ui.bandeau("⚠ " + avertissement, ui.couleur(R.color.attention_fond), ui.couleur(R.color.attention_texte)), ui.marges(4, 6));
             if (erreur != null) corps.addView(ui.bandeau("❌ " + erreur, ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)), ui.marges(4, 6));
             LinearLayout boutons = ui.rangee();
@@ -757,7 +768,7 @@ final class PartageVue {
             MaterialButton delier = ui.boutonContour("Délier");
             delier.setOnClickListener(v -> delier());
             boutons.addView(delier, ui.poids(1));
-            corps.addView(boutons, ui.marges(6, 0));
+            corps.addView(boutons, ui.marges(4, 0));
             return carte;
         }
         corps.addView(ui.texte("Sur le PC : Bibliothèque des semaines → « Activer l'envoi au téléphone », puis scannez le QR code affiché (une seule fois). "
@@ -830,6 +841,8 @@ final class PartageVue {
     // ---- Suivi de production (V6.2) : comme l'onglet du PC, lu dans le fichier partagé ----
 
     private final java.util.Set<String> suiviOuverts = new java.util.HashSet<>();
+    /** Lancements ouverts dans Contrôler la coupe (les autres : seulement leur titre et leur état). */
+    private final java.util.Set<String> controlesOuverts = new java.util.HashSet<>();
     private static final int BLEU = 0xFF2A78D6;
     private static final int BLEU_TEXTE = 0xFF1B5FAE;
     private static final int VERT = 0xFF2E7D32;
@@ -939,33 +952,23 @@ final class PartageVue {
         if (s == null) {
             MaterialCardView carte = ui.carte();
             LinearLayout corps = corpsDe(carte);
-            corps.addView(ui.titre("Extraction Diakonos", 17, Ui.BORDEAUX));
-            corps.addView(ui.filetSaumon());
+            corps.addView(ui.titreCarte("Extraction Diakonos"));
             corps.addView(ui.texte("Aucune extraction Diakonos lue sur le PC pour l'instant. Sur le PC : Suivi de production → « Choisir le dossier des extractions… ».", 14, false, Ui.NOIR));
             racine.addView(carte);
             return;
         }
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
-        corps.addView(ui.titre("Extraction Diakonos", 17, Ui.BORDEAUX));
-        corps.addView(ui.filetSaumon());
+        corps.addView(ui.titreCarte("Extraction Diakonos"));
         corps.addView(ui.texte("Dernière extraction : " + jourLisible(s.jour) + " (semaine " + s.semaine + ")", 14, true, Ui.NOIR));
         corps.addView(ui.texte(android.text.TextUtils.join(" + ", s.fichiers) + (s.nbExtractions > 1 ? " · " + s.nbExtractions + " extractions gardées pour l'évolution" : ""), 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 0));
         racine.addView(carte);
 
-        LinearLayout haut = ui.rangee();
-        haut.addView(tuile(fmtSuivi(s.lancements), "Lancements suivis", false), ui.poids(1));
-        haut.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
-        String depuis = s.depuis != null && !s.precedente.isEmpty() ? " · " + (s.depuis >= 0 ? "+" : "−") + fmtSuivi(Math.abs(s.depuis)) + " depuis le " + jourCourt(s.precedente) : "";
-        haut.addView(tuile(fmtSuivi(s.faites), "Pièces faites" + depuis, false), ui.poids(1));
-        racine.addView(haut, ui.pleineLargeur());
-        LinearLayout bas = ui.rangee();
-        bas.addView(tuile(fmtSuivi(s.restantes), "Pièces à faire", false), ui.poids(1));
-        bas.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
-        bas.addView(tuile(fmtSuivi(s.retard), "Lancements en retard", s.retard > 0), ui.poids(1));
-        racine.addView(bas, ui.pleineLargeur());
+        String depuis = s.depuis != null && !s.precedente.isEmpty() ? (s.depuis >= 0 ? "+" : "−") + fmtSuivi(Math.abs(s.depuis)) + " depuis le " + jourCourt(s.precedente) : null;
+        racine.addView(bandeChiffres(new String[] {fmtSuivi(s.lancements), "Lancements"}, new String[] {fmtSuivi(s.faites), "Pièces faites", null, depuis},
+                new String[] {fmtSuivi(s.restantes), "Pièces à faire"}, new String[] {fmtSuivi(s.retard), "En retard", s.retard > 0 ? "souci" : null}));
 
-        racine.addView(ui.titre("Avancement par lancement", 17, Ui.NOIR), ui.marges(10, 2));
+        racine.addView(ui.texte("Avancement par lancement", 15, true, Ui.NOIR), ui.marges(8, 0));
         racine.addView(ui.texte("Une pièce du lancement encore dans l'extraction est à faire ; sortie de l'extraction, elle est faite. Les pièces jamais vues dans les extractions (bandes, casse, rajouts…) ne comptent pas dans la barre. Touchez un lancement : les commandes encore à faire.",
                 13, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 4));
         if (s.semaines.isEmpty())
@@ -977,8 +980,7 @@ final class PartageVue {
         if (!s.hors.isEmpty()) {
             MaterialCardView ch = ui.carte();
             LinearLayout c = corpsDe(ch);
-            c.addView(ui.titre("Dans Diakonos, dans aucun lancement", 16, Ui.BORDEAUX));
-            c.addView(ui.filetSaumon());
+            c.addView(ui.titreCarte("Dans Diakonos, dans aucun lancement"));
             c.addView(ui.texte("Pièces de l'extraction qui ne sont dans aucun lancement de la bibliothèque (pas encore lancées, ou lancement pas scanné).", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 4));
             for (String[] h : s.hors) {
                 if (h.length < 4) continue;
@@ -996,7 +998,7 @@ final class PartageVue {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
         boolean courante = sem.annee == s.annee && sem.semaine == s.semaine;
-        corps.addView(ui.titre("Semaine " + sem.semaine + (courante ? " · en cours" : ""), 17, Ui.BORDEAUX));
+        corps.addView(ui.titreCarte("Semaine " + sem.semaine + (courante ? " · en cours" : "")));
         corps.addView(ui.texte(CompteRendu.datesSemaine(sem.annee, sem.semaine), 13, false, ui.couleur(R.color.gris_texte)));
         LinearLayout tete = ui.rangee();
         tete.addView(barreSuivi(sem.f, sem.r, sem.e), new LinearLayout.LayoutParams(0, ui.dp(10), 1));
@@ -1005,7 +1007,7 @@ final class PartageVue {
         pct.setPadding(ui.dp(10), 0, 0, 0);
         tete.addView(pct);
         corps.addView(tete, ui.marges(6, 4));
-        corps.addView(ui.filetSaumon());
+        corps.addView(ui.filet(), ui.marges(4, 0));
         for (FichierPartage.LancementSuivi l : sem.lancements) corps.addView(blocLancementSuivi(l, s));
         return carte;
     }
@@ -1065,8 +1067,7 @@ final class PartageVue {
     private View carteTableauSuivi(FichierPartage.Suivi s) {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
-        corps.addView(ui.titre("Pièces à faire par transporteur et par semaine", 16, Ui.BORDEAUX));
-        corps.addView(ui.filetSaumon());
+        corps.addView(ui.titreCarte("Pièces à faire par transporteur et par semaine"));
         android.widget.HorizontalScrollView defile = new android.widget.HorizontalScrollView(activite);
         android.widget.TableLayout t = new android.widget.TableLayout(activite);
         android.widget.TableRow tete = new android.widget.TableRow(activite);
@@ -1111,14 +1112,9 @@ final class PartageVue {
     private MaterialCardView carteRecherche() {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
-        corps.addView(ui.titre("Recherche", 17, Ui.BORDEAUX));
-        corps.addView(ui.filetSaumon());
+        corps.addView(ui.titreCarte("Recherche"));
         LinearLayout ligne = ui.rangee();
-        EditText champ = new EditText(activite);
-        champ.setHint("Pièce ou commande");
-        champ.setSingleLine(true);
-        champ.setText(requete);
-        champ.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
+        EditText champ = champ("Pièce ou commande", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, requete);
         champ.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         Runnable chercher = () -> {
             requete = champ.getText().toString().trim();
@@ -1133,6 +1129,7 @@ final class PartageVue {
             return false;
         });
         ligne.addView(champ, ui.poids(1));
+        ligne.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
         MaterialButton bouton = ui.bouton("Chercher");
         bouton.setOnClickListener(v -> chercher.run());
         ligne.addView(bouton);
@@ -1146,7 +1143,7 @@ final class PartageVue {
             ligne.addView(effacer);
         }
         corps.addView(ligne);
-        corps.addView(ui.texte("26090331003 ou 26090331 (CVC facultatif), dans toutes les semaines du fichier partagé.", 12, false, ui.couleur(R.color.gris_texte)));
+        corps.addView(ui.note("26090331003 ou 26090331 (CVC facultatif), dans toutes les semaines du fichier partagé."), ui.marges(6, 0));
         return carte;
     }
 
@@ -1170,8 +1167,7 @@ final class PartageVue {
                 // fiche impossible : la liste simple ci-dessous
             }
         }
-        corps.addView(ui.titre(res.isEmpty() ? "« " + requete + " » introuvable" : res.size() + " résultat(s) pour « " + requete + " »", 15, Ui.BORDEAUX));
-        corps.addView(ui.filetSaumon());
+        corps.addView(ui.titreCarte(res.isEmpty() ? "« " + requete + " » introuvable" : res.size() + " résultat(s) pour « " + requete + " »"));
         int n = 0;
         for (FichierPartage.Trouvaille t : res) {
             if (n++ >= MAX_RESULTATS) {
@@ -1192,29 +1188,38 @@ final class PartageVue {
         return s;
     }
 
-    /** Choix de la semaine : ‹ semaine d'avant, « Semaine 46 · 2026 ▾ » (liste de toutes les semaines), semaine d'après ›. */
+    /** Choix de la semaine : « ‹ S45 » semaine d'avant, « Choisir la semaine ▾ » (toutes les semaines), « S47 › » semaine d'après. */
     private View choixSemaines(FichierPartage.Semaine choisie) {
         List<FichierPartage.Semaine> liste = donnees.semaines; // la plus récente d'abord
         int i = liste.indexOf(choisie);
+        FichierPartage.Semaine precedente = i >= 0 && i < liste.size() - 1 ? liste.get(i + 1) : null;
+        FichierPartage.Semaine suivante = i > 0 ? liste.get(i - 1) : null;
         LinearLayout rangee = ui.rangee();
-        rangee.setGravity(Gravity.CENTER_VERTICAL);
-        MaterialButton avant = ui.boutonContour("‹");
+        android.graphics.drawable.GradientDrawable fond = ui.fondRond(0xFFFFFFFF, 14);
+        fond.setStroke(Math.max(1, ui.dp(1)), ui.couleur(R.color.bordure));
+        rangee.setBackground(fond);
+        rangee.setPadding(ui.dp(2), 0, ui.dp(2), 0);
+        android.content.res.ColorStateList couleurs = new android.content.res.ColorStateList(new int[][] {{-android.R.attr.state_enabled}, {}}, new int[] {Ui.GRIS_FILET, Ui.BORDEAUX});
+        MaterialButton avant = ui.boutonTexte(precedente == null ? "‹" : "‹ S" + precedente.semaine);
+        avant.setTextColor(couleurs);
         avant.setContentDescription("Semaine d'avant");
-        avant.setEnabled(i >= 0 && i < liste.size() - 1);
-        avant.setOnClickListener(v -> choisirSemaine(liste.get(i + 1)));
-        MaterialButton choix = ui.bouton(choisie.libelle() + " · " + choisie.annee + "  ▾");
+        avant.setEnabled(precedente != null);
+        avant.setOnClickListener(v -> choisirSemaine(precedente));
+        MaterialButton choix = ui.boutonTexte("Choisir la semaine  ▾");
+        choix.setTextColor(Ui.NOIR);
         choix.setContentDescription("Choisir la semaine (" + choisie.libelle() + " " + choisie.annee + ")");
         choix.setOnClickListener(v -> listeDesSemaines());
-        MaterialButton apres = ui.boutonContour("›");
+        MaterialButton apres = ui.boutonTexte(suivante == null ? "›" : "S" + suivante.semaine + " ›");
+        apres.setTextColor(couleurs);
         apres.setContentDescription("Semaine d'après");
-        apres.setEnabled(i > 0);
-        apres.setOnClickListener(v -> choisirSemaine(liste.get(i - 1)));
-        LinearLayout.LayoutParams lpBord = new LinearLayout.LayoutParams(ui.dp(56), ViewGroup.LayoutParams.WRAP_CONTENT);
-        LinearLayout.LayoutParams lpMilieu = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
-        lpMilieu.setMargins(ui.dp(8), 0, ui.dp(8), 0);
-        rangee.addView(avant, lpBord);
-        rangee.addView(choix, lpMilieu);
-        rangee.addView(apres, new LinearLayout.LayoutParams(ui.dp(56), ViewGroup.LayoutParams.WRAP_CONTENT));
+        apres.setEnabled(suivante != null);
+        apres.setOnClickListener(v -> choisirSemaine(suivante));
+        LinearLayout.LayoutParams bord = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        avant.setMinWidth(ui.dp(64));
+        apres.setMinWidth(ui.dp(64));
+        rangee.addView(avant, bord);
+        rangee.addView(choix, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        rangee.addView(apres, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         return rangee;
     }
 
@@ -1329,37 +1334,37 @@ final class PartageVue {
     private MaterialCardView carteTableau(FichierPartage.Semaine s) {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
-        corps.addView(ui.titre(s.libelle() + " — lancements", 17, Ui.BORDEAUX));
+        corps.addView(ui.titreCarte(s.libelle() + " — lancements"));
         String quand = dateLisible(s.maj);
-        if (!quand.isEmpty()) corps.addView(ui.texte("Mise à jour le " + quand, 12, false, ui.couleur(R.color.gris_texte)));
-        corps.addView(ui.filetSaumon());
-        LinearLayout entete = ui.rangee();
-        entete.setBackgroundColor(Ui.BORDEAUX);
-        entete.setPadding(ui.dp(6), ui.dp(6), ui.dp(6), ui.dp(6));
-        String[] titres = {"Poste", "Prévues", ".bkp", "Contrôle", "Scies", "Couleurs"};
-        float[] poids = {2.3f, 1f, 1f, 1.35f, 1f, 1.25f};
-        for (int i = 0; i < titres.length; i++) {
-            TextView t = ui.texte(titres[i].toUpperCase(Locale.FRANCE), 9, true, 0xFFFFFFFF);
-            t.setMaxLines(1);
-            t.setGravity(i == 0 ? Gravity.START : i < 3 ? Gravity.END : Gravity.CENTER_HORIZONTAL);
-            entete.addView(t, ui.poids(poids[i]));
-        }
-        corps.addView(entete);
-        int i = 0;
+        if (!quand.isEmpty()) corps.addView(ui.note("Mise à jour le " + quand));
         for (FichierPartage.Lancement l : s.lancements) {
-            LinearLayout r = ui.rangee();
-            r.setPadding(ui.dp(6), ui.dp(7), ui.dp(6), ui.dp(7));
-            if (i++ % 2 == 1) r.setBackgroundColor(Ui.GRIS_CLAIR);
+            corps.addView(ui.filet(), ui.marges(8, 0));
+            LinearLayout bloc = ui.colonne();
+            bloc.setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8));
+            LinearLayout tete = ui.rangee();
             LinearLayout nom = ui.colonne();
-            nom.addView(ui.texte(titrePoste(l), 13, true, Ui.NOIR));
-            nom.addView(ui.texte(l.nom, 11, false, ui.couleur(R.color.gris_texte)));
-            r.addView(nom, ui.poids(poids[0]));
-            r.addView(celluleTexte(new String[] {nombre(l.prevues), "info"}, true), ui.poids(poids[1]));
-            r.addView(celluleTexte(new String[] {nombre(l.bkp), "info"}, true), ui.poids(poids[2]));
-            r.addView(celluleTexte(cellule(l.controle, ""), false), ui.poids(poids[3]));
-            r.addView(celluleTexte(cellule(l.scies, ""), false), ui.poids(poids[4]));
-            r.addView(celluleTexte(celluleCouleurs(l), false), ui.poids(poids[5]));
-            corps.addView(r);
+            nom.addView(ui.texte(titrePoste(l), 14, true, Ui.NOIR));
+            nom.addView(ui.note(l.nom));
+            tete.addView(nom, ui.poids(1));
+            LinearLayout chiffres = ui.colonne();
+            chiffres.setGravity(Gravity.END);
+            chiffres.addView(ui.texte(nombre(l.prevues) + " prévues", 13, true, Ui.NOIR));
+            chiffres.addView(ui.note(nombre(l.bkp) + " dans le .bkp"));
+            tete.addView(chiffres);
+            bloc.addView(tete);
+            LinearLayout pastilles = ui.rangee();
+            pastilles.addView(pastilleControle("Contrôle", cellule(l.controle, "")));
+            pastilles.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(6), 1));
+            pastilles.addView(pastilleControle("Scies", cellule(l.scies, "")));
+            pastilles.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(6), 1));
+            pastilles.addView(pastilleControle("Couleurs", celluleCouleurs(l)));
+            bloc.addView(pastilles, ui.marges(6, 0));
+            ui.cliquable(bloc, v -> {
+                controlesOuverts.add(l.nom);
+                lancementAMontrer = l.nom;
+                construire();
+            });
+            corps.addView(bloc);
         }
         // Total de la semaine.
         double prevues = 0;
@@ -1372,23 +1377,12 @@ final class PartageVue {
                 avecBkp = true;
             }
         }
-        LinearLayout total = ui.rangee();
-        total.setBackgroundColor(Ui.BORDEAUX);
-        total.setPadding(ui.dp(6), ui.dp(7), ui.dp(6), ui.dp(7));
-        TextView libelleTotal = ui.texte("Total", 13, true, 0xFFFFFFFF);
-        total.addView(libelleTotal, ui.poids(poids[0]));
-        TextView tPrevues = ui.texte(nombre(prevues), 13, true, 0xFFFFFFFF);
-        tPrevues.setGravity(Gravity.END);
-        total.addView(tPrevues, ui.poids(poids[1]));
-        TextView tBkp = ui.texte(avecBkp ? nombre(bkp) : "—", 13, true, 0xFFFFFFFF);
-        tBkp.setGravity(Gravity.END);
-        total.addView(tBkp, ui.poids(poids[2]));
-        total.addView(ui.espace(1), ui.poids(poids[3] + poids[4] + poids[5]));
+        corps.addView(ui.filet(), ui.marges(8, 0));
+        TextView total = ui.texte("Pièces : " + nombre(prevues) + " prévues dans " + s.lancements.size() + " lancement(s)"
+                + (avecBkp ? ", " + nombre(bkp) + " dans les .bkp" : "") + ".", 14, true, Ui.BORDEAUX);
+        total.setPadding(ui.dp(4), ui.dp(10), ui.dp(4), ui.dp(6));
         corps.addView(total);
-
-        // Bilan de la semaine : pièces, pièces lancées deux fois, casse.
-        corps.addView(ui.texte("Pièces : " + nombre(prevues) + " prévues dans " + s.lancements.size() + " lancement(s)"
-                + (avecBkp ? ", " + nombre(bkp) + " dans les .bkp" : "") + ".", 14, true, Ui.NOIR), ui.marges(10, 4));
+        // Pièces lancées deux fois, casse.
         Map<String, List<String>> deuxFois = FichierPartage.lanceesDeuxFois(s, donnees.colonne("cle"));
         if (deuxFois.isEmpty()) corps.addView(ui.bandeau("✔ Aucune pièce lancée deux fois", ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte)), ui.marges(2, 2));
         else corps.addView(ui.bandeau("⚠ " + deuxFois.size() + " pièce(s) lancée(s) deux fois : elles sont dans deux lancements",
@@ -1398,6 +1392,13 @@ final class PartageVue {
             if (casse != null) corps.addView(casse, ui.marges(2, 2));
         }
         return carte;
+    }
+
+    /** « Scies ⚠ 2 » : une pastille de l'état d'un contrôle (vert, bordeaux, gris). */
+    private TextView pastilleControle(String nom, String[] cellule) {
+        int[] c = couleursStatut(cellule[1]);
+        String valeur = cellule[0].replace("✔ OK", "✔");
+        return ui.pilule(nom + " " + valeur, c[0], "info".equals(cellule[1]) ? ui.couleur(R.color.gris_texte) : c[1]);
     }
 
     /** « Casse : 61 pièces — 13 déjà lancée(s) en semaine 44, 47 rajout(s) » (null si ce n'est pas une casse comptée). */
@@ -1416,15 +1417,22 @@ final class PartageVue {
     private MaterialCardView carteLancement(FichierPartage.Lancement l, int numero) {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
-        LinearLayout tete = ui.rangee();
-        tete.addView(ui.pastille(numero));
-        LinearLayout titres = ui.colonne();
-        titres.setPadding(ui.dp(10), 0, 0, 0);
-        titres.addView(ui.titre(titrePoste(l), 16, Ui.BORDEAUX));
-        titres.addView(ui.texte(l.fichier.isEmpty() ? l.nom : l.fichier, 12, false, ui.couleur(R.color.gris_texte)));
-        tete.addView(titres, ui.poids(1));
+        boolean ouvert = controlesOuverts.contains(l.nom);
+        // Titre : numéro, poste, fichier ; à droite l'état du contrôle ; un toucher ouvre ou ferme le détail.
+        String[] etat;
+        if (!l.controleFait) etat = new String[] {"Pas de bilan", "info"};
+        else if (l.nbCorriger > 0) etat = new String[] {l.nbCorriger + " à corriger", "alerte"};
+        else if (l.nbVerifier > 0) etat = new String[] {l.nbVerifier + " à vérifier", "attention"};
+        else etat = new String[] {"✔ OK", "ok"};
+        int[] ce = couleursStatut(etat[1]);
+        LinearLayout tete = ui.ligne(ui.pastille(numero), titrePoste(l), l.fichier.isEmpty() ? l.nom : l.fichier, ui.pilule(etat[0], ce[0], ce[1]), ouvert ? "˄" : "˅", v -> {
+            if (!controlesOuverts.remove(l.nom)) controlesOuverts.add(l.nom);
+            construire();
+        });
+        tete.setPadding(0, 0, 0, 0);
         corps.addView(tete);
-        corps.addView(ui.filetSaumon());
+        if (!ouvert) return carte;
+        corps.addView(ui.filet(), ui.marges(8, 8));
 
         if (!l.controleFait) {
             corps.addView(ui.bandeau("Pas de bilan des contrôles pour ce lancement (semaine ajoutée depuis les archives).", Ui.GRIS_CLAIR, ui.couleur(R.color.gris_texte)));

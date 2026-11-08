@@ -1,7 +1,10 @@
 package com.marinedouyere.sentinelle;
 
+import android.content.res.ColorStateList;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -16,14 +19,16 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.google.android.material.snackbar.Snackbar;
 import com.journeyapps.barcodescanner.ScanContract;
 import com.journeyapps.barcodescanner.ScanOptions;
-import com.google.android.material.tabs.TabLayout;
+import com.google.android.material.bottomnavigation.BottomNavigationView;
+import com.google.android.material.navigation.NavigationBarView;
 
 import java.io.OutputStream;
 
 /**
  * Sentinelle sur le téléphone : les mêmes écrans que Sentinelle sur le PC (La semaine, Contrôler la coupe,
- * Rechercher une pièce, Bibliothèque des semaines), lus dans le fichier partagé que le PC écrit sur le Drive.
+ * Rechercher une pièce, Bibliothèque des semaines, Suivi de production), lus dans le fichier partagé du PC.
  * L'appli ne fait que lire : les lancements se préparent et se contrôlent sur le PC.
+ * V6.2.1 : barre compacte en haut, menu en bas (icônes du PC), écrans faits pour le téléphone.
  */
 public class MainActivity extends AppCompatActivity {
 
@@ -33,12 +38,21 @@ public class MainActivity extends AppCompatActivity {
     static final String ONGLET_BIBLIOTHEQUE = "bibliotheque";
     static final String ONGLET_SUIVI = "suivi";
 
+    /** Le menu du bas : { onglet, libellé court, icône } dans l'ordre du menu du PC. */
+    static final Object[][] MENU = {
+            {ONGLET_SEMAINE, "Semaine", R.drawable.ic_nav_semaine},
+            {ONGLET_CONTROLE, "Contrôle", R.drawable.ic_nav_controle},
+            {ONGLET_RECHERCHE, "Recherche", R.drawable.ic_nav_recherche},
+            {ONGLET_BIBLIOTHEQUE, "Bibliothèque", R.drawable.ic_nav_bibliotheque},
+            {ONGLET_SUIVI, "Suivi", R.drawable.ic_nav_suivi},
+    };
+
     private SentinelleApp app;
     private Ui ui;
     private String onglet = ONGLET_SEMAINE;
     private LinearLayout contenu;
     private ScrollView defilement;
-    private TabLayout onglets;
+    private BottomNavigationView menu;
     private PartageVue partage;
     private ActivityResultLauncher<String[]> choixPartage;
     private ActivityResultLauncher<String> creationPdf;
@@ -60,65 +74,80 @@ public class MainActivity extends AppCompatActivity {
         racine.setBackgroundColor(ui.couleur(R.color.fond));
         racine.addView(barreLaisne(), ui.pleineLargeur());
 
-        // Le menu de Sentinelle sur le PC (Préparer un lancement reste sur le PC : les modifications ne se font que là).
-        onglets = new TabLayout(this);
-        onglets.setBackgroundColor(0xFFFFFFFF);
-        // Cinq onglets : ils défilent si l'écran est trop étroit.
-        onglets.setTabMode(TabLayout.MODE_SCROLLABLE);
-        onglets.setSelectedTabIndicatorColor(Ui.BORDEAUX);
-        onglets.setTabTextColors(Ui.GRIS, Ui.BORDEAUX);
-        onglets.addTab(onglets.newTab().setText("La semaine").setTag(ONGLET_SEMAINE));
-        onglets.addTab(onglets.newTab().setText("Contrôler la coupe").setTag(ONGLET_CONTROLE));
-        onglets.addTab(onglets.newTab().setText("Rechercher une pièce").setTag(ONGLET_RECHERCHE));
-        onglets.addTab(onglets.newTab().setText("Bibliothèque des semaines").setTag(ONGLET_BIBLIOTHEQUE));
-        onglets.addTab(onglets.newTab().setText("Suivi de production").setTag(ONGLET_SUIVI));
-        racine.addView(onglets, ui.pleineLargeur());
-
         defilement = new ScrollView(this);
         defilement.setFillViewport(true);
         contenu = ui.colonne();
-        contenu.setPadding(ui.dp(14), ui.dp(12), ui.dp(14), ui.dp(40));
+        contenu.setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(24));
         defilement.addView(contenu, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         racine.addView(defilement, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+
+        // Le menu de Sentinelle sur le PC, en bas de l'écran (Préparer un lancement reste sur le PC).
+        View filet = new View(this);
+        filet.setBackgroundColor(ui.couleur(R.color.bordure));
+        racine.addView(filet, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, ui.dp(1))));
+        menu = new BottomNavigationView(this);
+        menu.setBackgroundColor(0xFFFFFFFF);
+        menu.setLabelVisibilityMode(NavigationBarView.LABEL_VISIBILITY_LABELED);
+        ColorStateList couleurs = new ColorStateList(new int[][] {{android.R.attr.state_checked}, {}}, new int[] {Ui.BORDEAUX, Ui.GRIS});
+        menu.setItemIconTintList(couleurs);
+        menu.setItemTextColor(couleurs);
+        menu.setItemActiveIndicatorColor(ColorStateList.valueOf(Ui.SAUMON_PALE));
+        menu.setItemTextAppearanceActive(R.style.Texte_Menu);
+        menu.setItemTextAppearanceInactive(R.style.Texte_Menu);
+        for (int i = 0; i < MENU.length; i++) {
+            MenuItem item = menu.getMenu().add(Menu.NONE, i + 1, i, (String) MENU[i][1]);
+            item.setIcon((Integer) MENU[i][2]);
+        }
+        racine.addView(menu, ui.pleineLargeur());
         setContentView(racine);
 
-        selectionnerOnglet(onglet);
-        onglets.addOnTabSelectedListener(new TabLayout.OnTabSelectedListener() {
-            @Override
-            public void onTabSelected(TabLayout.Tab tab) {
-                onglet = (String) tab.getTag();
-                afficher();
-                defilement.scrollTo(0, 0);
-            }
-
-            @Override
-            public void onTabUnselected(TabLayout.Tab tab) {}
-
-            @Override
-            public void onTabReselected(TabLayout.Tab tab) {}
+        menu.setSelectedItemId(idDe(onglet));
+        menu.setOnItemSelectedListener(item -> {
+            onglet = (String) MENU[item.getItemId() - 1][0];
+            afficher();
+            defilement.scrollTo(0, 0);
+            return true;
         });
+        menu.setOnItemReselectedListener(item -> defilement.smoothScrollTo(0, 0));
         afficher();
     }
 
-    /** Barre du haut à la charte (comme la page web) : logo Laisné Industrie blanc, filet, « Sentinelle » et la version. */
+    private static int idDe(String tag) {
+        for (int i = 0; i < MENU.length; i++) if (MENU[i][0].equals(tag)) return i + 1;
+        return 1;
+    }
+
+    /** Barre du haut à la charte, compacte : logo Laisné Industrie blanc, « Sentinelle », la version, Actualiser. */
     private View barreLaisne() {
         LinearLayout barre = ui.rangee();
         barre.setBackgroundColor(ui.couleur(R.color.marque));
-        barre.setPadding(ui.dp(16), ui.dp(10), ui.dp(16), ui.dp(10));
+        barre.setPadding(ui.dp(14), ui.dp(8), ui.dp(6), ui.dp(8));
         android.widget.ImageView logo = new android.widget.ImageView(this);
         logo.setImageResource(R.drawable.logo_laisne_blanc);
         logo.setAdjustViewBounds(true);
         logo.setContentDescription("LAISNÉ INDUSTRIE");
-        barre.addView(logo, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ui.dp(36)));
+        barre.addView(logo, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ui.dp(26)));
         View filet = new View(this);
         filet.setBackgroundColor(0x59FFFFFF);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Math.max(1, ui.dp(1)), ui.dp(34));
-        lp.setMargins(ui.dp(14), 0, ui.dp(14), 0);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(Math.max(1, ui.dp(1)), ui.dp(26));
+        lp.setMargins(ui.dp(12), 0, ui.dp(12), 0);
         barre.addView(filet, lp);
         LinearLayout titres = ui.colonne();
-        titres.addView(ui.titre("Sentinelle", 20, 0xFFFFFFFF));
-        titres.addView(ui.texte("Contrôle de coupe · " + version(), 13, false, 0xDDFFFFFF));
-        barre.addView(titres);
+        titres.addView(ui.titre("Sentinelle", 17, 0xFFFFFFFF));
+        titres.addView(ui.texte("Contrôle de coupe · " + version(), 11, false, 0xDDFFFFFF));
+        barre.addView(titres, ui.poids(1));
+        android.widget.ImageButton actualiser = new android.widget.ImageButton(this);
+        actualiser.setImageResource(R.drawable.ic_actualiser);
+        actualiser.setColorFilter(0xFFFFFFFF);
+        actualiser.setContentDescription("Actualiser");
+        android.util.TypedValue fond = new android.util.TypedValue();
+        getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, fond, true);
+        actualiser.setBackgroundResource(fond.resourceId);
+        actualiser.setOnClickListener(v -> {
+            if (partage().uri() != null || partage().codeLien() != null) partage().actualiser();
+            else allerA(ONGLET_BIBLIOTHEQUE);
+        });
+        barre.addView(actualiser, new LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)));
         return barre;
     }
 
@@ -188,20 +217,13 @@ public class MainActivity extends AppCompatActivity {
         contenu.addView(partage().vue(ecran()));
     }
 
-    private void selectionnerOnglet(String tag) {
-        for (int i = 0; i < onglets.getTabCount(); i++) {
-            TabLayout.Tab t = onglets.getTabAt(i);
-            if (t != null && tag.equals(t.getTag()) && !t.isSelected()) t.select();
-        }
-    }
-
-    /** Va à un écran (comme un clic dans le menu). */
+    /** Va à un écran (comme un appui dans le menu du bas). */
     void allerA(String tag) {
         if (tag.equals(onglet)) {
             afficher();
             defilement.scrollTo(0, 0);
         } else {
-            selectionnerOnglet(tag);
+            menu.setSelectedItemId(idDe(tag));
         }
     }
 

@@ -14,7 +14,7 @@ import android.view.ViewGroup;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import com.google.android.material.tabs.TabLayout;
+import com.google.android.material.bottomnavigation.BottomNavigationView;
 
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -136,6 +136,15 @@ public class PartageTest {
         c.restoreToCount(s);
         c.translate(0, hauteurAvant);
         contenu.draw(c);
+        BottomNavigationView menu = chercherVue(racine, BottomNavigationView.class);
+        if (menu != null && hauteur + menu.getHeight() <= 9000) {
+            Bitmap avecMenu = Bitmap.createBitmap(largeur, hauteur + menu.getHeight(), Bitmap.Config.ARGB_8888);
+            Canvas c2 = new Canvas(avecMenu);
+            c2.drawBitmap(image, 0, 0, null);
+            c2.translate(0, hauteur);
+            menu.draw(c2);
+            image = avecMenu;
+        }
         try (OutputStream out = new FileOutputStream(sortie)) {
             image.compress(Bitmap.CompressFormat.PNG, 100, out);
         }
@@ -161,8 +170,8 @@ public class PartageTest {
     }
 
     private static void onglet(MainActivity a, String tag) {
-        TabLayout onglets = chercherVue(a.getWindow().getDecorView(), TabLayout.class);
-        for (int i = 0; i < onglets.getTabCount(); i++) if (tag.equals(onglets.getTabAt(i).getTag())) onglets.getTabAt(i).select();
+        BottomNavigationView menu = chercherVue(a.getWindow().getDecorView(), BottomNavigationView.class);
+        for (int i = 0; i < MainActivity.MENU.length; i++) if (tag.equals(MainActivity.MENU[i][0])) menu.setSelectedItemId(menu.getMenu().getItem(i).getItemId());
         ShadowLooper.idleMainLooper();
     }
 
@@ -183,10 +192,15 @@ public class PartageTest {
     public void menuCommeLePc() throws Exception {
         MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
         ShadowLooper.idleMainLooper();
-        TabLayout onglets = chercherVue(a.getWindow().getDecorView(), TabLayout.class);
-        assertEquals(5, onglets.getTabCount());
-        String[] attendus = {"La semaine", "Contrôler la coupe", "Rechercher une pièce", "Bibliothèque des semaines", "Suivi de production"};
-        for (int i = 0; i < attendus.length; i++) assertEquals(attendus[i], String.valueOf(onglets.getTabAt(i).getText()));
+        // V6.2.1 : le menu est en bas de l'écran, avec les icônes du PC.
+        BottomNavigationView menu = chercherVue(a.getWindow().getDecorView(), BottomNavigationView.class);
+        assertNotNull(menu);
+        assertEquals(5, menu.getMenu().size());
+        String[] attendus = {"Semaine", "Contrôle", "Recherche", "Bibliothèque", "Suivi"};
+        for (int i = 0; i < attendus.length; i++) {
+            assertEquals(attendus[i], String.valueOf(menu.getMenu().getItem(i).getTitle()));
+            assertNotNull(menu.getMenu().getItem(i).getIcon());
+        }
         String texte = ecran(a);
         assertTrue(texte, texte.contains("Contrôle de coupe · V"));
         assertTrue("sans données : relier au PC (code), ou choisir le fichier du Drive", texte.contains("Relier au PC") && texte.contains("choisissez le fichier"));
@@ -204,14 +218,15 @@ public class PartageTest {
         MainActivity a = avecFichier(gzip(EXEMPLE));
         onglet(a, MainActivity.ONGLET_CONTROLE);
         View racine = a.getWindow().getDecorView();
-        attendre(() -> bouton(racine, "Semaine 46 · 2026") != null);
-        assertTrue("‹ actif sur la semaine la plus récente", bouton(racine, "‹").isEnabled());
+        attendre(() -> ecran(a).contains("Semaine 46 · 2026"));
+        assertTrue("‹ S45 actif sur la semaine la plus récente", bouton(racine, "‹ S45").isEnabled());
         assertFalse("› inactif sur la semaine la plus récente", bouton(racine, "›").isEnabled());
-        bouton(racine, "‹").performClick();
+        assertNotNull("liste de toutes les semaines", bouton(racine, "Choisir la semaine"));
+        bouton(racine, "‹ S45").performClick();
         ShadowLooper.idleMainLooper();
-        assertNotNull("semaine 45 choisie", bouton(racine, "Semaine 45 · 2026"));
+        assertTrue("semaine 45 choisie", ecran(a).contains("Semaine 45 · 2026"));
         assertTrue(ecran(a).contains("Semaine 45 — lancements"));
-        assertTrue("› actif sur la semaine 45", bouton(racine, "›").isEnabled());
+        assertTrue("S46 › actif sur la semaine 45", bouton(racine, "S46 ›").isEnabled());
         assertFalse("‹ inactif sur la plus ancienne", bouton(racine, "‹").isEnabled());
         // La semaine choisie est la même dans La semaine.
         onglet(a, MainActivity.ONGLET_SEMAINE);
@@ -329,19 +344,24 @@ public class PartageTest {
         assertTrue(semaine.contains("Du lundi 9 au vendredi 13 novembre"));
         assertTrue(semaine.contains("Contrôles faits"));
         assertTrue("nombre de pièces de la semaine", semaine.contains("Pièces\n951"));
-        assertTrue("nombre de pièces du lancement", semaine.contains("Pièces\n340"));
+        assertTrue("nombre de pièces du lancement", semaine.contains("340 pièces"));
+        assertFalse("plus de gros bouton par lancement", semaine.contains("Voir le contrôle"));
         assertTrue(semaine.contains("Les lancements de la semaine"));
         assertTrue(semaine.contains("À regarder"));
         capturerSiDemande(a, "appli_semaine.png");
 
-        // « Voir le contrôle » : Contrôler la coupe, sur ce lancement.
-        bouton(a.getWindow().getDecorView(), "Voir le contrôle").performClick();
+        // Un toucher sur un lancement : Contrôler la coupe, sur ce lancement (ouvert).
+        View ligneLancement = vueAvecTexte(a.getWindow().getDecorView(), "Agglo 2ème tour");
+        while (ligneLancement != null && !ligneLancement.isClickable()) ligneLancement = (View) ligneLancement.getParent();
+        assertNotNull(ligneLancement);
+        ligneLancement.performClick();
         ShadowLooper.idleMainLooper();
         String controle = ecran(a);
         assertTrue(controle, controle.contains("Semaine 46 — lancements"));
         assertTrue(controle.contains("Compte rendu de la semaine (.pdf)"));
         assertTrue(controle.contains("Pièces : 951 prévues dans 6 lancement(s), 952 dans les .bkp."));
         assertTrue(controle.contains("à corriger"));
+        assertTrue("le lancement touché est ouvert (son bilan)", controle.contains("Scies (.bkp)"));
         assertFalse(controle.contains("illisible"));
         capturerSiDemande(a, "appli_controle.png");
 

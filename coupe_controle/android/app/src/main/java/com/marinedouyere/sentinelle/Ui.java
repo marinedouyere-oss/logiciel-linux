@@ -151,18 +151,89 @@ final class Ui {
         return v;
     }
 
+    /** Carte blanche aux coins arrondis (V6.2.1 : plus douce, moins d'espace perdu). */
     MaterialCardView carte() {
         MaterialCardView carte = new MaterialCardView(c);
-        carte.setRadius(dp(6));
+        carte.setRadius(dp(12));
         carte.setCardElevation(0);
-        carte.setStrokeWidth(dp(1));
+        carte.setStrokeWidth(Math.max(1, dp(1)));
         carte.setStrokeColor(couleur(R.color.bordure));
         carte.setCardBackgroundColor(0xFFFFFFFF);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, dp(6), 0, dp(10));
+        lp.setMargins(0, dp(5), 0, dp(7));
         carte.setLayoutParams(lp);
         return carte;
+    }
+
+    /** Titre d'une carte (Raleway, bordeaux). */
+    TextView titreCarte(CharSequence t) {
+        return titre(t, 16, BORDEAUX);
+    }
+
+    /** Petit texte gris (explications, dates, noms de fichiers). */
+    TextView note(CharSequence t) {
+        return texte(t, 12.5f, false, couleur(R.color.gris_texte));
+    }
+
+    /** Fond arrondi d'une couleur. */
+    GradientDrawable fondRond(int couleur, float rayonDp) {
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(couleur);
+        g.setCornerRadius(dp(rayonDp));
+        return g;
+    }
+
+    /** Pastille d'état : « OK », « 2 à regarder »… (fond clair, texte de la même couleur, en gras). */
+    TextView pilule(CharSequence t, int fond, int texte) {
+        TextView v = texte(t, 11.5f, true, texte);
+        v.setPadding(dp(8), dp(2), dp(8), dp(3));
+        v.setBackground(fondRond(fond, 10));
+        v.setMaxLines(1);
+        return v;
+    }
+
+    /** Effet au toucher (ondulation) sur une ligne cliquable. */
+    void cliquable(View v, View.OnClickListener action) {
+        TypedValue fond = new TypedValue();
+        c.getTheme().resolveAttribute(android.R.attr.selectableItemBackground, fond, true);
+        v.setBackgroundResource(fond.resourceId);
+        v.setClickable(true);
+        v.setFocusable(true);
+        v.setOnClickListener(action);
+    }
+
+    /** Chevron de fin de ligne (« › » : la ligne s'ouvre ; « ˅ / ˄ » : elle se déplie). */
+    TextView chevron(String t) {
+        TextView v = texte(t, 20, false, GRIS);
+        v.setPadding(dp(8), 0, 0, 0);
+        return v;
+    }
+
+    /** Ligne de liste : pastille ou rien, titre, sous-titre, vue à droite, chevron ; toute la ligne est cliquable. */
+    LinearLayout ligne(View debut, CharSequence titre, CharSequence sousTitre, View droite, String chevron, View.OnClickListener action) {
+        LinearLayout r = rangee();
+        r.setPadding(dp(4), dp(10), dp(4), dp(10));
+        if (debut != null) {
+            r.addView(debut);
+            r.addView(espace(1), new LinearLayout.LayoutParams(dp(10), 1));
+        }
+        LinearLayout textes = colonne();
+        textes.addView(texte(titre, 15, true, NOIR));
+        if (sousTitre != null && sousTitre.length() > 0) textes.addView(note(sousTitre));
+        r.addView(textes, poids(1));
+        if (droite != null) r.addView(droite);
+        if (chevron != null) r.addView(chevron(chevron));
+        if (action != null) cliquable(r, action);
+        return r;
+    }
+
+    /** Filet fin entre deux lignes d'une liste. */
+    View filet() {
+        View v = new View(c);
+        v.setBackgroundColor(couleur(R.color.bordure));
+        v.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1))));
+        return v;
     }
 
     /** Couleur d'un bouton : grisée quand il est désactivé. */
@@ -175,7 +246,7 @@ final class Ui {
         b.setText(texte);
         b.setAllCaps(false);
         b.setTypeface(latoGras());
-        b.setCornerRadius(dp(4));
+        b.setCornerRadius(dp(10));
         b.setBackgroundTintList(selonEtat(GRIS_FILET, BORDEAUX));
         b.setTextColor(selonEtat(GRIS, 0xFFFFFFFF));
         return b;
@@ -186,7 +257,7 @@ final class Ui {
         b.setText(texte);
         b.setAllCaps(false);
         b.setTypeface(latoGras());
-        b.setCornerRadius(dp(4));
+        b.setCornerRadius(dp(10));
         b.setStrokeColor(selonEtat(GRIS_FILET, BORDEAUX));
         b.setTextColor(selonEtat(GRIS, BORDEAUX));
         return b;
