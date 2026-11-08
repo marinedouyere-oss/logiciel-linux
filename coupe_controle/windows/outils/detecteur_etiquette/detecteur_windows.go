@@ -64,65 +64,96 @@ func main() {
 	}
 	defer garderImpressions(imprimante, false) // remis comme avant en partant
 
-	dejaLa := fichiersSpl()
-	fmt.Println()
-	fmt.Println(">>> Allez dans Diakonos et VALIDEZ UNE PIÈCE (scannez le code-barre).")
-	fmt.Println(">>> L'étiquette sort normalement. J'attends…")
-	fmt.Println()
-
-	chemin := attendreNouvelleEtiquette(dejaLa, 3*time.Minute)
-	if chemin == "" {
-		attendreTouche("Aucune étiquette détectée (3 min). Réessayez en validant une pièce.")
-		return
-	}
-
-	// On copie l'impression à côté du programme.
+	// À côté du programme.
 	ici, _ := os.Getwd()
 	if exe, e := os.Executable(); e == nil {
 		ici = filepath.Dir(exe)
 	}
-	cible := filepath.Join(ici, "etiquette_capturee.spl")
-	donnees, err := lireAvecReessai(chemin)
-	if err != nil {
-		attendreTouche("Étiquette captée mais illisible : " + err.Error())
-		return
-	}
-	if err := os.WriteFile(cible, donnees, 0o644); err != nil {
-		attendreTouche("Impossible d'écrire le fichier : " + err.Error())
-		return
-	}
 
-	fmt.Println("Étiquette captée :", len(donnees), "octets")
-	fmt.Println("Copie enregistrée :", cible)
+	dejaLa := fichiersSpl()
+	fmt.Println()
+	fmt.Println(">>> Allez dans Diakonos et VALIDEZ UNE PIÈCE (scannez le code-barre).")
+	fmt.Println(">>> Je garde TOUTES les étiquettes qui sortent (le code-barre est")
+	fmt.Println(">>> peut-être sur une 2ᵉ étiquette). J'attends…")
 	fmt.Println()
 
-	texte := texteLisible(donnees)
-	cvc := reCVC.FindAllString(texte, -1)
-	if len(cvc) > 0 {
-		fmt.Println("✔ TRÈS BONNE NOUVELLE : le CVC est écrit en clair dans l'étiquette.")
-		fmt.Println("   CVC trouvé(s) :", strings.Join(unique(cvc), ", "))
-		fmt.Println("   => On pourra savoir qu'une pièce est faite sans toucher à la base.")
-	} else {
-		fmt.Println("✖ Pas de « CVC… » en texte dans cette impression.")
-		fmt.Println("   L'étiquette est peut-être envoyée en image. On regardera l'autre")
-		fmt.Println("   solution (lire le CVC sur l'écran de Diakonos).")
-		fmt.Println()
-		fmt.Println("   Début de ce qui est lisible dans l'impression :")
-		apercu := texte
-		if len(apercu) > 300 {
-			apercu = apercu[:300]
+	captures := capturerToutes(dejaLa, ici, 90*time.Second)
+	if len(captures) == 0 {
+		attendreTouche("Aucune étiquette détectée. Réessayez en validant une pièce.")
+		return
+	}
+
+	fmt.Println()
+	fmt.Printf("%d étiquette(s) captée(s) :\n", len(captures))
+	var resume strings.Builder
+	resume.WriteString("Imprimante : " + imprimante + "\r\n")
+	for i, c := range captures {
+		cvc := reCVC.FindAllString(texteLisible(c.donnees), -1)
+		barres := ressembleCodeBarre(c.donnees)
+		fmt.Printf("  %d) %s : %d octets", i+1, filepath.Base(c.chemin), len(c.donnees))
+		if len(cvc) > 0 {
+			fmt.Printf(" — CVC en texte : %s", strings.Join(unique(cvc), ", "))
 		}
-		fmt.Println("   " + strings.ReplaceAll(apercu, "\n", " "))
+		if barres {
+			fmt.Print(" — contient peut-être un code-barre")
+		}
+		fmt.Println()
+		resume.WriteString(fmt.Sprintf("%s : %d octets, CVC texte=%v %s, code-barre?=%v\r\n",
+			filepath.Base(c.chemin), len(c.donnees), len(cvc) > 0, strings.Join(unique(cvc), ","), barres))
 	}
-
-	// Un petit résumé texte, pratique à m'envoyer avec le .spl.
-	resume := fmt.Sprintf("Imprimante : %s\nÉtiquette : %d octets\nCVC en texte : %v\n%s\n",
-		imprimante, len(donnees), len(cvc) > 0, strings.Join(unique(cvc), ", "))
-	os.WriteFile(filepath.Join(ici, "etiquette_resume.txt"), []byte(resume), 0o644)
+	os.WriteFile(filepath.Join(ici, "etiquettes_resume.txt"), []byte(resume.String()), 0o644)
 
 	fmt.Println()
-	fmt.Println("Merci de m'envoyer le fichier : etiquette_capturee.spl")
+	fmt.Println("Merci de me renvoyer TOUS les fichiers etiquette_1.spl, etiquette_2.spl, …")
+	fmt.Println("(déposez-les dans le Drive partagé Sentinelle).")
 	attendreTouche("")
+}
+
+type capture struct {
+	chemin  string
+	donnees []byte
+}
+
+// Garde toutes les nouvelles étiquettes qui sortent : s'arrête au bout de `delai`, ou 8 s après la
+// dernière (quand plus rien ne sort).
+func capturerToutes(dejaLa map[string]bool, dossier string, delai time.Duration) []capture {
+	vus := map[string]bool{}
+	for k := range dejaLa {
+		vus[k] = true
+	}
+	var res []capture
+	fin := time.Now().Add(delai)
+	dernier := time.Now()
+	for time.Now().Before(fin) {
+		for _, f := range listerSpl() {
+			if vus[f] {
+				continue
+			}
+			vus[f] = true
+			donnees, err := lireAvecReessai(f)
+			if err != nil || len(donnees) == 0 {
+				continue
+			}
+			cible := filepath.Join(dossier, fmt.Sprintf("etiquette_%d.spl", len(res)+1))
+			if os.WriteFile(cible, donnees, 0o644) == nil {
+				res = append(res, capture{cible, donnees})
+				fmt.Println("   étiquette captée →", filepath.Base(cible))
+				dernier = time.Now()
+			}
+		}
+		if len(res) > 0 && time.Since(dernier) > 8*time.Second {
+			break
+		}
+		time.Sleep(150 * time.Millisecond)
+	}
+	return res
+}
+
+// Beaucoup de barres verticales fines (dans le ZPL, un ^BC/^B… ou une image très « barrée ») :
+// signe d'un code-barre. Simple indice, pour repérer la bonne étiquette.
+func ressembleCodeBarre(donnees []byte) bool {
+	t := texteLisible(donnees)
+	return strings.Contains(t, "^BC") || strings.Contains(t, "^BY") || strings.Contains(t, "^B3") || strings.Contains(t, "^BE")
 }
 
 // ---- Trouver l'imprimante Zebra ----
