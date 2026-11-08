@@ -37,15 +37,17 @@ public class MainActivity extends AppCompatActivity {
     static final String ONGLET_RECHERCHE = "recherche";
     static final String ONGLET_BIBLIOTHEQUE = "bibliotheque";
     static final String ONGLET_SUIVI = "suivi";
+    static final String ONGLET_PLANS = "plans";
 
     /** Le menu du bas : { onglet, libellé court, icône } dans l'ordre du menu du PC. */
     static final Object[][] MENU = {
             {ONGLET_SEMAINE, "Semaine", R.drawable.ic_nav_semaine},
             {ONGLET_CONTROLE, "Contrôle", R.drawable.ic_nav_controle},
+            {ONGLET_PLANS, "Plans", R.drawable.ic_nav_plans},
             {ONGLET_RECHERCHE, "Recherche", R.drawable.ic_nav_recherche},
-            {ONGLET_BIBLIOTHEQUE, "Bibliothèque", R.drawable.ic_nav_bibliotheque},
             {ONGLET_SUIVI, "Suivi", R.drawable.ic_nav_suivi},
     };
+    // La Bibliothèque des semaines (et le lien avec le PC) : l'icône du livre, en haut à droite.
 
     private SentinelleApp app;
     private Ui ui;
@@ -101,20 +103,43 @@ public class MainActivity extends AppCompatActivity {
         racine.addView(menu, ui.pleineLargeur());
         setContentView(racine);
 
-        menu.setSelectedItemId(idDe(onglet));
+        if (idDe(onglet) > 0) menu.setSelectedItemId(idDe(onglet));
+        else decocherMenu();
         menu.setOnItemSelectedListener(item -> {
+            menu.getMenu().setGroupCheckable(0, true, true);
             onglet = (String) MENU[item.getItemId() - 1][0];
             afficher();
             defilement.scrollTo(0, 0);
             return true;
         });
-        menu.setOnItemReselectedListener(item -> defilement.smoothScrollTo(0, 0));
+        menu.setOnItemReselectedListener(item -> {
+            String tag = (String) MENU[item.getItemId() - 1][0];
+            if (tag.equals(onglet)) {
+                defilement.smoothScrollTo(0, 0);
+                return;
+            }
+            // Retour depuis la Bibliothèque sur l'onglet qui était choisi.
+            menu.getMenu().setGroupCheckable(0, true, true);
+            item.setChecked(true);
+            onglet = tag;
+            afficher();
+            defilement.scrollTo(0, 0);
+        });
         afficher();
     }
 
+    /** Le numéro de l'onglet dans le menu du bas (-1 : pas dans le menu, ex. la Bibliothèque). */
     private static int idDe(String tag) {
         for (int i = 0; i < MENU.length; i++) if (MENU[i][0].equals(tag)) return i + 1;
-        return 1;
+        return -1;
+    }
+
+    /** Aucun onglet du bas en avant (la Bibliothèque est ouverte depuis la barre du haut). */
+    private void decocherMenu() {
+        android.view.Menu m = menu.getMenu();
+        m.setGroupCheckable(0, true, false);
+        for (int i = 0; i < m.size(); i++) m.getItem(i).setChecked(false);
+        m.setGroupCheckable(0, true, true);
     }
 
     /** Barre du haut à la charte, compacte : logo Laisné Industrie blanc, « Sentinelle », la version, Actualiser. */
@@ -136,6 +161,15 @@ public class MainActivity extends AppCompatActivity {
         titres.addView(ui.titre("Sentinelle", 17, 0xFFFFFFFF));
         titres.addView(ui.texte("Contrôle de coupe · " + version(), 11, false, 0xDDFFFFFF));
         barre.addView(titres, ui.poids(1));
+        android.widget.ImageButton biblio = new android.widget.ImageButton(this);
+        biblio.setImageResource(R.drawable.ic_nav_bibliotheque);
+        biblio.setColorFilter(0xFFFFFFFF);
+        biblio.setContentDescription("Bibliothèque des semaines et lien avec le PC");
+        android.util.TypedValue fondB = new android.util.TypedValue();
+        getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, fondB, true);
+        biblio.setBackgroundResource(fondB.resourceId);
+        biblio.setOnClickListener(v -> allerA(ONGLET_BIBLIOTHEQUE));
+        barre.addView(biblio, new LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)));
         android.widget.ImageButton actualiser = new android.widget.ImageButton(this);
         actualiser.setImageResource(R.drawable.ic_actualiser);
         actualiser.setColorFilter(0xFFFFFFFF);
@@ -207,6 +241,8 @@ public class MainActivity extends AppCompatActivity {
                 return PartageVue.Ecran.BIBLIOTHEQUE;
             case ONGLET_SUIVI:
                 return PartageVue.Ecran.SUIVI;
+            case ONGLET_PLANS:
+                return PartageVue.Ecran.PLANS;
             default:
                 return PartageVue.Ecran.SEMAINE;
         }
@@ -219,10 +255,13 @@ public class MainActivity extends AppCompatActivity {
 
     /** Va à un écran (comme un appui dans le menu du bas). */
     void allerA(String tag) {
-        if (tag.equals(onglet)) {
+        if (tag.equals(onglet) || idDe(tag) < 0) {
+            if (idDe(tag) < 0) decocherMenu();
+            onglet = tag;
             afficher();
             defilement.scrollTo(0, 0);
         } else {
+            menu.getMenu().setGroupCheckable(0, true, true);
             menu.setSelectedItemId(idDe(tag));
         }
     }

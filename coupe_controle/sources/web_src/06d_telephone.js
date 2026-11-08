@@ -158,7 +158,7 @@ function envoyerAuTelephone(forcer = false) {
     return lienTelephone.envoi;
   }
   // Rien n'a changé depuis le dernier envoi réussi : rien à faire (et surtout rien qui reste « en cours »).
-  const signature = signaturePartage([...bibliotheque.semaines.values()], typeof suiviPourPartage === "function" ? suiviPourPartage() : null);
+  const signature = signaturePartage([...bibliotheque.semaines.values()], typeof suiviPourPartage === "function" ? suiviPourPartage() : null, typeof retourPourPartage === "function" ? retourPourPartage() : null);
   if (!forcer && etat.signature === signature && !etat.erreur) return Promise.resolve({ ok: true, inchange: true });
   clearTimeout(lienTelephone.relance);
   const envoi = (async () => {
@@ -255,12 +255,13 @@ function htmlLienTelephone() {
     html += `<div class="lien-qr">
         ${qr ? `<div class="qr-cadre" id="qrLien" title="QR code du lien avec le téléphone">${qr}</div>` : ""}
         <div class="lien-qr-texte">
-          <div class="note">Dans l'appli du téléphone : Bibliothèque des semaines → <strong>« Scanner le QR code du PC »</strong>, et visez ce QR code (une seule fois).</div>
+          <div class="note">Dans l'appli du téléphone : l'icône du livre (en haut) → <strong>« Scanner le QR code du PC »</strong>, et visez ce QR code (une seule fois).</div>
           <div class="note">Ou tapez le code :</div>
           <div class="code-lien" id="codeLien">${echapper(etat.code)}</div>
         </div>
       </div>
       <div class="compte-rendu ${etat.erreur && !lienTelephone.envoi ? "erreur" : ""}" id="etatLien">${echapper(statut)}</div>
+      ${typeof htmlRetourTelephone === "function" ? htmlRetourTelephone() : ""}
       <div class="boutons-carte">
         <button type="button" id="btnEnvoyerLien" ${lienTelephone.envoi ? "disabled" : ""}>Envoyer maintenant</button>
         <button type="button" class="contour" id="btnNouveauCodeLien">Nouveau code</button>

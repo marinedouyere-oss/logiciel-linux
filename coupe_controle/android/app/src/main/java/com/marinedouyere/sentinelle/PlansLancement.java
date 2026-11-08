@@ -32,6 +32,14 @@ final class PlansLancement {
         boolean module;
         /** Modifié dans Sentinelle sur le PC (le .bkp, lui, ne change pas). */
         boolean modifie;
+        /** V6.3 : empreinte du plan d'origine (« #1a2b3c4d ») : la modification faite ici est vérifiée par le PC. */
+        String empreinte = "";
+        /** La modification en cours sur le PC ({ morceaux, ajouts }), ou null. */
+        JSONObject rt;
+        /** Pour chaque morceau montré : son morceau d'origine (« 5 »), une pièce posée (« a2 »), un reste de chute (« r5 »). */
+        final List<String> origine = new ArrayList<>();
+        /** Rang du plan dans le fichier (pour le retrouver). */
+        int rang;
         double L, W;
         final List<Morceau> morceaux = new ArrayList<>();
     }
@@ -102,6 +110,13 @@ final class PlansLancement {
         p.fois = j.optInt(7, 1);
         p.desc = j.optString(8, "");
         p.modifie = j.optInt(10, 0) == 1;
+        JSONObject extra = j.optJSONObject(11);
+        if (extra != null) {
+            p.empreinte = extra.optString("e", "");
+            p.rt = extra.optJSONObject("rt");
+            JSONArray o = extra.optJSONArray("o");
+            if (o != null) for (int i = 0; i < o.length(); i++) p.origine.add(o.isNull(i) ? "" : o.optString(i, ""));
+        }
         JSONArray rects = j.optJSONArray(9);
         if (rects != null)
             for (int i = 0; i < rects.length(); i++) {
@@ -125,6 +140,46 @@ final class PlansLancement {
                 p.morceaux.add(m);
             }
         return p;
+    }
+
+    /** Tous les plans d'un lancement, dans l'ordre du fichier. */
+    static List<Plan> tous(JSONObject plans) {
+        List<Plan> l = new ArrayList<>();
+        if (plans == null) return l;
+        JSONArray liste = plans.optJSONArray("plans");
+        JSONArray noms = plans.optJSONArray("noms");
+        if (liste == null) return l;
+        for (int i = 0; i < liste.length(); i++) {
+            JSONArray j = liste.optJSONArray(i);
+            if (j == null) continue;
+            Plan p = plan(j, noms);
+            p.rang = i;
+            l.add(p);
+        }
+        return l;
+    }
+
+    /** Le morceau d'origine d'un morceau montré (son numéro dans le plan d'origine), -1 si c'est une pièce posée. */
+    static int origineDe(Plan p, int i) {
+        if (p.origine.isEmpty()) return i; // plan pas modifié : les mêmes morceaux
+        String o = i < p.origine.size() ? p.origine.get(i) : "";
+        if (o.startsWith("r")) o = o.substring(1);
+        try {
+            return Integer.parseInt(o);
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    /** La pièce posée (rang dans les ajouts) d'un morceau montré, -1 sinon. */
+    static int ajoutDe(Plan p, int i) {
+        String o = i < p.origine.size() ? p.origine.get(i) : "";
+        if (!o.startsWith("a")) return -1;
+        try {
+            return Integer.parseInt(o.substring(1));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
     }
 
     static String dims(double L, double W) {

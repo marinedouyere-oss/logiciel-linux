@@ -228,11 +228,17 @@ final class Ui {
         return r;
     }
 
-    /** Filet fin entre deux lignes d'une liste. */
+    /** Filet fin entre deux lignes d'une liste (hauteur fixe : il ne doit jamais prendre la place libre). */
     View filet() {
+        return filet(0, 0);
+    }
+
+    View filet(int hautDp, int basDp) {
         View v = new View(c);
         v.setBackgroundColor(couleur(R.color.bordure));
-        v.setLayoutParams(new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1))));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.max(1, dp(1)));
+        lp.setMargins(0, dp(hautDp), 0, dp(basDp));
+        v.setLayoutParams(lp);
         return v;
     }
 

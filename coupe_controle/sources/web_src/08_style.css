@@ -601,3 +601,8 @@
     .sv-droite { justify-content: flex-start; }
   }
   .sv-badge { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--bordeaux); color: #fff; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; vertical-align: 2px; }
+  /* ---- V6.3 : demandes reçues du téléphone ---- */
+  .retour-telephone { margin: 8px 0 4px; padding: 8px 10px; border-radius: 8px; background: var(--gris-clair); }
+  .retour-ligne { font-size: 0.85rem; margin-top: 3px; line-height: 1.4; }
+  .retour-ligne.ok { color: var(--ok-texte); }
+  .retour-ligne.refus { color: var(--bordeaux); }

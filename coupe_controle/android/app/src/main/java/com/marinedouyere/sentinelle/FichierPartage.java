@@ -147,6 +147,8 @@ final class FichierPartage {
     String par;
     /** null : aucune extraction Diakonos lue sur le PC. */
     Suivi suivi;
+    /** V6.3 : les réponses du PC aux demandes du téléphone : identifiant → { ok ("true"/"false"), texte, quand }. */
+    final Map<String, String[]> reponsesPc = new HashMap<>();
     final List<String> colonnes = new ArrayList<>();
     /** Type de problème → { ce qu'il veut dire, que faire }. */
     final Map<String, String[]> explications = new HashMap<>();
@@ -230,6 +232,14 @@ final class FichierPartage {
         }
         Collections.sort(f.semaines, (a, b) -> Integer.compare(b.annee * 100 + b.semaine, a.annee * 100 + a.semaine));
         f.suivi = suivi(racine.optJSONObject("suiviProduction"));
+        JSONObject retour = racine.optJSONObject("retourTelephone");
+        JSONObject traitees = retour == null ? null : retour.optJSONObject("traitees");
+        if (traitees != null)
+            for (java.util.Iterator<String> it = traitees.keys(); it.hasNext(); ) {
+                String id = it.next();
+                JSONObject t = traitees.optJSONObject(id);
+                if (t != null) f.reponsesPc.put(id, new String[] {String.valueOf(t.optBoolean("ok")), texte(t, "texte"), texte(t, "quand")});
+            }
         return f;
     }
 

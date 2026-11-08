@@ -148,7 +148,102 @@ final class LienPc {
 
     /** Le manifeste, puis chaque partie, mises bout à bout (paquet encore chiffré). */
     static Recu telecharger(String code) throws IOException, GeneralSecurityException {
-        String api = ADRESSE + "/api/partage?canal=" + canal(code);
+        return telechargerCanal(canal(code));
+    }
+
+    // ---- V6.3 : le chemin retour, du téléphone vers le PC (plans modifiés, problèmes validés OK) ----
+
+    /** Où le téléphone dépose ses demandes (tiré du code, comme sur le PC). */
+    static String canalRetour(String code) throws GeneralSecurityException {
+        byte[] e = MessageDigest.getInstance("SHA-256").digest(("sentinelle-retour:" + normaliser(code)).getBytes(StandardCharsets.UTF_8));
+        return hex(e).substring(0, 32);
+    }
+
+    /** Jeton d'écriture du canal retour (seuls les téléphones qui ont le code peuvent y écrire). */
+    static String jetonRetour(String code) throws GeneralSecurityException {
+        return hex(MessageDigest.getInstance("SHA-256").digest(("sentinelle-retour-ecriture:" + normaliser(code)).getBytes(StandardCharsets.UTF_8)));
+    }
+
+    /** « SNT1 » + vecteur (12 octets) + données chiffrées (AES-GCM) : le même paquet que celui du PC. */
+    static byte[] chiffrer(byte[] clair, byte[] cle) throws GeneralSecurityException {
+        byte[] iv = new byte[12];
+        new java.security.SecureRandom().nextBytes(iv);
+        Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
+        c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(cle, "AES"), new GCMParameterSpec(128, iv));
+        byte[] chiffre = c.doFinal(clair);
+        byte[] paquet = new byte[16 + chiffre.length];
+        paquet[0] = 'S';
+        paquet[1] = 'N';
+        paquet[2] = 'T';
+        paquet[3] = '1';
+        System.arraycopy(iv, 0, paquet, 4, 12);
+        System.arraycopy(chiffre, 0, paquet, 16, chiffre.length);
+        return paquet;
+    }
+
+    private static String envoyer(String adresse, String methode, String jeton, String type, byte[] corps) throws IOException {
+        HttpURLConnection c = (HttpURLConnection) new URL(adresse).openConnection();
+        c.setConnectTimeout(15000);
+        c.setReadTimeout(60000);
+        c.setUseCaches(false);
+        c.setDoOutput(true);
+        c.setRequestMethod(methode);
+        c.setRequestProperty("Content-Type", type);
+        c.setRequestProperty("X-Sentinelle-Jeton", jeton);
+        try {
+            try (java.io.OutputStream out = c.getOutputStream()) {
+                out.write(corps);
+            }
+            int statut = c.getResponseCode();
+            InputStream in = statut < 400 ? c.getInputStream() : c.getErrorStream();
+            String texte = "";
+            if (in != null)
+                try (InputStream x = in) {
+                    ByteArrayOutputStream b = new ByteArrayOutputStream();
+                    byte[] t = new byte[8192];
+                    for (int n; (n = x.read(t)) > 0; ) b.write(t, 0, n);
+                    texte = new String(b.toByteArray(), StandardCharsets.UTF_8);
+                }
+            if (statut >= 300) {
+                String detail = "";
+                try {
+                    detail = new JSONObject(texte).optString("erreur", "");
+                } catch (JSONException e) {
+                    detail = "";
+                }
+                throw new IOException("le site a répondu " + statut + (detail.isEmpty() ? "" : " (" + detail + ")"));
+            }
+            return texte;
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    /** Dépose un paquet chiffré dans un canal : les parties, puis le manifeste (le site garde la dernière version). */
+    static void deposer(String canal, String jeton, byte[] paquet) throws IOException {
+        String version = Long.toString(System.currentTimeMillis(), 36) + String.format(Locale.ROOT, "%08x", new java.security.SecureRandom().nextInt());
+        int taille = 4 * 1024 * 1024;
+        int parties = Math.max(1, (paquet.length + taille - 1) / taille);
+        String api = ADRESSE + "/api/partage?canal=" + canal;
+        for (int i = 0; i < parties; i++) {
+            byte[] morceau = java.util.Arrays.copyOfRange(paquet, i * taille, Math.min(paquet.length, (i + 1) * taille));
+            envoyer(api + "&version=" + version + "&partie=" + i, "PUT", jeton, "application/octet-stream", morceau);
+        }
+        JSONObject m = new JSONObject();
+        try {
+            m.put("version", version);
+            m.put("parties", parties);
+            m.put("taille", paquet.length);
+            m.put("genere", new java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.ROOT).format(new java.util.Date()));
+        } catch (JSONException e) {
+            throw new IOException(e);
+        }
+        envoyer(api, "POST", jeton, "application/json", m.toString().getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** Le manifeste d'un canal, puis chaque partie, mises bout à bout (paquet encore chiffré). */
+    static Recu telechargerCanal(String canal) throws IOException {
+        String api = ADRESSE + "/api/partage?canal=" + canal;
         JSONObject m;
         try {
             m = new JSONObject(new String(lire(api, 1 << 16), StandardCharsets.UTF_8));

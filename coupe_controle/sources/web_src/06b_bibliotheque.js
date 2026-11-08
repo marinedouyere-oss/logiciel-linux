@@ -467,11 +467,14 @@ function contenuFichierPartage() {
     semaines,
     // V6.2 : avancement des lancements d'après l'extraction Diakonos (onglet Suivi de production).
     suiviProduction: typeof suiviPourPartage === "function" ? suiviPourPartage() : null,
+    // V6.3 : les demandes du téléphone reprises par ce PC (le téléphone les retire de sa file d'attente).
+    retourTelephone: typeof retourPourPartage === "function" ? retourPourPartage() : null,
   };
 }
 
-// Signature du fichier partagé : les semaines et le suivi de production.
-const signaturePartage = (semaines, suivi) => `${signatureDesSemaines(semaines)}|suivi:${typeof signatureSuivi === "function" ? signatureSuivi(suivi) : ""}`;
+// Signature du fichier partagé : les semaines, le suivi de production et les réponses au téléphone.
+const signaturePartage = (semaines, suivi, retour = null) =>
+  `${signatureDesSemaines(semaines)}|suivi:${typeof signatureSuivi === "function" ? signatureSuivi(suivi) : ""}|retour:${retour && retour.traitees ? Object.keys(retour.traitees).sort().join(",") : ""}`;
 
 async function ecrireFichierPartage() {
   const octets = await compresserJson(contenuFichierPartage());
@@ -554,7 +557,8 @@ function synchroniserBibliotheque(interactif) {
           distantes = contenu.semaines;
           // Suivi de production écrit par un autre PC : gardé s'il vient d'une extraction plus récente.
           if (typeof SUIVI !== "undefined") SUIVI.recevoir(contenu.suiviProduction);
-          signatureFichier = signaturePartage(distantes, contenu.suiviProduction);
+          if (typeof recevoirRetourDistant === "function") recevoirRetourDistant(contenu.retourTelephone);
+          signatureFichier = signaturePartage(distantes, contenu.suiviProduction, contenu.retourTelephone);
         }
       } else distantes = await semainesDesAnciensFichiers();
       for (const d of distantes || []) {
@@ -566,7 +570,7 @@ function synchroniserBibliotheque(interactif) {
           r.recues++;
         }
       }
-      const signatureLocale = signaturePartage([...bibliotheque.semaines.values()], typeof suiviPourPartage === "function" ? suiviPourPartage() : null);
+      const signatureLocale = signaturePartage([...bibliotheque.semaines.values()], typeof suiviPourPartage === "function" ? suiviPourPartage() : null, typeof retourPourPartage === "function" ? retourPourPartage() : null);
       if (!fh || signatureLocale !== signatureFichier) {
         await enregistrerFichierConnu({ ...(await ecrireFichierPartage()), signature: signatureLocale });
         r.ecrit = true;

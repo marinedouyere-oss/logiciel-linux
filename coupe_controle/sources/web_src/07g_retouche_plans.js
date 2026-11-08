@@ -12,6 +12,13 @@ let retouchesEnMemoire = null; // sans stockage du navigateur : le temps de la p
 const idPlanRetouche = (lancement, plan) => `${lancement}|${plan.module ? `module ${plan.nom}` : `${plan.matiere}|Pdc ${plan.pdc}`}`;
 const empreintePlan = (plan) => `${Math.round(plan.L)}x${Math.round(plan.W)}:${plan.rects.map((r) => (r.chute ? "-" : r.cle || r.nom || "?")).join(",")}`;
 const retoucheVide = (rt) => !rt || (!Object.keys(rt.morceaux || {}).length && !(rt.ajouts || []).length);
+// Empreinte courte (« #1a2b3c4d ») : celle qui part au téléphone et revient avec une modification faite là-bas.
+function empreinteCourte(texte) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < texte.length; i++) h = Math.imul(h ^ texte.charCodeAt(i), 0x01000193) >>> 0;
+  return h.toString(16).padStart(8, "0");
+}
+const memeEmpreinte = (gardee, plan) => gardee === empreintePlan(plan) || gardee === `#${empreinteCourte(empreintePlan(plan))}`;
 
 function lireRetouchesPlans() {
   if (retouchesEnMemoire) return retouchesEnMemoire;
@@ -35,7 +42,7 @@ function ecrireRetouchesPlans(t) {
 // La modification d'un plan (null : plan d'origine).
 function retoucheDuPlan(lancement, plan) {
   const rt = lireRetouchesPlans()[idPlanRetouche(lancement, plan)];
-  return rt && rt.empreinte === empreintePlan(plan) && !retoucheVide(rt) ? rt : null;
+  return rt && memeEmpreinte(rt.empreinte, plan) && !retoucheVide(rt) ? rt : null;
 }
 
 function enregistrerRetouche(lancement, plan, rt) {

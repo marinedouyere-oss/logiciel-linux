@@ -2970,6 +2970,8 @@ document.querySelectorAll("img[data-logo]").forEach((img) => (img.src = img.data
   afficher();
   // Suivi de production : les extractions gardées, puis les nouvelles du dossier (sans attendre).
   SUIVI.demarrer().catch(() => {});
+  // V6.3 : les demandes du téléphone (plans modifiés, problèmes validés OK), lues toutes seules.
+  demarrerRetourTelephone();
 })();
 
 // N'a d'effet que servi en http(s)/localhost (ex. server/lancer_sentinelle.bat).

@@ -439,7 +439,15 @@ function plansPourTelephone(donnees, cles) {
         if (etat) x.push(etat, nom((v.marques && v.marques.get(idx)) || ""));
         return x;
       });
-      plans.push([plan.matiere, plan.pdc, plan.module ? 1 : 0, plan.nom, plan.sorte, r1(plan.L), r1(plan.W), plan.fois, m ? m.desc : "", morceaux, ...(v.rt ? [1] : [])]);
+      // V6.3 : de quoi modifier le plan sur le téléphone (la modification revient au PC) : empreinte du plan d'origine,
+      // modification en cours, et pour chaque morceau montré son morceau d'origine (n°, « a2 » pièce posée, « r5 » reste
+      // de la chute n°5).
+      const extra = {
+        e: typeof empreintePlan === "function" ? `#${empreinteCourte(empreintePlan(plan))}` : "",
+        rt: v.rt ? { morceaux: v.rt.morceaux || {}, ajouts: v.rt.ajouts || [] } : null,
+        o: v.origine ? v.origine.map((o) => (!o ? null : o.ajout !== undefined ? `a${o.ajout}` : o.reste ? `r${o.idx}` : o.idx)) : null,
+      };
+      plans.push([plan.matiere, plan.pdc, plan.module ? 1 : 0, plan.nom, plan.sorte, r1(plan.L), r1(plan.W), plan.fois, m ? m.desc : "", morceaux, v.rt ? 1 : 0, extra]);
     }
     return indexPlan.get(plan).i;
   };

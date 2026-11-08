@@ -121,7 +121,20 @@ public class PartageTest {
     }
 
     private static void capturer(MainActivity a, File sortie) throws Exception {
-        View racine = a.getWindow().getDecorView();
+        capturerRacine(a.getWindow().getDecorView(), sortie);
+    }
+
+    /** Une fenêtre (le plan en grand) : sa barre du haut, puis tout son contenu. */
+    private static void capturerFenetre(android.app.Dialog d, String nom) throws Exception {
+        String captures = System.getProperty("sentinelle.captures", "");
+        if (captures.isEmpty()) return;
+        View v = d.getWindow().getDecorView();
+        v.measure(View.MeasureSpec.makeMeasureSpec(1233, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(2670, View.MeasureSpec.EXACTLY));
+        v.layout(0, 0, 1233, 2670);
+        capturerRacine(v, new File(captures, nom));
+    }
+
+    private static void capturerRacine(View racine, File sortie) throws Exception {
         ScrollView defilement = chercherVue(racine, ScrollView.class);
         View contenu = defilement.getChildAt(0);
         int largeur = racine.getWidth();
@@ -171,7 +184,14 @@ public class PartageTest {
 
     private static void onglet(MainActivity a, String tag) {
         BottomNavigationView menu = chercherVue(a.getWindow().getDecorView(), BottomNavigationView.class);
-        for (int i = 0; i < MainActivity.MENU.length; i++) if (tag.equals(MainActivity.MENU[i][0])) menu.setSelectedItemId(menu.getMenu().getItem(i).getItemId());
+        boolean dansLeMenu = false;
+        for (int i = 0; i < MainActivity.MENU.length; i++)
+            if (tag.equals(MainActivity.MENU[i][0])) {
+                menu.setSelectedItemId(menu.getMenu().getItem(i).getItemId());
+                dansLeMenu = true;
+            }
+        // La Bibliothèque : l'icône du livre, en haut.
+        if (!dansLeMenu) a.allerA(tag);
         ShadowLooper.idleMainLooper();
     }
 
@@ -196,7 +216,7 @@ public class PartageTest {
         BottomNavigationView menu = chercherVue(a.getWindow().getDecorView(), BottomNavigationView.class);
         assertNotNull(menu);
         assertEquals(5, menu.getMenu().size());
-        String[] attendus = {"Semaine", "Contrôle", "Recherche", "Bibliothèque", "Suivi"};
+        String[] attendus = {"Semaine", "Contrôle", "Plans", "Recherche", "Suivi"};
         for (int i = 0; i < attendus.length; i++) {
             assertEquals(attendus[i], String.valueOf(menu.getMenu().getItem(i).getTitle()));
             assertNotNull(menu.getMenu().getItem(i).getIcon());
@@ -592,5 +612,157 @@ public class PartageTest {
                 if (t != null) return t;
             }
         return null;
+    }
+
+    /** V6.3 : les demandes pour le PC, chiffrées comme le fichier du PC ; les réponses du PC les retirent de la file. */
+    @Test
+    public void demandesPourLePc() throws Exception {
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().get();
+        DemandesPc d = new DemandesPc(a);
+        org.json.JSONObject v = new org.json.JSONObject().put("type", "validation").put("titre", "Essai").put("lancement", "LAN264801START").put("cle", "CVC1").put("probleme", "Essai");
+        org.json.JSONObject x = d.ajouter(v);
+        assertTrue(x.optString("id").startsWith(d.appareil() + "-"));
+        assertTrue(d.validationEnAttente("LAN264801START", "CVC1", "Essai"));
+        assertTrue(d.aEnvoyer());
+        // Le paquet : « SNT1 » + vecteur + contenu chiffré, relu avec la même clé.
+        byte[] cle = LienPc.cle("TEST-TEST-TEST-TEST");
+        byte[] paquet = LienPc.chiffrer(d.contenu(null), cle);
+        assertEquals('S', paquet[0]);
+        org.json.JSONArray autres = DemandesPc.autres(LienPc.dechiffrer(paquet, cle), "autre-telephone", null);
+        assertEquals("les demandes d'un autre téléphone sont gardées", 1, autres.length());
+        assertEquals(0, DemandesPc.autres(LienPc.dechiffrer(paquet, cle), d.appareil(), null).length());
+        assertEquals("b6f360a2db7496fba521876907f782da", LienPc.canal("TEST-TEST-TEST-TEST"));
+        assertEquals(32, LienPc.canalRetour("TEST-TEST-TEST-TEST").length());
+        assertFalse(LienPc.canalRetour("TEST-TEST-TEST-TEST").equals(LienPc.canal("TEST-TEST-TEST-TEST")));
+        // Le PC répond : la demande sort de la file et va dans les résultats.
+        java.util.Map<String, String[]> rep = new java.util.HashMap<>();
+        rep.put(x.optString("id"), new String[] {"true", "Validé OK : Essai — CVC1", "2026-11-08T08:00:00Z"});
+        assertEquals(1, d.reponses(rep));
+        assertTrue(d.enAttente().isEmpty());
+        assertEquals("Validé OK : Essai — CVC1", d.resultats().get(0).optString("texte"));
+    }
+
+    private static androidx.appcompat.app.AlertDialog dernierAlerte() {
+        android.app.Dialog dl = org.robolectric.shadows.ShadowDialog.getLatestDialog();
+        return dl instanceof androidx.appcompat.app.AlertDialog ? (androidx.appcompat.app.AlertDialog) dl : null;
+    }
+
+    /** V6.3 : l'écran Plans de coupe sur le vrai fichier du PC ; un plan modifié et un problème validé OK partent au PC. */
+    @Test
+    public void plansModifiesEtValidationsPourLePc() throws Exception {
+        String chemin = System.getProperty("sentinelle.partage_retour", "");
+        assumeTrue(!chemin.isEmpty());
+        byte[] json = java.nio.file.Files.readAllBytes(new File(chemin).toPath());
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
+        ShadowLooper.idleMainLooper();
+        // Relié au PC (code de l'essai), données déjà lues.
+        a.getSharedPreferences("sentinelle_partage", android.content.Context.MODE_PRIVATE).edit().putString("code_lien", "TEST-TEST-TEST-TEST").commit();
+        FichierPartage f = FichierPartage.lire(new ByteArrayInputStream(json));
+        a.partage().afficherDonnees(f, "essai");
+        onglet(a, MainActivity.ONGLET_PLANS);
+        String texte = ecran(a);
+        assertTrue(texte, texte.contains("Plans de coupe"));
+        assertTrue(texte, texte.contains("LAN264801START"));
+        assertTrue(texte, texte.contains("SAG10HYBR"));
+        capturerSiDemande(a, "appli_plans.png");
+        // Ouvrir la matière SAG10HYBR, puis le plan Pdc 12.
+        View matiere = vueAvecTexte(a.getWindow().getDecorView(), "SAG10HYBR");
+        while (matiere != null && !matiere.isClickable()) matiere = (View) matiere.getParent();
+        matiere.performClick();
+        ShadowLooper.idleMainLooper();
+        assertTrue(ecran(a).contains("Pdc 12 · SAG10HYBR"));
+        EcranPlans.Source src = a.partage().plans().sources().get(0);
+        PlansLancement.Plan plan = null;
+        for (PlansLancement.Plan p : PlansLancement.tous(src.lancement.plans)) if (!p.module && p.pdc == 12 && "SAG10HYBR".equals(p.matiere)) plan = p;
+        assertNotNull(plan);
+        assertTrue("empreinte du plan reçue du PC", plan.empreinte.matches("#[0-9a-f]{8}"));
+        View bloc = vueAvecTexte(a.getWindow().getDecorView(), "Pdc 12 · SAG10HYBR");
+        while (bloc != null && !bloc.isClickable()) bloc = (View) bloc.getParent();
+        bloc.performClick();
+        ShadowLooper.idleMainLooper();
+        android.app.Dialog fenetre = org.robolectric.shadows.ShadowDialog.getLatestDialog();
+        assertNotNull(fenetre);
+        View dans = fenetre.getWindow().getDecorView();
+        capturerFenetre(fenetre, "appli_plan_grand.png");
+        assertNotNull("Modifier le plan", bouton(dans, "Modifier le plan"));
+        assertNotNull("Imprimer le plan (PDF)", bouton(dans, "Imprimer le plan"));
+        bouton(dans, "Modifier le plan").performClick();
+        ShadowLooper.idleMainLooper();
+        dans = fenetre.getWindow().getDecorView();
+        // Toucher « module T73 » (la 2e pièce du plan), puis « Retirer du plan ».
+        View piece = vueAvecTexte(dans, "module T73");
+        while (piece != null && !piece.isClickable()) piece = (View) piece.getParent();
+        assertNotNull(piece);
+        piece.performClick();
+        ShadowLooper.idleMainLooper();
+        androidx.appcompat.app.AlertDialog choix = dernierAlerte();
+        assertNotNull(choix);
+        choix.getButton(android.content.DialogInterface.BUTTON_NEUTRAL).performClick();
+        ShadowLooper.idleMainLooper();
+        dans = fenetre.getWindow().getDecorView();
+        StringBuilder sb = new StringBuilder();
+        textes(dans, sb);
+        assertTrue(sb.toString(), sb.toString().contains("Changements à envoyer au PC"));
+        assertTrue(sb.toString(), sb.toString().contains("module T73") && sb.toString().contains("retirée du plan — ne pas la couper"));
+        capturerFenetre(fenetre, "appli_plan_modifie.png");
+        bouton(dans, "Envoyer au PC").performClick();
+        ShadowLooper.idleMainLooper();
+        List<org.json.JSONObject> attente = a.partage().demandes().enAttente();
+        assertEquals(1, attente.size());
+        org.json.JSONObject d = attente.get(0);
+        assertEquals("plan", d.optString("type"));
+        assertEquals("LAN264801START", d.optString("lancement"));
+        assertEquals(plan.empreinte, d.optString("empreinte"));
+        assertEquals(12, d.optInt("pdc"));
+        assertTrue(d.optJSONObject("rt").optJSONObject("morceaux").optJSONObject("1").optBoolean("retire"));
+        // L'écran dit que la modification attend le PC.
+        assertTrue(ecran(a), ecran(a).contains("envoyée(s) au PC"));
+
+        // Valider OK un problème (Contrôler la coupe, lancement LAN264801START).
+        onglet(a, MainActivity.ONGLET_CONTROLE);
+        View tete = vueAvecTexte(a.getWindow().getDecorView(), "LAN264801START.xlsx");
+        while (tete != null && !tete.isClickable()) tete = (View) tete.getParent();
+        assertNotNull(tete);
+        tete.performClick();
+        ShadowLooper.idleMainLooper();
+        com.google.android.material.button.MaterialButton valider = bouton(a.getWindow().getDecorView(), "✔ Valider OK");
+        assertNotNull("bouton Valider OK", valider);
+        valider.performClick();
+        ShadowLooper.idleMainLooper();
+        dernierAlerte().getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick();
+        ShadowLooper.idleMainLooper();
+        assertTrue(a.partage().demandes().validationEnAttente("LAN264801START", "CVC26110064003", "Essai téléphone"));
+        assertTrue(ecran(a), ecran(a).contains("Validation OK envoyée au PC"));
+        capturerSiDemande(a, "appli_valider.png");
+        // Une validation de plus pour l'essai avec le PC, puis le paquet chiffré que le PC lira.
+        a.partage().demandes().ajouter(new org.json.JSONObject().put("type", "validation").put("titre", "Essai Android").put("lancement", "LAN264801START").put("cle", "CVC26110064004").put("probleme", "Essai Android"));
+        String sortie = System.getProperty("sentinelle.retour_bin", "");
+        if (!sortie.isEmpty()) {
+            byte[] paquet = LienPc.chiffrer(a.partage().demandes().contenu(null), LienPc.cle("TEST-TEST-TEST-TEST"));
+            try (OutputStream out = new FileOutputStream(sortie)) {
+                out.write(paquet);
+            }
+        }
+        // Bibliothèque : « Envoyé au PC ».
+        onglet(a, MainActivity.ONGLET_BIBLIOTHEQUE);
+        assertTrue(ecran(a), ecran(a).contains("Envoyé au PC"));
+        capturerSiDemande(a, "appli_envois.png");
+    }
+
+    /** V6.3, sur le vrai site : l'appli reliée au PC y dépose une demande (chiffrée) ; le PC la relira (test PC). */
+    @Test
+    public void retourSurLeVraiSite() throws Exception {
+        String code = System.getProperty("sentinelle.lien_code", "");
+        assumeTrue(!code.isEmpty());
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
+        ShadowLooper.idleMainLooper();
+        a.partage().relier(code);
+        attendre(() -> ((SentinelleApp) a.getApplication()).partage != null);
+        org.json.JSONObject d = new org.json.JSONObject().put("type", "validation").put("titre", "Essai vrai site").put("lancement", "LAN-ESSAI").put("cle", "CVC00000000001").put("probleme", "Essai vrai site");
+        a.partage().envoyerDemande(d);
+        attendre(() -> !a.partage().demandes().aEnvoyer() || a.partage().demandes().erreur() != null);
+        assertEquals("envoi au PC sans erreur", null, a.partage().demandes().erreur());
+        assertFalse(a.partage().demandes().aEnvoyer());
+        System.out.println("DEMANDE DEPOSEE SUR LE SITE : " + a.partage().demandes().enAttente().get(0).optString("id"));
     }
 }

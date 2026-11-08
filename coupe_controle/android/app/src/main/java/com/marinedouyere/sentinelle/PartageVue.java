@@ -26,6 +26,8 @@ import com.google.android.material.button.MaterialButton;
 import com.google.android.material.card.MaterialCardView;
 import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
+import org.json.JSONObject;
+
 import java.io.InputStream;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -44,7 +46,7 @@ import java.util.TimeZone;
  */
 final class PartageVue {
 
-    enum Ecran { SEMAINE, CONTROLE, RECHERCHE, BIBLIOTHEQUE, SUIVI }
+    enum Ecran { SEMAINE, CONTROLE, RECHERCHE, BIBLIOTHEQUE, SUIVI, PLANS }
 
     private static final String PREFERENCES = "sentinelle_partage";
     private static final String CLE_URI = "uri";
@@ -80,11 +82,91 @@ final class PartageVue {
     private String codeDeLaCle;
     private byte[] cleDuCode;
 
+    /** V6.3 : ce que le téléphone demande au PC (plans modifiés, problèmes validés OK), en attente de réponse. */
+    private final DemandesPc demandes;
+    private final EcranPlans plans;
+
     PartageVue(MainActivity activite, Ui ui, SentinelleApp app) {
         this.activite = activite;
         this.ui = ui;
         this.app = app;
         racine = ui.colonne();
+        demandes = new DemandesPc(activite);
+        plans = new EcranPlans(activite, ui, new EcranPlans.Hote() {
+            @Override
+            public FichierPartage donnees() {
+                return donnees;
+            }
+
+            @Override
+            public void reconstruire() {
+                construire();
+            }
+
+            @Override
+            public boolean relie() {
+                return codeLien() != null;
+            }
+
+            @Override
+            public DemandesPc demandes() {
+                return demandes;
+            }
+
+            @Override
+            public void envoyerDemande(JSONObject d) {
+                PartageVue.this.envoyerDemande(d);
+            }
+        });
+    }
+
+    DemandesPc demandes() {
+        return demandes;
+    }
+
+    EcranPlans plans() {
+        return plans;
+    }
+
+    /** Une demande pour le PC : en file d'attente, puis envoyée (chiffrée) ; le PC répond dans le fichier partagé. */
+    void envoyerDemande(JSONObject d) {
+        try {
+            demandes.ajouter(d);
+        } catch (org.json.JSONException e) {
+            return;
+        }
+        android.widget.Toast.makeText(activite, "Envoyé au PC : il le reprendra tout seul.", android.widget.Toast.LENGTH_LONG).show();
+        envoyerAuPc();
+        construire();
+    }
+
+    /** Dépose les demandes en attente sur le site (canal retour), sans effacer celles d'un autre téléphone. */
+    void envoyerAuPc() {
+        final String code = codeLien();
+        if (code == null || demandes.enAttente().isEmpty()) return;
+        final java.util.Map<String, String[]> reponses = donnees != null ? new java.util.HashMap<>(donnees.reponsesPc) : null;
+        app.annexe.execute(() -> {
+            try {
+                byte[] cle = cleDe(code);
+                String canal = LienPc.canalRetour(code);
+                org.json.JSONArray autres = new org.json.JSONArray();
+                try {
+                    LienPc.Recu r = LienPc.telechargerCanal(canal);
+                    autres = DemandesPc.autres(LienPc.dechiffrer(r.paquet, cle), demandes.appareil(), reponses);
+                } catch (LienPc.RienPourCeCode e) {
+                    // rien encore sur le site
+                } catch (Exception e) {
+                    // paquet illisible : il est remplacé
+                }
+                java.util.Set<String> ids = new java.util.HashSet<>();
+                for (JSONObject d : demandes.enAttente()) ids.add(d.optString("id"));
+                LienPc.deposer(canal, LienPc.jetonRetour(code), LienPc.chiffrer(demandes.contenu(autres), cle));
+                demandes.envoyees(ids);
+            } catch (Exception e) {
+                demandes.erreurEnvoi(e.getMessage() != null ? e.getMessage() : e.toString());
+            }
+            principal.post(this::construire);
+        });
     }
 
     View vue(Ecran e) {
@@ -256,7 +338,12 @@ final class PartageVue {
                     app.partage = resultat;
                 }
                 construire();
-                if (resultat != null) activite.partageCharge();
+                if (resultat != null) {
+                    // Les réponses du PC : les demandes reprises sortent de la file ; les autres repartent si besoin.
+                    if (demandes.reponses(resultat.reponsesPc) > 0) construire();
+                    if (demandes.aEnvoyer() || demandes.erreur() != null) envoyerAuPc();
+                    activite.partageCharge();
+                }
             });
         });
     }
@@ -296,6 +383,9 @@ final class PartageVue {
                 break;
             case SUIVI:
                 ecranSuivi();
+                break;
+            case PLANS:
+                ecranPlans();
                 break;
             default:
                 ecranSemaine();
@@ -475,7 +565,7 @@ final class PartageVue {
         corps.addView(ui.note("Touchez un lancement pour voir son contrôle."));
         int numero = 1;
         for (FichierPartage.Lancement l : s.lancements) {
-            corps.addView(ui.filet(), ui.marges(8, 0));
+            corps.addView(ui.filet(8, 0));
             LinearLayout droite = ui.colonne();
             droite.setGravity(Gravity.END);
             droite.addView(ui.texte(nombre(piecesDe(l)) + " pièces", 13, true, Ui.NOIR));
@@ -703,6 +793,8 @@ final class PartageVue {
     private void ecranBibliotheque() {
         entete("Outils", "Bibliothèque des semaines", "Les semaines gardées par Sentinelle sur le PC, dans le fichier partagé.");
         racine.addView(carteFichier());
+        View envois = carteEnvoisPc();
+        if (envois != null) racine.addView(envois);
         if (donnees == null || donnees.semaines.isEmpty()) {
             if (donnees != null) racine.addView(ui.texte("Le fichier ne contient encore aucune semaine.", 14, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 6));
             return;
@@ -719,7 +811,7 @@ final class PartageVue {
                 noms.add(l.nom);
             }
             String quand = dateLisible(s.maj);
-            corps.addView(ui.filet(), ui.marges(8, 0));
+            corps.addView(ui.filet(8, 0));
             LinearLayout r = ui.ligne(null, titreSemaine(s), s.lancements.size() + " lancement(s) · " + nombre(pieces) + " pièces" + (quand.isEmpty() ? "" : " · mis à jour le " + quand),
                     null, "›", v -> {
                         semaineChoisie = s.id;
@@ -732,6 +824,37 @@ final class PartageVue {
             corps.addView(r);
         }
         racine.addView(carte);
+    }
+
+    /** V6.3 : ce qui est parti au PC (plans modifiés, validations) : en attente de sa réponse, et ses dernières réponses. */
+    private View carteEnvoisPc() {
+        List<JSONObject> attente = demandes.enAttente();
+        List<JSONObject> res = demandes.resultats();
+        if (attente.isEmpty() && res.isEmpty()) return null;
+        MaterialCardView carte = ui.carte();
+        LinearLayout corps = corpsDe(carte);
+        corps.addView(ui.titreCarte("Envoyé au PC"));
+        corps.addView(ui.note("Plans modifiés et problèmes validés OK depuis le téléphone : le PC les reprend tout seul et répond ici."));
+        for (JSONObject d : attente) {
+            corps.addView(ui.filet(6, 0));
+            String etat = d.optBoolean("envoyee") ? "envoyé, pas encore repris par le PC" : "pas encore envoyé";
+            corps.addView(ui.ligne(ui.texte("⏳", 14, false, ui.couleur(R.color.attention_texte)), d.optString("titre"), d.optString("lancement") + " · " + etat, null, null, null));
+        }
+        int n = 0;
+        for (JSONObject r : res) {
+            if (n++ >= 5) break;
+            corps.addView(ui.filet(6, 0));
+            boolean ok = r.optBoolean("ok");
+            corps.addView(ui.ligne(ui.texte(ok ? "✔" : "⚠", 14, true, ok ? ui.couleur(R.color.ok_texte) : ui.couleur(R.color.attention_texte)), r.optString("titre"),
+                    (ok ? "Repris par le PC : " : "Pas repris : ") + r.optString("texte"), null, null, null));
+        }
+        if (demandes.erreur() != null && !attente.isEmpty()) {
+            corps.addView(ui.bandeau("⚠ Envoi au PC : " + demandes.erreur(), ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)), ui.marges(6, 4));
+            MaterialButton renvoyer = ui.bouton("Renvoyer au PC");
+            renvoyer.setOnClickListener(v -> envoyerAuPc());
+            corps.addView(renvoyer, ui.marges(4, 0));
+        }
+        return carte;
     }
 
     private LinearLayout corpsDe(MaterialCardView carte) {
@@ -836,6 +959,14 @@ final class PartageVue {
         } catch (java.text.ParseException e) {
             return "";
         }
+    }
+
+    // ---- Plans de coupe (V6.3) : comme l'onglet du PC ; un plan modifié ici part au PC ----
+
+    private void ecranPlans() {
+        entete("Outils", "Plans de coupe", "Les plans de l'optimisation Cut Rite, lus par le PC dans la sauvegarde .bkp, avec les mêmes numéros « Pdc ». Un plan modifié ici part au PC.");
+        if (sansDonnees()) return;
+        plans.construire(racine);
     }
 
     // ---- Suivi de production (V6.2) : comme l'onglet du PC, lu dans le fichier partagé ----
@@ -1007,7 +1138,7 @@ final class PartageVue {
         pct.setPadding(ui.dp(10), 0, 0, 0);
         tete.addView(pct);
         corps.addView(tete, ui.marges(6, 4));
-        corps.addView(ui.filet(), ui.marges(4, 0));
+        corps.addView(ui.filet(4, 0));
         for (FichierPartage.LancementSuivi l : sem.lancements) corps.addView(blocLancementSuivi(l, s));
         return carte;
     }
@@ -1338,7 +1469,7 @@ final class PartageVue {
         String quand = dateLisible(s.maj);
         if (!quand.isEmpty()) corps.addView(ui.note("Mise à jour le " + quand));
         for (FichierPartage.Lancement l : s.lancements) {
-            corps.addView(ui.filet(), ui.marges(8, 0));
+            corps.addView(ui.filet(8, 0));
             LinearLayout bloc = ui.colonne();
             bloc.setPadding(ui.dp(4), ui.dp(8), ui.dp(4), ui.dp(8));
             LinearLayout tete = ui.rangee();
@@ -1377,7 +1508,7 @@ final class PartageVue {
                 avecBkp = true;
             }
         }
-        corps.addView(ui.filet(), ui.marges(8, 0));
+        corps.addView(ui.filet(8, 0));
         TextView total = ui.texte("Pièces : " + nombre(prevues) + " prévues dans " + s.lancements.size() + " lancement(s)"
                 + (avecBkp ? ", " + nombre(bkp) + " dans les .bkp" : "") + ".", 14, true, Ui.BORDEAUX);
         total.setPadding(ui.dp(4), ui.dp(10), ui.dp(4), ui.dp(6));
@@ -1399,6 +1530,33 @@ final class PartageVue {
         int[] c = couleursStatut(cellule[1]);
         String valeur = cellule[0].replace("✔ OK", "✔");
         return ui.pilule(nom + " " + valeur, c[0], "info".equals(cellule[1]) ? ui.couleur(R.color.gris_texte) : c[1]);
+    }
+
+    /** Valider un problème comme voulu : demandé au PC (il le reprend tout seul, comme son bouton « Valider »). */
+    private void validerOk(FichierPartage.Lancement l, FichierPartage.Probleme p) {
+        if (codeLien() == null) {
+            new MaterialAlertDialogBuilder(activite).setTitle("Valider OK")
+                    .setMessage("Pour envoyer une validation au PC, reliez l'appli au PC : icône du livre en haut → « Scanner le QR code du PC ».")
+                    .setPositiveButton("OK", null).show();
+            return;
+        }
+        new MaterialAlertDialogBuilder(activite).setTitle("Valider OK ?")
+                .setMessage(p.type + " — " + p.cle + "\n\nC'est voulu : le PC le reprendra et le problème ne comptera plus (comme « Valider » sur le PC).")
+                .setPositiveButton("Valider OK", (d, k) -> {
+                    try {
+                        JSONObject x = new JSONObject();
+                        x.put("type", "validation");
+                        x.put("titre", p.type + " — " + p.cle);
+                        x.put("lancement", l.nom);
+                        x.put("cle", p.cle);
+                        x.put("probleme", p.type);
+                        x.put("detail", p.detail);
+                        envoyerDemande(x);
+                    } catch (org.json.JSONException e) {
+                        // ne peut pas arriver
+                    }
+                })
+                .setNegativeButton("Annuler", null).show();
     }
 
     /** « Casse : 61 pièces — 13 déjà lancée(s) en semaine 44, 47 rajout(s) » (null si ce n'est pas une casse comptée). */
@@ -1432,7 +1590,7 @@ final class PartageVue {
         tete.setPadding(0, 0, 0, 0);
         corps.addView(tete);
         if (!ouvert) return carte;
-        corps.addView(ui.filet(), ui.marges(8, 8));
+        corps.addView(ui.filet(8, 8));
 
         if (!l.controleFait) {
             corps.addView(ui.bandeau("Pas de bilan des contrôles pour ce lancement (semaine ajoutée depuis les archives).", Ui.GRIS_CLAIR, ui.couleur(R.color.gris_texte)));
@@ -1501,6 +1659,21 @@ final class PartageVue {
                 String detail = groupeValides ? p.type + " : " + p.detail + " — validé le " + dateLisibleCourte(p.valide) : p.detail;
                 corps.addView(ui.texte(detail + (p.lignes.isEmpty() || "hors lancement".equals(p.lignes) ? "" : " (ligne(s) " + p.lignes + ")"),
                         12, false, ui.couleur(R.color.gris_texte)));
+                // V6.3 : « Valider OK » depuis le téléphone (comme sur le PC) : la validation part au PC.
+                if (!groupeValides && ("corriger".equals(p.niveau) || "verifier".equals(p.niveau))) {
+                    if (demandes.validationEnAttente(l.nom, p.cle, p.type)) {
+                        corps.addView(ui.texte("⏳ Validation OK envoyée au PC, pas encore reprise", 12, true, ui.couleur(R.color.attention_texte)), ui.marges(2, 2));
+                    } else {
+                        MaterialButton valider = ui.boutonTexte("✔ Valider OK (c'est voulu)");
+                        valider.setTextColor(ui.couleur(R.color.ok_texte));
+                        valider.setTextSize(12.5f);
+                        valider.setOnClickListener(v -> validerOk(l, p));
+                        LinearLayout ligneValider = ui.rangee();
+                        ligneValider.setGravity(Gravity.END);
+                        ligneValider.addView(valider);
+                        corps.addView(ligneValider, ui.pleineLargeur());
+                    }
+                }
             }
         }
         if (!l.fichiers.isEmpty()) {
