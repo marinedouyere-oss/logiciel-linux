@@ -1152,6 +1152,10 @@ const SUIVI = (() => {
 
   function brancher(page) {
     const q = (id) => page.querySelector(`#${id}`);
+    if (q("svReinitValidations"))
+      q("svReinitValidations").addEventListener("click", () => {
+        if (window.confirm("Remettre à zéro le suivi en direct ? Les pièces reviendront à l'état de la dernière extraction (les nouvelles validations seront de nouveau comptées).") && typeof reinitialiserValidations === "function") reinitialiserValidations();
+      });
     q("svDossier").addEventListener("click", choisirDossier);
     if (q("svActualiser")) q("svActualiser").addEventListener("click", () => lireDossier(true));
     q("svFichier").addEventListener("click", () => q("svChampFichier").click());

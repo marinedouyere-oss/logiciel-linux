@@ -9,8 +9,9 @@ const CLE_VALIDATIONS_FAITES = "sentinelle-validations-faites"; // pièces faite
 
 const validations = {
   lecture: null,
-  faites: null, // { cle: { id, jour, poste, commande, ligne } }
+  faites: null, // { cle: { id, jour, poste, nom, commande, ligne, quand } }
   traitees: null, // id déjà pris en compte
+  postes: null, // { poste: { nom, dernier, nb } } — activité par poste
   erreur: null,
 };
 
@@ -20,18 +21,30 @@ function lireValidationsLocal() {
     const v = JSON.parse(localStorage.getItem(CLE_VALIDATIONS_FAITES) || "null") || {};
     validations.faites = v.faites || {};
     validations.traitees = v.traitees || {};
+    validations.postes = v.postes || {};
   } catch (_e) {
     validations.faites = {};
     validations.traitees = {};
+    validations.postes = {};
   }
 }
 
 function ecrireValidationsLocal() {
   try {
-    localStorage.setItem(CLE_VALIDATIONS_FAITES, JSON.stringify({ faites: validations.faites, traitees: validations.traitees }));
+    localStorage.setItem(CLE_VALIDATIONS_FAITES, JSON.stringify({ faites: validations.faites, traitees: validations.traitees, postes: validations.postes }));
   } catch (_e) {
     // sans stockage : gardé le temps de la page
   }
+}
+
+// Remet à zéro le suivi en direct (pratique en phase de dev). Les pièces reviennent à l'état de l'extraction.
+function reinitialiserValidations() {
+  lireValidationsLocal();
+  validations.faites = {};
+  validations.postes = {};
+  // on garde « traitees » : les étiquettes déjà reçues ne seront pas recomptées (seules les nouvelles le seront).
+  ecrireValidationsLocal();
+  if (typeof SUIVI !== "undefined" && SUIVI.rafraichirValidations) SUIVI.rafraichirValidations();
 }
 
 // Le canal d'un poste de validation (tiré du code, comme le canal du fichier partagé et celui du retour).
@@ -80,7 +93,7 @@ async function telechargerValidations(code, poste) {
   const secrets = await secretsLien(code);
   const lot = await dechiffrerPaquetLien(secrets.cle, paquet);
   if (!lot || lot.format !== "sentinelle-validations-1" || !Array.isArray(lot.demandes)) throw new Error("ce ne sont pas des étiquettes validées");
-  return { version: m.version, pc: lot.pc || poste, demandes: lot.demandes };
+  return { version: m.version, pc: lot.pc || poste, nom: lot.nom || "", demandes: lot.demandes };
 }
 
 // Lit l'étiquette d'une demande et renvoie la pièce faite { cle, commande, ligne } ou null (lecture douteuse).
@@ -113,6 +126,11 @@ function lireValidations() {
           continue; // ce poste ne répond pas / illisible : on passe
         }
         if (!lot) continue;
+        const nomPoste = lot.nom || ("Poste " + lot.pc);
+        // Activité du poste : nom + dernière réception (même s'il n'y a rien de nouveau).
+        const act = validations.postes[lot.pc] || { nb: 0 };
+        act.nom = nomPoste;
+        validations.postes[lot.pc] = act;
         for (const d of lot.demandes) {
           if (!d || typeof d.id !== "string" || !d.id || validations.traitees[d.id]) continue;
           validations.traitees[d.id] = { jour: d.jour || "", poste: lot.pc };
@@ -123,7 +141,9 @@ function lireValidations() {
             piece = null;
           }
           if (piece && !validations.faites[piece.cle]) {
-            validations.faites[piece.cle] = { id: d.id, jour: d.jour || "", poste: lot.pc, commande: piece.commande, ligne: piece.ligne };
+            validations.faites[piece.cle] = { id: d.id, jour: d.jour || "", poste: lot.pc, nom: nomPoste, commande: piece.commande, ligne: piece.ligne, quand: new Date().toISOString() };
+            act.nb = (act.nb || 0) + 1;
+            act.dernier = new Date().toISOString();
             nouvelles++;
           }
         }
@@ -182,8 +202,18 @@ function htmlBandeauValidations() {
   if (!etat || !etat.code) return ""; // pas de lien : pas de postes de validation
   lireValidationsLocal();
   const n = Object.keys(validations.faites || {}).length;
-  const err = validations.erreur ? ` · <span class="sv-t-retard">${echapper(validations.erreur)}</span>` : "";
-  if (n === 0 && !validations.erreur) return "";
+  const postes = Object.entries(validations.postes || {}).sort(([a], [b]) => a.localeCompare(b));
+  if (n === 0 && !postes.length && !validations.erreur) return "";
+  const err = validations.erreur ? `<div class="note sv-t-retard">${echapper(validations.erreur)}</div>` : "";
   const mot = n > 1 ? "pièces faites reçues en direct" : "pièce faite reçue en direct";
-  return `<div class="sv-direct">⚡ <strong>${n}</strong> ${mot} des postes de validation (étiquette imprimée = pièce faite)${err}</div>`;
+  // Activité par poste.
+  const lignes = postes
+    .map(([, p]) => `<tr><td>${echapper(p.nom || "")}</td><td class="nombre">${fmt(p.nb || 0)}</td><td>${p.dernier ? echapper(jourCourt(p.dernier.slice(0, 10)) + " " + p.dernier.slice(11, 16)) : "—"}</td></tr>`)
+    .join("");
+  const table = postes.length
+    ? `<table class="sv-table" style="margin-top:6px"><thead><tr><th>Poste</th><th class="nombre">Pièces faites</th><th>Dernière</th></tr></thead><tbody>${lignes}</tbody></table>`
+    : "";
+  return `<div class="sv-direct">⚡ <strong>${fmt(n)}</strong> ${mot} des postes de validation (étiquette imprimée = pièce faite)
+    <button type="button" class="texte" id="svReinitValidations" style="margin-left:10px">Réinitialiser</button>
+    ${table}${err}</div>`;
 }

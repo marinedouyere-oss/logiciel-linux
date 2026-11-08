@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const versionAgent = "6.4.0"
+const versionAgent = "6.4.1"
 
 func main() {
 	// Même en cas de pépin, la fenêtre reste ouverte (pas de « flash »).
@@ -49,7 +49,7 @@ func main() {
 			}
 			demandes = append(demandes, demandeValidation{ID: fmt.Sprintf("%s-%d", poste, i+1), Jour: time.Now().Format("2006-01-02"), Etiquette: etiquetteBase64(octets)})
 		}
-		if err := envoyerValidations(code, poste, demandes); err != nil {
+		if err := envoyerValidations(code, poste, "Essai", demandes); err != nil {
 			fmt.Println("envoi :", err)
 			os.Exit(1)
 		}
@@ -87,12 +87,12 @@ func main() {
 		}
 		fmt.Println("paquet écrit :", len(p), "octets")
 	case "run":
-		code, poste := reglagesAgent()
+		code, poste, nom := reglagesAgent()
 		if code == "" {
 			fmt.Println("Pas encore réglé. Lancez d'abord : agent setup")
 			os.Exit(1)
 		}
-		if err := lancerAgent(code, poste); err != nil {
+		if err := lancerAgent(code, poste, nom); err != nil {
 			fmt.Println(err)
 			os.Exit(1)
 		}
@@ -100,24 +100,24 @@ func main() {
 		faireSetup()
 		fmt.Println()
 		fmt.Println("Je lance la surveillance maintenant (laissez cette fenêtre ouverte).")
-		code, poste := reglagesAgent()
+		code, poste, nom := reglagesAgent()
 		if code != "" {
-			lancerAgent(code, poste)
+			lancerAgent(code, poste, nom)
 		}
 		attendreEntree()
 	default:
 		// Double-clic : si déjà réglé, on surveille ; sinon on fait le réglage puis on surveille.
-		code, poste := reglagesAgent()
+		code, poste, nom := reglagesAgent()
 		if code == "" {
 			faireSetup()
-			code, poste = reglagesAgent()
+			code, poste, nom = reglagesAgent()
 		}
 		if code == "" {
 			attendreEntree()
 			return
 		}
-		fmt.Println("Agent de validation Sentinelle — poste", poste, ": surveillance en cours. Laissez cette fenêtre ouverte.")
-		if err := lancerAgent(code, poste); err != nil {
+		fmt.Println("Poste «", nom, "» : surveillance en cours. Laissez cette fenêtre ouverte.")
+		if err := lancerAgent(code, poste, nom); err != nil {
 			fmt.Println(err)
 		}
 		attendreEntree()

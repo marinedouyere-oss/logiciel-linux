@@ -20,16 +20,17 @@ type demandeValidation struct {
 type lotValidations struct {
 	Format   string              `json:"format"`
 	PC       string              `json:"pc"`
+	Nom      string              `json:"nom"`
 	Demandes []demandeValidation `json:"demandes"`
 }
 
 // Dépose un lot d'étiquettes validées sur le canal du poste (code + numéro de poste).
-func envoyerValidations(code, poste string, demandes []demandeValidation) error {
+func envoyerValidations(code, poste, nom string, demandes []demandeValidation) error {
 	s, err := secrets(code, butValidations+":"+poste)
 	if err != nil {
 		return err
 	}
-	lot := lotValidations{Format: "sentinelle-validations-1", PC: poste, Demandes: demandes}
+	lot := lotValidations{Format: "sentinelle-validations-1", PC: poste, Nom: nom, Demandes: demandes}
 	clair, err := json.Marshal(lot)
 	if err != nil {
 		return err
