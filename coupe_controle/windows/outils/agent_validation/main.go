@@ -85,7 +85,33 @@ func main() {
 		}
 	case "setup":
 		faireSetup()
+		fmt.Println()
+		fmt.Println("Je lance la surveillance maintenant (laissez cette fenêtre ouverte).")
+		code, poste := reglagesAgent()
+		if code != "" {
+			lancerAgent(code, poste)
+		}
+		attendreEntree()
 	default:
-		fmt.Println("Agent de validation Sentinelle — commandes : setup | run | test-envoyer | test-relire")
+		// Double-clic : si déjà réglé, on surveille ; sinon on fait le réglage puis on surveille.
+		code, poste := reglagesAgent()
+		if code == "" {
+			faireSetup()
+			code, poste = reglagesAgent()
+		}
+		if code == "" {
+			attendreEntree()
+			return
+		}
+		fmt.Println("Agent de validation Sentinelle — poste", poste, ": surveillance en cours. Laissez cette fenêtre ouverte.")
+		if err := lancerAgent(code, poste); err != nil {
+			fmt.Println(err)
+		}
+		attendreEntree()
 	}
+}
+
+func attendreEntree() {
+	fmt.Print("\nAppuyez sur Entrée pour fermer… ")
+	fmt.Scanln()
 }

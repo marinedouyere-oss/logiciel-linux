@@ -99,7 +99,12 @@ func ecrireFile(f *fileLocale) {
 
 // La boucle : surveille l'imprimante, envoie chaque étiquette, retire celles que Sentinelle a prises.
 func lancerAgent(code, poste string) error {
-	fmt.Println("Agent de validation Sentinelle — poste", poste, ": surveillance de l'imprimante…")
+	if imp, err := trouverZebra(); err == nil {
+		fmt.Println("Imprimante surveillée :", imp)
+	} else {
+		fmt.Println("⚠ Imprimante Zebra introuvable pour l'instant :", err)
+	}
+	fmt.Println("Validez une pièce : l'étiquette qui sort sera envoyée à Sentinelle. (Ctrl+C pour arrêter.)")
 	reglerImprimante(true)
 	defer reglerImprimante(false)
 
@@ -139,9 +144,10 @@ func lancerAgent(code, poste string) error {
 		// Envoi (dès qu'il y a du nouveau, ou toutes les ~10 s s'il reste du monde en attente).
 		if len(file.Pending) > 0 && (changed || time.Since(dernierEnvoi) > 10*time.Second) {
 			if err := envoyerValidations(code, poste, file.Pending); err != nil {
-				fmt.Println("  envoi (nouvel essai plus tard) :", err)
+				fmt.Println("  ⚠ envoi raté (nouvel essai plus tard) :", err)
 			} else {
 				dernierEnvoi = time.Now()
+				fmt.Printf("  → envoyé à Sentinelle (%d en attente d'accusé)\n", len(file.Pending))
 			}
 		}
 		// Accusés de Sentinelle : on retire ce qui est déjà pris en compte.
