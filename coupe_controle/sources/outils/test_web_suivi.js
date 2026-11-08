@@ -1,11 +1,13 @@
 // V6.2 : onglet « Suivi de production » (avancement par lancement d'après l'extraction Diakonos).
 // Usage : node test_web_suivi.js <index.html> <dossier « Semaine 47 »> <LAN264801START.xlsx> <extraction du 07/11 .xlsx>
-//         <même extraction en .ref.json> <python avec openpyxl> <fabriquer_extraction.py> <dossier de sortie> [capture.png]
+//         <même extraction en .ref.json> <python avec openpyxl> <fabriquer_extraction.py> <dossier de sortie> [capture.png] [dossier « Semaine 46 »]
+// Règle de l'atelier (V6.3.1) : un CVC du lancement qui n'est plus dans l'extraction = pièce faite ; encore là : « Qte en
+// cours » à faire, le reste fait.
 const { chromium } = require("playwright");
 const fs = require("fs");
 const path = require("path");
 const { execFileSync } = require("child_process");
-const [pageHtml, dossierS47, lan48, extraction07, ref07, python, fabriquer, sortie, capture] = process.argv.slice(2);
+const [pageHtml, dossierS47, lan48, extraction07, ref07, python, fabriquer, sortie, capture, dossierS46] = process.argv.slice(2);
 let echecs = 0;
 const verifier = (ok, t) => {
   console.log(`${ok ? "OK  " : "ÉCHEC"} ${t}`);
@@ -36,6 +38,10 @@ const LANS_S47 = [
 
   // 1. La bibliothèque : les lancements de la semaine 47 (et un de la semaine 48).
   const lancements = LANS_S47.map(([f, poste]) => ({ b64: b64(path.join(dossierS47, f)), nom: path.basename(f), poste, semaine: 47 })).concat([{ b64: b64(lan48), nom: "LAN264801START.xlsx", poste: "Agglo 1er tour", semaine: 48 }]);
+  // Semaine 46 (ta capture : presque finie le 07/11, ses CVC ne sont plus dans l'extraction).
+  if (dossierS46)
+    for (const [f, poste] of [["1ER TOUR AGGLO/LAN264601START.xlsx", "Agglo 1er tour"], ["2EME TOUR AGGLO/LAN264602START.xlsx", "Agglo 2ème tour"]])
+      lancements.push({ b64: b64(path.join(dossierS46, f)), nom: path.basename(f), poste, semaine: 46 });
   const nb = await page.evaluate(async (liste) => {
     const items = [];
     for (const x of liste) {
@@ -68,9 +74,18 @@ const LANS_S47 = [
   console.log(JSON.stringify({ s2: [s2.f, s2.r, s2.h, s2.e], s1: [s1.f, s1.r, s1.h, s1.e], s48: s48 && [s48.f, s48.r, s48.h, s48.e], casse: [casse.f, casse.r, casse.h, casse.e] }));
   verifier(r1.jour === "2026-11-07" && r1.semaine === 45, "extraction du 07/11/2026, semaine 45");
   verifier(s2.f === 0 && s2.r === 165 && s2.h === 0 && s2.e === "en_cours", "LAN264702START : 165 pièces à faire, 0 faite (toutes dans Diakonos)");
-  verifier(s1.f === 0 && s1.r === 308 && s1.h === 48 && s1.e === "en_cours", "LAN264701START : 308 à faire, 48 pièces pas dans Diakonos (pas comptées)");
-  verifier(s48 && s48.f + s48.r === 0 && s48.e === "attente", "LAN264801START (semaine 48) : pas encore dans Diakonos");
-  verifier(casse.r === 1 && casse.h === 76, "LAN2646CASSE : 1 pièce dans Diakonos, 76 pas dans Diakonos");
+  verifier(s1.f === 48 && s1.r === 308 && s1.h === 0 && s1.e === "en_cours", "LAN264701START : 308 à faire (encore dans l'extraction), 48 faites (CVC plus dans l'extraction)");
+  verifier(s48 && s48.f + s48.r === 0 && s48.h === 492 && s48.e === "hors_extraction" && r1.semaineMax === 47, "LAN264801START (semaine 48) : pas dans cette extraction (elle va jusqu'à la semaine 47), rien d'inventé");
+  if (dossierS46) {
+    const a = lan(r1, "LAN264601START");
+    const b = lan(r1, "LAN264602START");
+    console.log(JSON.stringify({ s46_1: [a.f, a.r, a.h, a.e], s46_2: [b.f, b.r, b.h, b.e] }));
+    verifier(a.f + a.r === 340 && a.r <= 5 && a.h === 0 && Math.round((100 * a.f) / 340) >= 98, `LAN264601START (semaine 46) : presque fini le 07/11 (${a.f} faites, ${a.r} à faire)`);
+    verifier(b.f + b.r === 340 && b.h === 0 && b.f > b.r, `LAN264602START (semaine 46) : ${b.f} faites, ${b.r} à faire`);
+  }
+  // La casse n'est pas suivie par Diakonos : seules ses pièces encore dans l'extraction comptent (sa seule pièce présente
+  // est aussi dans le lancement de la semaine 46 : elle compte pour lui quand il est là).
+  verifier(casse.f === 0 && casse.r + casse.h === 77 && (dossierS46 ? casse.e === "casse" && casse.r === 0 : casse.r === 1), `LAN2646CASSE : rien compté « fait » (casse pas suivie par Diakonos) (${casse.r} à faire, ${casse.h} pas dans Diakonos)`);
   // Le tableau des transporteurs : la somme de « Qte en cours » du fichier, comme Excel.
   const ref = JSON.parse(fs.readFileSync(ref07, "utf8"));
   const sommeExcel = ref.slice(1).reduce((t, r) => t + (r && typeof r[8] === "number" ? r[8] : 0), 0);
@@ -99,7 +114,7 @@ const LANS_S47 = [
   verifier(t2.f === piecesRetirees && t2.r === 165 - piecesRetirees && t2.h === 0, `LAN264702START : ${piecesRetirees} faites, ${165 - piecesRetirees} à faire`);
   verifier(t2.d === piecesRetirees && r2.precedente === "2026-11-07" && r2.totaux.depuis === piecesRetirees, `évolution : +${piecesRetirees} pièces depuis le 07/11`);
   verifier(t2.p.length === 2 && t2.p[0][1] === 0 && t2.p[1][1] === Math.round((100 * piecesRetirees) / 165), `courbe : 0 % puis ${t2.p[1] && t2.p[1][1]} %`);
-  verifier(lan(r2, "LAN264701START").f === 0, "LAN264701START : rien de fait (ses 48 pièces hors Diakonos ne comptent pas)");
+  verifier(lan(r2, "LAN264701START").f === 48, "LAN264701START : toujours 48 faites (rien de plus sorti de l'extraction)");
 
   // 4. Le fichier partagé (et le téléphone) contient le même résumé.
   const partage = await page.evaluate(() => {
@@ -116,7 +131,8 @@ const LANS_S47 = [
   });
   const texte = await page.locator("#pageSuivi").innerText();
   verifier(/Suivi de production/.test(texte) && /Semaine 47/.test(texte) && /Semaine 48/.test(texte), "écran : semaines 47 et 48");
-  verifier(texte.includes(`${Math.round((100 * piecesRetirees) / 165)} %`) && /Pas encore dans Diakonos/i.test(texte), "écran : pourcentage de LAN264702START, « Pas encore dans Diakonos » pour la 48");
+  verifier(texte.includes(`${Math.round((100 * piecesRetirees) / 165)} %`) && /Pas dans cette extraction/i.test(texte), "écran : pourcentage de LAN264702START, « Pas dans cette extraction » pour la 48");
+  verifier(/un CVC qui n'y est plus = pièce faite/.test(texte), "écran : la règle de l'atelier est écrite");
   verifier(/depuis le 07\/11/.test(texte), "écran : « +N pièces depuis le 07/11 »");
   const barres = await page.locator("#pageSuivi .sv-lan .sv-barre").count();
   verifier(barres === lancements.length, `une barre par lancement (${barres})`);

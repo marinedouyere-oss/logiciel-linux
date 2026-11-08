@@ -577,8 +577,9 @@
   .sv-t-en_cours { color: #1b5fae; }
   .sv-t-termine, .sv-t-absent { color: var(--ok-texte); }
   .sv-t-retard { color: var(--bordeaux); }
-  .sv-t-attente { color: var(--gris-texte); }
-  .sv-semaine .sv-sem-barre .sv-pct.sv-t-attente, .sv-semaine .sv-sem-barre .sv-pct.sv-t-absent, .sv-droite .sv-pct.sv-t-attente, .sv-droite .sv-pct.sv-t-absent { font-family: var(--texte); font-size: 0.8rem; }
+  .sv-t-attente, .sv-t-hors_extraction, .sv-t-casse { color: var(--gris-texte); }
+  .sv-sem-barre .sv-pct.sv-t-attente, .sv-sem-barre .sv-pct.sv-t-absent, .sv-sem-barre .sv-pct.sv-t-hors_extraction, .sv-sem-barre .sv-pct.sv-t-casse,
+  .sv-droite .sv-pct.sv-t-attente, .sv-droite .sv-pct.sv-t-absent, .sv-droite .sv-pct.sv-t-hors_extraction, .sv-droite .sv-pct.sv-t-casse { font-family: var(--texte); font-size: 0.8rem; }
   .sv-evo { font-size: 0.78rem; white-space: nowrap; }
   .sv-evo.plus { color: var(--ok-texte); font-weight: 700; }
   .sv-evo.moins { color: var(--bordeaux); font-weight: 700; }

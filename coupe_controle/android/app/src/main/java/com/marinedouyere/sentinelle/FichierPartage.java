@@ -101,6 +101,8 @@ final class FichierPartage {
         int annee;
         String precedente; // jour de l'extraction d'avant (vide sinon)
         int nbExtractions;
+        /** La semaine la plus loin dans l'extraction (0 : inconnue) ; au-delà : « pas dans cette extraction ». */
+        int semaineMax;
         final List<String> fichiers = new ArrayList<>();
         int lancements;
         int retard;
@@ -258,6 +260,7 @@ final class FichierPartage {
         s.annee = js.optInt("annee");
         s.precedente = texte(js, "precedente");
         s.nbExtractions = js.optInt("nbExtractions");
+        s.semaineMax = js.optInt("semaineMax", 0);
         for (String n : textes(js.optJSONArray("fichiers"))) s.fichiers.add(n);
         JSONObject t = js.optJSONObject("totaux");
         if (t != null) {

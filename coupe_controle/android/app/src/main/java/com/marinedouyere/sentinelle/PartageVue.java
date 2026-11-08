@@ -989,6 +989,10 @@ final class PartageVue {
                 return "Plus rien dans Diakonos";
             case "attente":
                 return "Pas encore dans Diakonos";
+            case "hors_extraction":
+                return "Pas dans cette extraction";
+            case "casse":
+                return "Casse : pas suivie dans Diakonos";
             case "retard":
                 return "En retard";
             default:
@@ -1006,7 +1010,7 @@ final class PartageVue {
     private static int couleurTexteEtat(String e) {
         if ("termine".equals(e) || "absent".equals(e)) return VERT;
         if ("retard".equals(e)) return Ui.BORDEAUX;
-        if ("attente".equals(e)) return Ui.GRIS;
+        if ("attente".equals(e) || "hors_extraction".equals(e) || "casse".equals(e)) return Ui.GRIS;
         return BLEU_TEXTE;
     }
 
@@ -1059,10 +1063,24 @@ final class PartageVue {
         return b;
     }
 
-    private static String chiffresSuivi(FichierPartage.LancementSuivi l) {
-        if (l.f + l.r == 0)
-            return fmtSuivi(l.h) + (l.h > 1 ? " pièces" : " pièce") + ("absent".equals(l.e) ? " · aucune dans l'extraction" : " · pas encore dans l'extraction");
-        return fmtSuivi(l.f) + (l.f > 1 ? " faites" : " faite") + " · " + fmtSuivi(l.r) + " à faire" + (l.h > 0 ? " · " + fmtSuivi(l.h) + " pas dans Diakonos" : "");
+    private static String chiffresSuivi(FichierPartage.LancementSuivi l, FichierPartage.Suivi s) {
+        String pieces = fmtSuivi(l.h) + (l.h > 1 ? " pièces" : " pièce");
+        if ("hors_extraction".equals(l.e))
+            return pieces + " · sa semaine n'est pas dans l'extraction du " + jourCourt(s.jour) + (s.semaineMax > 0 ? " (elle va jusqu'à la semaine " + s.semaineMax + ")" : "");
+        if ("attente".equals(l.e)) return pieces + " · pas encore dans l'extraction";
+        if (l.f + l.r == 0) return pieces + ("casse".equals(l.e) ? " · aucune dans l'extraction (la casse n'est pas suivie par Diakonos)" : " · rien à suivre");
+        return fmtSuivi(l.f) + (l.f > 1 ? " faites" : " faite") + " · " + fmtSuivi(l.r) + " à faire" + (l.h > 0 ? " · " + fmtSuivi(l.h) + " pas dans Diakonos (casse)" : "");
+    }
+
+    /** L'avancement est celui du jour de l'extraction : si elle date, on le dit. */
+    static String ageExtraction(String jour, long maintenant) {
+        if (jour == null || jour.length() < 10) return "";
+        java.util.Calendar c = java.util.Calendar.getInstance();
+        c.clear();
+        c.set(Integer.parseInt(jour.substring(0, 4)), Integer.parseInt(jour.substring(5, 7)) - 1, Integer.parseInt(jour.substring(8, 10)));
+        long jours = (maintenant - c.getTimeInMillis()) / 86400000L;
+        if (jours < 2) return "";
+        return "⚠ Cette extraction date du " + jourLisible(jour) + " (il y a " + jours + " jours) : l'avancement montré est celui de ce jour-là. Sur le PC, mettez la dernière extraction de Diakonos dans le dossier du Suivi de production.";
     }
 
     /** « +101 pièces depuis le 07/11 » (vide sans extraction d'avant). */
@@ -1092,7 +1110,10 @@ final class PartageVue {
         LinearLayout corps = corpsDe(carte);
         corps.addView(ui.titreCarte("Extraction Diakonos"));
         corps.addView(ui.texte("Dernière extraction : " + jourLisible(s.jour) + " (semaine " + s.semaine + ")", 14, true, Ui.NOIR));
-        corps.addView(ui.texte(android.text.TextUtils.join(" + ", s.fichiers) + (s.nbExtractions > 1 ? " · " + s.nbExtractions + " extractions gardées pour l'évolution" : ""), 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 0));
+        corps.addView(ui.texte(android.text.TextUtils.join(" + ", s.fichiers) + (s.semaineMax > 0 ? " · semaines jusqu'à la " + s.semaineMax : "")
+                + (s.nbExtractions > 1 ? " · " + s.nbExtractions + " extractions gardées pour l'évolution" : ""), 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 0));
+        String age = ageExtraction(s.jour, System.currentTimeMillis());
+        if (!age.isEmpty()) corps.addView(ui.bandeau(age, ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)), ui.marges(6, 0));
         racine.addView(carte);
 
         String depuis = s.depuis != null && !s.precedente.isEmpty() ? (s.depuis >= 0 ? "+" : "−") + fmtSuivi(Math.abs(s.depuis)) + " depuis le " + jourCourt(s.precedente) : null;
@@ -1100,7 +1121,7 @@ final class PartageVue {
                 new String[] {fmtSuivi(s.restantes), "Pièces à faire"}, new String[] {fmtSuivi(s.retard), "En retard", s.retard > 0 ? "souci" : null}));
 
         racine.addView(ui.texte("Avancement par lancement", 15, true, Ui.NOIR), ui.marges(8, 0));
-        racine.addView(ui.texte("Une pièce du lancement encore dans l'extraction est à faire ; sortie de l'extraction, elle est faite. Les pièces jamais vues dans les extractions (bandes, casse, rajouts…) ne comptent pas dans la barre. Touchez un lancement : les commandes encore à faire.",
+        racine.addView(ui.texte("L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Touchez un lancement : les commandes encore à faire.",
                 13, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 4));
         if (s.semaines.isEmpty())
             racine.addView(ui.texte("Aucun lancement dans la bibliothèque des semaines autour de cette extraction.", 14, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 4));
@@ -1160,7 +1181,7 @@ final class PartageVue {
         bloc.addView(tete);
         bloc.addView(barreSuivi(l.f, l.r, l.e), new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(10)));
         ((LinearLayout.LayoutParams) bloc.getChildAt(1).getLayoutParams()).setMargins(0, ui.dp(6), 0, ui.dp(4));
-        bloc.addView(ui.texte(chiffresSuivi(l), 13, false, Ui.NOIR));
+        bloc.addView(ui.texte(chiffresSuivi(l, s), 13, false, Ui.NOIR));
         String evo = evolutionSuivi(l, s.precedente);
         if (!evo.isEmpty()) bloc.addView(ui.texte(evo, 12, l.d != null && l.d != 0, l.d != null && l.d > 0 ? VERT : l.d != null && l.d < 0 ? Ui.BORDEAUX : Ui.GRIS));
         if (suiviOuverts.contains(l.cle)) {
@@ -1180,9 +1201,7 @@ final class PartageVue {
                     bloc.addView(r);
                 }
             }
-            if (l.h > 0 && l.f + l.r > 0)
-                bloc.addView(ui.texte(fmtSuivi(l.h) + (l.h > 1 ? " pièces du lancement n'ont jamais été vues" : " pièce du lancement n'a jamais été vue") + " dans les extractions lues (pas comptée" + (l.h > 1 ? "s" : "") + " dans la barre).",
-                        12, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 0));
+
         }
         bloc.setOnClickListener(v -> {
             if (!suiviOuverts.remove(l.cle)) suiviOuverts.add(l.cle);

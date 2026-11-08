@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.3.0 — Contrôle de coupe</title>
+<title>Sentinelle V6.3.1 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -595,8 +595,9 @@
   .sv-t-en_cours { color: #1b5fae; }
   .sv-t-termine, .sv-t-absent { color: var(--ok-texte); }
   .sv-t-retard { color: var(--bordeaux); }
-  .sv-t-attente { color: var(--gris-texte); }
-  .sv-semaine .sv-sem-barre .sv-pct.sv-t-attente, .sv-semaine .sv-sem-barre .sv-pct.sv-t-absent, .sv-droite .sv-pct.sv-t-attente, .sv-droite .sv-pct.sv-t-absent { font-family: var(--texte); font-size: 0.8rem; }
+  .sv-t-attente, .sv-t-hors_extraction, .sv-t-casse { color: var(--gris-texte); }
+  .sv-sem-barre .sv-pct.sv-t-attente, .sv-sem-barre .sv-pct.sv-t-absent, .sv-sem-barre .sv-pct.sv-t-hors_extraction, .sv-sem-barre .sv-pct.sv-t-casse,
+  .sv-droite .sv-pct.sv-t-attente, .sv-droite .sv-pct.sv-t-absent, .sv-droite .sv-pct.sv-t-hors_extraction, .sv-droite .sv-pct.sv-t-casse { font-family: var(--texte); font-size: 0.8rem; }
   .sv-evo { font-size: 0.78rem; white-space: nowrap; }
   .sv-evo.plus { color: var(--ok-texte); font-weight: 700; }
   .sv-evo.moins { color: var(--bordeaux); font-weight: 700; }
@@ -631,7 +632,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.3.0</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.3.1</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -738,7 +739,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.3.0 · Contrôle de coupe</span>
+    <span>Sentinelle V6.3.1 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -15274,9 +15275,13 @@ async function remplirZoneSemaine(zone, p) {
 
 // ---- V6.2 : Suivi de production ----
 // L'avancement de chaque lancement de la bibliothèque, d'après l'extraction « Suivi production » de Diakonos
-// (suivi_production_JJMMAAAA.xlsx). Une pièce du lancement encore dans l'extraction est à faire (sa « Qté en cours ») ;
-// vue dans une extraction d'avant puis sortie, elle est faite. Une pièce jamais vue dans les extractions lues n'est pas
-// comptée dans la barre (« pas dans Diakonos » : bandes ajoutées, casse, rajouts…).
+// (suivi_production_JJMMAAAA.xlsx), comparée au lancement (la règle de l'atelier, V6.3.1) :
+//   - un CVC du lancement qui n'est plus dans l'extraction : la pièce est faite ;
+//   - un CVC encore dans l'extraction : il reste « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 :
+//     8 à faire, 2 faites).
+// Exceptions : un lancement d'une semaine que l'extraction ne contient pas du tout (ex. la 48 dans une extraction qui
+// s'arrête à la 47) n'est pas compté (« pas dans cette extraction ») ; la casse n'est pas suivie par Diakonos (la
+// commande est déjà sortie) : seules ses pièces encore dans l'extraction comptent.
 // Les extractions sont lues sur ce PC (le dossier choisi une fois, ou un fichier chargé) et gardées dans le navigateur
 // pour suivre l'évolution. Le résumé va dans le fichier partagé et au téléphone. L'extraction n'est jamais modifiée.
 
@@ -15613,7 +15618,11 @@ const SUIVI = (() => {
           x.cours += r[6];
           x.lignes.push(r);
         }
-        return { jour, courante, ordre: ordreSemaine(courante.annee, courante.semaine), fichiers: fichiers.map((f) => ({ nom: f.nom, chemin: f.chemin, id: f.id, genre: f.genre })), lignes, parCle };
+        // La semaine la plus loin dans l'extraction : au-delà, l'extraction ne dit rien.
+        let ordreMax = 0;
+        for (const r of lignes) if (r[0] && r[1]) ordreMax = Math.max(ordreMax, ordreSemaine(r[1], r[0]));
+        const modifie = Math.max(...fichiers.map((f) => f.modifie || 0));
+        return { jour, courante, ordre: ordreSemaine(courante.annee, courante.semaine), ordreMax, modifie, fichiers: fichiers.map((f) => ({ nom: f.nom, chemin: f.chemin, id: f.id, genre: f.genre })), lignes, parCle };
       });
     etat.generation++;
   }
@@ -15653,9 +15662,11 @@ const SUIVI = (() => {
   };
   const MAX_COMMANDES = 200;
 
-  // État d'un lancement : termine, absent (plus rien dans Diakonos), attente (pas encore dans Diakonos), retard, en_cours.
-  function etatLancement(f, r, ordre, courante) {
-    if (f + r === 0) return ordre <= courante ? "absent" : "attente";
+  // État d'un lancement : hors_extraction (sa semaine n'est pas dans l'extraction), casse (pas suivie dans Diakonos),
+  // termine, retard (semaine passée, pas fini), en_cours.
+  function etatLancement(f, r, ordre, courante, couvert, casse) {
+    if (!couvert) return "hors_extraction";
+    if (f + r === 0) return casse ? "casse" : "absent";
     if (r === 0) return "termine";
     return ordre < courante ? "retard" : "en_cours";
   }
@@ -15691,7 +15702,7 @@ const SUIVI = (() => {
           pieces.set(k, (pieces.get(k) || 0) + Math.max(0, Number(p[iQ]) || 0));
         }
         lancements.push({ cle: cleNomLancement(l.nom), nom: l.nom, poste: l.poste || "", casse: Boolean(l.casse), id: s.id, annee: s.annee, semaine: Number(s.semaine),
-          ordre: ordreSemaine(s.annee, Number(s.semaine)), pieces, vus: new Set(), histo: [], presents: null, f: 0, r: 0, h: 0, fPrec: null });
+          ordre: ordreSemaine(s.annee, Number(s.semaine)), pieces, vus: new Set(), histo: [], presents: null, f: 0, r: 0, h: 0, fPrec: null, couvert: false });
       }
     }
     lancements.sort((a, b) => a.ordre - b.ordre || rangPoste(a.poste) - rangPoste(b.poste) || a.nom.localeCompare(b.nom));
@@ -15720,25 +15731,28 @@ const SUIVI = (() => {
         }
       }
       lancements.forEach((L, i) => {
-        if (!L.vus.size) return;
         const p = presents.get(i) || new Map();
+        // Sa semaine n'est pas dans l'extraction (et aucune de ses pièces) : l'extraction ne dit rien de lui.
+        const couvert = p.size > 0 || L.ordre <= e.ordreMax;
         let f = 0;
         let r = 0;
         const detail = n >= ex.length - 2 ? new Map() : null; // par pièce (pour les totaux : une pièce comptée une fois)
-        for (const [k, q] of L.pieces) {
-          const v = p.get(k);
-          let fk = 0;
-          let rk = 0;
-          if (v) {
-            rk = Math.min(q, Math.max(0, v.cours));
-            fk = Math.min(q - rk, Math.max(0, v.lanc - v.cours));
-          } else if (L.vus.has(k)) fk = q;
-          f += fk;
-          r += rk;
-          if (detail && (fk || rk)) detail.set(k, [fk, rk]);
-        }
+        if (couvert)
+          for (const [k, q] of L.pieces) {
+            const v = p.get(k);
+            let fk = 0;
+            let rk = 0;
+            if (v) {
+              // Encore dans l'extraction : « Qte en cours » à faire, le reste du lancement est fait.
+              rk = Math.min(q, Math.max(0, v.cours));
+              fk = q - rk;
+            } else if (!L.casse) fk = q; // le CVC n'est plus dans l'extraction : la pièce est faite
+            f += fk;
+            r += rk;
+            if (detail && (fk || rk)) detail.set(k, [fk, rk]);
+          }
         if (n === ex.length - 2) {
-          L.fPrec = f;
+          L.fPrec = couvert ? f : null;
           L.detailPrec = detail;
         }
         if (n === ex.length - 1) {
@@ -15746,8 +15760,9 @@ const SUIVI = (() => {
           L.r = r;
           L.presents = p;
           L.detail = detail;
+          L.couvert = couvert;
         }
-        if (f + r > 0) L.histo.push([e.jour, Math.round((100 * f) / (f + r))]);
+        if (couvert && f + r > 0) L.histo.push([e.jour, Math.round((100 * f) / (f + r))]);
       });
     });
     const total = (L) => [...L.pieces.values()].reduce((t, q) => t + q, 0);
@@ -15782,14 +15797,15 @@ const SUIVI = (() => {
       const r = s.lancements.reduce((t, L) => t + L.r, 0);
       const h = s.lancements.reduce((t, L) => t + L.h, 0);
       // Les semaines finies depuis plus de 3 semaines : seulement comptées (« N semaines plus anciennes : finies »).
-      if (r === 0 && ecartSemaines({ annee: s.annee, semaine: s.semaine }, der.courante) > 3) {
+      if (r === 0 && f > 0 && ecartSemaines({ annee: s.annee, semaine: s.semaine }, der.courante) > 3) {
         anciennes++;
         continue;
       }
+      const couverte = s.lancements.some((L) => L.couvert);
       semaines.push({
-        id: s.id, annee: s.annee, semaine: s.semaine, f, r, h, e: etatLancement(f, r, s.ordre, der.ordre),
+        id: s.id, annee: s.annee, semaine: s.semaine, f, r, h, e: etatLancement(f, r, s.ordre, der.ordre, couverte, s.lancements.every((L) => L.casse)),
         lancements: s.lancements.map((L) => ({
-          cle: L.cle, nom: L.nom, poste: L.poste, f: L.f, r: L.r, h: L.h, e: etatLancement(L.f, L.r, L.ordre, der.ordre),
+          cle: L.cle, nom: L.nom, poste: L.poste, f: L.f, r: L.r, h: L.h, e: etatLancement(L.f, L.r, L.ordre, der.ordre, L.couvert, L.casse),
           d: L.fPrec === null ? null : L.f - L.fPrec, p: L.histo.slice(-10), c: commandes(L),
         })),
       });
@@ -15843,6 +15859,10 @@ const SUIVI = (() => {
       semaine: der.courante.semaine,
       annee: der.courante.annee,
       fichiers: der.fichiers.map((f) => f.nom),
+      // La semaine la plus loin dans l'extraction (au-delà : « pas dans cette extraction »).
+      semaineMax: der.ordreMax ? der.ordreMax % 100 : null,
+      anneeMax: der.ordreMax ? Math.floor(der.ordreMax / 100) : null,
+      enregistre: der.modifie ? new Date(der.modifie).toISOString() : null,
       precedente: prec ? prec.jour : null,
       nbExtractions: ex.length,
       inclus: { ...etat.inclus },
@@ -16034,7 +16054,10 @@ const SUIVI = (() => {
 
   const fmt = (v) => Number(v || 0).toLocaleString("fr-FR", { maximumFractionDigits: 2 });
   const pluriel = (n, un, plusieurs) => `${fmt(n)} ${n > 1 ? plusieurs : un}`;
-  const LIBELLES_ETAT = { termine: "Terminé", absent: "Plus rien dans Diakonos", attente: "Pas encore dans Diakonos", retard: "En retard", en_cours: "En cours" };
+  const LIBELLES_ETAT = {
+    termine: "Terminé", absent: "Rien à suivre", attente: "Pas encore dans Diakonos", hors_extraction: "Pas dans cette extraction",
+    casse: "Casse : pas suivie dans Diakonos", retard: "En retard", en_cours: "En cours",
+  };
   const pct = (f, r) => (f + r > 0 ? Math.round((100 * f) / (f + r)) : null);
 
   // « Du lundi 16 au vendredi 20 novembre » (comme le téléphone et le compte rendu).
@@ -16063,9 +16086,11 @@ const SUIVI = (() => {
     return `<svg class="sv-courbe" viewBox="0 0 ${l} ${h}" width="${l}" height="${h}" aria-label="Évolution"><title>${echapper(titre)}</title><polyline points="${xy}"/></svg>`;
   }
 
-  function texteChiffres(L) {
-    if (L.f + L.r === 0) return L.e === "absent" ? `${pluriel(L.h, "pièce", "pièces")} · aucune dans l'extraction` : `${pluriel(L.h, "pièce", "pièces")} · pas encore dans l'extraction`;
-    return `<strong>${fmt(L.f)}</strong> faite${L.f > 1 ? "s" : ""} · <strong>${fmt(L.r)}</strong> à faire`;
+  function texteChiffres(L, resume) {
+    if (L.e === "hors_extraction")
+      return `${pluriel(L.h, "pièce", "pièces")} · sa semaine n'est pas dans l'extraction du ${echapper(jourCourt(resume.jour))}${resume.semaineMax ? ` (elle va jusqu'à la semaine ${resume.semaineMax})` : ""}`;
+    if (L.f + L.r === 0) return `${pluriel(L.h, "pièce", "pièces")} · ${L.e === "casse" ? "aucune dans l'extraction (la casse n'est pas suivie par Diakonos)" : "rien à suivre"}`;
+    return `<strong>${fmt(L.f)}</strong> faite${L.f > 1 ? "s" : ""} · <strong>${fmt(L.r)}</strong> à faire${L.h ? ` <span class="pale">· ${fmt(L.h)} pas dans Diakonos (casse)</span>` : ""}`;
   }
 
   function texteEvolution(L, resume) {
@@ -16085,11 +16110,11 @@ const SUIVI = (() => {
                 .map((c) => `<tr><td>${echapper(c[0])}</td><td>${echapper(c[1])}</td><td>${echapper(c[2])}</td><td>${echapper(c[4])}</td><td class="nombre">${fmt(c[3])}</td></tr>`)
                 .join("")}</tbody></table>`
             : `<div class="note">Plus aucune pièce de ce lancement dans l'extraction du ${echapper(jourLong(resume.jour))}.</div>`
-        }${L.h ? `<div class="note">${pluriel(L.h, "pièce du lancement n'a", "pièces du lancement n'ont")} jamais été vue${L.h > 1 ? "s" : ""} dans les extractions lues (pas comptée${L.h > 1 ? "s" : ""} dans la barre).</div>` : ""}</div>`;
+        }</div>`;
     return `<div class="sv-lan${ouvert ? " ouvert" : ""}" data-sv-lan="${echapper(L.cle)}">
       <button type="button" class="sv-ligne" aria-expanded="${ouvert}">
         <span class="sv-nom"><span class="sv-poste">${echapper(L.poste || "Lancement")}</span><span class="sv-fichier">${echapper(L.nom)}</span></span>
-        <span class="sv-milieu">${barre(L.f, L.r, L.e)}<span class="sv-chiffres">${texteChiffres(L)}${L.h && L.f + L.r ? ` <span class="pale">· ${fmt(L.h)} pas dans Diakonos</span>` : ""}</span></span>
+        <span class="sv-milieu">${barre(L.f, L.r, L.e)}<span class="sv-chiffres">${texteChiffres(L, resume)}</span></span>
         <span class="sv-droite"><span class="sv-pct sv-t-${L.e}">${p === null ? echapper(LIBELLES_ETAT[L.e]) : `${p} %`}</span>${p !== null ? `<span class="sv-etat sv-t-${L.e}">${echapper(L.e === "en_cours" && !L.f ? "À faire" : LIBELLES_ETAT[L.e])}</span>` : ""}${texteEvolution(L, resume)}${courbe(L.p)}</span>
       </button>${detail}</div>`;
   }
@@ -16103,6 +16128,17 @@ const SUIVI = (() => {
       ${s.lancements.map((L) => htmlLancement(L, resume)).join("")}</div>`;
   }
 
+  // L'avancement est celui du jour de l'extraction : si elle date, on le dit (et la date du fichier si elle diffère).
+  function avertissementAge(jour, modifie) {
+    const jours = Math.floor((Date.now() - dateDuJour(jour).getTime()) / 86400000);
+    const enregistre = modifie ? jourIso(new Date(modifie)) : "";
+    let t = "";
+    if (jours >= 2) t = `⚠ Cette extraction date du ${jourLong(jour)} (il y a ${jours} jours) : l'avancement montré est celui de ce jour-là. Mettez la dernière extraction de Diakonos dans le dossier (ou chargez-la), puis « Actualiser ».`;
+    if (enregistre && enregistre > jour && Math.floor((dateDuJour(enregistre) - dateDuJour(jour)) / 86400000) >= 1)
+      t += `${t ? " " : "⚠ "}Le nom du fichier dit ${jourLong(jour)}, mais il a été enregistré le ${jourLong(enregistre)} : si c'est l'extraction du ${jourLong(enregistre)}, mettez cette date dans son nom (suivi_production_${enregistre.slice(8, 10)}${enregistre.slice(5, 7)}${enregistre.slice(0, 4)}.xlsx).`;
+    return t ? `<div class="sv-message alerte">${echapper(t)}</div>` : "";
+  }
+
   function htmlCarteExtraction(resume, local) {
     const d = etat.dossier;
     const i = etat.infoDossier || {};
@@ -16110,10 +16146,12 @@ const SUIVI = (() => {
     let html = `<div class="carte" id="svCarteExtraction"><div class="carte-titre">Extraction Diakonos</div>`;
     if (der) {
       html += `<div class="sv-source">Dernière extraction : <strong>${echapper(jourLong(der.jour))}</strong> (semaine ${der.courante.semaine}) · ${der.fichiers.map((f) => `<span class="sv-fichier-lu">${echapper(f.nom)}</span>`).join(" + ")}${
-        etat.extractions.length > 1 ? ` · <span class="pale">${etat.extractions.length} extractions gardées pour l'évolution</span>` : ""
-      }</div>`;
+        der.ordreMax ? ` · <span class="pale">semaines jusqu'à la ${der.ordreMax % 100}</span>` : ""
+      }${etat.extractions.length > 1 ? ` · <span class="pale">${etat.extractions.length} extractions gardées pour l'évolution</span>` : ""}</div>`;
+      html += avertissementAge(der.jour, der.modifie);
     } else if (resume && !local) {
       html += `<div class="sv-source">Avancement reçu du fichier partagé : extraction du <strong>${echapper(jourLong(resume.jour))}</strong>, lue sur un autre PC.</div>`;
+      html += avertissementAge(resume.jour, 0);
     } else {
       html += `<div class="note">Choisissez une fois le dossier où arrivent les extractions « suivi_production_JJMMAAAA.xlsx » : Sentinelle y lit toute seule les nouvelles, à chaque ouverture. Ou chargez le fichier à la main. Le fichier est lu sur ce PC et n'est jamais modifié.</div>`;
     }
@@ -16185,8 +16223,8 @@ const SUIVI = (() => {
     if (resume) {
       html += htmlTuiles(resume);
       html += `<div class="carte"><div class="carte-titre">Avancement par lancement</div>
-        <div class="note">Une pièce du lancement encore dans l'extraction est à faire ; sortie de l'extraction, elle est faite. Les pièces jamais vues dans les extractions (bandes, casse, rajouts…) ne comptent pas dans la barre. Un clic sur un lancement : les commandes encore à faire.</div>
-        <div class="sv-legende"><span><i class="sv-l-en_cours"></i>En cours</span><span><i class="sv-l-termine"></i>Terminé</span><span><i class="sv-l-retard"></i>En retard (semaine passée)</span><span><i class="sv-l-attente"></i>Pas encore dans Diakonos</span></div>
+        <div class="note">L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Un clic sur un lancement : les commandes encore à faire.</div>
+        <div class="sv-legende"><span><i class="sv-l-en_cours"></i>En cours</span><span><i class="sv-l-termine"></i>Terminé</span><span><i class="sv-l-retard"></i>En retard (semaine passée)</span><span><i class="sv-l-attente"></i>Pas dans cette extraction</span></div>
         ${resume.semaines.length ? resume.semaines.map((s) => htmlSemaine(s, resume)).join("") : '<div class="note">Aucun lancement dans la bibliothèque des semaines autour de cette extraction : scannez les semaines dans « Contrôler la coupe ».</div>'}
         ${resume.anciennes ? `<div class="note">${pluriel(resume.anciennes, "semaine plus ancienne : finie", "semaines plus anciennes : finies")}.</div>` : ""}</div>`;
       html += htmlHors(resume);
