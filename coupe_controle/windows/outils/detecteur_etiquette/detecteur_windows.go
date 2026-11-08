@@ -40,11 +40,13 @@ func main() {
 	fmt.Println("  Détecteur d'étiquette Zebra — Sentinelle (Laisné)")
 	fmt.Println("===========================================================")
 
+	// Ce programme demande déjà l'autorisation administrateur en s'ouvrant (fenêtre « Oui » de
+	// Windows), grâce à son manifeste. On vérifie quand même, au cas où.
 	if !estAdministrateur() {
-		fmt.Println("Ouverture en administrateur (répondez « Oui » à la fenêtre Windows)…")
-		if err := relancerEnAdmin(); err != nil {
-			attendreTouche("Impossible de passer en administrateur : " + err.Error())
-		}
+		fmt.Println("⚠ Il faut lancer ce programme en administrateur.")
+		fmt.Println("  Fermez cette fenêtre, faites un CLIC DROIT sur le fichier,")
+		fmt.Println("  puis « Exécuter en tant qu'administrateur ».")
+		attendreTouche("")
 		return
 	}
 
