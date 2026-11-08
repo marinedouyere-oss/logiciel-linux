@@ -87,6 +87,37 @@ const LANS_S47 = [
   // La casse : ses pièces comptent chez elle (le lancement le plus récent), la pièce relancée encore en cours
   // (CVC26100261001, « Lancement 2 » dans Diakonos) est à faire, les autres sont faites.
   verifier(casse.r === 1 && casse.f + casse.r === 77 && casse.e === "en_cours", `LAN2646CASSE : ${casse.f} faites, ${casse.r} à faire (la pièce relancée encore dans Diakonos)`);
+  // La casse de la semaine 46 est suivie dans la semaine 46 (même rangée dans la 47 par la bibliothèque).
+  const semCasse = r1.semaines.find((s) => s.lancements.some((l) => l.nom === "LAN2646CASSE"));
+  verifier(semCasse && semCasse.semaine === 46, `LAN2646CASSE suivie dans la semaine ${semCasse && semCasse.semaine} (celle de son nom)`);
+  // Suivi par semaine / transporteur / coloris : mêmes pièces que les barres (les totaux tombent juste).
+  const somme = (vue, i) => r1.vues[vue].reduce((t, g) => t + g[i], 0);
+  const sommeSous = (vue, i) => r1.vues[vue].reduce((t, g) => t + g[4].reduce((u, x) => u + x[i], 0), 0);
+  const inconnu = r1.vues.transporteur.find((g) => g[0] === "Transporteur inconnu");
+  console.log(JSON.stringify({ totaux: [r1.totaux.faites, r1.totaux.restantes], transporteurs: r1.vues.transporteur.length, coloris: r1.vues.coloris.length, clients: r1.vues.client.length, noms: r1.vues.transporteur.map((g) => g[0]), inconnu: inconnu && inconnu.slice(0, 3), t0: r1.vues.transporteur[0].slice(0, 4), c0: r1.vues.coloris[0].slice(0, 4) }));
+  for (const vue of ["semaine", "transporteur", "coloris", "client"])
+    verifier(somme(vue, 1) === r1.totaux.faites && somme(vue, 2) === r1.totaux.restantes && sommeSous(vue, 1) === r1.totaux.faites && sommeSous(vue, 2) === r1.totaux.restantes,
+      `suivi par ${vue} : ${somme(vue, 1)} faites, ${somme(vue, 2)} à faire (= les barres des lancements, détail compris)`);
+  const v46 = r1.vues.semaine.find((g) => g[0] === "Semaine 46");
+  const v48 = r1.vues.semaine.find((g) => g[0] === "Semaine 48");
+  verifier(!dossierS46 || (v46 && v46[1] > v46[2] && v46[4].length > 0), "suivi par semaine : la 46 presque finie, détail par transporteur");
+  verifier(v48 && v48[3] === "hors_extraction", "suivi par semaine : la 48 « pas dans cette extraction »");
+  verifier(!inconnu || inconnu[1] + inconnu[2] < 0.05 * (r1.totaux.faites + r1.totaux.restantes), `transporteur retrouvé pour presque toutes les pièces (inconnu : ${inconnu ? inconnu[1] + inconnu[2] : 0})`);
+  // Bibliothèque rangée avant la V6.3.3 (sans la colonne transporteur) : le transporteur vient de Diakonos.
+  const ancien = await page.evaluate(() => {
+    const garde = [];
+    for (const s of bibliotheque.semaines.values()) {
+      garde.push([s, s.colonnesPieces]);
+      s.colonnesPieces = (s.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE).map((c) => (c === "transporteur" ? "ancienne" : c));
+    }
+    bibliotheque.generation++;
+    const r = SUIVI.calculer();
+    for (const [s, c] of garde) s.colonnesPieces = c;
+    bibliotheque.generation++;
+    return { noms: r.vues.transporteur.map((g) => [g[0], g[1] + g[2]]), f: r.vues.transporteur.reduce((t, g) => t + g[1], 0) };
+  });
+  console.log(JSON.stringify(ancien));
+  verifier(ancien.f === r1.totaux.faites, "bibliothèque sans la colonne transporteur : même total, transporteur pris dans Diakonos");
   // Le tableau des transporteurs : la somme de « Qte en cours » du fichier, comme Excel.
   const ref = JSON.parse(fs.readFileSync(ref07, "utf8"));
   const sommeExcel = ref.slice(1).reduce((t, r) => t + (r && typeof r[8] === "number" ? r[8] : 0), 0);
@@ -135,12 +166,28 @@ const LANS_S47 = [
   verifier(texte.includes(`${Math.round((100 * piecesRetirees) / 165)} %`) && /Pas dans cette extraction/i.test(texte), "écran : pourcentage de LAN264702START, « Pas dans cette extraction » pour la 48");
   verifier(/un CVC qui n'y est plus = pièce faite/.test(texte), "écran : la règle de l'atelier est écrite");
   verifier(/depuis le 07\/11/.test(texte), "écran : « +N pièces depuis le 07/11 »");
-  const barres = await page.locator("#pageSuivi .sv-lan .sv-barre").count();
+  const barres = await page.locator("#pageSuivi [data-sv-lan] .sv-barre").count();
   verifier(barres === lancements.length, `une barre par lancement (${barres})`);
   await page.locator('#pageSuivi [data-sv-lan="LAN264702START"] > .sv-ligne').click();
   const detail = await page.locator('#pageSuivi [data-sv-lan="LAN264702START"] .sv-detail').innerText();
   verifier(/Commande/.test(detail) && /CVC\d{8}/.test(detail), "clic : les commandes encore à faire du lancement");
   if (capture) await page.locator("#pageSuivi").screenshot({ path: capture });
+  // Suivi par semaine / transporteur / coloris : une barre par ligne, un clic donne le détail.
+  const vuesEcran = {};
+  for (const vue of ["transporteur", "coloris", "client", "semaine"]) {
+    await page.locator(`#svVues [data-sv-vue="${vue}"]`).click();
+    const lignes = await page.locator("#svVues [data-sv-groupe]").count();
+    await page.locator("#svVues [data-sv-groupe] > .sv-ligne").first().click();
+    const sous = await page.locator("#svVues .sv-sous").count();
+    vuesEcran[vue] = [lignes, sous, await page.locator("#svVues .carte-titre").innerText(), await page.locator("#svVues .sv-sous").first().innerText().catch(() => "")];
+    if (capture && vue !== "semaine") await page.locator("#svVues").screenshot({ path: capture.replace(/\.png$/, `_${vue}.png`) });
+  }
+  console.log(JSON.stringify(vuesEcran));
+  verifier(vuesEcran.transporteur[0] > 3 && vuesEcran.transporteur[1] > 0 && /Semaine \d+/.test(vuesEcran.transporteur[3]) && /par transporteur/i.test(vuesEcran.transporteur[2]),
+    `écran : suivi par transporteur (${vuesEcran.transporteur[0]} transporteurs), clic = détail par semaine`);
+  verifier(vuesEcran.coloris[0] > 3 && vuesEcran.coloris[1] > 0, `écran : suivi par coloris (${vuesEcran.coloris[0]} coloris)`);
+  verifier(vuesEcran.client[0] > 3 && vuesEcran.client[1] > 0, `écran : suivi par client (${vuesEcran.client[0]} clients)`);
+  verifier(vuesEcran.semaine[0] >= 3 && vuesEcran.semaine[1] > 0, `écran : suivi par semaine (${vuesEcran.semaine[0]} semaines), clic = détail par transporteur`);
 
   // 6. Rechargé : les extractions sont gardées (évolution conservée).
   await page.reload();

@@ -13,8 +13,9 @@ const NOM_FICHIER_PARTAGE = "sentinelle_partage.json.gz";
 const ID_FICHIER_CONNU = "__fichier_partage"; // dernier état connu du fichier partagé (dans IndexedDB)
 // Une pièce = un tableau dans cet ordre (le fichier redonne l'ordre dans « colonnesPieces »).
 // V6.1 : de quoi redessiner la commande sur le téléphone (assemblage, découpes, chants, angles, commentaire), client et référence.
+// V6.3.3 : transporteur (trans_nomcourt du fichier de lancement), pour le suivi de production par transporteur.
 const COLONNES_PIECES_BIBLIOTHEQUE = ["cle", "commande", "ligne", "article", "pieces", "longueur", "largeur", "epaisseur", "coloris", "coloris_inf", "matiere", "livraison",
-  "assemblage", "info3", "chants", "angles", "commentaire", "client", "reference"];
+  "assemblage", "info3", "chants", "angles", "commentaire", "client", "reference", "transporteur"];
 const ANGLES_BIBLIOTHEQUE = [["ARG", "Usinage angle arrière gauche"], ["ARD", "Usinage angle arrière droit"], ["AVD", "Usinage angle avant droit"], ["AVG", "Usinage angle avant gauche"]];
 // Les plans de coupe ne vont dans le fichier partagé que pour les semaines les plus récentes (taille du fichier).
 const SEMAINES_AVEC_PLANS = 4;
@@ -274,7 +275,8 @@ function ficheLancementBibliotheque(nomFichier, strat, infos) {
       texte(colorisDeLaPiece(l)), texte(d.coloris_inf), texte(d[COL_AGGLO]), livraison.get(l.cle) || "",
       texte(l.assemblage || d["info atelier assemblage"]), texte(d["info 3 atelier"]),
       ["conf_chantavant", "conf_chantarriere", "conf_chantgauche", "conf_chantdroit"].map((k) => (d[k] ? "1" : "0")).join(""),
-      ANGLES_BIBLIOTHEQUE.filter(([, k]) => d[k]).map(([c, k]) => `${c}:${d[k]}`).join(";"), texte(d.commentaire), texte(d.com_clientcom), texte(d.com_reference)];
+      ANGLES_BIBLIOTHEQUE.filter(([, k]) => d[k]).map(([c, k]) => `${c}:${d[k]}`).join(";"), texte(d.commentaire), texte(d.com_clientcom), texte(d.com_reference),
+      texte(d.trans_nomcourt).trim()];
   });
   return {
     nom: nomFichier.replace(/\.[^.]*$/, ""),

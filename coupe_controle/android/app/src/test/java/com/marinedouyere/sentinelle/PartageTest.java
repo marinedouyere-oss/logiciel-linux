@@ -535,7 +535,11 @@ public class PartageTest {
             + "\"p\":[[\"2026-11-07\",0],[\"2026-11-10\",61]],\"c\":[[\"CVC26119999\",\"TRANSPORTEUR A\",\"VILLE A\",2,\"S47\"]]}]},"
             + "{\"id\":\"2026-48\",\"annee\":2026,\"semaine\":48,\"f\":0,\"r\":0,\"h\":492,\"e\":\"hors_extraction\",\"lancements\":["
             + "{\"cle\":\"LAN264801START\",\"nom\":\"LAN264801START\",\"poste\":\"Agglo 1er tour\",\"f\":0,\"r\":0,\"h\":492,\"e\":\"hors_extraction\",\"d\":null,\"p\":[],\"c\":[]}]}],"
-            + "\"anciennes\":1,\"hors\":[[\"En retard\",45.93,70,26]],\"tableau\":{\"colonnes\":[\"En retard\",\"S46\",\"Total\"],\"lignes\":[[\"TRANSPORTEUR B\",1.51,3,4.51]]}}}";
+            + "\"anciennes\":1,\"hors\":[[\"En retard\",45.93,70,26]],\"tableau\":{\"colonnes\":[\"En retard\",\"S46\",\"Total\"],\"lignes\":[[\"TRANSPORTEUR B\",1.51,3,4.51]]},"
+            + "\"vues\":{\"semaine\":[[\"Semaine 47\",101,64,\"en_cours\",[[\"TRANSPORTEUR A\",101,64,\"en_cours\"]]],[\"Semaine 48\",0,0,\"hors_extraction\",[]]],"
+            + "\"transporteur\":[[\"TRANSPORTEUR A\",80,60,\"en_cours\",[[\"Semaine 47\",80,60,\"en_cours\"]]],[\"TRANSPORTEUR B\",21,4,\"en_cours\",[[\"Semaine 47\",21,4,\"en_cours\"]]]],"
+            + "\"coloris\":[[\"1122\",101,64,\"en_cours\",[[\"Semaine 47\",101,64,\"en_cours\"]]]],"
+            + "\"client\":[[\"CLIENT A\",100,64,\"en_cours\",[[\"Semaine 47\",100,64,\"en_cours\"]]],[\"CLIENT B\",1,0,\"termine\",[[\"Semaine 47\",1,0,\"termine\"]]]]}}}";
 
     @Test
     public void suiviDeProduction() throws Exception {
@@ -554,6 +558,16 @@ public class PartageTest {
         assertTrue(PartageVue.ageExtraction("2026-11-10", java.util.Date.UTC(126, 10, 25, 12, 0, 0)).contains("il y a 15 jours"));
         assertEquals("", PartageVue.ageExtraction("2026-11-10", java.util.Date.UTC(126, 10, 10, 18, 0, 0)));
         assertEquals(null, f.suivi.semaines.get(1).lancements.get(0).d);
+        // V6.3.3 : suivi par semaine / transporteur / coloris / client.
+        assertEquals(4, f.suivi.vues.size());
+        assertEquals("TRANSPORTEUR A", f.suivi.vues.get("transporteur").get(0).nom);
+        assertEquals(60, f.suivi.vues.get("transporteur").get(0).r, 0);
+        assertEquals("Semaine 47", f.suivi.vues.get("transporteur").get(0).sous.get(0).nom);
+        assertEquals("termine", f.suivi.vues.get("client").get(1).e);
+        assertEquals("18 faites · 3 à faire", PartageVue.chiffresGroupe(18, 3, "en_cours", "2026-11-10"));
+        assertEquals("pas dans l'extraction du 10/11", PartageVue.chiffresGroupe(0, 0, "hors_extraction", "2026-11-10"));
+        assertEquals("log4t3", PartageVue.sansAccents("LOG 4 T3"));
+        assertEquals("etiquete", PartageVue.sansAccents("Étiqueté"));
         // Sans résumé : pas de suivi (fichier d'une version d'avant).
         assertEquals(null, FichierPartage.lire(new ByteArrayInputStream(gzip(EXEMPLE))).suivi);
 
@@ -569,7 +583,7 @@ public class PartageTest {
         assertTrue(texte, texte.contains("Pas dans cette extraction"));
         assertTrue(texte, texte.contains("elle va jusqu'à la semaine 47"));
         assertTrue(texte, texte.contains("Dans Diakonos, dans aucun lancement"));
-        assertTrue(texte, texte.contains("Pièces à faire par transporteur et par semaine"));
+        assertTrue(texte, texte.contains("Qté en cours par transporteur et par semaine (comme dans Excel)"));
         assertTrue(texte, texte.contains("1 semaine plus ancienne : finie."));
         assertFalse("commandes cachées avant le clic", texte.contains("CVC26119999"));
         // Un appui sur le lancement : ses commandes encore à faire.
@@ -582,6 +596,40 @@ public class PartageTest {
         assertTrue(texte, texte.contains("CVC26119999"));
         assertTrue(texte, texte.contains("TRANSPORTEUR A · VILLE A · S47"));
         capturerSiDemande(a, "appli_suivi.png");
+        // Suivi par : semaine (au départ), puis transporteur, coloris, client ; un appui sur une ligne : le détail.
+        assertTrue(texte, texte.contains("Suivi par semaine"));
+        assertTrue(texte, texte.contains("101 faites · 64 à faire"));
+        vueAvecTexte(a.getWindow().getDecorView(), "Transporteur").performClick();
+        ShadowLooper.idleMainLooper();
+        texte = ecran(a);
+        assertTrue(texte, texte.contains("Suivi par transporteur"));
+        assertTrue(texte, texte.contains("80 faites · 60 à faire"));
+        assertTrue(texte, texte.contains("21 faites · 4 à faire"));
+        View ligne = vueAvecTexte(a.getWindow().getDecorView(), "TRANSPORTEUR B");
+        while (ligne != null && !ligne.isClickable()) ligne = (View) ligne.getParent();
+        ligne.performClick();
+        ShadowLooper.idleMainLooper();
+        texte = ecran(a);
+        assertEquals("détail par semaine", 2, texte.split("21 faites · 4 à faire", -1).length - 1);
+        capturerSiDemande(a, "appli_suivi_transporteur.png");
+        vueAvecTexte(a.getWindow().getDecorView(), "Client").performClick();
+        ShadowLooper.idleMainLooper();
+        texte = ecran(a);
+        assertTrue(texte, texte.contains("Suivi par client"));
+        assertTrue(texte, texte.contains("CLIENT B"));
+        assertTrue(texte, texte.contains("TERMINÉ"));
+        // Chercher : seules les lignes qui contiennent le texte restent.
+        android.widget.EditText champ = (android.widget.EditText) vueAvecIndice(a.getWindow().getDecorView(), "Chercher un client…");
+        assertNotNull(champ);
+        champ.setText("client b");
+        ShadowLooper.idleMainLooper();
+        View a1 = vueAvecTexte(a.getWindow().getDecorView(), "CLIENT A");
+        while (a1 != null && !a1.isClickable()) a1 = (View) a1.getParent();
+        assertEquals(View.GONE, ((View) a1.getParent()).getVisibility());
+        vueAvecTexte(a.getWindow().getDecorView(), "Coloris").performClick();
+        ShadowLooper.idleMainLooper();
+        assertTrue(ecran(a).contains("Suivi par coloris"));
+        assertTrue(ecran(a).contains("1122"));
     }
 
     /** Le vrai fichier écrit par la page web après la lecture de deux extractions Diakonos (test_web_suivi.js). */
@@ -605,7 +653,29 @@ public class PartageTest {
         assertTrue(texte, texte.contains("LAN264702START"));
         assertTrue(texte, texte.contains("61 %"));
         assertTrue(texte, texte.contains("LAN264801START"));
+        // Suivi par transporteur / coloris / client : les totaux sont ceux des barres.
+        for (String vue : new String[] {"semaine", "transporteur", "coloris", "client"}) {
+            double faites = 0;
+            double restantes = 0;
+            for (FichierPartage.GroupeSuivi g : f.suivi.vues.get(vue)) {
+                faites += g.f;
+                restantes += g.r;
+            }
+            assertEquals(vue, f.suivi.faites, faites, 0.001);
+            assertEquals(vue, f.suivi.restantes, restantes, 0.001);
+        }
+        assertTrue(texte, texte.contains("Suivi par"));
         capturerSiDemande(a, "appli_suivi_vrai.png");
+    }
+
+    private static View vueAvecIndice(View v, String indice) {
+        if (v instanceof TextView && ((TextView) v).getHint() != null && indice.contentEquals(((TextView) v).getHint())) return v;
+        if (v instanceof ViewGroup)
+            for (int i = 0; i < ((ViewGroup) v).getChildCount(); i++) {
+                View t = vueAvecIndice(((ViewGroup) v).getChildAt(i), indice);
+                if (t != null) return t;
+            }
+        return null;
     }
 
     private static View vueAvecTexte(View v, String texte) {

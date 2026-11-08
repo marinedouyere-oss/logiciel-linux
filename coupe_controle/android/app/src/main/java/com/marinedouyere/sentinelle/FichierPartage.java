@@ -116,7 +116,20 @@ final class FichierPartage {
         /** Pièces à faire par transporteur et par semaine : colonnes (semaines puis « Total »), lignes (transporteur, valeurs…). */
         final List<String> colonnes = new ArrayList<>();
         final List<String[]> tableau = new ArrayList<>();
+        /** V6.3.3 : suivi par semaine, transporteur, coloris, client (même calcul que les barres). Vue → lignes. */
+        final Map<String, List<GroupeSuivi>> vues = new HashMap<>();
     }
+
+    /** Une ligne du suivi par… : nom, pièces faites, à faire, état, et le détail (par semaine, ou par transporteur). */
+    static final class GroupeSuivi {
+        String nom;
+        double f;
+        double r;
+        String e;
+        final List<GroupeSuivi> sous = new ArrayList<>();
+    }
+
+    static final String[] VUES_SUIVI = {"semaine", "transporteur", "coloris", "client"};
 
     static final class SemaineSuivi {
         String id;
@@ -325,7 +338,36 @@ final class FichierPartage {
             JSONArray lignes = tableau.optJSONArray("lignes");
             if (lignes != null) for (int i = 0; i < lignes.length(); i++) s.tableau.add(textes(lignes.optJSONArray(i)));
         }
+        JSONObject vues = js.optJSONObject("vues");
+        if (vues != null)
+            for (String vue : VUES_SUIVI) {
+                JSONArray lignes = vues.optJSONArray(vue);
+                if (lignes == null) continue;
+                List<GroupeSuivi> liste = new ArrayList<>();
+                for (int i = 0; i < lignes.length(); i++) {
+                    GroupeSuivi g = groupeSuivi(lignes.optJSONArray(i));
+                    if (g == null) continue;
+                    JSONArray sous = lignes.optJSONArray(i).optJSONArray(4);
+                    if (sous != null)
+                        for (int k = 0; k < sous.length(); k++) {
+                            GroupeSuivi x = groupeSuivi(sous.optJSONArray(k));
+                            if (x != null) g.sous.add(x);
+                        }
+                    liste.add(g);
+                }
+                s.vues.put(vue, liste);
+            }
         return s;
+    }
+
+    private static GroupeSuivi groupeSuivi(JSONArray a) {
+        if (a == null || a.length() < 4) return null;
+        GroupeSuivi g = new GroupeSuivi();
+        g.nom = a.optString(0, "");
+        g.f = a.optDouble(1, 0);
+        g.r = a.optDouble(2, 0);
+        g.e = a.optString(3, "");
+        return g;
     }
 
     private static final List<String> ORDRE_POSTES = java.util.Arrays.asList("Agglo 1er tour", "Recyclage", "Feno", "Casse", "Agglo 2ème tour");

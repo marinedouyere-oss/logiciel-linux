@@ -5,7 +5,8 @@
 //   - un CVC encore dans l'extraction : il reste « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 :
 //     8 à faire, 2 faites).
 // Une pièce relancée (casse, retard repris dans un lancement suivant ; Diakonos lui donne un n° de lancement 2, 3…) ne
-// compte que dans le lancement le plus récent qui l'a : elle est déduite du lancement d'origine.
+// compte que dans le lancement le plus récent qui l'a : elle est déduite du lancement d'origine. La casse est suivie dans
+// la semaine écrite dans son nom (LAN2646CASSE : semaine 46).
 // Un lancement d'une semaine que l'extraction ne contient pas du tout (ex. la 48 dans une extraction qui s'arrête à la
 // 47) n'est pas compté (« pas dans cette extraction »).
 // Les extractions sont lues sur ce PC (le dossier choisi une fois, ou un fichier chargé) et gardées dans le navigateur
@@ -237,6 +238,7 @@ const SUIVI = (() => {
   const BASE = "sentinelle-suivi-production";
   const GARDER_JOURS = 180; // les extractions plus anciennes que la dernière de 6 mois sont oubliées
   const CLE_INCLUS = "sentinelle-suivi-inclus";
+  const CLE_VUE = "sentinelle-suivi-vue"; // suivi par semaine, transporteur, coloris ou client (choix retenu)
   const CLE_RESUME = "sentinelle-suivi-resume"; // dernier résumé (le nôtre ou celui du fichier partagé, le plus récent)
   let base = null;
   function ouvrirBase() {
@@ -298,6 +300,9 @@ const SUIVI = (() => {
       return x && typeof x === "object" ? { production: x.production !== false, fournitures: x.fournitures !== false, resine: x.resine !== false } : { production: true, fournitures: true, resine: true };
     })(),
     ouverts: new Set(), // lancements dont le détail est ouvert
+    vue: lireLocal(CLE_VUE, "semaine"), // suivi par semaine, transporteur, coloris ou client
+    filtreVue: "", // texte cherché dans le suivi par…
+    groupesOuverts: new Set(), // lignes du suivi par… dont le détail est ouvert
     anciennesOuvertes: false,
     resume: null,
     cleResume: "",
@@ -387,6 +392,7 @@ const SUIVI = (() => {
     return i < 0 ? ORDRE_POSTES.length : i;
   };
   const MAX_COMMANDES = 200;
+  const TRANSPORTEUR_INCONNU = "Transporteur inconnu";
 
   // État d'un lancement : hors_extraction (sa semaine n'est pas dans l'extraction), casse (pas suivie dans Diakonos),
   // termine, retard (semaine passée, pas fini), en_cours.
@@ -420,15 +426,33 @@ const SUIVI = (() => {
       const cols = s.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
       const iCle = Math.max(0, cols.indexOf("cle"));
       const iQ = cols.indexOf("pieces") >= 0 ? cols.indexOf("pieces") : 4;
+      const iCmd = cols.indexOf("commande");
+      const iCol = cols.indexOf("coloris");
+      const iTr = cols.indexOf("transporteur");
+      const iCli = cols.indexOf("client");
       for (const l of s.lancements) {
         const pieces = new Map();
+        const infos = new Map(); // pièce → [commande, coloris, transporteur, client] (suivi par transporteur, coloris, client)
         for (const p of l.pieces || []) {
           const k = p[iCle];
           if (!k) continue;
           pieces.set(k, (pieces.get(k) || 0) + Math.max(0, Number(p[iQ]) || 0));
+          const val = (i) => (i >= 0 ? String(p[i] ?? "").trim() : "");
+          if (!infos.has(k)) infos.set(k, [val(iCmd), val(iCol), val(iTr), val(iCli)]);
         }
-        lancements.push({ cle: cleNomLancement(l.nom), nom: l.nom, poste: l.poste || "", casse: Boolean(l.casse), id: s.id, annee: s.annee, semaine: Number(s.semaine),
-          ordre: ordreSemaine(s.annee, Number(s.semaine)), pieces, deduites: new Map(), vus: new Set(), histo: [], presents: null, f: 0, r: 0, h: 0, fPrec: null, couvert: false });
+        // La casse est suivie dans la semaine écrite dans son nom (LAN2646CASSE : semaine 46), même si la bibliothèque
+        // la range dans la semaine suivante.
+        const casse = Boolean(l.casse) || /CASSE/i.test(l.nom);
+        let annee = s.annee;
+        let semaine = Number(s.semaine);
+        const code = casse && typeof semaineEtTourDuLancement === "function" ? semaineEtTourDuLancement(l.nom) : null;
+        const n = code ? Number(code[0]) : 0;
+        if (n >= 1 && n <= 53 && n !== semaine) {
+          annee = n > semaine + 26 ? annee - 1 : n < semaine - 26 ? annee + 1 : annee;
+          semaine = n;
+        }
+        lancements.push({ cle: cleNomLancement(l.nom), nom: l.nom, poste: l.poste || "", casse, id: idSemaine(annee, semaine), annee, semaine,
+          ordre: ordreSemaine(annee, semaine), pieces, infos, deduites: new Map(), vus: new Set(), histo: [], presents: null, f: 0, r: 0, h: 0, fPrec: null, couvert: false });
       }
     }
     lancements.sort((a, b) => a.ordre - b.ordre || rangPoste(a.poste) - rangPoste(b.poste) || a.nom.localeCompare(b.nom));
@@ -441,12 +465,20 @@ const SUIVI = (() => {
       }
     });
     // Une pièce relancée (casse, retard repris dans un lancement suivant) ne compte que dans le lancement le plus
-    // récent qui l'a : elle est déduite du lancement d'origine (règle de l'atelier). Deux lancements de la même semaine
-    // qui ont la pièce la gardent tous les deux.
+    // récent qui l'a : elle est déduite du lancement d'origine (règle de l'atelier). Dans une même semaine, la casse
+    // passe en dernier (c'est la relance), puis l'ordre des postes (1er tour, recyclage, Feno, 2ème tour, chantiers).
+    const recence = (L) => [L.ordre, L.casse ? 1 : 0, rangPoste(L.poste)];
+    const plusRecentQue = (a, b) => {
+      const x = recence(a);
+      const y = recence(b);
+      for (let k = 0; k < x.length; k++) if (x[k] !== y[k]) return x[k] > y[k];
+      return a.nom > b.nom;
+    };
     const proprietaires = new Map();
     for (const [k, liste] of index) {
-      const plusRecent = Math.max(...liste.map((i) => lancements[i].ordre));
-      const garde = liste.filter((i) => lancements[i].ordre === plusRecent);
+      let dernier = liste[0];
+      for (const i of liste) if (plusRecentQue(lancements[i], lancements[dernier])) dernier = i;
+      const garde = [dernier];
       proprietaires.set(k, garde);
       if (garde.length === liste.length) continue;
       const ou = [...new Set(garde.map((i) => lancements[i].nom))].join(", ");
@@ -594,6 +626,85 @@ const SUIVI = (() => {
       }
       return [...m.values()].reduce((t, v) => [t[0] + v[0], t[1] + v[1]], [0, 0]);
     };
+    // Suivi par semaine, par transporteur, par coloris : les mêmes pièces et le même calcul que les barres (faites =
+    // lancées − « Qte en cours », CVC plus dans l'extraction = faite ; une pièce relancée compte dans le plus récent).
+    // Transporteur : celui du fichier de lancement (trans_nomcourt) ; pour un lancement rangé avant la V6.3.3 (sans
+    // cette colonne), celui de Diakonos (la pièce, sinon sa commande), ramené au nom du fichier de lancement quand on le
+    // connaît. « LOG4 T3 » et « LOG 4 T3 » : le même transporteur (écrit comme le plus souvent).
+    const transpCle = new Map();
+    const transpCommande = new Map();
+    for (const e of ex)
+      for (const r of e.lignes) {
+        if (!r[7] || r[7] === "(sans transporteur)") continue;
+        transpCle.set(cleLigne(r[2], r[3]), r[7]);
+        transpCommande.set(r[2], r[7]);
+      }
+    const cleTr = (t) => t.toUpperCase().replace(/\s+/g, "");
+    const ecritures = new Map(); // transporteur → { écriture : nombre de pièces }
+    const compter = (m, a, b) => {
+      if (!m.has(a)) m.set(a, new Map());
+      m.get(a).set(b, (m.get(a).get(b) || 0) + 1);
+    };
+    const lePlusSouvent = (m) => [...m.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0][0];
+    const appris = new Map(); // nom Diakonos → transporteur du fichier de lancement
+    for (const L of lancements) {
+      if (!affiches.has(L.id) || !L.detail) continue;
+      for (const k of L.detail.keys()) {
+        const [commande, , tr] = L.infos.get(k) || ["", "", ""];
+        const diak = transpCle.get(k) || transpCommande.get(commande);
+        if (tr) compter(ecritures, cleTr(tr), tr.replace(/\s+/g, " "));
+        if (tr && diak) compter(appris, diak, cleTr(tr));
+      }
+    }
+    const transporteurDe = (k, commande, tr) => {
+      if (tr) return lePlusSouvent(ecritures.get(cleTr(tr)));
+      const diak = transpCle.get(k) || transpCommande.get(commande);
+      if (!diak) return TRANSPORTEUR_INCONNU;
+      const c = appris.has(diak) ? lePlusSouvent(appris.get(diak)) : null;
+      return c && ecritures.has(c) ? lePlusSouvent(ecritures.get(c)) : diak;
+    };
+    const groupes = { semaine: new Map(), transporteur: new Map(), coloris: new Map(), client: new Map() };
+    const ajouter = (vue, cle, nom, ordre, sCle, sNom, sOrdre, fk, rk, enRetard) => {
+      const m = groupes[vue];
+      if (!m.has(cle)) m.set(cle, { nom, ordre, f: 0, r: 0, retard: false, sous: new Map() });
+      const g = m.get(cle);
+      g.f += fk;
+      g.r += rk;
+      if (enRetard) g.retard = true;
+      if (!g.sous.has(sCle)) g.sous.set(sCle, { nom: sNom, ordre: sOrdre, f: 0, r: 0, retard: false });
+      const x = g.sous.get(sCle);
+      x.f += fk;
+      x.r += rk;
+      if (enRetard) x.retard = true;
+    };
+    for (const L of lancements) {
+      if (!affiches.has(L.id) || !L.detail) continue;
+      const nomSem = `Semaine ${L.semaine}`;
+      for (const [k, [fk, rk]] of L.detail) {
+        const [commande, coloris, trLan, client] = L.infos.get(k) || ["", "", "", ""];
+        const tr = transporteurDe(k, commande, trLan);
+        const co = coloris || "Sans coloris";
+        const enRetard = rk > 0 && L.ordre < der.ordre;
+        ajouter("semaine", L.id, nomSem, L.ordre, tr, tr, 0, fk, rk, enRetard);
+        ajouter("transporteur", tr, tr, 0, L.id, nomSem, L.ordre, fk, rk, enRetard);
+        ajouter("coloris", co, co, 0, L.id, nomSem, L.ordre, fk, rk, enRetard);
+        ajouter("client", client || "Sans client", client || "Sans client", 0, L.id, nomSem, L.ordre, fk, rk, enRetard);
+      }
+    }
+    const etatGroupe = (g) => (g.f + g.r === 0 ? "absent" : g.r === 0 ? "termine" : g.retard ? "retard" : "en_cours");
+    // Par semaine : dans l'ordre ; ailleurs : le plus à faire d'abord (« Transporteur inconnu » à la fin).
+    const trier = (a, b) => (a.ordre || b.ordre ? a.ordre - b.ordre : (a.nom === TRANSPORTEUR_INCONNU) - (b.nom === TRANSPORTEUR_INCONNU) || b.r - a.r || b.f - a.f || a.nom.localeCompare(b.nom));
+    const ligneGroupe = (g) => [g.nom, g.f, g.r, etatGroupe(g), [...g.sous.values()].sort(trier).map((x) => [x.nom, x.f, x.r, etatGroupe(x)])];
+    const vues = {
+      // Chaque semaine affichée, même sans pièce suivie (ex. « pas dans cette extraction »).
+      semaine: semaines.map((s) => {
+        const g = groupes.semaine.get(s.id);
+        return [`Semaine ${s.semaine}`, s.f, s.r, s.e, g ? [...g.sous.values()].sort(trier).map((x) => [x.nom, x.f, x.r, etatGroupe(x)]) : []];
+      }),
+      transporteur: [...groupes.transporteur.values()].sort(trier).map(ligneGroupe),
+      coloris: [...groupes.coloris.values()].sort(trier).map(ligneGroupe),
+      client: [...groupes.client.values()].sort(trier).map(ligneGroupe),
+    };
     const [faites, restantes] = unique("detail");
     const [faitesAvant] = unique("detailPrec");
     const resume = {
@@ -620,6 +731,8 @@ const SUIVI = (() => {
       anciennes,
       hors: [...hors.entries()].sort(([a], [b]) => ordreCles(a, b)).map(([, x]) => [x.libelle, arrondi(x.pieces), x.lignes, x.commandes.size]),
       tableau: { colonnes: [...clesCol.map((c) => colonnes.get(c)), "Total"], lignes: lignesTableau },
+      // Suivi par semaine / transporteur / coloris / client : [nom, faites, à faire, état, [[nom, faites, à faire, état], …]].
+      vues,
     };
     etat.resume = resume;
     etat.cleResume = cle;
@@ -925,16 +1038,64 @@ const SUIVI = (() => {
       .join("")}</div>`;
   }
 
+  // Suivi par semaine, par transporteur, par coloris, par client : une barre par ligne, le même calcul que les lancements.
+  const VUES = [
+    ["semaine", "Semaine", "transporteur"],
+    ["transporteur", "Transporteur", "semaine"],
+    ["coloris", "Coloris", "semaine"],
+    ["client", "Client", "semaine"],
+  ];
+  function chiffresGroupe(f, r, e, resume) {
+    if (e === "hors_extraction") return `pas dans l'extraction du ${echapper(jourCourt(resume.jour))}`;
+    if (f + r === 0) return "rien à suivre";
+    return `<strong>${fmt(f)}</strong> faite${f > 1 ? "s" : ""} · <strong>${fmt(r)}</strong> à faire`;
+  }
+  function droiteGroupe(f, r, e) {
+    const p = pct(f, r);
+    return `<span class="sv-pct sv-t-${e}">${p === null ? echapper(LIBELLES_ETAT[e]) : `${p} %`}</span>${p !== null ? `<span class="sv-etat sv-t-${e}">${echapper(e === "en_cours" && !f ? "À faire" : LIBELLES_ETAT[e])}</span>` : ""}`;
+  }
+  function htmlVues(resume) {
+    const v = resume.vues;
+    if (!v) return "";
+    const [vue, nomVue, nomSous] = VUES.find(([k]) => k === etat.vue) || VUES[0];
+    const lignes = v[vue] || [];
+    const groupe = (g) => {
+      const cle = `${vue}|${g[0]}`;
+      const ouvert = etat.groupesOuverts.has(cle);
+      const sous = g[4] || [];
+      const detail = !ouvert
+        ? ""
+        : `<div class="sv-detail">${
+            sous.length
+              ? sous.map((x) => `<div class="sv-sous"><span class="sv-sous-nom">${echapper(x[0])}</span><span class="sv-milieu">${barre(x[1], x[2], x[3])}<span class="sv-chiffres">${chiffresGroupe(x[1], x[2], x[3], resume)}</span></span><span class="sv-droite">${droiteGroupe(x[1], x[2], x[3])}</span></div>`).join("")
+              : `<div class="note">Aucune pièce suivie.</div>`
+          }</div>`;
+      const cache = etat.filtreVue && !sansAccents(g[0]).includes(sansAccents(etat.filtreVue));
+      return `<div class="sv-lan${ouvert ? " ouvert" : ""}" data-sv-groupe="${echapper(cle)}" data-sv-nom="${echapper(sansAccents(g[0]))}"${cache ? " hidden" : ""}>
+        <button type="button" class="sv-ligne" aria-expanded="${ouvert}">
+          <span class="sv-nom"><span class="sv-poste">${echapper(g[0])}</span></span>
+          <span class="sv-milieu">${barre(g[1], g[2], g[3])}<span class="sv-chiffres">${chiffresGroupe(g[1], g[2], g[3], resume)}</span></span>
+          <span class="sv-droite">${droiteGroupe(g[1], g[2], g[3])}</span>
+        </button>${detail}</div>`;
+    };
+    return `<div class="carte" id="svVues"><div class="carte-titre">Suivi par ${nomVue.toLowerCase()}</div>
+      <div class="sv-vues"><div class="choix-semaine" role="group" aria-label="Suivi par">${VUES.map(([k, n]) => `<button type="button" data-sv-vue="${k}"${k === vue ? ' class="actif" aria-pressed="true"' : ' aria-pressed="false"'}>${n}</button>`).join("")}</div>
+        ${vue !== "semaine" ? `<input type="search" id="svFiltreVue" placeholder="Chercher un ${nomVue.toLowerCase()}…" aria-label="Chercher" value="${echapper(etat.filtreVue)}">` : ""}</div>
+      <div class="note">Les pièces des lancements, comptées comme les barres : faites = lancées − « Qte en cours » (CVC plus dans l'extraction = faite). Un clic sur une ligne : le détail par ${nomSous}.</div>
+      ${vue === "transporteur" && lignes.some((g) => g[0] === TRANSPORTEUR_INCONNU) ? `<div class="sv-message">« ${TRANSPORTEUR_INCONNU} » : pièces de lancements rangés dans la bibliothèque avant la version 6.3.3, déjà faites (plus dans l'extraction). Scannez de nouveau leur semaine dans « Contrôler la coupe » : le transporteur sera pris dans le fichier de lancement.</div>` : ""}
+      ${lignes.length ? lignes.map(groupe).join("") : '<div class="note">Aucune pièce suivie.</div>'}</div>`;
+  }
+
   function htmlTableau(resume, local) {
     const t = resume.tableau;
     if (!t || !t.lignes.length) return "";
     const totaux = t.colonnes.map((_, i) => t.lignes.reduce((s, l) => s + (Number(l[i + 1]) || 0), 0));
-    return `<div class="carte"><div class="carte-titre">Pièces à faire par transporteur et par semaine</div>
+    return `<div class="carte"><div class="carte-titre">Qté en cours par transporteur et par semaine (comme dans Excel)</div>
       ${local ? htmlInclus(resume) : ""}
       <div class="defile"><table class="sv-table sv-croise"><thead><tr><th>Transporteur</th>${t.colonnes.map((c) => `<th class="nombre">${echapper(c)}</th>`).join("")}</tr></thead>
       <tbody>${t.lignes.map((l) => `<tr><td>${echapper(l[0])}</td>${l.slice(1).map((v, i) => `<td class="nombre${i === l.length - 2 ? " total" : ""}">${v ? fmt(v) : ""}</td>`).join("")}</tr>`).join("")}</tbody>
       <tfoot><tr><td>Total</td>${totaux.map((v) => `<td class="nombre total">${fmt(v)}</td>`).join("")}</tr></tfoot></table></div>
-      <div class="note">« Qté en cours » de l'extraction du ${echapper(jourLong(resume.jour))}, comme dans Excel.</div></div>`;
+      <div class="note">Somme de « Qté en cours » de toute l'extraction du ${echapper(jourLong(resume.jour))} (lancements ou pas), comme dans Excel : pour contrôler avec Diakonos.</div></div>`;
   }
 
   function htmlHors(resume) {
@@ -966,6 +1127,7 @@ const SUIVI = (() => {
     html += htmlCarteExtraction(resume, Boolean(local));
     if (resume) {
       html += htmlTuiles(resume);
+      html += htmlVues(resume);
       html += `<div class="carte"><div class="carte-titre">Avancement par lancement</div>
         <div class="note">L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Une pièce relancée (casse, retard) compte dans le lancement le plus récent, et elle est déduite du lancement d'origine. Un clic sur un lancement : les commandes encore à faire.</div>
         <div class="sv-legende"><span><i class="sv-l-en_cours"></i>En cours</span><span><i class="sv-l-termine"></i>Terminé</span><span><i class="sv-l-retard"></i>En retard (semaine passée)</span><span><i class="sv-l-attente"></i>Pas dans cette extraction</span></div>
@@ -990,6 +1152,28 @@ const SUIVI = (() => {
         const cle = b.parentElement.dataset.svLan;
         if (etat.ouverts.has(cle)) etat.ouverts.delete(cle);
         else etat.ouverts.add(cle);
+        afficher();
+      })
+    );
+    page.querySelectorAll("[data-sv-vue]").forEach((b) =>
+      b.addEventListener("click", () => {
+        etat.vue = b.dataset.svVue;
+        etat.filtreVue = "";
+        ecrireLocal(CLE_VUE, etat.vue);
+        afficher();
+      })
+    );
+    if (q("svFiltreVue"))
+      q("svFiltreVue").addEventListener("input", (e) => {
+        etat.filtreVue = e.target.value;
+        const t = sansAccents(etat.filtreVue);
+        page.querySelectorAll("#svVues [data-sv-groupe]").forEach((d) => (d.hidden = Boolean(t) && !d.dataset.svNom.includes(t)));
+      });
+    page.querySelectorAll("[data-sv-groupe] > .sv-ligne").forEach((b) =>
+      b.addEventListener("click", () => {
+        const cle = b.parentElement.dataset.svGroupe;
+        if (etat.groupesOuverts.has(cle)) etat.groupesOuverts.delete(cle);
+        else etat.groupesOuverts.add(cle);
         afficher();
       })
     );

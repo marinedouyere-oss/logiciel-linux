@@ -972,6 +972,13 @@ final class PartageVue {
     // ---- Suivi de production (V6.2) : comme l'onglet du PC, lu dans le fichier partagé ----
 
     private final java.util.Set<String> suiviOuverts = new java.util.HashSet<>();
+    /** V6.3.3 : suivi par semaine, transporteur, coloris ou client (comme sur le PC). */
+    private String vueSuivi = "semaine";
+    private String filtreVueSuivi = "";
+    private final java.util.Set<String> groupesOuverts = new java.util.HashSet<>();
+    /** Vue, nom affiché, détail d'une ligne. */
+    static final String[][] VUES_SUIVI = {{"semaine", "Semaine", "transporteur"}, {"transporteur", "Transporteur", "semaine"}, {"coloris", "Coloris", "semaine"}, {"client", "Client", "semaine"}};
+    static final String TRANSPORTEUR_INCONNU = "Transporteur inconnu";
     /** Lancements ouverts dans Contrôler la coupe (les autres : seulement leur titre et leur état). */
     private final java.util.Set<String> controlesOuverts = new java.util.HashSet<>();
     private static final int BLEU = 0xFF2A78D6;
@@ -986,7 +993,7 @@ final class PartageVue {
             case "termine":
                 return "Terminé";
             case "absent":
-                return "Plus rien dans Diakonos";
+                return "Rien à suivre";
             case "attente":
                 return "Pas encore dans Diakonos";
             case "hors_extraction":
@@ -1121,6 +1128,8 @@ final class PartageVue {
         racine.addView(bandeChiffres(new String[] {fmtSuivi(s.lancements), "Lancements"}, new String[] {fmtSuivi(s.faites), "Pièces faites", null, depuis},
                 new String[] {fmtSuivi(s.restantes), "Pièces à faire"}, new String[] {fmtSuivi(s.retard), "En retard", s.retard > 0 ? "souci" : null}));
 
+        if (!s.vues.isEmpty()) racine.addView(carteVuesSuivi(s));
+
         racine.addView(ui.texte("Avancement par lancement", 15, true, Ui.NOIR), ui.marges(8, 0));
         racine.addView(ui.texte("L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Une pièce relancée (casse, retard) compte dans le lancement le plus récent, et elle est déduite du lancement d'origine. Touchez un lancement : les commandes encore à faire.",
                 13, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 4));
@@ -1215,10 +1224,147 @@ final class PartageVue {
         return avecFilet;
     }
 
+    /** « 18 faites · 3 à faire » (comme le PC). */
+    static String chiffresGroupe(double f, double r, String e, String jour) {
+        if ("hors_extraction".equals(e)) return "pas dans l'extraction du " + jourCourt(jour);
+        if (f + r == 0) return "rien à suivre";
+        return fmtSuivi(f) + (f > 1 ? " faites" : " faite") + " · " + fmtSuivi(r) + " à faire";
+    }
+
+    /** Pour chercher : sans accents ni espaces, en minuscules (comme le PC). */
+    static String sansAccents(String t) {
+        return java.text.Normalizer.normalize(t == null ? "" : t, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9]", "");
+    }
+
+    /** Suivi par semaine, par transporteur, par coloris, par client : une barre par ligne, le même calcul que les lancements. */
+    private View carteVuesSuivi(FichierPartage.Suivi s) {
+        String[] v = VUES_SUIVI[0];
+        for (String[] x : VUES_SUIVI) if (x[0].equals(vueSuivi)) v = x;
+        final String vue = v[0];
+        List<FichierPartage.GroupeSuivi> lignes = s.vues.get(vue);
+        if (lignes == null) lignes = new ArrayList<>();
+        MaterialCardView carte = ui.carte();
+        LinearLayout corps = corpsDe(carte);
+        corps.addView(ui.titreCarte("Suivi par " + v[1].toLowerCase(Locale.FRANCE)));
+        // Le choix de la vue : Semaine | Transporteur | Coloris | Client.
+        LinearLayout choix = ui.rangee();
+        android.graphics.drawable.GradientDrawable fond = ui.fondRond(0xFFFFFFFF, 10);
+        fond.setStroke(Math.max(1, ui.dp(1)), 0xFFD9D4CF);
+        choix.setBackground(fond);
+        choix.setClipToOutline(true);
+        for (String[] x : VUES_SUIVI) {
+            boolean actif = x[0].equals(vue);
+            TextView b = ui.texte(x[1], 13, true, actif ? 0xFFFFFFFF : Ui.NOIR);
+            b.setGravity(Gravity.CENTER);
+            b.setMinHeight(ui.dp(44));
+            b.setPadding(ui.dp(4), 0, ui.dp(4), 0);
+            b.setMaxLines(1);
+            if (actif) b.setBackground(ui.fondRond(Ui.BORDEAUX, 9));
+            else
+                ui.cliquable(b, w -> {
+                    vueSuivi = x[0];
+                    filtreVueSuivi = "";
+                    construire();
+                });
+            b.setContentDescription("Suivi par " + x[1].toLowerCase(Locale.FRANCE) + (actif ? " (choisi)" : ""));
+            b.setSelected(actif);
+            choix.addView(b, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        }
+        corps.addView(choix, ui.marges(4, 6));
+        corps.addView(ui.texte("Les pièces des lancements, comptées comme les barres : faites = lancées − « Qte en cours » (CVC plus dans l'extraction = faite). Touchez une ligne : le détail par " + v[2] + ".",
+                12, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 4));
+        if ("transporteur".equals(vue))
+            for (FichierPartage.GroupeSuivi g : lignes)
+                if (TRANSPORTEUR_INCONNU.equals(g.nom)) {
+                    corps.addView(ui.bandeau("« " + TRANSPORTEUR_INCONNU + " » : pièces de lancements rangés dans la bibliothèque avant la version 6.3.3, déjà faites (plus dans l'extraction). Sur le PC, scannez de nouveau leur semaine dans « Contrôler la coupe » : le transporteur sera pris dans le fichier de lancement.",
+                            ui.couleur(R.color.fond), Ui.NOIR), ui.marges(2, 4));
+                    break;
+                }
+        final List<View> blocs = new ArrayList<>();
+        final List<String> noms = new ArrayList<>();
+        if (!"semaine".equals(vue)) {
+            EditText champ = champ("Chercher un " + v[1].toLowerCase(Locale.FRANCE) + "…", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, filtreVueSuivi);
+            champ.setContentDescription("Chercher");
+            champ.addTextChangedListener(new android.text.TextWatcher() {
+                @Override
+                public void beforeTextChanged(CharSequence t, int a, int b, int c) {}
+
+                @Override
+                public void onTextChanged(CharSequence t, int a, int b, int c) {}
+
+                @Override
+                public void afterTextChanged(android.text.Editable t) {
+                    filtreVueSuivi = t.toString();
+                    String f = sansAccents(filtreVueSuivi);
+                    for (int i = 0; i < blocs.size(); i++) blocs.get(i).setVisibility(f.isEmpty() || noms.get(i).contains(f) ? View.VISIBLE : View.GONE);
+                }
+            });
+            corps.addView(champ, ui.marges(2, 6));
+        }
+        if (lignes.isEmpty()) corps.addView(ui.texte("Aucune pièce suivie.", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 4));
+        String filtre = sansAccents(filtreVueSuivi);
+        for (FichierPartage.GroupeSuivi g : lignes) {
+            View b = blocGroupeSuivi(g, vue, s);
+            String n = sansAccents(g.nom);
+            if (!filtre.isEmpty() && !n.contains(filtre)) b.setVisibility(View.GONE);
+            blocs.add(b);
+            noms.add(n);
+            corps.addView(b);
+        }
+        return carte;
+    }
+
+    private View blocGroupeSuivi(FichierPartage.GroupeSuivi g, String vue, FichierPartage.Suivi s) {
+        final String cle = vue + "|" + g.nom;
+        LinearLayout bloc = ui.colonne();
+        bloc.setPadding(0, ui.dp(8), 0, ui.dp(8));
+        LinearLayout tete = ui.rangee();
+        tete.addView(ui.texte(g.nom, 15, true, Ui.NOIR), ui.poids(1));
+        Integer p = pctSuivi(g.f, g.r);
+        LinearLayout droite = ui.colonne();
+        droite.setGravity(Gravity.END);
+        droite.addView(ui.titre(p == null ? libelleEtatSuivi(g.e, g.f) : p + " %", p == null ? 12 : 17, couleurTexteEtat(g.e)));
+        if (p != null) droite.addView(ui.texte(libelleEtatSuivi(g.e, g.f).toUpperCase(Locale.FRANCE), 10, true, couleurTexteEtat(g.e)));
+        tete.addView(droite);
+        bloc.addView(tete);
+        View barre = barreSuivi(g.f, g.r, g.e);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(10));
+        lp.setMargins(0, ui.dp(6), 0, ui.dp(4));
+        bloc.addView(barre, lp);
+        bloc.addView(ui.texte(chiffresGroupe(g.f, g.r, g.e, s.jour), 13, false, Ui.NOIR));
+        if (groupesOuverts.contains(cle)) {
+            if (g.sous.isEmpty()) bloc.addView(ui.texte("Aucune pièce suivie.", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 0));
+            for (FichierPartage.GroupeSuivi x : g.sous) {
+                LinearLayout r = ui.colonne();
+                r.setPadding(ui.dp(14), ui.dp(6), 0, ui.dp(4));
+                LinearLayout t = ui.rangee();
+                t.addView(ui.texte(x.nom, 13, true, Ui.NOIR), ui.poids(1));
+                Integer px = pctSuivi(x.f, x.r);
+                t.addView(ui.texte(px == null ? libelleEtatSuivi(x.e, x.f) : px + " % · " + libelleEtatSuivi(x.e, x.f).toUpperCase(Locale.FRANCE), 11, true, couleurTexteEtat(x.e)));
+                r.addView(t);
+                View bx = barreSuivi(x.f, x.r, x.e);
+                LinearLayout.LayoutParams lx = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ui.dp(8));
+                lx.setMargins(0, ui.dp(4), 0, ui.dp(2));
+                r.addView(bx, lx);
+                r.addView(ui.texte(chiffresGroupe(x.f, x.r, x.e, s.jour), 12, false, Ui.NOIR));
+                bloc.addView(r);
+            }
+        }
+        bloc.setOnClickListener(w -> {
+            if (!groupesOuverts.remove(cle)) groupesOuverts.add(cle);
+            construire();
+        });
+        bloc.setClickable(true);
+        LinearLayout avecFilet = ui.colonne();
+        avecFilet.addView(bloc);
+        avecFilet.addView(ui.separateur());
+        return avecFilet;
+    }
+
     private View carteTableauSuivi(FichierPartage.Suivi s) {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
-        corps.addView(ui.titreCarte("Pièces à faire par transporteur et par semaine"));
+        corps.addView(ui.titreCarte("Qté en cours par transporteur et par semaine (comme dans Excel)"));
         android.widget.HorizontalScrollView defile = new android.widget.HorizontalScrollView(activite);
         android.widget.TableLayout t = new android.widget.TableLayout(activite);
         android.widget.TableRow tete = new android.widget.TableRow(activite);
@@ -1247,7 +1393,7 @@ final class PartageVue {
         t.addView(total);
         defile.addView(t);
         corps.addView(defile);
-        corps.addView(ui.texte("« Qté en cours » de l'extraction du " + jourLisible(s.jour) + ", comme dans Excel.", 12, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 0));
+        corps.addView(ui.texte("Somme de « Qté en cours » de toute l'extraction du " + jourLisible(s.jour) + " (lancements ou pas), comme dans Excel : pour contrôler avec Diakonos.", 12, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 0));
         return carte;
     }
 
