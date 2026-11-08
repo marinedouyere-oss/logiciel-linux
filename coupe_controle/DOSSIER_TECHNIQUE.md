@@ -1,0 +1,267 @@
+# Sentinelle — dossier technique de reprise
+
+Document destiné à un développeur qui reprend le projet **Sentinelle** (contrôle de coupe
++ suivi de production, Laisné Industrie). Tout le code est dans ce dépôt ; ce document
+explique à quoi sert chaque partie, comment on la fabrique, comment les morceaux communiquent,
+et où continuer.
+
+> Le dépôt contient aussi `oracle_budget/` (une autre application, sans rapport) et
+> `suivi_production/` (une maquette, voir plus bas). Sentinelle = le dossier **`coupe_controle/`**.
+
+---
+
+## 1. Vue d'ensemble
+
+Sentinelle contrôle la découpe de panneaux (cuisines) à partir des fichiers de l'atelier,
+et suit l'avancement de la production. Il existe sous trois formes **qui partagent le même
+code métier** :
+
+- **PC** : une page web autonome (`coupe_controle/web/index.html`), empaquetée dans un `.exe`
+  Windows qui sert la page en local et l'ouvre dans Chrome. C'est le poste principal.
+- **Téléphone** : une application Android (`coupe_controle/android/`) qui est un **lecteur**
+  de l'état partagé par le PC (plus, depuis la V6.3, quelques retours vers le PC).
+- **Mini-site chiffré** (`coupe_controle/lien_telephone/`, Netlify) : relais qui transporte,
+  **chiffré de bout en bout**, l'état du PC vers le téléphone (et les retours).
+
+Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
+(`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
+(imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
+
+Version courante : **6.4.2** (le PC et l'APK partagent le même numéro ; l'agent suit).
+
+### Glossaire métier
+
+| Terme | Sens |
+|---|---|
+| **CVC** | Identifiant d'une pièce dans Diakonos : `CVC` + 8 chiffres (commande), + n° de ligne. La clé d'une pièce = commande + ligne (ligne sur 3 chiffres). |
+| **LAN** | Fichier de lancement (`LANssnnPOSTE.xlsx`, 37 colonnes) : les pièces à couper d'un lancement. **Jamais modifié** par Sentinelle (c'est la référence de la prod). |
+| **Diakonos** | Le logiciel de gestion de l'atelier (pas « ERP »). On n'y accède **pas** en SQL sans accord du service informatique. |
+| **Extraction** | Export Excel « Suivi production » de Diakonos (`suivi_production_JJMMAAAA.xlsx`) : les pièces qui restent à valider. |
+| **Bibliothèque** | Base locale (IndexedDB) des semaines et de leurs lancements, scannés dans « Contrôler la coupe ». Source des pièces lancées. |
+| **Cut Rite / .bkp** | Logiciel d'optimisation de coupe ; `.bkp` = projet contenant les plans de coupe (`.pct/.ptn/.brd`). |
+| **pf** | Petit format (couleur) — géré par l'atelier, pas par Sentinelle. |
+| **Casse** | Pièce cassée relancée. Suivie dans la semaine écrite dans le nom du lancement (`LAN2646CASSE` → semaine 46). |
+
+---
+
+## 2. Arborescence (ce qui compte)
+
+```
+coupe_controle/
+├── sources/                      # SOURCES de travail (à modifier ici)
+│   ├── web_src/                  # la page web en morceaux (assemblés ensuite)
+│   │   ├── 01_moteur.js          # cœur : lecture LAN, clés de pièces (cleLigne), règles
+│   │   ├── 03b_plans.js          # plans de coupe Cut Rite (.bkp)
+│   │   ├── 04*_*.js              # contrôles, scan, Diakonos, sommaire, correction
+│   │   ├── 06b_bibliotheque.js   # bibliothèque des semaines (IndexedDB) + fichier partagé
+│   │   ├── 06d_telephone.js      # LIEN chiffré : code → canal/jeton/clé, envoi au mini-site
+│   │   ├── 06g_retour_telephone.js # retour téléphone → PC (canal « retour »)
+│   │   ├── 06h_validations.js    # V6.4 : réception des étiquettes validées (canaux « validations »)
+│   │   ├── 07_ui.js              # interface (menu, pages), échappement HTML (echapper)
+│   │   ├── 07i_suivi_production.js # SUIVI de production (calcul + écran) — gros module (IIFE SUIVI)
+│   │   ├── 07j_etiquette_cvc.js  # V6.4 : décode l'étiquette Zebra (ZPL ^GFA) et LIT le CVC
+│   │   ├── 08_style.css, 08a_polices.css, 09_body.html
+│   ├── outils/                   # fabrication + TESTS
+│   │   ├── assembler_web.py      # assemble web_src/ → web/index.html (porte la version)
+│   │   ├── test_web*.js          # tests Playwright (navigateur réel)
+│   │   ├── fabriquer_etiquette_test.py  # fabrique une fausse étiquette ZPL (test, anonyme)
+│   └── LISEZMOI.md
+├── web/                          # page ASSEMBLÉE + PWA (manifest, sw.js, icônes)
+│   └── index.html                # LIVRÉE (générée par assembler_web.py — ne pas éditer à la main)
+├── android/                      # application téléphone (Gradle, Java, Robolectric)
+│   └── app/src/main/java/com/marinedouyere/sentinelle/*.java
+├── windows/                      # lanceur .exe (Go) + ressources
+│   ├── main.go, fenetre_windows.go, reseau.go, fabriquer.sh, ressources.py
+│   └── outils/
+│       ├── agent_validation/     # V6.4 : AGENT des PC de validation (Go)
+│       └── detecteur_etiquette/  # outil d'essai (capture d'une étiquette Zebra)
+├── lien_telephone/               # mini-site Netlify (relais chiffré)
+│   └── netlify/functions/partage.mjs
+├── claustra/                     # logiciel à part (fichier de lancement des claustras)
+└── DOSSIER_TECHNIQUE.md          # ce fichier
+```
+
+`coupe_controle/web/android/` est une **ancienne** variante (ignorer) ; l'appli courante est
+`coupe_controle/android/`.
+
+---
+
+## 3. Architecture et flux
+
+```mermaid
+flowchart LR
+  subgraph PC["PC principal (Sentinelle.exe → page web dans Chrome)"]
+    BIB["Bibliothèque (IndexedDB)\nsemaines + lancements"]
+    SUIVI["Suivi de production\n(extraction Diakonos + validations)"]
+  end
+  LAN["Fichiers LAN (.xlsx)\n+ .bkp Cut Rite"] -->|scan, lecture seule| BIB
+  EXTRACT["Extraction Diakonos\nsuivi_production_*.xlsx"] -->|lecture seule| SUIVI
+  BIB -->|chiffré AES-GCM| MINISITE["Mini-site Netlify\n(stocke des fichiers illisibles)"]
+  MINISITE -->|chiffré| TEL["Téléphone (APK)\nlecteur"]
+  TEL -->|retours chiffrés| MINISITE
+  subgraph VALID["PC de validation (×2, imprimante Zebra USB)"]
+    AGENT["Agent de validation\nsurveille l'imprimante"]
+  end
+  ZEBRA["Étiquette imprimée\n(ZPL ^GFA = image)"] --> AGENT
+  AGENT -->|étiquette chiffrée,\n1 canal par poste| MINISITE
+  MINISITE -->|Sentinelle lit le CVC| SUIVI
+```
+
+### Le lien chiffré (PC ↔ téléphone ↔ agents)
+
+Tout passe par le **mini-site** `https://sentinelle-laisne-0ysi8zpn.netlify.app/api/partage`.
+Le site ne voit que des octets chiffrés. Le **code de liaison** (16 caractères, ~80 bits,
+alphabet sans O/0/I/1) n'est **jamais** envoyé.
+
+À partir du code `n` (normalisé majuscules + alphanumérique) :
+
+- **canal** (où est le fichier) = `SHA-256("<but>:" + n)` → 32 hex.
+  - fichier partagé : but `sentinelle-canal` → `06d_telephone.js` (`sentinelle-canal:n`).
+  - retour téléphone : but `sentinelle-retour`.
+  - validations poste P : but `sentinelle-validations:P` (P = 1..4).
+- **jeton d'écriture** = `SHA-256("sentinelle-ecriture:" + n)` (le 1ᵉʳ écrivain d'un canal le fixe).
+- **clé** = PBKDF2-HMAC-SHA256(mot de passe = `n`, sel = `sentinelle-laisne-industrie`,
+  150 000 itérations, 32 octets) → AES-256-GCM.
+- **paquet** = `"SNT1"` (4) + IV (12) + chiffré AES-GCM (avec le tag). Le contenu peut être gzip.
+
+L'API (`partage.mjs`) : `GET ?canal=` → manifeste ; `GET ?canal=&version=&partie=i` → octets ;
+`PUT …` (en-tête `X-Sentinelle-Jeton`) dépose une partie ; `POST ?canal=` publie le manifeste
+et efface l'ancienne version. Taille par partie ≤ 5 Mo, ≤ 60 parties.
+
+### Le fichier partagé (PC → téléphone)
+
+`contenuFichierPartage()` (`06b_bibliotheque.js`) : `{ format, genere, par, colonnesPieces,
+explications, semaines[], suiviProduction, retourTelephone, retourValidations }`.
+Envoyé au canal « fichier » dès qu'il change (signature comparée). Le téléphone le lit.
+
+### Le suivi en direct (V6.4, le point délicat)
+
+Diakonos imprime l'étiquette d'une pièce **en image** (ZPL `^GFA`, compressé Z64 = zlib+base64) :
+pas de texte, pas de code-barre exploitable. La chaîne :
+
+1. **Agent** (`agent_validation/`, Go, sur le PC de validation) : surveille le dossier spool
+   Windows (`C:\Windows\System32\spool\PRINTERS`, avec « conserver les documents imprimés »).
+   À chaque nouvelle étiquette, il la met en file, la chiffre (même format SNT1 que le lien) et
+   la **dépose sur son canal** (`sentinelle-validations:<poste>`). File locale + accusés.
+2. **Sentinelle** (`06h_validations.js`) : interroge les canaux des postes (1..4) toutes les 8 s,
+   déchiffre le lot, et pour chaque étiquette appelle `lireCvcEtiquette` (`07j`).
+3. **Lecture du CVC** (`07j_etiquette_cvc.js`) : décode l'image `^GFA`, repère la ligne du CVC,
+   lit les 8 chiffres **un par un** (police à pas fixe ; gabarits dessinés au canvas), puis
+   **choisit la commande lancée** qui colle le mieux (recoupée avec la bibliothèque). Une lecture
+   douteuse est **écartée** (jamais une mauvaise pièce). Renvoie `{ commande, ligne, cle, … }`.
+4. **Intégration au suivi** (`07i`, dans `calculer`) : une pièce dont la clé est validée compte
+   comme **faite tout de suite**, même encore dans l'extraction. L'extraction Diakonos reste le
+   **contrôle**. Les étiquettes prises sont accusées dans le fichier partagé
+   (`retourValidations.traitees`) pour que l'agent arrête de les renvoyer.
+
+Activité par poste et bouton « Réinitialiser » : `htmlBandeauValidations()` (06h) + `brancher()`
+(07i). Chaque poste a un **nom** (ex. « Crédences ») envoyé dans son lot.
+
+---
+
+## 4. Fabrication (build)
+
+Prérequis : Python 3 (+ Pillow pour les icônes), Node + Playwright (Chromium pré-installé),
+Go ≥ 1.24, Gradle + JDK (pour l'APK).
+
+```sh
+# 1) Assembler la page web (OBLIGATOIRE après toute modif de web_src/)
+cd coupe_controle
+python3 -I sources/outils/assembler_web.py web/index.html sources/web_src web/index.html
+
+# 2) .exe Windows de Sentinelle (lit la version dans web/manifest.webmanifest)
+cd coupe_controle/windows && sh fabriquer.sh <dossier_de_sortie>
+
+# 3) APK téléphone
+cd coupe_controle/android && gradle --offline :app:assembleRelease
+#    (tests : gradle --offline :app:testDebugUnitTest)
+
+# 4) Agent de validation (Go, Windows)
+cd coupe_controle/windows/outils/agent_validation
+#    ressources (icône + manifeste « administrateur ») :
+python3 -I ../../ressources.py ../../../web/icons/icon-512.png 1.0.0 rsrc_windows_amd64.syso "Agent validation" "Suivi en direct"
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-s -w" -o "Agent validation Sentinelle.exe" .
+
+# 5) Mini-site : déploiement Netlify du dossier coupe_controle/lien_telephone
+```
+
+### Où se trouve le numéro de version
+
+À changer **ensemble** : `web/sw.js` (CACHE_NAME), `web/manifest.webmanifest`,
+`sources/outils/assembler_web.py` (titre, avec une assertion), `sources/web_src/09_body.html`
+(badge + pied de page), `android/app/build.gradle` (`versionName` + `versionCode`),
+`windows/outils/agent_validation/main.go` (`versionAgent`).
+
+---
+
+## 5. Tests
+
+Les tests Playwright chargent la vraie page dans Chromium et vérifient le comportement.
+Beaucoup prennent en argument des **données client** (dossiers de lancement, extractions) qui ne
+sont **pas** dans le dépôt : il faut les fournir localement.
+
+```sh
+cd coupe_controle/sources
+node outils/test_web.js ../web/index.html <…dossiers semaine…>
+node outils/test_web_suivi.js ../web/index.html <Semaine 47> <LAN…48.xlsx> <extraction.xlsx> <ref.json> <python> <fabriquer_extraction.py> <sortie> [capture] [Semaine 46]
+# Suivi en direct (autonome, données anonymes générées) :
+node outils/test_web_etiquette.js ../web/index.html <python> outils/fabriquer_etiquette_test.py <sortie> [etiquette_reelle.spl]
+# Agent (chiffrement/canal, se teste sur ce poste, sans Windows) :
+cd ../windows/outils/agent_validation && go test ./...   # (ou test-envoyer / test-relire contre le vrai mini-site)
+# Android (Robolectric) :
+cd coupe_controle/android && gradle --offline :app:testDebugUnitTest
+```
+
+`test_web_etiquette.js` couvre la lecture du CVC (vraie étiquette + fausses anonymes) et le
+rendu de l'écran Suivi **lien branché** (régression de la page blanche).
+
+---
+
+## 6. Règles métier à respecter (important)
+
+- **Ne jamais modifier** le fichier LAN, la liste de coupe, ni le `.bkp` : ce sont les
+  références de la production. Les corrections se font côté PC ; le téléphone n'est qu'un lecteur
+  (ses retours sont **appliqués par le PC**).
+- **Pas d'accès SQL** à Diakonos sans accord du service informatique ; ne jamais extraire
+  d'identifiants. woodStore = lecture seule.
+- **Données client** (LAN, extractions Diakonos, `.bkp`…) : **jamais** dans le dépôt. Les
+  fixtures de test sont anonymisées.
+- Textes d'interface : **français simple et court**. Dire « logiciel de gestion », pas « ERP ».
+- La **version** ne doit pas apparaître dans le fichier généré par Sentinelle, mais doit être
+  visible dans l'interface.
+- Le PC et l'APK portent **le même numéro de version**.
+
+---
+
+## 7. Déploiement
+
+- **PC principal** : remplacer `Sentinelle Vx.y.z.exe`. Il sert la page en local (127.0.0.1,
+  port fixe) et l'ouvre dans Chrome (Edge à défaut). Mémoire par adresse locale.
+- **Téléphone** : installer l'APK par-dessus (garde lien + réglages).
+- **PC de validation (×2)** : installer `Agent validation Sentinelle.exe` (administrateur),
+  `setup` (code de liaison = celui du téléphone + numéro + nom du poste). Démarrage auto par
+  tâche planifiée au logon. Internet requis.
+- **Mini-site** : Netlify, dossier `lien_telephone/`.
+
+---
+
+## 8. Reprise : points ouverts
+
+- **Renforcer le mini-site** (laissé exprès pour ne pas casser le lien en service) : ajouter un
+  **jeton de lecture** (un `GET` exige un en-tête dérivé du code), effacement automatique plus
+  agressif des vieux canaux. À faire avec prudence (coordonné PC + téléphone + agent).
+- **Agent** : capture réelle de la Zebra et démarrage auto à valider sur site (non testables hors
+  atelier). Driver ZDesigner GK420t en mode graphique (étiquette = image) — si le modèle de la
+  Zebra change et que la mise en page bouge, revalider `07j` (gabarits, repérage de la ligne CVC).
+- L'historique du suivi en direct est gardé par navigateur (localStorage) ; le bouton
+  « Réinitialiser » le vide (phase de dev).
+
+---
+
+## 9. Dépôt et accès
+
+- Dépôt : **`marinedouyere-oss/logiciel-linux`** (GitHub).
+- Branche de développement : **`claude/happy-ride-7x1yby`** (tout le travail récent y est).
+- Donner accès au développeur : *Settings → Collaborators* du dépôt (ou l'équipe), en lecture
+  ou écriture selon le besoin. Un développeur clone le dépôt et travaille sur la branche (ou en
+  ouvre une nouvelle à partir d'elle).
