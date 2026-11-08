@@ -412,7 +412,9 @@ const SUIVI = (() => {
 
   // Le résumé complet (écran du PC, fichier partagé, téléphone). null sans extraction.
   function calculer() {
-    const cle = `${bibliotheque.generation}|${etat.generation}|${JSON.stringify(etat.inclus)}`;
+    // Pièces déjà faites reçues en direct des PC de validation (étiquette imprimée = pièce faite).
+    const validees = typeof clesValidees === "function" ? clesValidees() : new Set();
+    const cle = `${bibliotheque.generation}|${etat.generation}|${JSON.stringify(etat.inclus)}|v${validees.size}`;
     if (etat.resume && etat.cleResume === cle) return etat.resume;
     const ex = etat.extractions;
     if (!ex.length) return null;
@@ -501,10 +503,14 @@ const SUIVI = (() => {
           lancements[i].vus.add(k);
         }
       }
+      const dernier = n === ex.length - 1; // seule l'extraction la plus récente profite des validations en direct
       lancements.forEach((L, i) => {
         const p = presents.get(i) || new Map();
+        // Une pièce validée en direct (étiquette imprimée) compte comme faite, même si elle est encore dans
+        // l'extraction (l'étiquette va plus vite que l'extraction).
+        const aValidee = dernier && [...L.pieces.keys()].some((k) => validees.has(k));
         // Sa semaine n'est pas dans l'extraction (et aucune de ses pièces) : l'extraction ne dit rien de lui.
-        const couvert = p.size > 0 || L.ordre <= e.ordreMax;
+        const couvert = p.size > 0 || L.ordre <= e.ordreMax || aValidee;
         let f = 0;
         let r = 0;
         const detail = n >= ex.length - 2 ? new Map() : null; // par pièce (pour les totaux : une pièce comptée une fois)
@@ -513,7 +519,9 @@ const SUIVI = (() => {
             const v = p.get(k);
             let fk = 0;
             let rk = 0;
-            if (v) {
+            if (dernier && validees.has(k)) {
+              fk = q; // validée en direct : faite
+            } else if (v) {
               // Encore dans l'extraction : « Qte en cours » à faire, le reste du lancement est fait.
               rk = Math.min(q, Math.max(0, v.cours));
               fk = q - rk;
@@ -1125,6 +1133,7 @@ const SUIVI = (() => {
     const resume = local || pourPartage();
     let html = entetePage("Outils", "Suivi de production", "L'avancement de chaque lancement, d'après l'extraction « Suivi production » de Diakonos.");
     html += htmlCarteExtraction(resume, Boolean(local));
+    if (typeof htmlBandeauValidations === "function") html += htmlBandeauValidations();
     if (resume) {
       html += htmlTuiles(resume);
       html += htmlVues(resume);
@@ -1225,7 +1234,15 @@ const SUIVI = (() => {
     if (etat.dossier) await lireDossier(false);
   }
 
-  return { afficher, demarrer, pourPartage, signature, recevoir, chargerFichiers, lireDossier, etat, calculer };
+  // De nouvelles pièces faites reçues des PC de validation : on recalcule et on réaffiche.
+  function rafraichirValidations() {
+    etat.resume = null;
+    pourPartage();
+    if (typeof planifierEnvoiTelephone === "function") planifierEnvoiTelephone();
+    rafraichir();
+  }
+
+  return { afficher, demarrer, pourPartage, signature, recevoir, chargerFichiers, lireDossier, etat, calculer, rafraichirValidations };
 })();
 
 function afficherSuiviProduction() {

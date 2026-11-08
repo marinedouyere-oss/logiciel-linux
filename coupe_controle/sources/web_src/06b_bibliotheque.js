@@ -471,12 +471,14 @@ function contenuFichierPartage() {
     suiviProduction: typeof suiviPourPartage === "function" ? suiviPourPartage() : null,
     // V6.3 : les demandes du téléphone reprises par ce PC (le téléphone les retire de sa file d'attente).
     retourTelephone: typeof retourPourPartage === "function" ? retourPourPartage() : null,
+    // V6.4 : les étiquettes validées déjà prises en compte (les PC de validation arrêtent de les renvoyer).
+    retourValidations: typeof accusesValidations === "function" ? { traitees: accusesValidations() } : null,
   };
 }
 
-// Signature du fichier partagé : les semaines, le suivi de production et les réponses au téléphone.
-const signaturePartage = (semaines, suivi, retour = null) =>
-  `${signatureDesSemaines(semaines)}|suivi:${typeof signatureSuivi === "function" ? signatureSuivi(suivi) : ""}|retour:${retour && retour.traitees ? Object.keys(retour.traitees).sort().join(",") : ""}`;
+// Signature du fichier partagé : les semaines, le suivi, les réponses au téléphone et les étiquettes prises.
+const signaturePartage = (semaines, suivi, retour = null, valid = null) =>
+  `${signatureDesSemaines(semaines)}|suivi:${typeof signatureSuivi === "function" ? signatureSuivi(suivi) : ""}|retour:${retour && retour.traitees ? Object.keys(retour.traitees).sort().join(",") : ""}|val:${valid && valid.traitees ? Object.keys(valid.traitees).length : 0}`;
 
 async function ecrireFichierPartage() {
   const octets = await compresserJson(contenuFichierPartage());

@@ -2972,6 +2972,7 @@ document.querySelectorAll("img[data-logo]").forEach((img) => (img.src = img.data
   SUIVI.demarrer().catch(() => {});
   // V6.3 : les demandes du téléphone (plans modifiés, problèmes validés OK), lues toutes seules.
   demarrerRetourTelephone();
+  if (typeof demarrerValidations === "function") demarrerValidations();
 })();
 
 // N'a d'effet que servi en http(s)/localhost (ex. server/lancer_sentinelle.bat).

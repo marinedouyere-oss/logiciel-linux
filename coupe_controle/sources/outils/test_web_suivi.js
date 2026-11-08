@@ -90,6 +90,29 @@ const LANS_S47 = [
   // La casse de la semaine 46 est suivie dans la semaine 46 (même rangée dans la 47 par la bibliothèque).
   const semCasse = r1.semaines.find((s) => s.lancements.some((l) => l.nom === "LAN2646CASSE"));
   verifier(semCasse && semCasse.semaine === 46, `LAN2646CASSE suivie dans la semaine ${semCasse && semCasse.semaine} (celle de son nom)`);
+
+  // V6.4 : une pièce validée en direct (étiquette imprimée reçue d'un PC de validation) passe faite tout de
+  // suite, même si elle est encore dans l'extraction. Ici LAN264702START est à 0 fait / 165 à faire.
+  const direct = await page.evaluate(() => {
+    const s = [...bibliotheque.semaines.values()].find((x) => x.lancements.some((l) => l.nom === "LAN264702START"));
+    const l = s.lancements.find((l) => l.nom === "LAN264702START");
+    const iCle = Math.max(0, (s.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE).indexOf("cle"));
+    const cles = l.pieces.map((p) => p[iCle]);
+    const faire = (n) => {
+      validations.faites = Object.fromEntries(cles.slice(0, n).map((c) => [c, { poste: "1" }]));
+      SUIVI.etat.resume = null;
+      const r = SUIVI.calculer().semaines.flatMap((x) => x.lancements).find((l) => l.nom === "LAN264702START");
+      return [r.f, r.r, r.e];
+    };
+    const d10 = faire(10);
+    const tout = faire(cles.length);
+    validations.faites = {}; // on nettoie pour la suite du test
+    SUIVI.etat.resume = null;
+    return { d10, tout, n: cles.length };
+  });
+  console.log(JSON.stringify({ validation_direct: direct }));
+  verifier(direct.d10[0] === 10 && direct.d10[1] === 155, `10 étiquettes reçues → 10 faites, 155 à faire (étaient 0/165)`);
+  verifier(direct.tout[0] === 165 && direct.tout[1] === 0 && direct.tout[2] === "termine", `toutes les étiquettes reçues → lancement terminé (${direct.tout.join("/")})`);
   // Suivi par semaine / transporteur / coloris : mêmes pièces que les barres (les totaux tombent juste).
   const somme = (vue, i) => r1.vues[vue].reduce((t, g) => t + g[i], 0);
   const sommeSous = (vue, i) => r1.vues[vue].reduce((t, g) => t + g[4].reduce((u, x) => u + x[i], 0), 0);

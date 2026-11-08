@@ -614,3 +614,4 @@
   .retour-ligne { font-size: 0.85rem; margin-top: 3px; line-height: 1.4; }
   .retour-ligne.ok { color: var(--ok-texte); }
   .retour-ligne.refus { color: var(--bordeaux); }
+  .sv-direct { margin: 8px 0; padding: 8px 12px; border-radius: 8px; background: var(--ok-fond); color: var(--ok-texte); font-size: 0.9rem; }
