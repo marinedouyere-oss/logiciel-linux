@@ -27,7 +27,7 @@ Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
 (`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
 (imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
 
-Version courante : **6.4.3** (le PC et l'APK partagent le même numéro ; l'agent suit).
+Version courante : **6.4.4** (le PC et l'APK partagent le même numéro ; l'agent suit).
 
 ### Glossaire métier
 
@@ -155,13 +155,17 @@ pas de texte, pas de code-barre exploitable. La chaîne :
    étiquette = son heure d'impression (l'agent la met dans l'identifiant `poste-secondes-compteur`).
    - **Dévalidation** : une étiquette d'avant l'extraction ne compte plus — l'extraction fait foi.
    - **Ré-impression** : compte, plafonnée à la ligne, corrigée par l'extraction suivante.
-   - **Casse** : une pièce relancée en casse après l'extraction repart à faire
-     (`relanceesCasseApres`) ; seules les étiquettes d'après la relance comptent. L'heure d'une relance
-     = la **première** fois qu'on a vu le lancement casse (`validations.casses`), car une relecture de la
-     semaine réécrit `maj`.
+   - **Casse** : c'est l'extraction qui décide (Diakonos remet une pièce relancée « en cours »). Ne pas
+     se fier à la date `maj` d'un lancement : elle est réécrite à chaque relecture de la semaine (une
+     tentative 6.4.3 basée dessus passait toute la casse « à faire », corrigée en 6.4.4).
    - Un lancement hors extraction n'est suivi que par ses pièces étiquetées (le reste : à faire).
    Les étiquettes prises sont accusées dans le fichier partagé (`retourValidations.traitees`) pour que
    l'agent arrête de les renvoyer. Test autonome : `sources/outils/test_web_comptage.js`.
+5. **Pièces de Diakonos hors lancement** (6.4.4) : les pièces de production de l'extraction qui ne sont
+   dans aucun lancement de la bibliothèque (lancement pas scanné, pièces ajoutées après) forment une
+   ligne « Pas dans un lancement » (poste « Diakonos ») par semaine Diakonos, avec le coloris de
+   l'extraction (« Code Coloris », 11e case des lignes). Contrôle : « à faire » du suivi = somme
+   « Qte en cours » de production de l'extraction (`test_web_suivi.js`).
 
 Activité par poste et bouton « Réinitialiser » : `htmlBandeauValidations()` (06h) + `brancher()`
 (07i). Chaque poste a un **nom** (ex. « Crédences ») envoyé dans son lot.
