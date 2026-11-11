@@ -196,6 +196,12 @@ function lirePlansMatiere(texPct, texPtn, texBrd) {
     P.set(parseInt(c[2], 10), c);
   }
   const brd = texBrd.split(/\r?\n/).filter((l) => l.startsWith("BRD1,")).map((l) => l.split(","));
+  // La case de chaque panneau ou chute (BRD3, juste après son BRD1) : « 5986(1) », relevée par woodStore à l'optimisation.
+  const casesBrd = [];
+  for (const l of texBrd.split(/\r?\n/)) {
+    if (l.startsWith("BRD1,")) casesBrd.push("");
+    else if (l.startsWith("BRD3,") && casesBrd.length) casesBrd[casesBrd.length - 1] = l.split(",")[1] || "";
+  }
   const lignes = texPtn.split(/\r?\n/);
   const prm = (lignes.find((l) => l.startsWith("PRM1,")) || "PRM1,4.4,0,0,0,0,0").split(",");
   const mat1 = (lignes.find((l) => l.startsWith("MAT1,")) || "").split(",");
@@ -215,6 +221,7 @@ function lirePlansMatiere(texPct, texPtn, texBrd) {
     let nom;
     let sorte;
     let rects;
+    let cases = "";
     try {
       if (module) {
         const m = P.get(parseInt(c[1], 10));
@@ -227,6 +234,7 @@ function lirePlansMatiere(texPct, texPtn, texBrd) {
       } else {
         const B = brd[parseInt(c[1], 10) - 1];
         if (!B) continue;
+        cases = casesBrd[parseInt(c[1], 10) - 1] || "";
         L = parseFloat(B[3]);
         W = parseFloat(B[4]);
         nom = B[1];
@@ -254,7 +262,7 @@ function lirePlansMatiere(texPct, texPtn, texBrd) {
       r.dessous = q[31] || "";
       r.support = q[21] || "";
     }
-    plans.push({ pdc, module, nom, sorte, L, W, fois, plan: pat, rects, ok: rects.length > 0 && planVerifie(rects, L, W) });
+    plans.push({ pdc, module, nom, sorte, L, W, fois, cases, plan: pat, rects, ok: rects.length > 0 && planVerifie(rects, L, W) });
   }
   const ep = parseFloat(mat1[3]) || 0;
   const stratifie = /^STRAT/i.test((mat1[2] || "").trim()) || (ep > 0 && ep <= 1.2);

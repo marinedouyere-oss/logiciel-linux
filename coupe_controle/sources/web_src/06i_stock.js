@@ -167,8 +167,11 @@ async function chutesStratReserveesLancement(fichierBkp) {
     for (const plan of m.plans) {
       if (plan.module || plan.sorte !== "chute du stock") continue;
       const s = parCode.get(plan.nom);
+      // La case : celle relevée dans la sauvegarde du lancement (au moment de la réservation), sinon le fichier de stock.
+      const casesBkp = [...String(plan.cases || "").matchAll(/([^\s()]+)\((\d+)\)?/g)].map((x) => [x[1], Number(x[2])]);
+      const cases = casesBkp.length ? casesBkp : s && s.emplacements.length ? s.emplacements : null;
       if (!res.has(plan.nom))
-        res.set(plan.nom, { code: plan.nom, mat: m.mat, desc: (s && s.desc) || m.desc, L: plan.L, W: plan.W, qte: 0, cases: s ? s.emplacements : null, reservee: s ? s.reservee : null });
+        res.set(plan.nom, { code: plan.nom, mat: m.mat, desc: (s && s.desc) || m.desc, L: plan.L, W: plan.W, qte: 0, cases, reservee: s ? s.reservee : null });
       res.get(plan.nom).qte += plan.fois || 1;
     }
   }
@@ -202,16 +205,10 @@ async function partieChutesStratReservees(p, base) {
       mmFr(c.W),
       String(c.qte),
     ]);
-  const d = stock.donnees;
   const sansCase = liste.filter((c) => !c.cases).length;
-  if (!d) [partie.statut, partie.couleurStatut] = ["Cases inconnues : chargez le fichier de stock (brdlib.bdx) dans Sentinelle, page « Stock des panneaux ».", STATUT.ATTENTION];
-  else {
-    const age = joursDepuis(d.donneesJusquau || d.modifie);
-    if (sansCase) [partie.statut, partie.couleurStatut] = [`${sansCase} chute${sansCase > 1 ? "s" : ""} sans case : pas dans le fichier de stock du ${jourFr(d.donneesJusquau || d.modifie)} (extrayez un fichier plus récent).`, STATUT.ATTENTION];
-    else if (age !== null && age > STOCK_VIEUX_JOURS) [partie.statut, partie.couleurStatut] = [`Cases d'après le fichier de stock du ${jourFr(d.donneesJusquau || d.modifie)} : à vérifier.`, STATUT.ATTENTION];
-  }
+  if (sansCase) [partie.statut, partie.couleurStatut] = [`${sansCase} chute${sansCase > 1 ? "s" : ""} sans case connue (ni dans la sauvegarde Cut Rite, ni dans le fichier de stock).`, STATUT.ATTENTION];
   partie.notes.push(["Chutes : ", "celles que Cut Rite utilise dans les plans de ce lancement (réservées pour lui dans woodStore, statut 2). Stratifié seulement."]);
-  if (d) partie.notes.push(["Fichier de stock : ", `${d.nom || "brdlib.bdx"}, données jusqu'au ${jourFr(d.donneesJusquau || d.modifie)}.`]);
+  partie.notes.push(["Cases : ", "relevées par woodStore dans la sauvegarde Cut Rite du lancement (au moment de l'optimisation)."]);
   return partie;
 }
 
