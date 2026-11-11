@@ -152,6 +152,66 @@ function stockDuMateriau(mat) {
   return stock.donnees ? stock.donnees.materiaux.find((m) => m.mat === mat) || null : null;
 }
 
+// ---------- Rapport du lancement : les chutes de STRATIFIÉ réservées, à sortir des cases avant la coupe ----------
+// Les chutes que Cut Rite utilise dans les plans du lancement (son .bkp) sont celles que woodStore a réservées pour
+// lui (statut 2). Le fichier de stock donne leur case. Stratifié seulement (pas d'agglo, pas de compact).
+
+async function chutesStratReserveesLancement(fichierBkp) {
+  const donnees = await lirePlansBkp(fichierBkp);
+  lireStockMemoire();
+  const parCode = new Map();
+  if (stock.donnees) for (const f of stock.donnees.formats) if (f.chute) parCode.set(f.code, f);
+  const res = new Map();
+  for (const m of donnees.matieres.values()) {
+    if (!m.stratifie) continue;
+    for (const plan of m.plans) {
+      if (plan.module || plan.sorte !== "chute du stock") continue;
+      const s = parCode.get(plan.nom);
+      if (!res.has(plan.nom))
+        res.set(plan.nom, { code: plan.nom, mat: m.mat, desc: (s && s.desc) || m.desc, L: plan.L, W: plan.W, qte: 0, cases: s ? s.emplacements : null, reservee: s ? s.reservee : null });
+      res.get(plan.nom).qte += plan.fois || 1;
+    }
+  }
+  const caseDe = (c) => (c.cases && c.cases.length ? c.cases[0][0] : "~"); // sans case : à la fin
+  return [...res.values()].sort((a, b) => comparerTexteFr(caseDe(a), caseDe(b)) || comparerTexteFr(a.mat, b.mat) || b.L * b.W - a.L * a.W);
+}
+
+// La page du rapport (null : pas de .bkp, ou aucune chute de stratifié dans ce lancement).
+async function partieChutesStratReservees(p, base) {
+  if (!p.bkp) return null;
+  let liste;
+  try {
+    liste = await chutesStratReserveesLancement(p.bkp);
+  } catch (_e) {
+    return null;
+  }
+  if (!liste.length) return null;
+  const mmFr = (v) => String(Math.round(v * 10) / 10).replace(".", ","); // sans séparateur de milliers (absent de la police du PDF)
+  const partie = partieRapport("Chutes réservées", `${base} — Chutes de stratifié réservées (${liste.length})`,
+    ["Case", "Couleur", "Désignation", "Longueur", "Largeur", "Qté"], [21, 26, 77, 23, 22, 13], 3);
+  partie.total = false;
+  for (const c of liste)
+    partie.rangees.push([
+      c.cases ? c.cases.map(([e, q]) => (q > 1 ? `${e} (${q})` : e)).join(", ") : "?",
+      c.mat,
+      c.desc || "",
+      mmFr(c.L),
+      mmFr(c.W),
+      String(c.qte),
+    ]);
+  const d = stock.donnees;
+  const sansCase = liste.filter((c) => !c.cases).length;
+  if (!d) [partie.statut, partie.couleurStatut] = ["Cases inconnues : chargez le fichier de stock (brdlib.bdx) dans Sentinelle, page « Stock des panneaux ».", STATUT.ATTENTION];
+  else {
+    const age = joursDepuis(d.donneesJusquau || d.modifie);
+    if (sansCase) [partie.statut, partie.couleurStatut] = [`${sansCase} chute${sansCase > 1 ? "s" : ""} sans case : pas dans le fichier de stock du ${jourFr(d.donneesJusquau || d.modifie)} (extrayez un fichier plus récent).`, STATUT.ATTENTION];
+    else if (age !== null && age > STOCK_VIEUX_JOURS) [partie.statut, partie.couleurStatut] = [`Cases d'après le fichier de stock du ${jourFr(d.donneesJusquau || d.modifie)} : à vérifier.`, STATUT.ATTENTION];
+  }
+  partie.notes.push(["Chutes : ", "celles que Cut Rite utilise dans les plans de ce lancement (réservées pour lui dans woodStore, statut 2). Stratifié seulement."]);
+  if (d) partie.notes.push(["Fichier de stock : ", `${d.nom || "brdlib.bdx"}, données jusqu'au ${jourFr(d.donneesJusquau || d.modifie)}.`]);
+  return partie;
+}
+
 // ---------- Tri par les en-têtes de colonnes ----------
 
 const comparerTexteFr = (a, b) => String(a || "").localeCompare(String(b || ""), "fr", { numeric: true, sensitivity: "base" });

@@ -256,7 +256,9 @@ function lirePlansMatiere(texPct, texPtn, texBrd) {
     }
     plans.push({ pdc, module, nom, sorte, L, W, fois, plan: pat, rects, ok: rects.length > 0 && planVerifie(rects, L, W) });
   }
-  return { desc: (mat1[2] || "").replace(/\s+\d+\*\d+.*$/, "").replace(/^STRAT\s+/, "").trim(), plans, morceaux: P };
+  const ep = parseFloat(mat1[3]) || 0;
+  const stratifie = /^STRAT/i.test((mat1[2] || "").trim()) || (ep > 0 && ep <= 1.2);
+  return { desc: (mat1[2] || "").replace(/\s+\d+\*\d+.*$/, "").replace(/^STRAT\s+/, "").trim(), ep, stratifie, plans, morceaux: P };
 }
 
 // Tous les plans d'un .bkp, lus une seule fois par fichier.

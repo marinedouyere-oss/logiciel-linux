@@ -1483,6 +1483,8 @@ async function rapportLancement(p) {
     partie.notes.push(["Fichier : ", p.sommaire.name]);
     parties.push(partie);
   }
+  const chutesStrat = await partieChutesStratReservees(p, base);
+  if (chutesStrat) parties.push(chutesStrat);
   const groupe = groupeDiakonosDossier(p);
   const diakonos = diakonosDeLaCase(p);
   if (groupe) parties.push(partieDiakonos(await calculerDiakonosDossier(groupe, [...semaine, ...pairesDeLaSemaine(autre)]), base));
