@@ -137,6 +137,23 @@ const LANS_S47 = [
   verifier(!dossierS46 || (v46 && v46[1] > v46[2] && v46[4].length > 0), "suivi par semaine : la 46 presque finie, détail par transporteur");
   verifier(v48 && v48[3] === "hors_extraction", "suivi par semaine : la 48 « pas dans cette extraction »");
   verifier(!inconnu || inconnu[1] + inconnu[2] < 0.05 * (r1.totaux.faites + r1.totaux.restantes), `transporteur retrouvé pour presque toutes les pièces (inconnu : ${inconnu ? inconnu[1] + inconnu[2] : 0})`);
+  // V6.4.4 : les pièces de production que Diakonos connaît mais qui ne sont dans aucun lancement comptent aussi (ligne
+  // « Pas dans un lancement » de leur semaine) : rien d'oublié, et leur coloris vient de l'extraction (ex. 1114 en S46).
+  const controle = await page.evaluate(() => {
+    const ex = SUIVI.etat.extractions;
+    const der = ex[ex.length - 1];
+    const prod = (c) => !/r[ée]sine/i.test(c) && !/fourniture|dibond/i.test(c);
+    let cours = 0;
+    for (const l of der.lignes) if (l[0] && l[1] && prod(l[4])) cours += Math.max(0, l[6]);
+    const r = SUIVI.calculer();
+    const c1114 = r.vues.coloris.find((g) => String(g[0]) === "1114");
+    const hors46 = r.semaines.flatMap((x) => x.lancements.map((l) => [x.semaine, l])).find(([sem, l]) => sem === 46 && l.nom === "Pas dans un lancement");
+    return { cours: Math.round(cours * 100) / 100, restantes: r.totaux.restantes, c1114: c1114 ? [c1114[1], c1114[2], c1114[4].map((x) => x[0])] : null, hors46: hors46 ? [hors46[1].f, hors46[1].r] : null };
+  });
+  console.log(JSON.stringify({ controle }));
+  verifier(Math.abs(controle.restantes - controle.cours) < 0.01, `aucune pièce de production de Diakonos oubliée : ${controle.restantes} à faire = somme « Qte en cours » (${controle.cours})`);
+  verifier(!dossierS46 || (controle.c1114 && controle.c1114[2].includes("Semaine 46")), `coloris 1114 dans le suivi par coloris, avec la semaine 46 (${JSON.stringify(controle.c1114)})`);
+  verifier(!dossierS46 || (controle.hors46 && controle.hors46[1] > 0), `semaine 46 : ligne « Pas dans un lancement » (${JSON.stringify(controle.hors46)})`);
   // Bibliothèque rangée avant la V6.3.3 (sans la colonne transporteur) : le transporteur vient de Diakonos.
   const ancien = await page.evaluate(() => {
     const garde = [];
@@ -201,7 +218,8 @@ const LANS_S47 = [
   verifier(/un CVC qui n'y est plus = pièce faite/.test(texte), "écran : la règle de l'atelier est écrite");
   verifier(/depuis le 07\/11/.test(texte), "écran : « +N pièces depuis le 07/11 »");
   const barres = await page.locator("#pageSuivi [data-sv-lan] .sv-barre").count();
-  verifier(barres === lancements.length, `une barre par lancement (${barres})`);
+  const lignesHors = await page.evaluate(() => SUIVI.calculer().semaines.flatMap((x) => x.lancements).filter((l) => l.nom === "Pas dans un lancement").length);
+  verifier(barres === lancements.length + lignesHors, `une barre par lancement (${barres}, dont ${lignesHors} « Pas dans un lancement »)`);
   await page.locator('#pageSuivi [data-sv-lan="LAN264702START"] > .sv-ligne').click();
   const detail = await page.locator('#pageSuivi [data-sv-lan="LAN264702START"] .sv-detail').innerText();
   verifier(/Commande/.test(detail) && /CVC\d{8}/.test(detail), "clic : les commandes encore à faire du lancement");

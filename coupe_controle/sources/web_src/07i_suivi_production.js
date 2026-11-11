@@ -188,11 +188,12 @@ const SUIVI = (() => {
   const COLONNES = {
     semaine: ["semaine"], commande: ["commande"], ligne: ["ligne"], catalogue: ["catalogue"], qteLanc: ["qtelancement"], qteCours: ["qteencours"],
     ville: ["ville"], codeTransp: ["codeptransporteur", "codetransporteur"], transporteur: ["transporteur"], lancement: ["lancement"],
+    coloris: ["codecoloris"],
   };
   const perimetreDe = (catalogue) => (/r[ée]sine/i.test(catalogue) ? "resine" : /fourniture|dibond/i.test(catalogue) ? "fournitures" : "production");
 
   // Les lignes de l'extraction, en tableaux courts : [semaine, année, commande, ligne, catalogue, qté lancement,
-  // qté en cours, transporteur, ville, n° de lancement Diakonos].
+  // qté en cours, transporteur, ville, n° de lancement Diakonos, code coloris].
   function lignesExtraction(feuilles, date) {
     const courante = semaineIso(date);
     const txt = (v) => (v === null || v === undefined ? "" : String(v).trim());
@@ -216,7 +217,7 @@ const SUIVI = (() => {
         const commande = txt(get("commande")) || "(sans commande)";
         const annee = sem ? sem.annee || anneeDeLaSemaine(sem.semaine, commande, courante) : null;
         lignes.push([sem ? sem.semaine : null, annee, commande, txt(get("ligne")), txt(get("catalogue")) || "(sans catalogue)", num(get("qteLanc")), num(get("qteCours")),
-          txt(get("transporteur")) || txt(get("codeTransp")) || "(sans transporteur)", txt(get("ville")), txt(get("lancement"))]);
+          txt(get("transporteur")) || txt(get("codeTransp")) || "(sans transporteur)", txt(get("ville")), txt(get("lancement")), txt(get("coloris"))]);
       }
     }
     if (!lue) throw new Error("colonnes « Semaine » et « Commande » introuvables : est-ce bien l'extraction « Suivi production » de Diakonos ?");
@@ -461,6 +462,39 @@ const SUIVI = (() => {
           ordre: ordreSemaine(annee, semaine), pieces, infos, deduites: new Map(), vus: new Set(), histo: [], presents: null, f: 0, r: 0, h: 0, fPrec: null, couvert: false });
       }
     }
+    // Les pièces de production que Diakonos connaît mais qui ne sont dans AUCUN lancement de la bibliothèque (lancement pas
+    // scanné, pièces ajoutées après coup…) : une ligne « Pas dans un lancement » par semaine Diakonos, pour qu'elles
+    // comptent dans les barres et dans toutes les vues (avec le coloris de l'extraction). Même règle qu'un lancement :
+    // « Qte en cours » à faire, le reste fait ; une pièce qui sort de l'extraction est faite. Une pièce ne compte qu'à
+    // partir de l'extraction où elle apparaît (pour l'historique et le « depuis »).
+    const lancees = new Set();
+    for (const L of lancements) for (const k of L.pieces.keys()) lancees.add(k);
+    if (etat.inclus.production) {
+      const parPiece = new Map(); // pièce → { annee, semaine, q, infos, debut } (la dernière extraction qui l'a gagne)
+      ex.forEach((e, n) => {
+        for (const [k, v] of e.parCle) {
+          if (lancees.has(k)) continue;
+          const r0 = v.lignes[0];
+          if (!r0[0] || !r0[1] || perimetreDe(r0[4]) !== "production") continue;
+          const avant = parPiece.get(k);
+          parPiece.set(k, { annee: r0[1], semaine: Number(r0[0]), q: Math.max(0, v.lanc), infos: [r0[2], r0[10] || "", "", ""], debut: avant ? avant.debut : n });
+        }
+      });
+      const parSem = new Map();
+      for (const [k, x] of parPiece) {
+        if (!x.q || Math.abs(ecartSemaines(der.courante, { annee: x.annee, semaine: x.semaine })) > 26) continue;
+        const id = idSemaine(x.annee, x.semaine);
+        if (!parSem.has(id))
+          parSem.set(id, { cle: `hors-${id}`, nom: "Pas dans un lancement", poste: "Diakonos", casse: false, hors: true, id, annee: x.annee, semaine: x.semaine,
+            ordre: ordreSemaine(x.annee, x.semaine), pieces: new Map(), infos: new Map(), debut: new Map(), deduites: new Map(), vus: new Set(), histo: [],
+            presents: null, f: 0, r: 0, h: 0, fPrec: null, couvert: false });
+        const L = parSem.get(id);
+        L.pieces.set(k, x.q);
+        L.infos.set(k, x.infos);
+        L.debut.set(k, x.debut);
+      }
+      lancements.push(...parSem.values());
+    }
     lancements.sort((a, b) => a.ordre - b.ordre || rangPoste(a.poste) - rangPoste(b.poste) || a.nom.localeCompare(b.nom));
     // Pièce → lancements qui la contiennent (dans l'ordre des semaines).
     const index = new Map();
@@ -520,6 +554,7 @@ const SUIVI = (() => {
         const detail = n >= ex.length - 2 ? new Map() : null; // par pièce (pour les totaux : une pièce comptée une fois)
         if (couvert)
           for (const [k, q] of L.pieces) {
+            if (L.debut && L.debut.get(k) > n) continue; // pas encore dans Diakonos à cette extraction
             const v = p.get(k);
             let fk = 0;
             let rk = 0;
@@ -604,7 +639,7 @@ const SUIVI = (() => {
     }
     // Ce qui est compté (production, fournitures, résine) : pour « hors lancement » et le tableau des transporteurs.
     const comptee = (r) => Boolean(etat.inclus[perimetreDe(r[4])]);
-    const dansLancement = new Set(index.keys());
+    const dansLancement = lancees; // les vrais lancements (pas les lignes « Pas dans un lancement »)
     const hors = new Map();
     const tableau = new Map();
     const colonnes = new Map();
@@ -1118,7 +1153,7 @@ const SUIVI = (() => {
   function htmlHors(resume) {
     if (!resume.hors || !resume.hors.length) return "";
     return `<div class="carte"><div class="carte-titre">Dans Diakonos, dans aucun lancement</div>
-      <div class="note">Pièces de l'extraction qui ne sont dans aucun lancement de la bibliothèque (pas encore lancées, ou lancement pas scanné).</div>
+      <div class="note">Pièces de l'extraction qui ne sont dans aucun lancement de la bibliothèque (pas encore lancées, ou lancement pas scanné). Les pièces de production sont comptées dans le suivi, ligne « Pas dans un lancement » de leur semaine.</div>
       <table class="sv-table"><thead><tr><th>Semaine Diakonos</th><th class="nombre">Pièces à faire</th><th class="nombre">Lignes</th><th class="nombre">Commandes</th></tr></thead>
       <tbody>${resume.hors.map((h) => `<tr><td>${echapper(h[0])}</td><td class="nombre">${fmt(h[1])}</td><td class="nombre">${fmt(h[2])}</td><td class="nombre">${fmt(h[3])}</td></tr>`).join("")}</tbody></table></div>`;
   }
