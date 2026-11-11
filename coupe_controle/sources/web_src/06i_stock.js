@@ -172,8 +172,11 @@ async function chutesStratReserveesLancement(fichierBkp) {
       res.get(plan.nom).qte += plan.fois || 1;
     }
   }
-  const caseDe = (c) => (c.cases && c.cases.length ? c.cases[0][0] : "~"); // sans case : à la fin
-  return [...res.values()].sort((a, b) => comparerTexteFr(caseDe(a), caseDe(b)) || comparerTexteFr(a.mat, b.mat) || b.L * b.W - a.L * a.W);
+  // Par case (pour la sortie en magasin) ; les chutes sans case connue à la fin.
+  const caseDe = (c) => (c.cases && c.cases.length ? c.cases[0][0] : "");
+  return [...res.values()].sort(
+    (a, b) => !caseDe(a) - !caseDe(b) || comparerTexteFr(caseDe(a), caseDe(b)) || comparerTexteFr(a.mat, b.mat) || b.L * b.W - a.L * a.W
+  );
 }
 
 // La page du rapport (null : pas de .bkp, ou aucune chute de stratifié dans ce lancement).
