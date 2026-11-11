@@ -663,7 +663,8 @@ final class EcranPlans {
         PlansLancement.Plan p = o.plan;
         int dans = PlansLancement.origineDe(p, i);
         if (dans < 0) return;
-        EditText cle = champ("clé de la pièce (ex. CVC26110064003, facultatif)", "", false);
+        EditText cle = champ("clé de la pièce (ex. 26110064003, facultatif)", "", false);
+        cle.setInputType(InputType.TYPE_CLASS_NUMBER); // des chiffres : le « CVC » est ajouté tout seul
         EditText article = champ("article (facultatif)", "", false);
         EditText longueur = champ("longueur finie (mm)", "", true);
         EditText largeur = champ("largeur finie (mm)", "", true);
@@ -685,7 +686,9 @@ final class EcranPlans {
                     try {
                         JSONObject a = new JSONObject();
                         a.put("dans", dans);
-                        a.put("cle", cle.getText().toString().trim().toUpperCase(Locale.ROOT).replaceAll("\\s+", ""));
+                        String clePiece = cle.getText().toString().trim().toUpperCase(Locale.ROOT).replaceAll("\\s+", "");
+                        if (clePiece.matches("\\d+")) clePiece = "CVC" + clePiece; // tapé en chiffres seulement
+                        a.put("cle", clePiece);
                         a.put("article", article.getText().toString().trim());
                         a.put("fini", new JSONArray().put(L).put(W));
                         a.put("tourne", tourne.isChecked());

@@ -18,6 +18,7 @@ import android.view.KeyEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -70,6 +71,10 @@ final class PartageVue {
     private int generation;
     private String semaineChoisie;
     private String requete = "";
+    // Clavier choisi (chiffres par défaut, « ABC » pour les lettres), gardé tant que l'appli est ouverte.
+    private boolean lettresRecherche = false;
+    private boolean lettresCouleur = false;
+    private boolean lettresColoris = false;
     private Ecran ecran = Ecran.SEMAINE;
     /** Pièce sans étiquette : longueur (sens du fil), largeur, couleur, semaine ; null : pas encore cherché. */
     private String[] sansEtiquette;
@@ -667,6 +672,36 @@ final class PartageVue {
         return e;
     }
 
+    // ---- Clavier : chiffres par défaut (CVC, commandes, couleurs), « ABC » pour passer aux lettres ----
+    static final int CLAVIER_CHIFFRES = InputType.TYPE_CLASS_NUMBER;
+    static final int CLAVIER_LETTRES = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
+
+    private interface ChoixClavier {
+        void garder(boolean lettres);
+    }
+
+    private MaterialButton boutonClavier(EditText champ, boolean lettres, ChoixClavier choix) {
+        final boolean[] etat = {lettres};
+        MaterialButton b = ui.boutonTexte(lettres ? "123" : "ABC");
+        b.setContentDescription(lettres ? "Clavier chiffres" : "Clavier lettres");
+        b.setOnClickListener(v -> {
+            etat[0] = !etat[0];
+            choix.garder(etat[0]);
+            int pos = champ.getSelectionEnd();
+            champ.setInputType(etat[0] ? CLAVIER_LETTRES : CLAVIER_CHIFFRES);
+            champ.setSelection(Math.max(0, Math.min(pos < 0 ? champ.length() : pos, champ.length())));
+            b.setText(etat[0] ? "123" : "ABC");
+            b.setContentDescription(etat[0] ? "Clavier chiffres" : "Clavier lettres");
+            champ.requestFocus();
+            InputMethodManager imm = (InputMethodManager) activite.getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.restartInput(champ);
+                imm.showSoftInput(champ, InputMethodManager.SHOW_IMPLICIT);
+            }
+        });
+        return b;
+    }
+
     private LinearLayout libelle(String texte, View champ) {
         LinearLayout c = ui.colonne();
         c.addView(ui.texte(texte, 12, true, 0xFF4A403D));
@@ -683,7 +718,7 @@ final class PartageVue {
         int nombre = InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL;
         EditText longueur = champ("mm", nombre, v[0]);
         EditText largeur = champ("mm", nombre, v[1]);
-        EditText couleur = champ("facultatif", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, v[2]);
+        EditText couleur = champ("facultatif", lettresCouleur ? CLAVIER_LETTRES : CLAVIER_CHIFFRES, v[2]);
         EditText semaine = champ("n°", InputType.TYPE_CLASS_NUMBER, v[3]);
         LinearLayout cotes = ui.rangee();
         cotes.addView(libelle("Longueur (sens du fil)", longueur), ui.poids(1));
@@ -691,7 +726,10 @@ final class PartageVue {
         cotes.addView(libelle("Largeur", largeur), ui.poids(1));
         corps.addView(cotes, ui.pleineLargeur());
         LinearLayout autres = ui.rangee();
-        autres.addView(libelle("Couleur", couleur), ui.poids(1));
+        LinearLayout ligneCouleur = ui.rangee();
+        ligneCouleur.addView(couleur, ui.poids(1));
+        ligneCouleur.addView(boutonClavier(couleur, lettresCouleur, l -> lettresCouleur = l));
+        autres.addView(libelle("Couleur", ligneCouleur), ui.poids(1));
         autres.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(10), 1));
         autres.addView(libelle("Semaine", semaine), ui.poids(1));
         corps.addView(autres, ui.marges(6, 0));
@@ -1283,7 +1321,9 @@ final class PartageVue {
         final List<View> blocs = new ArrayList<>();
         final List<String> noms = new ArrayList<>();
         if (!"semaine".equals(vue)) {
-            EditText champ = champ("Chercher un " + v[1].toLowerCase(Locale.FRANCE) + "…", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, filtreVueSuivi);
+            boolean coloris = "coloris".equals(vue);
+            EditText champ = champ("Chercher un " + v[1].toLowerCase(Locale.FRANCE) + "…",
+                    coloris && !lettresColoris ? CLAVIER_CHIFFRES : InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, filtreVueSuivi);
             champ.setContentDescription("Chercher");
             champ.addTextChangedListener(new android.text.TextWatcher() {
                 @Override
@@ -1299,7 +1339,12 @@ final class PartageVue {
                     for (int i = 0; i < blocs.size(); i++) blocs.get(i).setVisibility(f.isEmpty() || noms.get(i).contains(f) ? View.VISIBLE : View.GONE);
                 }
             });
-            corps.addView(champ, ui.marges(2, 6));
+            if (coloris) {
+                LinearLayout ligneFiltre = ui.rangee();
+                ligneFiltre.addView(champ, ui.poids(1));
+                ligneFiltre.addView(boutonClavier(champ, lettresColoris, l -> lettresColoris = l));
+                corps.addView(ligneFiltre, ui.marges(2, 6));
+            } else corps.addView(champ, ui.marges(2, 6));
         }
         if (lignes.isEmpty()) corps.addView(ui.texte("Aucune pièce suivie.", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 4));
         String filtre = sansAccents(filtreVueSuivi);
@@ -1411,7 +1456,7 @@ final class PartageVue {
         LinearLayout corps = corpsDe(carte);
         corps.addView(ui.titreCarte("Recherche"));
         LinearLayout ligne = ui.rangee();
-        EditText champ = champ("Pièce ou commande", InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS, requete);
+        EditText champ = champ("Pièce ou commande", lettresRecherche ? CLAVIER_LETTRES : CLAVIER_CHIFFRES, requete);
         champ.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         Runnable chercher = () -> {
             requete = champ.getText().toString().trim();
@@ -1426,7 +1471,8 @@ final class PartageVue {
             return false;
         });
         ligne.addView(champ, ui.poids(1));
-        ligne.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
+        ligne.addView(boutonClavier(champ, lettresRecherche, l -> lettresRecherche = l));
+        ligne.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(4), 1));
         MaterialButton bouton = ui.bouton("Chercher");
         bouton.setOnClickListener(v -> chercher.run());
         ligne.addView(bouton);
