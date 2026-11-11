@@ -639,6 +639,10 @@
   .stk-res-badge { display: inline-block; border-radius: 4px; padding: 1px 6px; margin-left: 4px; font-size: 0.75rem; font-weight: 700; background: #ece8f6; color: #4b3a8a; }
   .stk-res td { color: #6b6a68; }
   .stk-res-mini { font-size: 0.75rem; color: #4b3a8a; font-weight: 700; }
+  .stk-tri { cursor: pointer; user-select: none; white-space: nowrap; }
+  .stk-tri:hover, .stk-tri.actif { color: var(--bordeaux); }
+  .stk-fleche { margin-left: 4px; font-size: 0.72rem; opacity: 0.4; }
+  .stk-tri.actif .stk-fleche { opacity: 1; }
   .stk-court { display: none; }
   @media (max-width: 700px) {
     .stk-col-desc, .stk-long { display: none; }

@@ -12,7 +12,11 @@ const CLE_STOCK = "sentinelle-stock";
 const STOCK_VIEUX_JOURS = 7; // au-delà : « extrayez un fichier neuf »
 const CHUTE_DORT_JOURS = 120; // une chute en stock depuis plus de 4 mois « dort »
 
-const stock = { donnees: null, lu: false, recherche: "", famille: "tous", avecStock: true, ouvert: null, erreur: null };
+const stock = {
+  donnees: null, lu: false, recherche: "", famille: "tous", avecStock: true, ouvert: null, erreur: null,
+  // Tri choisi en cliquant sur les en-têtes de colonnes (sens : 1 croissant, -1 décroissant).
+  tri: { liste: { col: "entiers", sens: -1 }, entiers: { col: "qte", sens: -1 }, chutes: { col: "taille", sens: -1 } },
+};
 
 const FAMILLES_STOCK = [
   ["tous", "Tous"],
@@ -148,6 +152,41 @@ function stockDuMateriau(mat) {
   return stock.donnees ? stock.donnees.materiaux.find((m) => m.mat === mat) || null : null;
 }
 
+// ---------- Tri par les en-têtes de colonnes ----------
+
+const comparerTexteFr = (a, b) => String(a || "").localeCompare(String(b || ""), "fr", { numeric: true, sensitivity: "base" });
+const premierEmplacement = (f) => (f.emplacements[0] || [""])[0];
+const TRIS_STOCK = {
+  liste: {
+    mat: (m) => m.mat,
+    desc: (m) => m.desc,
+    entiers: (m) => m.nbEntiers,
+    chutes: (m) => m.nbChutes,
+    limite: (m) => (m.limites.size === 1 ? [...m.limites][0] : m.limites.size ? 4.5 : -1),
+  },
+  entiers: { format: (f) => f.L * f.W, qte: (f) => f.qte, emplacement: premierEmplacement, limite: (f) => f.limite, fil: (f) => (f.fil ? 1 : 0) },
+  chutes: { taille: (f) => f.L * f.W, qte: (f) => f.qte, emplacement: premierEmplacement, origine: (f) => f.origine.texte, age: (f) => (f.origine.quand ? Date.now() - f.origine.quand : -1) },
+};
+const COLONNES_TEXTE_STOCK = new Set(["mat", "desc", "emplacement", "origine"]); // premier clic : A → Z ; nombres : du plus grand au plus petit
+
+function trierStock(liste, quoi) {
+  const t = stock.tri[quoi];
+  const cle = TRIS_STOCK[quoi][t.col];
+  if (!cle) return liste;
+  return [...liste].sort((a, b) => {
+    const x = cle(a);
+    const y = cle(b);
+    return (typeof x === "number" && typeof y === "number" ? x - y : comparerTexteFr(x, y)) * t.sens;
+  });
+}
+
+function enteteTri(quoi, col, libelle, classe = "") {
+  const t = stock.tri[quoi];
+  const actif = t.col === col;
+  const sens = actif ? (t.sens > 0 ? "ascending" : "descending") : "none";
+  return `<th class="stk-tri${classe ? ` ${classe}` : ""}${actif ? " actif" : ""}" data-stk-tri="${quoi}:${col}" aria-sort="${sens}" title="Trier par cette colonne">${libelle}<span class="stk-fleche" aria-hidden="true">${actif ? (t.sens > 0 ? "▲" : "▼") : "↕"}</span></th>`;
+}
+
 // ---------- Écran ----------
 
 const nbFr = (v) => Number(v || 0).toLocaleString("fr-FR");
@@ -210,11 +249,15 @@ function htmlFichierStock(d) {
 
 function materiauxFiltres(d) {
   const q = stock.recherche.trim().toUpperCase();
-  return d.materiaux
+  const liste = d.materiaux
     .filter((m) => stock.famille === "tous" || m.famille === stock.famille)
     .filter((m) => !stock.avecStock || m.nbEntiers + m.nbChutes > 0)
     .filter((m) => !q || m.mat.toUpperCase().includes(q) || m.desc.toUpperCase().includes(q))
-    .sort((a, b) => (q && (a.mat.toUpperCase() === q) !== (b.mat.toUpperCase() === q) ? (a.mat.toUpperCase() === q ? -1 : 1) : 0) || b.nbEntiers - a.nbEntiers || a.mat.localeCompare(b.mat));
+    .sort((a, b) => comparerTexteFr(a.mat, b.mat));
+  const res = trierStock(liste, "liste");
+  const exact = q ? res.findIndex((m) => m.mat.toUpperCase() === q) : -1;
+  if (exact > 0) res.unshift(res.splice(exact, 1)[0]); // le code tapé exactement en tête
+  return res;
 }
 
 function htmlRechercheStock(d) {
@@ -235,19 +278,20 @@ function htmlRechercheStock(d) {
     <div class="stk-cherche"><input type="search" id="champStock" placeholder="Code ou nom : 1114, chêne, SAG38…" value="${echapper(stock.recherche)}" autocomplete="off">
       <label class="stk-case"><input type="checkbox" id="caseAvecStock" ${stock.avecStock ? "checked" : ""}> avec du stock seulement</label></div>
     <div class="stk-filtres">${filtres}</div>
-    <div class="defilement"><table class="fp-table"><thead><tr><th>Matériau</th><th class="stk-col-desc">Description</th><th class="d"><span class="stk-long">Panneaux entiers</span><span class="stk-court">Entiers</span></th><th class="d">Chutes</th><th><span class="stk-long">Limite woodStore</span><span class="stk-court">Limite</span></th></tr></thead>
+    <div class="defilement"><table class="fp-table"><thead><tr>${enteteTri("liste", "mat", "Matériau")}${enteteTri("liste", "desc", "Description", "stk-col-desc")}${enteteTri("liste", "entiers", '<span class="stk-long">Panneaux entiers</span><span class="stk-court">Entiers</span>', "d")}${enteteTri("liste", "chutes", "Chutes", "d")}${enteteTri("liste", "limite", '<span class="stk-long">Limite woodStore</span><span class="stk-court">Limite</span>')}</tr></thead>
       <tbody>${lignes || '<tr><td colspan="5" class="pale">Rien ne correspond.</td></tr>'}</tbody></table></div>
     <div class="note">${nbFr(liste.length)} matériau${liste.length > 1 ? "x" : ""}${liste.length > MAX ? ` (les ${MAX} premiers affichés : précisez la recherche)` : ""} · cliquez sur une ligne pour le détail.</div></div>`;
 }
 
 function htmlMateriauStock(m) {
-  const entiers = m.entiers
+  const entiers = trierStock(m.entiers, "entiers")
     .map(
       (f) => `<tr><td>${formatFr(f)}</td><td class="d">${f.qte ? `<strong>${nbFr(f.qte)}</strong>` : '<span class="pale">0</span>'}</td>
       <td>${puceEmplacements(f)}</td><td>${puceLimite(f.limite)}</td><td class="c">${f.fil ? "oui" : '<span class="pale">non</span>'}</td></tr>`
     )
     .join("");
-  const chutes = m.chutes
+  // Les disponibles d'abord, puis les réservées ; chaque groupe dans l'ordre choisi.
+  const chutes = [...trierStock(m.chutes.filter((f) => !f.reservee), "chutes"), ...trierStock(m.chutes.filter((f) => f.reservee), "chutes")]
     .map((f) => {
       const j = joursDepuis(f.origine.quand);
       const dort = j !== null && j > CHUTE_DORT_JOURS;
@@ -262,10 +306,10 @@ function htmlMateriauStock(m) {
       ${m.nbReservees ? `<span class="pl-puce stk-res-puce">${nbFr(m.nbReservees)} réservée${m.nbReservees > 1 ? "s" : ""}</span>` : ""}
       ${m.ep ? `<span class="pl-puce">épaisseur ${String(m.ep).replace(".", ",")} mm</span>` : ""}</div>
     <h3 class="stk-sous-titre">Panneaux entiers</h3>
-    <div class="defilement"><table class="fp-table"><thead><tr><th>Format (mm)</th><th class="d">En stock</th><th>Emplacements</th><th>Limite woodStore</th><th class="c">Fil</th></tr></thead>
+    <div class="defilement"><table class="fp-table"><thead><tr>${enteteTri("entiers", "format", "Format (mm)")}${enteteTri("entiers", "qte", "En stock", "d")}${enteteTri("entiers", "emplacement", "Emplacements")}${enteteTri("entiers", "limite", "Limite woodStore")}${enteteTri("entiers", "fil", "Fil", "c")}</tr></thead>
       <tbody>${entiers || '<tr><td colspan="5" class="pale">Aucun format de panneau entier.</td></tr>'}</tbody></table></div>
     <h3 class="stk-sous-titre">Chutes en stock</h3>
-    <div class="defilement"><table class="fp-table"><thead><tr><th>Dimensions (mm)</th><th class="d">Qté</th><th>Emplacement</th><th>Origine</th><th>Âge</th></tr></thead>
+    <div class="defilement"><table class="fp-table"><thead><tr>${enteteTri("chutes", "taille", "Dimensions (mm)")}${enteteTri("chutes", "qte", "Qté", "d")}${enteteTri("chutes", "emplacement", "Emplacement")}${enteteTri("chutes", "origine", "Origine")}${enteteTri("chutes", "age", "Âge")}</tr></thead>
       <tbody>${chutes || '<tr><td colspan="5" class="pale">Aucune chute en stock.</td></tr>'}</tbody></table></div>
     <div class="note">Limite woodStore : <strong>0</strong> = Cut Rite ne peut pas utiliser plus que le stock ; <strong>9</strong> = il peut le dépasser (panneau à recommander).</div></div>`;
 }
@@ -330,6 +374,18 @@ function brancherStock() {
       afficherStock();
       const det = page.querySelector(".stk-detail");
       if (det) det.scrollIntoView({ behavior: "smooth", block: "start" });
+    })
+  );
+  page.querySelectorAll("[data-stk-tri]").forEach((th) =>
+    th.addEventListener("click", () => {
+      const [quoi, col] = th.dataset.stkTri.split(":");
+      const t = stock.tri[quoi];
+      if (t.col === col) t.sens = -t.sens;
+      else {
+        t.col = col;
+        t.sens = COLONNES_TEXTE_STOCK.has(col) ? 1 : -1;
+      }
+      afficherStock();
     })
   );
   const fermer = $("btnFermerStock");
