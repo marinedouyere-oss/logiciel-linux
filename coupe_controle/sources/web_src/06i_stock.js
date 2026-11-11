@@ -3,7 +3,8 @@
 //   0 code (« 1114_4100_1310 », chute : « X… »)   1 quantité en stock   2 matériau (le code des LAN : 1114, SAG38HYBL…)
 //   3-5 longueur, largeur, épaisseur (mm)          6 prix                7 LIMITE woodStore : 0 = limité au stock,
 //   9 description   10 fil (décor à veines)        9 = dépassement autorisé (champ « BoardsLimit » de Cut Rite)
-//   14 0 = panneau entier, 1 = chute en stock, 2 = chute sortie       15 emplacements « 1041(15) 7131(65) »
+//   14 statut : 0 = panneau entier, 1 = chute disponible, 2 = chute réservée (en stock, déjà prise pour un
+//      lancement ; à 0 = sortie)                                       15 emplacements « 1041(15) 7131(65) »
 //   17 famille (STRAT, COMPACT).
 // Le fichier est extrait à la main : Sentinelle garde le dernier chargé et prévient quand il vieillit.
 
@@ -73,7 +74,8 @@ function lireFichierStock(texte) {
       desc,
       fil: c[10].trim() === "1",
       chute,
-      emplacements: [...(c[15] || "").matchAll(/([^\s()]+)\((\d+)\)/g)].map((m) => [m[1], Number(m[2])]),
+      emplacements: [...(c[15] || "").matchAll(/([^\s()]+)\((\d+)\)?/g)].map((m) => [m[1], Number(m[2])]),
+      reservee: c[0].trim().startsWith("X") && c[14].trim() === "2",
       famille: familleStock(c[17] || c[12] || "", desc, ep),
       origine: chute ? origineChute(code) : null,
     };
@@ -83,12 +85,13 @@ function lireFichierStock(texte) {
   if (!formats.length) throw new Error("aucune ligne de stock lisible : est-ce bien le fichier brdlib.bdx ?");
   const parMat = new Map();
   for (const f of formats) {
-    if (!parMat.has(f.mat)) parMat.set(f.mat, { mat: f.mat, desc: "", famille: f.famille, ep: f.ep, entiers: [], chutes: [], nbEntiers: 0, nbChutes: 0, limites: new Set() });
+    if (!parMat.has(f.mat)) parMat.set(f.mat, { mat: f.mat, desc: "", famille: f.famille, ep: f.ep, entiers: [], chutes: [], nbEntiers: 0, nbChutes: 0, nbReservees: 0, limites: new Set() });
     const m = parMat.get(f.mat);
     if (f.chute) {
       if (f.qte > 0) {
         m.chutes.push(f);
-        m.nbChutes += f.qte;
+        if (f.reservee) m.nbReservees += f.qte;
+        else m.nbChutes += f.qte; // disponibles seulement
       }
     } else {
       m.entiers.push(f);
@@ -102,7 +105,7 @@ function lireFichierStock(texte) {
   for (const m of parMat.values()) {
     if (!m.desc) m.desc = (m.chutes.find((f) => f.desc) || {}).desc || "";
     m.entiers.sort((a, b) => b.qte - a.qte || b.L * b.W - a.L * a.W);
-    m.chutes.sort((a, b) => b.L * b.W - a.L * a.W);
+    m.chutes.sort((a, b) => a.reservee - b.reservee || b.L * b.W - a.L * a.W); // les disponibles d'abord
     if (m.entiers.length) m.ep = m.entiers[0].ep; // l'épaisseur du format le plus en stock
   }
   return { formats, materiaux: [...parMat.values()], donneesJusquau: jusquau };
@@ -187,6 +190,7 @@ function htmlFichierStock(d) {
   const age = joursDepuis(d.donneesJusquau || d.modifie);
   const entiers = d.materiaux.reduce((t, m) => t + m.nbEntiers, 0);
   const chutes = d.materiaux.reduce((t, m) => t + m.nbChutes, 0);
+  const reservees = d.materiaux.reduce((t, m) => t + m.nbReservees, 0);
   const vides = d.formats.filter((f) => !f.chute && f.qte === 0).length;
   const vieux = age !== null && age > STOCK_VIEUX_JOURS;
   return `<div class="carte"><div class="carte-titre">Fichier de stock</div>
@@ -197,9 +201,11 @@ function htmlFichierStock(d) {
     <div class="pl-puces" style="margin-top:10px">
       <span class="pl-puce">${nbFr(d.materiaux.length)} matériaux</span>
       <span class="pl-puce bon">${nbFr(entiers)} panneaux entiers</span>
-      <span class="pl-puce">${nbFr(chutes)} chutes</span>
+      <span class="pl-puce">${nbFr(chutes)} chutes disponibles (stock réel)</span>
+      ${reservees ? `<span class="pl-puce stk-res-puce">${nbFr(reservees)} chutes réservées</span>` : ""}
       <span class="pl-puce att">${nbFr(vides)} formats à zéro</span>
-    </div></div>`;
+    </div>
+    <div class="note"><strong>Stock réel = stock − réservé.</strong> Chutes : celles au statut 2 de woodStore sont comptées comme réservées, à part. Panneaux entiers : ce fichier ne contient pas de quantité réservée.</div></div>`;
 }
 
 function materiauxFiltres(d) {
@@ -221,7 +227,7 @@ function htmlRechercheStock(d) {
       return `<tr class="stk-ligne${stock.ouvert === m.mat ? " visee" : ""}" data-stk-mat="${echapper(m.mat)}">
         <td><strong>${echapper(m.mat)}</strong><div class="stk-desc-m">${echapper(m.desc)}</div></td><td class="stk-col-desc">${echapper(m.desc)}</td>
         <td class="d">${m.nbEntiers ? nbFr(m.nbEntiers) : '<span class="pale">0</span>'}</td>
-        <td class="d">${m.nbChutes ? nbFr(m.nbChutes) : '<span class="pale">0</span>'}</td><td>${lim}</td></tr>`;
+        <td class="d">${m.nbChutes ? nbFr(m.nbChutes) : '<span class="pale">0</span>'}${m.nbReservees ? `<div class="stk-res-mini">+${m.nbReservees} rés.</div>` : ""}</td><td>${lim}</td></tr>`;
     })
     .join("");
   const filtres = FAMILLES_STOCK.map(([c, n]) => `<button type="button" class="stk-filtre${stock.famille === c ? " actif" : ""}" data-stk-famille="${c}">${n}</button>`).join("");
@@ -245,14 +251,15 @@ function htmlMateriauStock(m) {
     .map((f) => {
       const j = joursDepuis(f.origine.quand);
       const dort = j !== null && j > CHUTE_DORT_JOURS;
-      return `<tr><td>${formatFr(f)}</td><td class="d">${f.qte > 1 ? nbFr(f.qte) : "1"}</td><td>${puceEmplacements(f)}</td>
+      return `<tr${f.reservee ? ' class="stk-res"' : ""}><td>${formatFr(f)}${f.reservee ? ' <span class="stk-res-badge" title="Statut 2 dans woodStore">réservée</span>' : ""}</td><td class="d">${f.qte > 1 ? nbFr(f.qte) : "1"}</td><td>${puceEmplacements(f)}</td>
         <td>${echapper(f.origine.texte)}</td><td>${j === null ? '<span class="pale">—</span>' : dort ? `<span class="stk-dort">dort depuis ${dureeFr(j)}</span>` : dureeFr(j)}</td></tr>`;
     })
     .join("");
   return `<div class="carte stk-detail"><div class="carte-titre">${echapper(m.mat)} — ${echapper(m.desc || "sans description")}
       <button type="button" class="texte" id="btnFermerStock" style="float:right">Fermer</button></div>
     <div class="pl-puces"><span class="pl-puce bon">${nbFr(m.nbEntiers)} panneau${m.nbEntiers > 1 ? "x" : ""} entier${m.nbEntiers > 1 ? "s" : ""}</span>
-      <span class="pl-puce">${nbFr(m.nbChutes)} chute${m.nbChutes > 1 ? "s" : ""}</span>
+      <span class="pl-puce">${nbFr(m.nbChutes)} chute${m.nbChutes > 1 ? "s" : ""} disponible${m.nbChutes > 1 ? "s" : ""}</span>
+      ${m.nbReservees ? `<span class="pl-puce stk-res-puce">${nbFr(m.nbReservees)} réservée${m.nbReservees > 1 ? "s" : ""}</span>` : ""}
       ${m.ep ? `<span class="pl-puce">épaisseur ${String(m.ep).replace(".", ",")} mm</span>` : ""}</div>
     <h3 class="stk-sous-titre">Panneaux entiers</h3>
     <div class="defilement"><table class="fp-table"><thead><tr><th>Format (mm)</th><th class="d">En stock</th><th>Emplacements</th><th>Limite woodStore</th><th class="c">Fil</th></tr></thead>
@@ -268,7 +275,7 @@ function htmlChutesQuiDorment(d) {
   for (const m of d.materiaux)
     for (const f of m.chutes) {
       const j = joursDepuis(f.origine.quand);
-      if (j !== null && j > CHUTE_DORT_JOURS) vieilles.push({ m, f, j });
+      if (!f.reservee && j !== null && j > CHUTE_DORT_JOURS) vieilles.push({ m, f, j });
     }
   if (!vieilles.length) return "";
   const parMat = new Map();

@@ -635,10 +635,16 @@
   .stk-puce-mat { border: 0; cursor: pointer; color: var(--noir); background: var(--gris-clair); font-family: var(--texte); }
   .stk-puce-mat:hover { background: var(--saumon-pale); color: var(--bordeaux); }
   .stk-desc-m { display: none; font-size: 0.8rem; color: var(--gris); font-weight: 400; margin-top: 2px; }
+  .stk-res-puce { background: #ece8f6; color: #4b3a8a; }
+  .stk-res-badge { display: inline-block; border-radius: 4px; padding: 1px 6px; margin-left: 4px; font-size: 0.75rem; font-weight: 700; background: #ece8f6; color: #4b3a8a; }
+  .stk-res td { color: #6b6a68; }
+  .stk-res-mini { font-size: 0.75rem; color: #4b3a8a; font-weight: 700; }
   .stk-court { display: none; }
   @media (max-width: 700px) {
     .stk-col-desc, .stk-long { display: none; }
-    .stk-desc-m { display: block; }
+    .stk-desc-m { display: block; overflow-wrap: anywhere; }
     .stk-court { display: inline; }
+    #pageStock .fp-table { font-size: 0.85rem; }
+    #pageStock .fp-table th, #pageStock .fp-table td { padding: 6px 4px; }
   }
 
