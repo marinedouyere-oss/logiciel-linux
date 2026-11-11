@@ -27,7 +27,7 @@ Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
 (`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
 (imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
 
-Version courante : **6.4.2** (le PC et l'APK partagent le même numéro ; l'agent suit).
+Version courante : **6.4.3** (le PC et l'APK partagent le même numéro ; l'agent suit).
 
 ### Glossaire métier
 
@@ -149,10 +149,19 @@ pas de texte, pas de code-barre exploitable. La chaîne :
    lit les 8 chiffres **un par un** (police à pas fixe ; gabarits dessinés au canvas), puis
    **choisit la commande lancée** qui colle le mieux (recoupée avec la bibliothèque). Une lecture
    douteuse est **écartée** (jamais une mauvaise pièce). Renvoie `{ commande, ligne, cle, … }`.
-4. **Intégration au suivi** (`07i`, dans `calculer`) : une pièce dont la clé est validée compte
-   comme **faite tout de suite**, même encore dans l'extraction. L'extraction Diakonos reste le
-   **contrôle**. Les étiquettes prises sont accusées dans le fichier partagé
-   (`retourValidations.traitees`) pour que l'agent arrête de les renvoyer.
+4. **Intégration au suivi** (`07i`, dans `calculer`, depuis la 6.4.3) : **une étiquette = une pièce**.
+   Pièces faites = ce que dit la dernière extraction **+ les étiquettes imprimées après elle**
+   (`etiquettesEnDirect(heure de l'extraction)`), plafonné à la quantité de la ligne. L'heure d'une
+   étiquette = son heure d'impression (l'agent la met dans l'identifiant `poste-secondes-compteur`).
+   - **Dévalidation** : une étiquette d'avant l'extraction ne compte plus — l'extraction fait foi.
+   - **Ré-impression** : compte, plafonnée à la ligne, corrigée par l'extraction suivante.
+   - **Casse** : une pièce relancée en casse après l'extraction repart à faire
+     (`relanceesCasseApres`) ; seules les étiquettes d'après la relance comptent. L'heure d'une relance
+     = la **première** fois qu'on a vu le lancement casse (`validations.casses`), car une relecture de la
+     semaine réécrit `maj`.
+   - Un lancement hors extraction n'est suivi que par ses pièces étiquetées (le reste : à faire).
+   Les étiquettes prises sont accusées dans le fichier partagé (`retourValidations.traitees`) pour que
+   l'agent arrête de les renvoyer. Test autonome : `sources/outils/test_web_comptage.js`.
 
 Activité par poste et bouton « Réinitialiser » : `htmlBandeauValidations()` (06h) + `brancher()`
 (07i). Chaque poste a un **nom** (ex. « Crédences ») envoyé dans son lot.
@@ -204,6 +213,8 @@ sont **pas** dans le dépôt : il faut les fournir localement.
 cd coupe_controle/sources
 node outils/test_web.js ../web/index.html <…dossiers semaine…>
 node outils/test_web_suivi.js ../web/index.html <Semaine 47> <LAN…48.xlsx> <extraction.xlsx> <ref.json> <python> <fabriquer_extraction.py> <sortie> [capture] [Semaine 46]
+# Comptage du suivi en direct (autonome, données fabriquées) :
+node outils/test_web_comptage.js ../web/index.html
 # Suivi en direct (autonome, données anonymes générées) :
 node outils/test_web_etiquette.js ../web/index.html <python> outils/fabriquer_etiquette_test.py <sortie> [etiquette_reelle.spl]
 # Agent (chiffrement/canal, se teste sur ce poste, sans Windows) :
