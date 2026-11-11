@@ -1,6 +1,6 @@
 // V6.4.3 : comptage du suivi en direct (une étiquette = une pièce), sur des données fabriquées (anonymes).
 // Vérifie : lignes de plusieurs pièces, lancement hors extraction, dévalidation (l'extraction fait foi),
-// ré-impression (plafonnée), relance casse (la pièce repart à faire ; une relecture ne fausse rien).
+// ré-impression (plafonnée), casse (l'extraction décide, même si le lancement casse est scanné après).
 // Usage : node test_web_comptage.js <index.html>
 const { chromium } = require("playwright");
 const fs = require("fs");
@@ -55,7 +55,7 @@ const verifier = (ok, t) => {
       cleLigne(cmd, lig),
       { commande: cmd, ligne: lig, poste: "1", nom: "Essai", quand: iso(h(heures[heures.length - 1])), etiquettes: heures.map((x) => [`1-${Math.floor(h(x) / 1000)}-${++compteur}`, Math.floor(h(x) / 1000) * 1000]) },
     ];
-    const calcul = (semaines, ex, etiquettes, garderCasses) => {
+    const calcul = (semaines, ex, etiquettes) => {
       bibliotheque.semaines = new Map(semaines.map((s) => [s.id, s]));
       bibliotheque.generation = (bibliotheque.generation || 0) + 1;
       SUIVI.etat.extractions = [ex];
@@ -63,7 +63,6 @@ const verifier = (ok, t) => {
       validations.faites = Object.fromEntries(etiquettes);
       validations.traitees = {};
       validations.postes = {};
-      if (!garderCasses) validations.casses = {};
       validations.rev++;
       const r = SUIVI.calculer();
       const L = Object.fromEntries(r.semaines.flatMap((x) => x.lancements).map((l) => [l.nom, [l.f, l.r]]));
@@ -89,20 +88,20 @@ const verifier = (ok, t) => {
     out.hors_sans = calcul([base(), s47], ex, []).L;
     out.hors_1etiq = calcul([base(), s47], ex, [etiq("CVC22222222", "1", 1)]).L;
 
-    // Casse : pièce faite (étiquette à +1 h), puis relancée en casse (vue à +2 h) → à refaire.
-    const avecCasse = (majCasse) => [
+    // Casse : c'est l'extraction qui décide (Diakonos remet la pièce relancée « en cours »).
+    const avecCasse = () => [
       semaine(46, [
         { nom: "LAN2646P1", poste: "P1", maj: iso(h(-20)), pieces: [ligne("CVC33333333", "1", 1), ligne("CVC33333333", "2", 1)] },
-        { nom: "LAN2646CASSE", poste: "", casse: true, maj: iso(majCasse), pieces: [ligne("CVC33333333", "1", 1)] },
+        // Lancement casse scanné APRÈS l'extraction (cas courant) : sa date de scan ne doit rien changer.
+        { nom: "LAN2646CASSE", poste: "", casse: true, maj: iso(h(5)), pieces: [ligne("CVC33333333", "1", 1)] },
       ]),
     ];
-    // L'extraction (avant la relance) ne la liste plus : elle avait été faite.
-    const exC = extraction([rangee(46, "CVC33333333", "2", 1, 1)]);
-    out.casse_avant_recoupe = calcul(avecCasse(h(2)), exC, [etiq("CVC33333333", "1", 1)]).L;
-    // Recoupée et revalidée à +3 h → de nouveau faite.
-    out.casse_recoupee = calcul(avecCasse(h(2)), exC, [etiq("CVC33333333", "1", 1, 3)], true).L;
-    // On relit la semaine à +5 h (la date du lancement casse est réécrite) : rien ne doit bouger.
-    out.casse_relue = calcul(avecCasse(h(5)), exC, [etiq("CVC33333333", "1", 1, 3)], true).L;
+    // La pièce relancée n'est plus dans l'extraction : elle a été refaite → faite (régression 6.4.3 : passait à faire).
+    out.casse_finie = calcul(avecCasse(), extraction([rangee(46, "CVC33333333", "2", 1, 1)]), []).L;
+    // L'extraction la remontre « en cours » (relancée, pas encore refaite) → à faire ; une étiquette après → faite.
+    const exC = extraction([rangee(46, "CVC33333333", "1", 1, 1), rangee(46, "CVC33333333", "2", 1, 1)]);
+    out.casse_a_refaire = calcul(avecCasse(), exC, []).L;
+    out.casse_recoupee = calcul(avecCasse(), exC, [etiq("CVC33333333", "1", 1)]).L;
     // Le bandeau compte les étiquettes (pièces), pas les lignes.
     validations.faites = Object.fromEntries([etiq("CVC11111111", "1", 1, 2, 3), etiq("CVC11111111", "2", 1)]);
     out.bandeau = nbEtiquettesRecues();
@@ -117,9 +116,9 @@ const verifier = (ok, t) => {
   verifier(eq(res.devalidee, [0, 4]), `dévalidation (étiquette d'avant l'extraction) : ne compte plus (${res.devalidee})`);
   verifier(eq(res.hors_sans.LAN2647P1, [0, 0]), `lancement hors extraction sans étiquette : pas suivi (${res.hors_sans.LAN2647P1})`);
   verifier(eq(res.hors_1etiq.LAN2647P1, [1, 9]), `lancement hors extraction, 1 étiquette → 1 faite / 9 à faire (${res.hors_1etiq.LAN2647P1})`);
-  verifier(eq(res.casse_avant_recoupe.LAN2646CASSE, [0, 1]), `relancée en casse après l'étiquette → à refaire (${res.casse_avant_recoupe.LAN2646CASSE})`);
-  verifier(eq(res.casse_recoupee.LAN2646CASSE, [1, 0]), `recoupée et revalidée → faite (${res.casse_recoupee.LAN2646CASSE})`);
-  verifier(eq(res.casse_relue.LAN2646CASSE, [1, 0]), `semaine relue (date du lancement réécrite) → toujours faite (${res.casse_relue.LAN2646CASSE})`);
+  verifier(eq(res.casse_finie.LAN2646CASSE, [1, 0]), `casse scannée après l'extraction, plus dans Diakonos → faite (${res.casse_finie.LAN2646CASSE})`);
+  verifier(eq(res.casse_a_refaire.LAN2646CASSE, [0, 1]), `casse encore « en cours » dans l'extraction → à faire (${res.casse_a_refaire.LAN2646CASSE})`);
+  verifier(eq(res.casse_recoupee.LAN2646CASSE, [1, 0]), `casse recoupée, étiquette après l'extraction → faite (${res.casse_recoupee.LAN2646CASSE})`);
   verifier(res.bandeau === 4, `bandeau : 4 étiquettes reçues = 4 pièces (${res.bandeau})`);
 
   // Réception (mini-site simulé) : 3 étiquettes de la même ligne → 3 étiquettes rangées sur la pièce, poste à 3 ;

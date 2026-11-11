@@ -420,12 +420,10 @@ const SUIVI = (() => {
     if (!ex.length) return null;
     const der = ex[ex.length - 1];
     const prec = ex.length > 1 ? ex[ex.length - 2] : null;
-    // Suivi en direct : seules comptent les étiquettes imprimées APRÈS la dernière extraction (celles d'avant y sont
-    // déjà — l'extraction fait foi, une dévalidation s'y voit). Une pièce relancée en casse après l'extraction est à
-    // refaire (l'extraction ne pouvait pas le savoir).
+    // Suivi en direct : seules comptent les étiquettes imprimées APRÈS la dernière extraction. Celles d'avant y sont
+    // déjà : l'extraction fait foi (une dévalidation, une ré-impression, une relance en casse s'y voient).
     const heureExtraction = der.modifie || Date.parse(`${der.jour}T00:00:00`) || 0;
     const direct = typeof etiquettesEnDirect === "function" ? etiquettesEnDirect(heureExtraction) : new Map();
-    const relancees = typeof relanceesCasseApres === "function" ? relanceesCasseApres(heureExtraction) : new Set();
     // Les lancements de la bibliothèque (6 mois autour de la dernière extraction).
     const lancements = [];
     for (const s of bibliotheque.semaines.values()) {
@@ -529,8 +527,8 @@ const SUIVI = (() => {
               // Encore dans l'extraction : « Qte en cours » à faire, le reste du lancement est fait.
               rk = Math.min(q, Math.max(0, v.cours));
               fk = q - rk;
-            } else if (couvertEx && !(dernier && relancees.has(k))) fk = q; // le CVC n'est plus dans l'extraction : la pièce est faite (casse comprise)
-            else rk = q; // hors extraction, ou relancée en casse après l'extraction : à faire
+            } else if (couvertEx) fk = q; // le CVC n'est plus dans l'extraction : la pièce est faite (casse comprise)
+            else rk = q; // lancement hors extraction (suivi par ses étiquettes) : à faire
             // Les étiquettes imprimées depuis l'extraction : une étiquette = une pièce faite (plafonné à la ligne).
             if (dernier && rk > 0) {
               const plus = Math.min(rk, direct.get(k) || 0);

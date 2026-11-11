@@ -14,7 +14,6 @@ const validations = {
   faites: null,
   traitees: null, // id déjà pris en compte
   postes: null, // { poste: { nom, dernier, nb } } — activité par poste (nb = étiquettes reçues)
-  casses: null, // { lancement casse : première fois qu'on l'a vu (ms) } — une relecture ne le « rajeunit » pas
   rev: 0, // change à chaque nouvelle étiquette (pour recalculer le suivi)
   erreur: null,
 };
@@ -26,21 +25,16 @@ function lireValidationsLocal() {
     validations.faites = v.faites || {};
     validations.traitees = v.traitees || {};
     validations.postes = v.postes || {};
-    validations.casses = v.casses || {};
   } catch (_e) {
     validations.faites = {};
     validations.traitees = {};
     validations.postes = {};
-    validations.casses = {};
   }
 }
 
 function ecrireValidationsLocal() {
   try {
-    localStorage.setItem(
-      CLE_VALIDATIONS_FAITES,
-      JSON.stringify({ faites: validations.faites, traitees: validations.traitees, postes: validations.postes, casses: validations.casses || {} })
-    );
+    localStorage.setItem(CLE_VALIDATIONS_FAITES, JSON.stringify({ faites: validations.faites, traitees: validations.traitees, postes: validations.postes }));
   } catch (_e) {
     // sans stockage : gardé le temps de la page
   }
@@ -194,56 +188,14 @@ function etiquettesDe(v) {
   return v.id ? [[v.id, heureEtiquette(v.id, v.quand)]] : [];
 }
 
-// Les relances casse : pour chaque pièce, l'heure de la relance casse la plus récente qui la contient. L'heure d'un
-// lancement casse = la PREMIÈRE fois qu'on l'a vu (une relecture de la semaine réécrit sa date, pas celle-ci).
-function relancesCasse() {
-  lireValidationsLocal();
-  const res = new Map();
-  if (typeof bibliotheque === "undefined" || !bibliotheque.semaines) return res;
-  const vus = validations.casses || (validations.casses = {});
-  let change = false;
-  for (const s of bibliotheque.semaines.values()) {
-    if (s.supprimeeLe || !s.lancements || !s.lancements.length) continue;
-    const cols = s.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
-    const iCle = Math.max(0, cols.indexOf("cle"));
-    for (const l of s.lancements) {
-      if (!(Boolean(l.casse) || /CASSE/i.test(l.nom || ""))) continue;
-      const nom = typeof cleNomLancement === "function" ? cleNomLancement(l.nom) : l.nom;
-      const t = Date.parse(l.maj || "") || 0;
-      if (t && (!vus[nom] || t < vus[nom])) {
-        vus[nom] = t;
-        change = true;
-      }
-      const depuis = vus[nom] || t;
-      if (!depuis) continue;
-      for (const p of l.pieces || []) {
-        const k = p[iCle];
-        if (k && (!res.has(k) || depuis > res.get(k))) res.set(k, depuis);
-      }
-    }
-  }
-  if (change) ecrireValidationsLocal();
-  return res;
-}
-
-// Les pièces relancées en casse APRÈS une heure donnée (celle de l'extraction) : l'extraction ne pouvait pas le
-// savoir, la pièce est à refaire.
-function relanceesCasseApres(heure) {
-  const res = new Set();
-  for (const [k, t] of relancesCasse()) if (t > heure) res.add(k);
-  return res;
-}
-
 // Les pièces faites en direct depuis une heure donnée (celle de l'extraction) : { cle → nombre d'étiquettes }.
-// Une étiquette d'avant l'extraction est déjà dans l'extraction (qui fait foi : une dévalidation s'y voit) ; une
-// étiquette d'avant la relance casse de la pièce concerne la pièce cassée, pas celle à refaire.
+// Une étiquette d'avant l'extraction est déjà dans l'extraction, qui fait foi : une dévalidation, une ré-impression
+// ou une relance en casse (Diakonos remet la pièce « en cours ») s'y voient à l'extraction suivante.
 function etiquettesEnDirect(depuis) {
   lireValidationsLocal();
-  const relances = relancesCasse();
   const res = new Map();
   for (const [k, v] of Object.entries(validations.faites || {})) {
-    const seuil = Math.max(depuis || 0, relances.get(k) || 0);
-    const n = etiquettesDe(v).filter(([, t]) => t > seuil).length;
+    const n = etiquettesDe(v).filter(([, t]) => t > (depuis || 0)).length;
     if (n) res.set(k, n);
   }
   return res;
