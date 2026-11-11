@@ -412,14 +412,20 @@ const SUIVI = (() => {
 
   // Le résumé complet (écran du PC, fichier partagé, téléphone). null sans extraction.
   function calculer() {
-    // Pièces déjà faites reçues en direct des PC de validation (étiquette imprimée = pièce faite).
-    const validees = typeof clesValidees === "function" ? clesValidees() : new Set();
-    const cle = `${bibliotheque.generation}|${etat.generation}|${JSON.stringify(etat.inclus)}|v${validees.size}`;
+    // Étiquettes reçues en direct des PC de validation (une étiquette imprimée = une pièce faite).
+    const rev = typeof validations !== "undefined" ? validations.rev : 0;
+    const cle = `${bibliotheque.generation}|${etat.generation}|${JSON.stringify(etat.inclus)}|v${rev}`;
     if (etat.resume && etat.cleResume === cle) return etat.resume;
     const ex = etat.extractions;
     if (!ex.length) return null;
     const der = ex[ex.length - 1];
     const prec = ex.length > 1 ? ex[ex.length - 2] : null;
+    // Suivi en direct : seules comptent les étiquettes imprimées APRÈS la dernière extraction (celles d'avant y sont
+    // déjà — l'extraction fait foi, une dévalidation s'y voit). Une pièce relancée en casse après l'extraction est à
+    // refaire (l'extraction ne pouvait pas le savoir).
+    const heureExtraction = der.modifie || Date.parse(`${der.jour}T00:00:00`) || 0;
+    const direct = typeof etiquettesEnDirect === "function" ? etiquettesEnDirect(heureExtraction) : new Map();
+    const relancees = typeof relanceesCasseApres === "function" ? relanceesCasseApres(heureExtraction) : new Set();
     // Les lancements de la bibliothèque (6 mois autour de la dernière extraction).
     const lancements = [];
     for (const s of bibliotheque.semaines.values()) {
@@ -503,14 +509,14 @@ const SUIVI = (() => {
           lancements[i].vus.add(k);
         }
       }
-      const dernier = n === ex.length - 1; // seule l'extraction la plus récente profite des validations en direct
+      const dernier = n === ex.length - 1; // seule l'extraction la plus récente profite des étiquettes en direct
       lancements.forEach((L, i) => {
         const p = presents.get(i) || new Map();
-        // Une pièce validée en direct (étiquette imprimée) compte comme faite, même si elle est encore dans
-        // l'extraction (l'étiquette va plus vite que l'extraction).
-        const aValidee = dernier && [...L.pieces.keys()].some((k) => validees.has(k));
-        // Sa semaine n'est pas dans l'extraction (et aucune de ses pièces) : l'extraction ne dit rien de lui.
-        const couvert = p.size > 0 || L.ordre <= e.ordreMax || aValidee;
+        // Sa semaine n'est pas dans l'extraction (et aucune de ses pièces) : l'extraction ne dit rien de lui…
+        const couvertEx = p.size > 0 || L.ordre <= e.ordreMax;
+        // …sauf s'il a des pièces étiquetées depuis : il est alors suivi (seules ces pièces sont faites).
+        const aDirect = dernier && [...L.pieces.keys()].some((k) => direct.has(k));
+        const couvert = couvertEx || aDirect;
         let f = 0;
         let r = 0;
         const detail = n >= ex.length - 2 ? new Map() : null; // par pièce (pour les totaux : une pièce comptée une fois)
@@ -519,13 +525,18 @@ const SUIVI = (() => {
             const v = p.get(k);
             let fk = 0;
             let rk = 0;
-            if (dernier && validees.has(k)) {
-              fk = q; // validée en direct : faite
-            } else if (v) {
+            if (v) {
               // Encore dans l'extraction : « Qte en cours » à faire, le reste du lancement est fait.
               rk = Math.min(q, Math.max(0, v.cours));
               fk = q - rk;
-            } else fk = q; // le CVC n'est plus dans l'extraction : la pièce est faite (casse comprise)
+            } else if (couvertEx && !(dernier && relancees.has(k))) fk = q; // le CVC n'est plus dans l'extraction : la pièce est faite (casse comprise)
+            else rk = q; // hors extraction, ou relancée en casse après l'extraction : à faire
+            // Les étiquettes imprimées depuis l'extraction : une étiquette = une pièce faite (plafonné à la ligne).
+            if (dernier && rk > 0) {
+              const plus = Math.min(rk, direct.get(k) || 0);
+              fk += plus;
+              rk -= plus;
+            }
             f += fk;
             r += rk;
             if (detail && (fk || rk)) detail.set(k, [fk, rk]);
@@ -555,7 +566,7 @@ const SUIVI = (() => {
       const par = new Map();
       for (const [k, v] of L.presents || []) {
         const r0 = v.lignes[0];
-        const reste = Math.min(L.pieces.get(k), Math.max(0, v.cours));
+        const reste = Math.max(0, Math.min(L.pieces.get(k), Math.max(0, v.cours)) - (direct.get(k) || 0));
         if (reste <= 0) continue;
         const c = par.get(r0[2]) || { commande: r0[2], transporteur: r0[7], ville: r0[8], reste: 0, semaines: new Set() };
         c.reste += reste;

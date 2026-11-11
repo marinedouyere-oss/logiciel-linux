@@ -97,16 +97,27 @@ const LANS_S47 = [
     const s = [...bibliotheque.semaines.values()].find((x) => x.lancements.some((l) => l.nom === "LAN264702START"));
     const l = s.lancements.find((l) => l.nom === "LAN264702START");
     const iCle = Math.max(0, (s.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE).indexOf("cle"));
-    const cles = l.pieces.map((p) => p[iCle]);
-    const faire = (n) => {
-      validations.faites = Object.fromEntries(cles.slice(0, n).map((c) => [c, { poste: "1" }]));
+    const cols = s.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
+    const iQ = cols.indexOf("pieces") >= 0 ? cols.indexOf("pieces") : 4;
+    const qte = new Map();
+    for (const p of l.pieces) qte.set(p[iCle], (qte.get(p[iCle]) || 0) + Math.max(0, Number(p[iQ]) || 0));
+    const cles = [...qte.keys()];
+    // Une étiquette par pièce, imprimée après la dernière extraction (celles d'avant y sont déjà).
+    const ex = SUIVI.etat.extractions;
+    const apres = Math.floor(((ex[ex.length - 1].modifie || Date.now()) + 60e3) / 1000);
+    let numero = 0;
+    const etiquettes = (c, n) => Array.from({ length: n }, () => [`1-${apres}-${++numero}`, apres * 1000]);
+    const faire = (n, parPiece) => {
+      validations.faites = Object.fromEntries(cles.slice(0, n).map((c) => [c, { poste: "1", etiquettes: etiquettes(c, parPiece ? qte.get(c) : 1) }]));
+      validations.rev++;
       SUIVI.etat.resume = null;
       const r = SUIVI.calculer().semaines.flatMap((x) => x.lancements).find((l) => l.nom === "LAN264702START");
       return [r.f, r.r, r.e];
     };
     const d10 = faire(10);
-    const tout = faire(cles.length);
+    const tout = faire(cles.length, true);
     validations.faites = {}; // on nettoie pour la suite du test
+    validations.rev++;
     SUIVI.etat.resume = null;
     return { d10, tout, n: cles.length };
   });

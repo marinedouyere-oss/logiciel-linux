@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.4.2 — Contrôle de coupe</title>
+<title>Sentinelle V6.4.3 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -640,7 +640,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.4.2</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.4.3</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -747,7 +747,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.4.2 · Contrôle de coupe</span>
+    <span>Sentinelle V6.4.3 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -9117,9 +9117,13 @@ const CLE_VALIDATIONS_FAITES = "sentinelle-validations-faites"; // pièces faite
 
 const validations = {
   lecture: null,
-  faites: null, // { cle: { id, jour, poste, nom, commande, ligne, quand } }
+  // { cle pièce : { commande, ligne, poste, nom, quand, etiquettes: [[id, heure d'impression (ms)], …] } }
+  // Une étiquette = une pièce faite : une ligne de 3 pièces a 3 étiquettes.
+  faites: null,
   traitees: null, // id déjà pris en compte
-  postes: null, // { poste: { nom, dernier, nb } } — activité par poste
+  postes: null, // { poste: { nom, dernier, nb } } — activité par poste (nb = étiquettes reçues)
+  casses: null, // { lancement casse : première fois qu'on l'a vu (ms) } — une relecture ne le « rajeunit » pas
+  rev: 0, // change à chaque nouvelle étiquette (pour recalculer le suivi)
   erreur: null,
 };
 
@@ -9130,16 +9134,21 @@ function lireValidationsLocal() {
     validations.faites = v.faites || {};
     validations.traitees = v.traitees || {};
     validations.postes = v.postes || {};
+    validations.casses = v.casses || {};
   } catch (_e) {
     validations.faites = {};
     validations.traitees = {};
     validations.postes = {};
+    validations.casses = {};
   }
 }
 
 function ecrireValidationsLocal() {
   try {
-    localStorage.setItem(CLE_VALIDATIONS_FAITES, JSON.stringify({ faites: validations.faites, traitees: validations.traitees, postes: validations.postes }));
+    localStorage.setItem(
+      CLE_VALIDATIONS_FAITES,
+      JSON.stringify({ faites: validations.faites, traitees: validations.traitees, postes: validations.postes, casses: validations.casses || {} })
+    );
   } catch (_e) {
     // sans stockage : gardé le temps de la page
   }
@@ -9150,6 +9159,7 @@ function reinitialiserValidations() {
   lireValidationsLocal();
   validations.faites = {};
   validations.postes = {};
+  validations.rev++;
   // on garde « traitees » : les étiquettes déjà reçues ne seront pas recomptées (seules les nouvelles le seront).
   ecrireValidationsLocal();
   if (typeof SUIVI !== "undefined" && SUIVI.rafraichirValidations) SUIVI.rafraichirValidations();
@@ -9248,14 +9258,20 @@ function lireValidations() {
           } catch (_e) {
             piece = null;
           }
-          if (piece && !validations.faites[piece.cle]) {
-            validations.faites[piece.cle] = { id: d.id, jour: d.jour || "", poste: lot.pc, nom: nomPoste, commande: piece.commande, ligne: piece.ligne, quand: new Date().toISOString() };
+          if (piece) {
+            // Une étiquette = une pièce faite. Une ligne de plusieurs pièces reçoit une étiquette par pièce ; une
+            // ré-impression compte aussi (plafonné à la quantité de la ligne, et corrigé par l'extraction suivante).
+            const maintenant = new Date().toISOString();
+            const avant = validations.faites[piece.cle];
+            const etiquettes = etiquettesDe(avant).concat([[d.id, heureEtiquette(d.id, maintenant)]]);
+            validations.faites[piece.cle] = { commande: piece.commande, ligne: piece.ligne, poste: lot.pc, nom: nomPoste, quand: maintenant, etiquettes };
             act.nb = (act.nb || 0) + 1;
-            act.dernier = new Date().toISOString();
+            act.dernier = maintenant;
             nouvelles++;
           }
         }
       }
+      if (nouvelles) validations.rev++;
       ecrireValidationsLocal();
       validations.erreur = null;
       if (nouvelles && typeof SUIVI !== "undefined") SUIVI.rafraichirValidations && SUIVI.rafraichirValidations();
@@ -9271,10 +9287,86 @@ function lireValidations() {
   return lecture;
 }
 
-// L'ensemble des clés de pièces faites reçues des PC de validation (pour le suivi).
+// Heure d'impression d'une étiquette : l'agent la met dans l'identifiant (« poste-secondes-compteur »).
+// À défaut (anciens essais), l'heure de réception.
+function heureEtiquette(id, quand) {
+  const m = /^[^-]+-(\d{9,11})-\d+$/.exec(String(id || ""));
+  if (m) return Number(m[1]) * 1000;
+  return Date.parse(quand || "") || 0;
+}
+
+// Les étiquettes reçues pour une pièce : [[id, heure], …] (ancien format : une seule étiquette).
+function etiquettesDe(v) {
+  if (!v) return [];
+  if (Array.isArray(v.etiquettes)) return v.etiquettes;
+  return v.id ? [[v.id, heureEtiquette(v.id, v.quand)]] : [];
+}
+
+// Les relances casse : pour chaque pièce, l'heure de la relance casse la plus récente qui la contient. L'heure d'un
+// lancement casse = la PREMIÈRE fois qu'on l'a vu (une relecture de la semaine réécrit sa date, pas celle-ci).
+function relancesCasse() {
+  lireValidationsLocal();
+  const res = new Map();
+  if (typeof bibliotheque === "undefined" || !bibliotheque.semaines) return res;
+  const vus = validations.casses || (validations.casses = {});
+  let change = false;
+  for (const s of bibliotheque.semaines.values()) {
+    if (s.supprimeeLe || !s.lancements || !s.lancements.length) continue;
+    const cols = s.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
+    const iCle = Math.max(0, cols.indexOf("cle"));
+    for (const l of s.lancements) {
+      if (!(Boolean(l.casse) || /CASSE/i.test(l.nom || ""))) continue;
+      const nom = typeof cleNomLancement === "function" ? cleNomLancement(l.nom) : l.nom;
+      const t = Date.parse(l.maj || "") || 0;
+      if (t && (!vus[nom] || t < vus[nom])) {
+        vus[nom] = t;
+        change = true;
+      }
+      const depuis = vus[nom] || t;
+      if (!depuis) continue;
+      for (const p of l.pieces || []) {
+        const k = p[iCle];
+        if (k && (!res.has(k) || depuis > res.get(k))) res.set(k, depuis);
+      }
+    }
+  }
+  if (change) ecrireValidationsLocal();
+  return res;
+}
+
+// Les pièces relancées en casse APRÈS une heure donnée (celle de l'extraction) : l'extraction ne pouvait pas le
+// savoir, la pièce est à refaire.
+function relanceesCasseApres(heure) {
+  const res = new Set();
+  for (const [k, t] of relancesCasse()) if (t > heure) res.add(k);
+  return res;
+}
+
+// Les pièces faites en direct depuis une heure donnée (celle de l'extraction) : { cle → nombre d'étiquettes }.
+// Une étiquette d'avant l'extraction est déjà dans l'extraction (qui fait foi : une dévalidation s'y voit) ; une
+// étiquette d'avant la relance casse de la pièce concerne la pièce cassée, pas celle à refaire.
+function etiquettesEnDirect(depuis) {
+  lireValidationsLocal();
+  const relances = relancesCasse();
+  const res = new Map();
+  for (const [k, v] of Object.entries(validations.faites || {})) {
+    const seuil = Math.max(depuis || 0, relances.get(k) || 0);
+    const n = etiquettesDe(v).filter(([, t]) => t > seuil).length;
+    if (n) res.set(k, n);
+  }
+  return res;
+}
+
+// Le nombre d'étiquettes reçues des PC de validation (= pièces faites signalées en direct).
+function nbEtiquettesRecues() {
+  lireValidationsLocal();
+  return Object.values(validations.faites || {}).reduce((t, v) => t + etiquettesDe(v).length, 0);
+}
+
+// Les pièces qui ont au moins une étiquette reçue.
 function clesValidees() {
   lireValidationsLocal();
-  return new Set(Object.keys(validations.faites || {}));
+  return new Set(Object.entries(validations.faites || {}).filter(([, v]) => etiquettesDe(v).length).map(([k]) => k));
 }
 
 // Les accusés à mettre dans le fichier partagé (pour que les PC arrêtent de renvoyer ces étiquettes).
@@ -9309,7 +9401,7 @@ function htmlBandeauValidations() {
   const etat = etatLienTelephone();
   if (!etat || !etat.code) return ""; // pas de lien : pas de postes de validation
   lireValidationsLocal();
-  const n = Object.keys(validations.faites || {}).length;
+  const n = nbEtiquettesRecues(); // une étiquette = une pièce faite
   const postes = Object.entries(validations.postes || {}).sort(([a], [b]) => a.localeCompare(b));
   if (n === 0 && !postes.length && !validations.erreur) return "";
   // Fonctions internes au module Suivi (fmt, jourCourt) non accessibles ici : on reste autonome.
@@ -15929,14 +16021,20 @@ const SUIVI = (() => {
 
   // Le résumé complet (écran du PC, fichier partagé, téléphone). null sans extraction.
   function calculer() {
-    // Pièces déjà faites reçues en direct des PC de validation (étiquette imprimée = pièce faite).
-    const validees = typeof clesValidees === "function" ? clesValidees() : new Set();
-    const cle = `${bibliotheque.generation}|${etat.generation}|${JSON.stringify(etat.inclus)}|v${validees.size}`;
+    // Étiquettes reçues en direct des PC de validation (une étiquette imprimée = une pièce faite).
+    const rev = typeof validations !== "undefined" ? validations.rev : 0;
+    const cle = `${bibliotheque.generation}|${etat.generation}|${JSON.stringify(etat.inclus)}|v${rev}`;
     if (etat.resume && etat.cleResume === cle) return etat.resume;
     const ex = etat.extractions;
     if (!ex.length) return null;
     const der = ex[ex.length - 1];
     const prec = ex.length > 1 ? ex[ex.length - 2] : null;
+    // Suivi en direct : seules comptent les étiquettes imprimées APRÈS la dernière extraction (celles d'avant y sont
+    // déjà — l'extraction fait foi, une dévalidation s'y voit). Une pièce relancée en casse après l'extraction est à
+    // refaire (l'extraction ne pouvait pas le savoir).
+    const heureExtraction = der.modifie || Date.parse(`${der.jour}T00:00:00`) || 0;
+    const direct = typeof etiquettesEnDirect === "function" ? etiquettesEnDirect(heureExtraction) : new Map();
+    const relancees = typeof relanceesCasseApres === "function" ? relanceesCasseApres(heureExtraction) : new Set();
     // Les lancements de la bibliothèque (6 mois autour de la dernière extraction).
     const lancements = [];
     for (const s of bibliotheque.semaines.values()) {
@@ -16020,14 +16118,14 @@ const SUIVI = (() => {
           lancements[i].vus.add(k);
         }
       }
-      const dernier = n === ex.length - 1; // seule l'extraction la plus récente profite des validations en direct
+      const dernier = n === ex.length - 1; // seule l'extraction la plus récente profite des étiquettes en direct
       lancements.forEach((L, i) => {
         const p = presents.get(i) || new Map();
-        // Une pièce validée en direct (étiquette imprimée) compte comme faite, même si elle est encore dans
-        // l'extraction (l'étiquette va plus vite que l'extraction).
-        const aValidee = dernier && [...L.pieces.keys()].some((k) => validees.has(k));
-        // Sa semaine n'est pas dans l'extraction (et aucune de ses pièces) : l'extraction ne dit rien de lui.
-        const couvert = p.size > 0 || L.ordre <= e.ordreMax || aValidee;
+        // Sa semaine n'est pas dans l'extraction (et aucune de ses pièces) : l'extraction ne dit rien de lui…
+        const couvertEx = p.size > 0 || L.ordre <= e.ordreMax;
+        // …sauf s'il a des pièces étiquetées depuis : il est alors suivi (seules ces pièces sont faites).
+        const aDirect = dernier && [...L.pieces.keys()].some((k) => direct.has(k));
+        const couvert = couvertEx || aDirect;
         let f = 0;
         let r = 0;
         const detail = n >= ex.length - 2 ? new Map() : null; // par pièce (pour les totaux : une pièce comptée une fois)
@@ -16036,13 +16134,18 @@ const SUIVI = (() => {
             const v = p.get(k);
             let fk = 0;
             let rk = 0;
-            if (dernier && validees.has(k)) {
-              fk = q; // validée en direct : faite
-            } else if (v) {
+            if (v) {
               // Encore dans l'extraction : « Qte en cours » à faire, le reste du lancement est fait.
               rk = Math.min(q, Math.max(0, v.cours));
               fk = q - rk;
-            } else fk = q; // le CVC n'est plus dans l'extraction : la pièce est faite (casse comprise)
+            } else if (couvertEx && !(dernier && relancees.has(k))) fk = q; // le CVC n'est plus dans l'extraction : la pièce est faite (casse comprise)
+            else rk = q; // hors extraction, ou relancée en casse après l'extraction : à faire
+            // Les étiquettes imprimées depuis l'extraction : une étiquette = une pièce faite (plafonné à la ligne).
+            if (dernier && rk > 0) {
+              const plus = Math.min(rk, direct.get(k) || 0);
+              fk += plus;
+              rk -= plus;
+            }
             f += fk;
             r += rk;
             if (detail && (fk || rk)) detail.set(k, [fk, rk]);
@@ -16072,7 +16175,7 @@ const SUIVI = (() => {
       const par = new Map();
       for (const [k, v] of L.presents || []) {
         const r0 = v.lignes[0];
-        const reste = Math.min(L.pieces.get(k), Math.max(0, v.cours));
+        const reste = Math.max(0, Math.min(L.pieces.get(k), Math.max(0, v.cours)) - (direct.get(k) || 0));
         if (reste <= 0) continue;
         const c = par.get(r0[2]) || { commande: r0[2], transporteur: r0[7], ville: r0[8], reste: 0, semaines: new Set() };
         c.reste += reste;

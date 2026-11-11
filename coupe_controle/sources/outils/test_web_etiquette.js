@@ -66,7 +66,7 @@ function fabriquerEtiquette(cvc, ligne) {
   //    sans erreur JS (régression 6.4.1 : la page devenait blanche).
   const ecran = await page.evaluate(() => {
     lienTelephone.memoire = { code: "ABCD-EFGH-JKLM-NPQR" };
-    validations.faites = { CVC26050839001: { poste: "1", nom: "Crédences" } };
+    validations.faites = { CVC26050839001: { commande: "CVC26050839", ligne: "1", poste: "1", nom: "Crédences", etiquettes: [["1-1762790400-1", 1762790400000]] } };
     validations.traitees = {};
     validations.postes = { "1": { nom: "Crédences", nb: 1, dernier: new Date().toISOString() } };
     onglet = "suivi";
