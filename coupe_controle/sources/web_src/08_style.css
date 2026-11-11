@@ -615,3 +615,30 @@
   .retour-ligne.ok { color: var(--ok-texte); }
   .retour-ligne.refus { color: var(--bordeaux); }
   .sv-direct { margin: 8px 0; padding: 8px 12px; border-radius: 8px; background: var(--ok-fond); color: var(--ok-texte); font-size: 0.9rem; }
+
+  /* V6.5 : stock des panneaux */
+  .stk-fichier { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; }
+  .stk-cherche { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .stk-cherche input[type="search"] { flex: 1 1 260px; min-width: 0; padding: 9px 12px; font-family: var(--texte); font-size: 1rem; border: 1px solid #cfccc6; border-radius: 3px; }
+  .stk-case { display: inline-flex; gap: 6px; align-items: center; font-size: 0.92rem; color: var(--gris); }
+  .stk-filtres { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 8px; }
+  .stk-filtre { background: var(--gris-clair); color: var(--noir); border: 1px solid var(--gris-filet); border-radius: 999px; padding: 5px 12px; font-size: 0.88rem; font-weight: 700; cursor: pointer; }
+  .stk-filtre.actif { background: var(--bordeaux); color: #fff; border-color: var(--bordeaux); }
+  .stk-ligne { cursor: pointer; }
+  .stk-ligne:hover td { background: var(--marque-survol); }
+  .stk-emp { display: inline-block; background: var(--saumon-pale); color: var(--bordeaux); border-radius: 999px; padding: 1px 8px; margin: 1px 2px 1px 0; font-size: 0.8rem; font-weight: 700; white-space: nowrap; }
+  .stk-lim { display: inline-block; border-radius: 4px; padding: 2px 7px; font-size: 0.78rem; font-weight: 700; white-space: nowrap; background: var(--gris-clair); }
+  .stk-lim.l9 { background: var(--ok-fond); color: var(--ok-texte); }
+  .stk-lim.l0 { background: var(--attention-fond); color: var(--attention-texte); }
+  .stk-dort { display: inline-block; border-radius: 4px; padding: 1px 7px; font-size: 0.8rem; font-weight: 700; background: var(--attention-fond); color: var(--attention-texte); white-space: nowrap; }
+  .stk-sous-titre { font-size: 0.98rem; color: var(--noir); margin: 14px 0 4px; }
+  .stk-puce-mat { border: 0; cursor: pointer; color: var(--noir); background: var(--gris-clair); font-family: var(--texte); }
+  .stk-puce-mat:hover { background: var(--saumon-pale); color: var(--bordeaux); }
+  .stk-desc-m { display: none; font-size: 0.8rem; color: var(--gris); font-weight: 400; margin-top: 2px; }
+  .stk-court { display: none; }
+  @media (max-width: 700px) {
+    .stk-col-desc, .stk-long { display: none; }
+    .stk-desc-m { display: block; }
+    .stk-court { display: inline; }
+  }
+

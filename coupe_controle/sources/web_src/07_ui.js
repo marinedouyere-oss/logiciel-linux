@@ -696,6 +696,7 @@ function afficher() {
   $("pageSuivi").classList.toggle("inactif", onglet !== "suivi");
   $("pageListeOpt").classList.toggle("inactif", onglet !== "liste-opt");
   $("pageWoodstore").classList.toggle("inactif", onglet !== "woodstore");
+  $("pageStock").classList.toggle("inactif", onglet !== "stock");
   majMenuDossier();
   if (estOngletSemaine()) construireSemaine(onglet);
   else if (onglet === "accueil") afficherAccueil();
@@ -705,6 +706,7 @@ function afficher() {
   else if (onglet === "suivi") afficherSuiviProduction();
   else if (onglet === "liste-opt") afficherListeOpt();
   else if (onglet === "woodstore") afficherWoodstore();
+  else if (onglet === "stock") afficherStock();
 }
 
 function majOnglets() {
