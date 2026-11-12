@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.8.2 — Contrôle de coupe</title>
+<title>Sentinelle V6.8.3 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -749,7 +749,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.8.2</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.8.3</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -871,7 +871,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.8.2 · Contrôle de coupe</span>
+    <span>Sentinelle V6.8.3 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -13579,6 +13579,29 @@ function lignesRecap(pairesSemaine) {
   return lignes.map((l, i) => [l, i]).sort((a, b) => num(a[0]) - num(b[0]) || a[1] - b[1]).map((x) => x[0]);
 }
 
+// V6.8.3 : le récapitulatif reprend aussi les lancements de la bibliothèque de la semaine qui ne sont dans aucune case
+// (créés dans Sentinelle, ou ajoutés depuis un autre dossier, ex. Trigano) : pas de .bkp ni de contrôle, mais leurs
+// pièces comptent dans le total et dans les doublons entre lancements.
+function avecHorsCases(lignes, parite) {
+  const numero = numeroSemaine(parite);
+  const hors = lancementsHorsCasesDeLaSemaine(numero, pairesDeLaSemaine(parite)).map((l) => ({
+    hors: true,
+    paire: { id: -1, poste: l.casse ? "Casse" : l.poste, semainesLivraison: [] },
+    semaine: String(numero),
+    nom: `${l.poste} · ${l.manuel ? "créé dans Sentinelle" : "bibliothèque"}`,
+    lancement: l.nom,
+    prevues: l.pieces,
+    bkp: null,
+    cles: l.cles,
+  }));
+  if (!hors.length) return lignes;
+  const num = (l) => {
+    const n = parseInt(l.semaine, 10);
+    return Number.isNaN(n) ? Infinity : n;
+  };
+  return [...lignes, ...hors].map((l, i) => [l, i]).sort((a, b) => num(a[0]) - num(b[0]) || a[1] - b[1]).map((x) => x[0]);
+}
+
 function majRecap() {
   if (onglet === "accueil") {
     afficherAccueil();
@@ -13590,10 +13613,11 @@ function majRecap() {
   const parite = onglet;
   const numero = ++zonesRecap.generation;
   const autre = ongletPrecedent(parite);
-  const lignes = lignesRecap(pairesDeLaSemaine(parite));
-  const autres = lignesRecap(pairesDeLaSemaine(autre));
+  const lignes = avecHorsCases(lignesRecap(pairesDeLaSemaine(parite)), parite);
+  const autres = avecHorsCases(lignesRecap(pairesDeLaSemaine(autre)), autre);
   zone.innerHTML = htmlRecap(lignes, autres, libelleOnglet(autre));
   zone.querySelectorAll("[data-case]").forEach((el) => el.addEventListener("click", () => montrerCase(Number(el.dataset.case))));
+  zone.querySelectorAll("[data-cree]").forEach((el) => el.addEventListener("click", ouvrirSuivi));
   const incomplet = (ls) => ls.some((l) => l.cles === null);
   if (!incomplet(lignes) && !incomplet(autres)) return;
   // Lecture des fichiers pour les totaux manquants, puis nouvel affichage.
@@ -13685,6 +13709,12 @@ function htmlRecap(lignes, autres, libelleAutre) {
     for (; i < lignes.length && lignes[i].semaine === semaine; i++) groupe.push(lignes[i]);
     groupe.forEach((l, n) => {
       const p = l.paire;
+      if (l.hors) {
+        html += `<tr class="${n % 2 ? "impaire" : ""} cliquable recap-hors" data-cree="1" title="Lancement sans fichier dans les dossiers de la semaine : son avancement est dans le Suivi de production">
+        <td><strong>${echapper(l.nom)}</strong><br><span class="lancement">${echapper(l.lancement)}</span></td>
+        <td class="droite">${nombreRecap(l.prevues)}</td><td class="droite pale">—</td><td class="centre pale">—</td><td class="centre pale">—</td><td class="centre pale">—</td></tr>`;
+        return;
+      }
       html += `<tr class="${n % 2 ? "impaire" : ""} cliquable" data-case="${p.id}">
         <td><strong>${echapper(l.nom)}</strong><br><span class="lancement">${echapper(l.lancement)}</span></td>
         <td class="droite">${nombreRecap(l.prevues)}</td>
@@ -16023,9 +16053,11 @@ function lancementsHorsCasesDeLaSemaine(numero, cases) {
   const dansLesCases = new Set((cases || []).filter((p) => p.strat).map((p) => cleNomLancement(p.strat.name)));
   const cols = w.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
   const iQ = cols.indexOf("pieces") >= 0 ? cols.indexOf("pieces") : 4;
+  const iCle = Math.max(0, cols.indexOf("cle"));
   return lancementsActifs(w)
     .filter((l) => !dansLesCases.has(cleNomLancement(l.nom)))
-    .map((l) => ({ nom: l.nom, poste: l.poste || "Chantiers", manuel: Boolean(l.manuel), fichier: l.fichier || "", lignes: (l.pieces || []).length, pieces: (l.pieces || []).reduce((t, x) => t + (Number(x[iQ]) || 0), 0) }));
+    .map((l) => ({ nom: l.nom, poste: l.poste || "Chantiers", manuel: Boolean(l.manuel), casse: Boolean(l.casse) || /CASSE/i.test(l.nom), fichier: l.fichier || "",
+      lignes: (l.pieces || []).length, pieces: (l.pieces || []).reduce((t, x) => t + (Number(x[iQ]) || 0), 0), cles: new Set((l.pieces || []).map((x) => String(x[iCle] || "")).filter(Boolean)) }));
 }
 const ouvrirSuivi = () => {
   const b = document.querySelector('[data-onglet="suivi"]');
@@ -16294,6 +16326,12 @@ async function donneesCompteRendu(parite) {
       const rang = estChantier(p) ? ORDRE_COMPTE_RENDU.length : Math.max(0, ORDRE_COMPTE_RENDU.indexOf(p.poste));
       lancements.push({ libelle: estChantier(p) ? nomChantierCompteRendu(base) : LIBELLES_COMPTE_RENDU[p.poste] || p.poste, base, pieces, rang });
     }
+  }
+  // V6.8.3 : les lancements de la bibliothèque de la semaine qui ne sont dans aucune case (créés dans Sentinelle, ou
+  // ajoutés depuis un autre dossier, ex. Trigano).
+  for (const l of lancementsHorsCasesDeLaSemaine(numeroSemaine(parite), pairesDeLaSemaine(parite))) {
+    if (l.casse) casses.push({ p: { poste: "Casse supplémentaire" }, base: l.nom, pieces: l.pieces });
+    else lancements.push({ libelle: nomChantierCompteRendu(l.nom), base: l.nom, pieces: l.pieces, rang: ORDRE_COMPTE_RENDU.length, remarque: l.manuel ? "créé dans Sentinelle" : "hors dossiers (bibliothèque)" });
   }
   lancements.sort((a, b) => a.rang - b.rang);
   // Casse : déjà lancées avant / rajouts, en pièces.

@@ -91,9 +91,11 @@ function lancementsHorsCasesDeLaSemaine(numero, cases) {
   const dansLesCases = new Set((cases || []).filter((p) => p.strat).map((p) => cleNomLancement(p.strat.name)));
   const cols = w.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
   const iQ = cols.indexOf("pieces") >= 0 ? cols.indexOf("pieces") : 4;
+  const iCle = Math.max(0, cols.indexOf("cle"));
   return lancementsActifs(w)
     .filter((l) => !dansLesCases.has(cleNomLancement(l.nom)))
-    .map((l) => ({ nom: l.nom, poste: l.poste || "Chantiers", manuel: Boolean(l.manuel), fichier: l.fichier || "", lignes: (l.pieces || []).length, pieces: (l.pieces || []).reduce((t, x) => t + (Number(x[iQ]) || 0), 0) }));
+    .map((l) => ({ nom: l.nom, poste: l.poste || "Chantiers", manuel: Boolean(l.manuel), casse: Boolean(l.casse) || /CASSE/i.test(l.nom), fichier: l.fichier || "",
+      lignes: (l.pieces || []).length, pieces: (l.pieces || []).reduce((t, x) => t + (Number(x[iQ]) || 0), 0), cles: new Set((l.pieces || []).map((x) => String(x[iCle] || "")).filter(Boolean)) }));
 }
 const ouvrirSuivi = () => {
   const b = document.querySelector('[data-onglet="suivi"]');

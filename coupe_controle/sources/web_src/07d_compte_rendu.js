@@ -34,6 +34,12 @@ async function donneesCompteRendu(parite) {
       lancements.push({ libelle: estChantier(p) ? nomChantierCompteRendu(base) : LIBELLES_COMPTE_RENDU[p.poste] || p.poste, base, pieces, rang });
     }
   }
+  // V6.8.3 : les lancements de la bibliothèque de la semaine qui ne sont dans aucune case (créés dans Sentinelle, ou
+  // ajoutés depuis un autre dossier, ex. Trigano).
+  for (const l of lancementsHorsCasesDeLaSemaine(numeroSemaine(parite), pairesDeLaSemaine(parite))) {
+    if (l.casse) casses.push({ p: { poste: "Casse supplémentaire" }, base: l.nom, pieces: l.pieces });
+    else lancements.push({ libelle: nomChantierCompteRendu(l.nom), base: l.nom, pieces: l.pieces, rang: ORDRE_COMPTE_RENDU.length, remarque: l.manuel ? "créé dans Sentinelle" : "hors dossiers (bibliothèque)" });
+  }
   lancements.sort((a, b) => a.rang - b.rang);
   // Casse : déjà lancées avant / rajouts, en pièces.
   const lignesCasse = [];

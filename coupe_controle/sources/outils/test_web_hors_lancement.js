@@ -318,6 +318,10 @@ const LIGNES = [
       await page.waitForTimeout(300);
       const postes = await page.locator("#listePostes").innerText();
       verifier(/LAN2648TRIGANO · 15 pièces/.test(postes) && /créé dans Sentinelle/.test(postes), "« Semaine 48 » : LAN2648TRIGANO dans la liste des postes");
+      const recap = await page.locator("#zoneRecap").innerText();
+      verifier(/LAN2648TRIGANO/.test(recap) && /créé dans Sentinelle/i.test(recap), "récapitulatif du bas : LAN2648TRIGANO compté");
+      const cr = await page.evaluate(async (o) => (await donneesCompteRendu(o)).lancements.map((l) => `${l.libelle}|${l.base}|${l.pieces}|${l.remarque || ""}`), onglet48);
+      verifier(cr.includes("TRIGANO|LAN2648TRIGANO|15|créé dans Sentinelle"), `compte rendu de la semaine : LAN2648TRIGANO (${cr.join(" ; ")})`);
     } else verifier(false, "onglet Semaine 48 introuvable");
     await page.click('[data-onglet="suivi"]');
     await page.waitForSelector("#svHors");

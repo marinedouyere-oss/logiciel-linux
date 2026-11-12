@@ -285,6 +285,8 @@ remet dans la liste. Export Excel : les lignes collées dans les colonnes de l'e
 **Lancements hors dossiers.** « La semaine » et « Contrôler la coupe → Semaine NN » ne montraient que les cases (fichiers
 des dossiers de la semaine). `lancementsHorsCasesDeLaSemaine` y ajoute les lancements de la bibliothèque de cette
 semaine qui ne sont dans aucune case : créés dans Sentinelle, ou ajoutés à la bibliothèque depuis un autre dossier.
+V6.8.3 : ces lancements comptent aussi dans le récapitulatif du bas de la semaine (`avecHorsCases` : prévues, total,
+doublons entre lancements ; pas de .bkp ni de contrôle) et dans le compte rendu de la semaine (`donneesCompteRendu`).
 
 ### Semaine retirée puis rescannée (V6.7.4, `lancementsActifs` dans `06b_bibliotheque.js`)
 

@@ -1599,6 +1599,29 @@ function lignesRecap(pairesSemaine) {
   return lignes.map((l, i) => [l, i]).sort((a, b) => num(a[0]) - num(b[0]) || a[1] - b[1]).map((x) => x[0]);
 }
 
+// V6.8.3 : le récapitulatif reprend aussi les lancements de la bibliothèque de la semaine qui ne sont dans aucune case
+// (créés dans Sentinelle, ou ajoutés depuis un autre dossier, ex. Trigano) : pas de .bkp ni de contrôle, mais leurs
+// pièces comptent dans le total et dans les doublons entre lancements.
+function avecHorsCases(lignes, parite) {
+  const numero = numeroSemaine(parite);
+  const hors = lancementsHorsCasesDeLaSemaine(numero, pairesDeLaSemaine(parite)).map((l) => ({
+    hors: true,
+    paire: { id: -1, poste: l.casse ? "Casse" : l.poste, semainesLivraison: [] },
+    semaine: String(numero),
+    nom: `${l.poste} · ${l.manuel ? "créé dans Sentinelle" : "bibliothèque"}`,
+    lancement: l.nom,
+    prevues: l.pieces,
+    bkp: null,
+    cles: l.cles,
+  }));
+  if (!hors.length) return lignes;
+  const num = (l) => {
+    const n = parseInt(l.semaine, 10);
+    return Number.isNaN(n) ? Infinity : n;
+  };
+  return [...lignes, ...hors].map((l, i) => [l, i]).sort((a, b) => num(a[0]) - num(b[0]) || a[1] - b[1]).map((x) => x[0]);
+}
+
 function majRecap() {
   if (onglet === "accueil") {
     afficherAccueil();
@@ -1610,10 +1633,11 @@ function majRecap() {
   const parite = onglet;
   const numero = ++zonesRecap.generation;
   const autre = ongletPrecedent(parite);
-  const lignes = lignesRecap(pairesDeLaSemaine(parite));
-  const autres = lignesRecap(pairesDeLaSemaine(autre));
+  const lignes = avecHorsCases(lignesRecap(pairesDeLaSemaine(parite)), parite);
+  const autres = avecHorsCases(lignesRecap(pairesDeLaSemaine(autre)), autre);
   zone.innerHTML = htmlRecap(lignes, autres, libelleOnglet(autre));
   zone.querySelectorAll("[data-case]").forEach((el) => el.addEventListener("click", () => montrerCase(Number(el.dataset.case))));
+  zone.querySelectorAll("[data-cree]").forEach((el) => el.addEventListener("click", ouvrirSuivi));
   const incomplet = (ls) => ls.some((l) => l.cles === null);
   if (!incomplet(lignes) && !incomplet(autres)) return;
   // Lecture des fichiers pour les totaux manquants, puis nouvel affichage.
@@ -1705,6 +1729,12 @@ function htmlRecap(lignes, autres, libelleAutre) {
     for (; i < lignes.length && lignes[i].semaine === semaine; i++) groupe.push(lignes[i]);
     groupe.forEach((l, n) => {
       const p = l.paire;
+      if (l.hors) {
+        html += `<tr class="${n % 2 ? "impaire" : ""} cliquable recap-hors" data-cree="1" title="Lancement sans fichier dans les dossiers de la semaine : son avancement est dans le Suivi de production">
+        <td><strong>${echapper(l.nom)}</strong><br><span class="lancement">${echapper(l.lancement)}</span></td>
+        <td class="droite">${nombreRecap(l.prevues)}</td><td class="droite pale">—</td><td class="centre pale">—</td><td class="centre pale">—</td><td class="centre pale">—</td></tr>`;
+        return;
+      }
       html += `<tr class="${n % 2 ? "impaire" : ""} cliquable" data-case="${p.id}">
         <td><strong>${echapper(l.nom)}</strong><br><span class="lancement">${echapper(l.lancement)}</span></td>
         <td class="droite">${nombreRecap(l.prevues)}</td>
