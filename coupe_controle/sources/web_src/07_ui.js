@@ -866,7 +866,12 @@ function remplirCarte(carte, p) {
     <div class="zone-casse"></div>
   `;
   carte.querySelectorAll('[data-action="choisir"]').forEach((b) => b.addEventListener("click", () => demanderFichier(p, b.dataset.role)));
-  carte.querySelector('[data-action="go"]').addEventListener("click", () => lancerUnePaire(p, null).then(() => problemesAutomatiques(p)));
+  // V6.5.5 : le contrôle d'une case seule met aussi le lancement dans la bibliothèque (avant : seulement le contrôle de toute la semaine).
+  carte.querySelector('[data-action="go"]').addEventListener("click", () =>
+    lancerUnePaire(p, null)
+      .then(() => problemesAutomatiques(p))
+      .then(() => planifierArchivageValidations(p.parite))
+  );
   carte.querySelector('[data-action="scies"]').addEventListener("click", () => lancerControleScies(p, () => problemesAutomatiques(p)));
   const boutonPlans = carte.querySelector('[data-action="plans-de-coupe"]');
   if (boutonPlans) boutonPlans.addEventListener("click", () => ouvrirOutilPlans(p));
@@ -1797,6 +1802,8 @@ async function fichierChoisi() {
   }
   await memoriserFichier(p, role, fichier);
   enregistrer(p);
+  // V6.5.5 : le lancement entre dans la bibliothèque (donc part au téléphone), même sans « Lancer les contrôles ».
+  if (!estDiakonos(p) && p.strat && typeof planifierArchivageValidations === "function") planifierArchivageValidations(p.parite);
   if (role === "strat" && caseAjoutee(p)) afficher();
   else rafraichir(p);
   if (role === "bkp") majCompteur();
@@ -2560,6 +2567,20 @@ function basculerValidation(p, e, oui) {
   planifierArchivageValidations(p.parite);
 }
 
+// V6.5.5 : les lancements des cases (les deux onglets) qui ne sont pas dans la bibliothèque y entrent.
+async function archiverLancementsManquants() {
+  const connus = new Set([...bibliotheque.semaines.values()].filter((s) => !s.supprimeeLe).flatMap((s) => s.lancements.map((l) => cleNomLancement(l.nom))));
+  let n = 0;
+  for (const parite of ["paire", "impaire"]) {
+    const manquants = pairesDeLaSemaine(parite).filter((p) => p.strat && !estDiakonos(p) && !connus.has(cleNomLancement(p.strat.name)));
+    if (!manquants.length) continue;
+    const garder = new Set(manquants);
+    await archiverOnglet(parite, null, (p) => garder.has(p));
+    n += manquants.length;
+  }
+  return n;
+}
+
 const archivagesValidations = new Map(); // parité → minuterie
 function planifierArchivageValidations(parite) {
   clearTimeout(archivagesValidations.get(parite));
@@ -2980,6 +3001,8 @@ document.querySelectorAll("img[data-logo]").forEach((img) => (img.src = img.data
   // V6.3 : les demandes du téléphone (plans modifiés, problèmes validés OK), lues toutes seules.
   demarrerRetourTelephone();
   if (typeof demarrerValidations === "function") demarrerValidations();
+  // V6.5.5 : à l'ouverture, les lancements des cases qui ne sont pas dans la bibliothèque y entrent.
+  await archiverLancementsManquants().catch(() => {});
   // V6.5.4 : à l'ouverture, ce qui n'était pas encore parti au téléphone part (rien si tout est déjà envoyé).
   if (typeof planifierEnvoiTelephone === "function") planifierEnvoiTelephone();
 })();

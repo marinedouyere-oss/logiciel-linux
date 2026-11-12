@@ -471,6 +471,7 @@ function htmlLienTelephone() {
       </div>
       <div class="compte-rendu ${etat.erreur && !lienTelephone.envoi ? "erreur" : ""}" id="etatLien">${echapper(statut)}</div>
       ${htmlLectureTelephone(etat)}
+      ${Object.keys(bibliotheque.nonArchives || {}).length ? `<div class="compte-rendu erreur">⚠ Pas dans la bibliothèque, donc <strong>pas envoyé au téléphone</strong> : ${Object.entries(bibliotheque.nonArchives).map(([nom, raison]) => `${echapper(nom)} (${echapper(raison)})`).join(" ; ")}</div>` : ""}
       ${Array.isArray(etat.envoye) && etat.envoye.length ? `<details class="reprendre-code"><summary>Ce que le téléphone a reçu au dernier envoi (${etat.envoye.reduce((t, x) => t + x.l.length, 0)} lancements)</summary>${etat.envoye.map((x) => `<div class="note"><strong>${echapper(x.s)}</strong> : ${echapper(x.l.join(", "))}</div>`).join("")}</details>` : ""}
       ${etat.repriseLe ? `<div class="note">Lancements des autres PC sur ce code : relus sur le site ${echapper(date(etat.repriseLe))}${etat.repriseDe ? ` (dernier envoi de ${echapper(etat.repriseDe)})` : ""}${lienTelephone.recuesDuSite ? ` · ${lienTelephone.recuesDuSite} semaine(s) complétée(s)` : ""}.</div>` : ""}
       ${lienTelephone.poste ? `<div class="note">Ce PC : <strong>${echapper(lienTelephone.poste)}</strong>. Un autre PC peut envoyer au même téléphone : tapez-y le même code (« Reprenez son code ») ; les lancements des deux PC sont mis en commun.</div>` : ""}

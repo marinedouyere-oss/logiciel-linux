@@ -324,18 +324,36 @@ async function archiverLancements(items) {
   return { semaines: [...touchees.values()], drive };
 }
 
-// Après un scan ou « Lancer le(s) contrôle(s) » : les lancements de l'onglet, avec le bilan de leurs contrôles.
-async function archiverOnglet(parite, lancementsRapport) {
+// V6.5.5 : les lancements qui n'ont pas pu entrer dans la bibliothèque (donc pas partis au téléphone), avec la raison.
+// Avant, ils étaient écartés sans rien dire (cas réel : le lancement du mardi 10/11, visible sur le PC, jamais sur le téléphone).
+bibliotheque.nonArchives = bibliotheque.nonArchives || {};
+
+// Année d'une semaine de l'onglet (passage d'une année à l'autre : semaine 1 vue en novembre = l'année d'après).
+function anneeDeLaSemaine(n) {
+  const aujourdHui = new Date();
+  const courante = semaineIso(aujourdHui);
+  const annee = aujourdHui.getFullYear();
+  return n < courante - 26 ? annee + 1 : n > courante + 26 ? annee - 1 : annee;
+}
+
+// Après un scan, « Lancer le(s) contrôle(s) », le contrôle d'une case seule, un fichier mis dans une case, ou à
+// l'ouverture : les lancements de l'onglet, avec le bilan de leurs contrôles. filtre : seulement certains lancements.
+async function archiverOnglet(parite, lancementsRapport, filtre = null) {
   const controles = new Map((lancementsRapport || []).filter((l) => !l.erreur).map((l) => [l.p, l]));
   const items = [];
   for (const p of pairesDeLaSemaine(parite)) {
-    if (!p.strat) continue;
+    if (!p.strat || (filtre && !filtre(p))) continue;
     try {
       const strat = await stratEnCache(p.strat);
       const casse = p.poste === "Casse";
       // La casse est dans l'onglet de la semaine où le scan l'a rangée.
-      const sem = semaineDuLancement(strat.lignes, casse, p.strat.name, casse ? String(numeroSemaine(parite)) : p.semaineDossier || null, strat.semaines);
-      if (!sem) continue;
+      let sem = semaineDuLancement(strat.lignes, casse, p.strat.name, casse ? String(numeroSemaine(parite)) : p.semaineDossier || null, strat.semaines);
+      // Semaine introuvable dans le fichier : celle de l'onglet où il est affiché (avant : écarté sans rien dire).
+      if (!sem) {
+        const n = parseInt(p.semaine, 10) || numeroSemaine(parite);
+        sem = n >= 1 && n <= 53 ? { annee: anneeDeLaSemaine(n), semaine: n } : null;
+      }
+      if (!sem) throw new Error("semaine du lancement introuvable");
       const c = controles.get(p);
       const fichiers = {};
       for (const role of ["coupe", "bkp", "sommaire", "diakonos"]) if (p[role]) fichiers[role] = p[role].name;
@@ -384,8 +402,10 @@ async function archiverOnglet(parite, lancementsRapport) {
           plans: await plansDuLancementPourTelephone(p, strat),
         }),
       });
-    } catch (_erreur) {
-      // lancement illisible : pas dans la bibliothèque
+      delete bibliotheque.nonArchives[p.strat.name];
+    } catch (erreur) {
+      // Pas dans la bibliothèque : on le dit (carte Téléphone et case du lancement).
+      bibliotheque.nonArchives[p.strat.name] = erreur && erreur.message ? erreur.message : String(erreur);
     }
   }
   if (!items.length) return null;

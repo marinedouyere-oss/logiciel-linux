@@ -27,7 +27,7 @@ Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
 (`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
 (imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
 
-Version courante : **6.5.4** (le PC et l'APK partagent le même numéro ; l'agent suit).
+Version courante : **6.5.5** (le PC et l'APK partagent le même numéro ; l'agent suit).
 
 ### Glossaire métier
 
@@ -229,6 +229,16 @@ toutes les 2 minutes, le PC relit le site (`reprendreDuSite`, `synchroniserAvecL
 (`SUIVI.recevoir`) et son stock s'il est plus récent (`recevoirStockDistant`). Le prochain envoi contient les
 lancements des deux PC. Le fichier partagé porte le nom du PC (`poste`, donné par `Sentinelle.exe` :
 route `/sentinelle/poste`) ; l'appli affiche « Données du PC « X » du … ».
+
+**Tout lancement des cases entre dans la bibliothèque (6.5.5)** — cause réelle du lancement du 10/11 absent du
+téléphone : il était dans sa case sur le PC, mais un lancement n'entrait dans la bibliothèque (donc dans le fichier
+envoyé) qu'après « Lancer les contrôles » de toute la semaine, un scan de dossier ou une validation. Le contrôle d'une
+case seule et un fichier mis à la main ne l'y mettaient pas ; une semaine introuvable l'écartait sans message.
+Désormais : fichier mis dans une case → `planifierArchivageValidations` (2 s) ; bouton du contrôle d'une case → idem ;
+à l'ouverture → `archiverLancementsManquants()` (les cases des deux onglets absentes de la bibliothèque) ; semaine
+introuvable → celle de l'onglet (`anneeDeLaSemaine`) ; un lancement qui ne peut pas entrer est noté dans
+`bibliotheque.nonArchives` et affiché en rouge sur la carte Téléphone (« pas envoyé au téléphone »).
+Test : `test_web_lancement_bibliotheque.js`.
 
 **Rien ne reste en route (6.5.4)** : un changement non envoyé (Sentinelle fermée dans les 3 s qui suivent, envoi
 raté…) part à l'ouverture suivante (`planifierEnvoiTelephone()` au démarrage) et à chaque synchro de 2 minutes
