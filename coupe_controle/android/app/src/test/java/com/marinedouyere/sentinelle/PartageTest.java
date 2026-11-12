@@ -849,10 +849,11 @@ public class PartageTest {
                 + "[\"XLAN260101STRAT_9001/0001\",1,\"9001\",2500,600,0.8,0,\"STRAT ESSAI CHENE\",1,0,\"strat\",\"5985(1)\",\"LAN260101STRAT (semaine 1)\",1767000000000],"
                 + "[\"XLAN264601STRAT_9001/0002\",1,\"9001\",2000,620,0.8,0,\"STRAT ESSAI CHENE\",1,1,\"strat\",\"5986(1)\",\"LAN264601STRAT (semaine 46)\",0],"
                 + "[\"XLAN260202_9001/0003\",0,\"9001\",1800,600,0.8,0,\"\",1,1,\"strat\",\"\",\"\",0],"
+                + "[\"9003_4100_1300\",48,\"9003\",4100,1310,0.8,0,\"STRAT ESSAI HAMILTON\",1,0,\"strat\",\"302(3) 1042(21) 1043(24)\",\"\",0],"
                 + "[\"SAGTEST_4150_2070\",34,\"SAGTEST\",4150,2070,38,0,\"AGGLO ESSAI 38MM\",0,0,\"agglo\",\"1205(10) 1206(24)\",\"\",0]]}}";
         FichierPartage f = FichierPartage.lire(new ByteArrayInputStream(gzip(json)));
         assertNotNull(f.stock);
-        assertEquals(5, f.stock.formats.size());
+        assertEquals(6, f.stock.formats.size());
         List<EcranStock.Materiau> ms = EcranStock.materiaux(f.stock);
         EcranStock.Materiau m = null;
         for (EcranStock.Materiau x : ms) if ("9001".equals(x.mat)) m = x;
@@ -861,6 +862,13 @@ public class PartageTest {
         assertEquals("chute disponible (stock réel = stock − réservé)", 1, m.chutes);
         assertEquals("chute réservée à part", 1, m.reservees);
         assertEquals("chute sortie (quantité 0) écartée", 2, m.lesChutes.size());
+        // V6.5.7 : la case 302 = panneaux réservés pour un lancement (1063 le 12/11 : 48 en stock, il en reste 45).
+        EcranStock.Materiau m302 = null;
+        for (EcranStock.Materiau x : ms) if ("9003".equals(x.mat)) m302 = x;
+        assertNotNull(m302);
+        assertEquals("48 − 3 réservés (case 302)", 45, m302.entiers);
+        assertEquals(3, m302.entiersReserves);
+        assertEquals(0, m.entiersReserves);
 
         MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
         ShadowLooper.idleMainLooper();

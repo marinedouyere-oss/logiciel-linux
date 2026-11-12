@@ -40,7 +40,8 @@ final class EcranStock {
         String desc = "";
         String famille = "";
         double ep;
-        int entiers;
+        int entiers; // disponibles (sans les panneaux réservés de la case 302)
+        int entiersReserves;
         int chutes; // disponibles seulement
         int reservees;
         final TreeSet<Integer> limites = new TreeSet<>();
@@ -68,7 +69,8 @@ final class EcranStock {
                 }
             } else {
                 m.lesEntiers.add(f);
-                m.entiers += f.qte;
+                m.entiers += f.dispo();
+                m.entiersReserves += f.reserve();
                 m.limites.add(f.limite);
                 if (m.desc.isEmpty() && !f.desc.isEmpty()) m.desc = f.desc;
                 m.famille = f.famille;
@@ -81,7 +83,7 @@ final class EcranStock {
                         m.desc = f.desc;
                         break;
                     }
-            Collections.sort(m.lesEntiers, (a, b) -> a.qte != b.qte ? Integer.compare(b.qte, a.qte) : Double.compare(b.L * b.W, a.L * a.W));
+            Collections.sort(m.lesEntiers, (a, b) -> a.dispo() != b.dispo() ? Integer.compare(b.dispo(), a.dispo()) : Double.compare(b.L * b.W, a.L * a.W));
             // Les disponibles d'abord, puis les plus grandes.
             Collections.sort(m.lesChutes, (a, b) -> a.reservee != b.reservee ? (a.reservee ? 1 : -1) : Double.compare(b.L * b.W, a.L * a.W));
             if (!m.lesEntiers.isEmpty()) m.ep = m.lesEntiers.get(0).ep;
@@ -235,7 +237,10 @@ final class EcranStock {
         if (age > STOCK_VIEUX_JOURS)
             corps.addView(ui.bandeau("⚠ Données de " + age + " jours : extrayez un fichier neuf de woodStore et chargez-le sur le PC (page Stock).",
                     ui.couleur(R.color.attention_fond), ui.couleur(R.color.attention_texte)), ui.marges(6, 2));
-        corps.addView(ui.note("Stock réel = stock − réservé : les chutes réservées pour un lancement à débiter sont comptées à part."), ui.marges(4, 0));
+        int panneauxReserves = 0;
+        for (FichierPartage.FormatStock f : s.formats) panneauxReserves += f.reserve();
+        corps.addView(ui.note("Stock réel = stock − réservé : les chutes réservées pour un lancement à débiter et les panneaux entiers de la case 302"
+                + (panneauxReserves > 0 ? " (" + panneauxReserves + " aujourd'hui)" : "") + " sont comptés à part."), ui.marges(4, 0));
         return carte;
     }
 
@@ -269,7 +274,7 @@ final class EcranStock {
         List<Materiau> res = new ArrayList<>();
         for (Materiau m : tous) {
             if (!"tous".equals(famille) && !famille.equals(m.famille)) continue;
-            if (avecStock && m.entiers + m.chutes + m.reservees == 0) continue;
+            if (avecStock && m.entiers + m.entiersReserves + m.chutes + m.reservees == 0) continue;
             if (!q.isEmpty() && !m.mat.toUpperCase(Locale.FRANCE).contains(q) && !m.desc.toUpperCase(Locale.FRANCE).contains(q)) continue;
             res.add(m);
         }
@@ -350,12 +355,15 @@ final class EcranStock {
         d.setPadding(ui.dp(10), ui.dp(4), ui.dp(6), ui.dp(10));
         d.setBackground(ui.fondRond(0xFFFAF7F4, 10));
         // Panneaux entiers : format, quantité, Limite woodStore, cases.
-        d.addView(ui.texte("Panneaux entiers", 13, true, Ui.BORDEAUX), ui.marges(4, 2));
+        d.addView(ui.texte("Panneaux entiers (" + m.entiers + " disponible" + (m.entiers > 1 ? "s" : "")
+                + (m.entiersReserves > 0 ? ", " + m.entiersReserves + " réservé" + (m.entiersReserves > 1 ? "s" : "") + " case 302" : "") + ")", 13, true, Ui.BORDEAUX), ui.marges(4, 2));
         if (m.lesEntiers.isEmpty()) d.addView(ui.note("Aucun format de panneau entier."));
         for (FichierPartage.FormatStock f : m.lesEntiers) {
             String lim = f.limite == 9 ? "Limite 9 : dépassement autorisé" : "Limite 0 : limité au stock";
-            String sous = lim + (f.fil ? " · fil" : "") + (f.cases.isEmpty() ? "" : "\nCases : " + cases(f.cases));
-            TextView qte = ui.texte(f.qte + " pann.", 14, true, f.qte == 0 ? Ui.GRIS : Ui.NOIR);
+            int res = f.reserve();
+            String sous = lim + (f.fil ? " · fil" : "") + (f.cases.isEmpty() ? "" : "\nCases : " + cases(f.cases))
+                    + (res > 0 ? "\n+ " + res + " réservé" + (res > 1 ? "s" : "") + " pour un lancement (case 302)" : "");
+            TextView qte = ui.texte(f.dispo() + " pann.", 14, true, f.dispo() == 0 ? Ui.GRIS : Ui.NOIR);
             d.addView(ui.ligne(null, mm(f.L) + " × " + mm(f.W) + " · " + mm(f.ep) + " mm", sous, qte, null, null));
         }
         // Chutes : disponibles, puis réservées.

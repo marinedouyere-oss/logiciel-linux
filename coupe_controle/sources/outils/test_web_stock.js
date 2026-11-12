@@ -25,6 +25,8 @@ const FICHIER = [
   ligne("XLAN264601STRAT_9001/0002", 1, "9001", "2000.0", "620.0", "0.8", 0, "STRAT ESSAI CHENE", 1, 2, "5986(1)"),
   ligne("XLAN260202_9001/0003", 0, "9001", "1800.0", "600.0", "0.8", 0, "", 1, 2, ""),
   ligne("X3988/260911065549-0014", 1, "9002", "2620.0", "930.0", "0.8", 0, "STRAT ESSAI GRIS", 0, 1, "6027(1)"),
+  // V6.5.7 : panneaux entiers réservés pour un lancement, rangés dans la case 302 (cas réel du 1063 le 12/11 : 48 − 3 = 45).
+  ligne("9003_4100_1300", 48, "9003", "4100.0", "1300.0", "0.8", 0, "STRAT ESSAI HAMILTON 4100*1310", 1, 0, "302(3) 1042(21) 1043(24)", "STRAT"),
   ligne("SAGTEST_4150_2070", 34, "SAGTEST", "4150.0", "2070.0", "38.0", 0, "AGGLO ESSAI 38MM", 0, 0, "1205(10) 1206(24)"),
   // Liste d'emplacements coupée dans le fichier (« 1005(11 » sans parenthèse) : la quantité reste juste.
   ligne("CAISSE_4290_1690", 55, "CAISSE", "4290", "1690", "19", 0, "CAISSE ESSAI", 0, 0, "1000(10) 1001(11) 1002(11) 1003(6) 1004(6) 1005(11"),
@@ -60,10 +62,12 @@ const FICHIER = [
       famille: [s.famille, m("SAGTEST").famille],
       empl: caisse.emplacements.reduce((t, [, q]) => t + q, 0),
       jusquau: new Date(d.donneesJusquau).toISOString().slice(0, 10),
+      r302: [m("9003").nbEntiers, m("9003").nbEntiersReserves, s.nbEntiersReserves],
     };
   }, FICHIER);
   console.log(JSON.stringify(lu));
-  verifier(lu.nbMat === 4, `4 matériaux lus (${lu.nbMat})`);
+  verifier(lu.nbMat === 5, `5 matériaux lus (${lu.nbMat})`);
+  verifier(JSON.stringify(lu.r302) === "[45,3,0]", `case 302 : 48 en stock, 3 réservés pour un lancement → 45 panneaux disponibles (${lu.r302})`);
   verifier(lu.entiers === 21 && lu.dispo === 1 && lu.reservees === 1, `9001 : 21 panneaux entiers, 1 chute disponible, 1 réservée (statut 2) — stock réel = stock − réservé`);
   verifier(lu.chutesListees === 2, `chute sortie (quantité 0) écartée`);
   verifier(JSON.stringify(lu.limites) === "[0,9]", `Limite woodStore lue (0 et 9)`);
@@ -77,6 +81,14 @@ const FICHIER = [
   await page.waitForSelector(".stk-fichier");
   const texte = await page.locator("#pageStock").innerText();
   verifier(/1 chutes? réservées?/.test(texte) && /chutes disponibles/.test(texte), `page : chutes disponibles et réservées à part`);
+  verifier(/3 panneaux réservés/.test(texte) && /case 302/.test(texte), `page : panneaux entiers réservés (case 302) comptés à part`);
+  await page.fill("#champStock", "9003");
+  const ligne9003 = await page.locator('tr[data-stk-mat="9003"]').innerText();
+  await page.click('tr[data-stk-mat="9003"]');
+  const det9003 = await page.locator(".stk-detail").innerText();
+  verifier(/45/.test(ligne9003) && /\+3 rés\./.test(ligne9003) && !/48/.test(ligne9003), `liste : 45 panneaux (+3 rés.), pas 48 (${ligne9003.replace(/\s+/g, " ")})`);
+  verifier(/45 panneaux entiers disponibles/.test(det9003) && /3 panneaux réservés \(case 302\)/.test(det9003) && /302 · 3 réservés/.test(det9003), `détail : 45 disponibles, 3 réservés dans la case 302`);
+  await page.click('tr[data-stk-mat="9003"]');
   await page.fill("#champStock", "9001");
   await page.click('tr[data-stk-mat="9001"]');
   const detail = await page.locator(".stk-detail").innerText();
@@ -136,7 +148,7 @@ const FICHIER = [
     envoyerPaquetLien = vrai;
     const canalAncien = (await secretsLien("AAAA-BBBB-CCCC-DDDD")).canal;
     return {
-      stock: Boolean(s && s.formats.length === 8),
+      stock: Boolean(s && s.formats.length === 9),
       f9001: f9001 && f9001[1] === 21 && f9001[6] === 9 && f9001[11] === "1041(9) 1042(12)",
       reservee: reservee && reservee[9] === 1,
       signature: signatureStock() !== "",

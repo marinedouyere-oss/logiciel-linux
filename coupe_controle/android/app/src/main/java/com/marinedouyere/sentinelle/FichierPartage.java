@@ -197,7 +197,25 @@ final class FichierPartage {
         boolean chute() {
             return code.startsWith("X");
         }
+
+        /** V6.5.7 : panneaux entiers réservés pour un lancement, rangés par woodStore dans la case 302 (comme sur le PC). */
+        int reserve() {
+            if (chute() || cases == null) return 0;
+            int n = 0;
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile("([^\\s()]+)\\((\\d+)\\)?").matcher(cases);
+            while (m.find())
+                if (CASES_RESERVATION.contains(m.group(1))) n += Integer.parseInt(m.group(2));
+            return Math.max(0, Math.min(qte, n));
+        }
+
+        /** Stock réel : en stock − réservés (chute : sa quantité ; une chute réservée a le drapeau « reservee »). */
+        int dispo() {
+            return qte - reserve();
+        }
     }
+
+    /** Cases woodStore des panneaux entiers réservés pour un lancement. */
+    static final java.util.Set<String> CASES_RESERVATION = java.util.Collections.singleton("302");
 
     static final class Stock {
         String nom = "";

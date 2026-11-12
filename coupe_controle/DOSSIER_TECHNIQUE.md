@@ -27,7 +27,7 @@ Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
 (`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
 (imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
 
-Version courante : **6.5.6** (le PC et l'APK partagent le même numéro ; l'agent suit).
+Version courante : **6.5.7** (le PC et l'APK partagent le même numéro ; l'agent suit).
 
 ### Glossaire métier
 
@@ -181,6 +181,12 @@ Activité par poste et bouton « Réinitialiser » : `htmlBandeauValidations()` 
   pour un lancement à débiter), 15 emplacements `case(qté) case(qté)` (liste parfois coupée par
   woodStore : la dernière parenthèse peut manquer), 17 famille.
 - **Règle** : stock réel = stock − réservé. Les chutes réservées sont comptées et listées à part.
+- **Panneaux entiers réservés (6.5.7)** : woodStore range les panneaux entiers réservés pour un lancement
+  dans la **case 302** (`CASES_RESERVATION`). Cas réel du 12/11 : 1063 = `302(3) 1042(21) 1043(24)` = 48
+  en stock, **45** disponibles. Par format : `reserve` (case 302, jamais plus que la quantité) et
+  `dispo` = qté − réservés ; par matériau : `nbEntiers` = disponibles, `nbEntiersReserves` à part. Le
+  fichier partagé garde la quantité totale (index 1) et les cases (index 11) : le téléphone refait le même
+  calcul (`FormatStock.reserve()` / `dispo()`), donc aucun changement de format.
 - **Page Stock** (menu) : charger le fichier (gardé en mémoire du navigateur, `sentinelle-stock`),
   rechercher un matériau, détail (entiers, chutes disponibles, chutes réservées, cases, Limite),
   « chutes qui dorment » (> 120 jours), tri par clic sur les en-têtes de colonnes. Avertit si les

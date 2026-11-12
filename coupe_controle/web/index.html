@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.5.6 — Contrôle de coupe</title>
+<title>Sentinelle V6.5.7 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -662,6 +662,7 @@
   .stk-res-badge { display: inline-block; border-radius: 4px; padding: 1px 6px; margin-left: 4px; font-size: 0.75rem; font-weight: 700; background: #ece8f6; color: #4b3a8a; }
   .stk-res td { color: #6b6a68; }
   .stk-res-mini { font-size: 0.75rem; color: #4b3a8a; font-weight: 700; }
+  .stk-emp.stk-emp-res { background: #ece8f6; color: #4b3a8a; }
   .stk-tri { cursor: pointer; user-select: none; white-space: nowrap; }
   .stk-tri:hover, .stk-tri.actif { color: var(--bordeaux); }
   .stk-fleche { margin-left: 4px; font-size: 0.72rem; opacity: 0.4; }
@@ -682,7 +683,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.5.6</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.5.7</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -794,7 +795,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.5.6 · Contrôle de coupe</span>
+    <span>Sentinelle V6.5.7 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -9728,10 +9729,20 @@ function htmlBandeauValidations() {
 //      lancement ; à 0 = sortie)                                       15 emplacements « 1041(15) 7131(65) »
 //   17 famille (STRAT, COMPACT).
 // Le fichier est extrait à la main : Sentinelle garde le dernier chargé et prévient quand il vieillit.
+// V6.5.7 : les PANNEAUX ENTIERS réservés pour un lancement sont rangés par woodStore dans la case 302 (fichier du
+// 12/11 : 1063 = « 302(3) 1042(21) 1043(24) » = 48 en stock, il en reste 45). Ils sont retirés du stock réel et
+// comptés à part, comme les chutes réservées (statut 2).
 
 const CLE_STOCK = "sentinelle-stock";
 const STOCK_VIEUX_JOURS = 7; // au-delà : « extrayez un fichier neuf »
 const CHUTE_DORT_JOURS = 120; // une chute en stock depuis plus de 4 mois « dort »
+const CASES_RESERVATION = new Set(["302"]); // cases woodStore des panneaux entiers réservés pour un lancement
+
+// Panneaux d'un format rangés dans une case de réservation (jamais plus que la quantité en stock).
+function reserveEnCase(emplacements, qte) {
+  const n = emplacements.reduce((t, [c, q]) => t + (CASES_RESERVATION.has(c) ? q : 0), 0);
+  return Math.max(0, Math.min(qte, n));
+}
 
 const stock = {
   donnees: null, lu: false, recherche: "", famille: "tous", avecStock: true, ouvert: null, erreur: null,
@@ -9804,13 +9815,16 @@ function lireFichierStock(texte) {
       famille: familleStock(c[17] || c[12] || "", desc, ep),
       origine: chute ? origineChute(code) : null,
     };
+    // Panneau entier : disponible = stock − réservés (case 302). Chute : la réservation, c'est son statut 2.
+    f.reserve = chute ? 0 : reserveEnCase(f.emplacements, f.qte);
+    f.dispo = f.qte - f.reserve;
     if (f.origine && f.origine.precis && f.origine.quand > jusquau) jusquau = f.origine.quand;
     formats.push(f);
   }
   if (!formats.length) throw new Error("aucune ligne de stock lisible : est-ce bien le fichier brdlib.bdx ?");
   const parMat = new Map();
   for (const f of formats) {
-    if (!parMat.has(f.mat)) parMat.set(f.mat, { mat: f.mat, desc: "", famille: f.famille, ep: f.ep, entiers: [], chutes: [], nbEntiers: 0, nbChutes: 0, nbReservees: 0, limites: new Set() });
+    if (!parMat.has(f.mat)) parMat.set(f.mat, { mat: f.mat, desc: "", famille: f.famille, ep: f.ep, entiers: [], chutes: [], nbEntiers: 0, nbEntiersReserves: 0, nbChutes: 0, nbReservees: 0, limites: new Set() });
     const m = parMat.get(f.mat);
     if (f.chute) {
       if (f.qte > 0) {
@@ -9820,7 +9834,8 @@ function lireFichierStock(texte) {
       }
     } else {
       m.entiers.push(f);
-      m.nbEntiers += f.qte;
+      m.nbEntiers += f.dispo; // stock réel : sans les panneaux réservés (case 302)
+      m.nbEntiersReserves += f.reserve;
       m.limites.add(f.limite);
       if (!m.desc && f.desc) m.desc = f.desc;
       m.famille = f.famille;
@@ -9829,7 +9844,7 @@ function lireFichierStock(texte) {
   }
   for (const m of parMat.values()) {
     if (!m.desc) m.desc = (m.chutes.find((f) => f.desc) || {}).desc || "";
-    m.entiers.sort((a, b) => b.qte - a.qte || b.L * b.W - a.L * a.W);
+    m.entiers.sort((a, b) => b.dispo - a.dispo || b.L * b.W - a.L * a.W);
     m.chutes.sort((a, b) => a.reservee - b.reservee || b.L * b.W - a.L * a.W); // les disponibles d'abord
     if (m.entiers.length) m.ep = m.entiers[0].ep; // l'épaisseur du format le plus en stock
   }
@@ -9979,7 +9994,7 @@ const TRIS_STOCK = {
     chutes: (m) => m.nbChutes,
     limite: (m) => (m.limites.size === 1 ? [...m.limites][0] : m.limites.size ? 4.5 : -1),
   },
-  entiers: { format: (f) => f.L * f.W, qte: (f) => f.qte, emplacement: premierEmplacement, limite: (f) => f.limite, fil: (f) => (f.fil ? 1 : 0) },
+  entiers: { format: (f) => f.L * f.W, qte: (f) => f.dispo, emplacement: premierEmplacement, limite: (f) => f.limite, fil: (f) => (f.fil ? 1 : 0) },
   chutes: { taille: (f) => f.L * f.W, qte: (f) => f.qte, emplacement: premierEmplacement, origine: (f) => f.origine.texte, age: (f) => (f.origine.quand ? Date.now() - f.origine.quand : -1) },
 };
 const COLONNES_TEXTE_STOCK = new Set(["mat", "desc", "emplacement", "origine"]); // premier clic : A → Z ; nombres : du plus grand au plus petit
@@ -10006,10 +10021,18 @@ function enteteTri(quoi, col, libelle, classe = "") {
 
 const nbFr = (v) => Number(v || 0).toLocaleString("fr-FR");
 const jourFr = (t) => (t ? new Date(t).toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" }) : "—");
-const joursDepuis = (t) => (t ? Math.floor((Date.now() - t) / 86400000) : null);
+// Une chute d'un lancement d'une semaine pas encore commencée (semaine de livraison) : 0 jour, pas « −4 j ».
+const joursDepuis = (t) => (t ? Math.max(0, Math.floor((Date.now() - t) / 86400000)) : null);
 const dureeFr = (j) => (j === null ? "" : j < 31 ? `${j} j` : j < 365 ? `${Math.round(j / 30)} mois` : `${(j / 365).toFixed(1).replace(".", ",")} an${j >= 730 ? "s" : ""}`);
 const formatFr = (f) => `${nbFr(f.L)} × ${nbFr(f.W)}${f.ep ? ` × ${String(f.ep).replace(".", ",")}` : ""}`;
-const puceEmplacements = (f) => f.emplacements.map(([e, q]) => `<span class="stk-emp">${echapper(e)} · ${q}</span>`).join(" ") || '<span class="pale">—</span>';
+const puceEmplacements = (f) =>
+  f.emplacements
+    .map(([e, q]) =>
+      !f.chute && CASES_RESERVATION.has(e)
+        ? `<span class="stk-emp stk-emp-res" title="Case ${echapper(e)} : panneaux réservés pour un lancement">${echapper(e)} · ${q} réservé${q > 1 ? "s" : ""}</span>`
+        : `<span class="stk-emp">${echapper(e)} · ${q}</span>`
+    )
+    .join(" ") || '<span class="pale">—</span>';
 const puceLimite = (l) =>
   l === 9
     ? '<span class="stk-lim l9" title="Code woodStore 9 : dépassement autorisé">9<span class="stk-long"> · dépassement autorisé</span></span>'
@@ -10043,9 +10066,10 @@ function afficherStock() {
 function htmlFichierStock(d) {
   const age = joursDepuis(d.donneesJusquau || d.modifie);
   const entiers = d.materiaux.reduce((t, m) => t + m.nbEntiers, 0);
+  const entiersReserves = d.materiaux.reduce((t, m) => t + (m.nbEntiersReserves || 0), 0);
   const chutes = d.materiaux.reduce((t, m) => t + m.nbChutes, 0);
   const reservees = d.materiaux.reduce((t, m) => t + m.nbReservees, 0);
-  const vides = d.formats.filter((f) => !f.chute && f.qte === 0).length;
+  const vides = d.formats.filter((f) => !f.chute && f.dispo === 0).length;
   const vieux = age !== null && age > STOCK_VIEUX_JOURS;
   return `<div class="carte"><div class="carte-titre">Fichier de stock</div>
     ${vieux ? `<div class="bandeau attention">⚠ Ce stock date d'il y a <strong>${dureeFr(age)}</strong> : extrayez un fichier neuf avant de vous y fier.</div>` : ""}
@@ -10054,19 +10078,20 @@ function htmlFichierStock(d) {
       <span class="pale">chargé le ${jourFr(d.charge)}</span></div>
     <div class="pl-puces" style="margin-top:10px">
       <span class="pl-puce">${nbFr(d.materiaux.length)} matériaux</span>
-      <span class="pl-puce bon">${nbFr(entiers)} panneaux entiers</span>
+      <span class="pl-puce bon">${nbFr(entiers)} panneaux entiers (stock réel)</span>
+      ${entiersReserves ? `<span class="pl-puce stk-res-puce">${nbFr(entiersReserves)} panneaux réservés</span>` : ""}
       <span class="pl-puce">${nbFr(chutes)} chutes disponibles (stock réel)</span>
       ${reservees ? `<span class="pl-puce stk-res-puce">${nbFr(reservees)} chutes réservées</span>` : ""}
       <span class="pl-puce att">${nbFr(vides)} formats à zéro</span>
     </div>
-    <div class="note"><strong>Stock réel = stock − réservé.</strong> Chutes : celles au statut 2 de woodStore sont comptées comme réservées, à part. Panneaux entiers : ce fichier ne contient pas de quantité réservée.</div></div>`;
+    <div class="note"><strong>Stock réel = stock − réservé.</strong> Chutes : celles au statut 2 de woodStore sont comptées comme réservées, à part. Panneaux entiers : ceux de la case 302 sont réservés pour un lancement, comptés à part.</div></div>`;
 }
 
 function materiauxFiltres(d) {
   const q = stock.recherche.trim().toUpperCase();
   const liste = d.materiaux
     .filter((m) => stock.famille === "tous" || m.famille === stock.famille)
-    .filter((m) => !stock.avecStock || m.nbEntiers + m.nbChutes + m.nbReservees > 0)
+    .filter((m) => !stock.avecStock || m.nbEntiers + m.nbEntiersReserves + m.nbChutes + m.nbReservees > 0)
     .filter((m) => !q || m.mat.toUpperCase().includes(q) || m.desc.toUpperCase().includes(q))
     .sort((a, b) => comparerTexteFr(a.mat, b.mat));
   const res = trierStock(liste, "liste");
@@ -10083,7 +10108,7 @@ function htmlRechercheStock(d) {
       const lim = m.limites.size === 1 ? puceLimite([...m.limites][0]) : m.limites.size ? '<span class="stk-lim">0 et 9</span>' : "";
       return `<tr class="stk-ligne${stock.ouvert === m.mat ? " visee" : ""}" data-stk-mat="${echapper(m.mat)}">
         <td><strong>${echapper(m.mat)}</strong><div class="stk-desc-m">${echapper(m.desc)}</div></td><td class="stk-col-desc">${echapper(m.desc)}</td>
-        <td class="d">${m.nbEntiers ? nbFr(m.nbEntiers) : '<span class="pale">0</span>'}</td>
+        <td class="d">${m.nbEntiers ? nbFr(m.nbEntiers) : '<span class="pale">0</span>'}${m.nbEntiersReserves ? `<div class="stk-res-mini">+${m.nbEntiersReserves} rés.</div>` : ""}</td>
         <td class="d">${m.nbChutes ? nbFr(m.nbChutes) : '<span class="pale">0</span>'}${m.nbReservees ? `<div class="stk-res-mini">+${m.nbReservees} rés.</div>` : ""}</td><td>${lim}</td></tr>`;
     })
     .join("");
@@ -10100,7 +10125,7 @@ function htmlRechercheStock(d) {
 function htmlMateriauStock(m) {
   const entiers = trierStock(m.entiers, "entiers")
     .map(
-      (f) => `<tr><td>${formatFr(f)}</td><td class="d">${f.qte ? `<strong>${nbFr(f.qte)}</strong>` : '<span class="pale">0</span>'}</td>
+      (f) => `<tr><td>${formatFr(f)}</td><td class="d">${f.dispo ? `<strong>${nbFr(f.dispo)}</strong>` : '<span class="pale">0</span>'}${f.reserve ? `<div class="stk-res-mini">+${f.reserve} rés.</div>` : ""}</td>
       <td>${puceEmplacements(f)}</td><td>${puceLimite(f.limite)}</td><td class="c">${f.fil ? "oui" : '<span class="pale">non</span>'}</td></tr>`
     )
     .join("");
@@ -10115,17 +10140,18 @@ function htmlMateriauStock(m) {
     .join("");
   return `<div class="carte stk-detail"><div class="carte-titre">${echapper(m.mat)} — ${echapper(m.desc || "sans description")}
       <button type="button" class="texte" id="btnFermerStock" style="float:right">Fermer</button></div>
-    <div class="pl-puces"><span class="pl-puce bon">${nbFr(m.nbEntiers)} panneau${m.nbEntiers > 1 ? "x" : ""} entier${m.nbEntiers > 1 ? "s" : ""}</span>
+    <div class="pl-puces"><span class="pl-puce bon">${nbFr(m.nbEntiers)} panneau${m.nbEntiers > 1 ? "x" : ""} entier${m.nbEntiers > 1 ? "s" : ""} disponible${m.nbEntiers > 1 ? "s" : ""}</span>
+      ${m.nbEntiersReserves ? `<span class="pl-puce stk-res-puce">${nbFr(m.nbEntiersReserves)} panneau${m.nbEntiersReserves > 1 ? "x" : ""} réservé${m.nbEntiersReserves > 1 ? "s" : ""} (case 302)</span>` : ""}
       <span class="pl-puce">${nbFr(m.nbChutes)} chute${m.nbChutes > 1 ? "s" : ""} disponible${m.nbChutes > 1 ? "s" : ""}</span>
       ${m.nbReservees ? `<span class="pl-puce stk-res-puce">${nbFr(m.nbReservees)} réservée${m.nbReservees > 1 ? "s" : ""}</span>` : ""}
       ${m.ep ? `<span class="pl-puce">épaisseur ${String(m.ep).replace(".", ",")} mm</span>` : ""}</div>
     <h3 class="stk-sous-titre">Panneaux entiers</h3>
-    <div class="defilement"><table class="fp-table"><thead><tr>${enteteTri("entiers", "format", "Format (mm)")}${enteteTri("entiers", "qte", "En stock", "d")}${enteteTri("entiers", "emplacement", "Emplacements")}${enteteTri("entiers", "limite", "Limite woodStore")}${enteteTri("entiers", "fil", "Fil", "c")}</tr></thead>
+    <div class="defilement"><table class="fp-table"><thead><tr>${enteteTri("entiers", "format", "Format (mm)")}${enteteTri("entiers", "qte", "Disponibles", "d")}${enteteTri("entiers", "emplacement", "Emplacements")}${enteteTri("entiers", "limite", "Limite woodStore")}${enteteTri("entiers", "fil", "Fil", "c")}</tr></thead>
       <tbody>${entiers || '<tr><td colspan="5" class="pale">Aucun format de panneau entier.</td></tr>'}</tbody></table></div>
     <h3 class="stk-sous-titre">Chutes en stock</h3>
     <div class="defilement"><table class="fp-table"><thead><tr>${enteteTri("chutes", "taille", "Dimensions (mm)")}${enteteTri("chutes", "qte", "Qté", "d")}${enteteTri("chutes", "emplacement", "Emplacement")}${enteteTri("chutes", "origine", "Origine")}${enteteTri("chutes", "age", "Âge")}</tr></thead>
       <tbody>${chutes || '<tr><td colspan="5" class="pale">Aucune chute en stock.</td></tr>'}</tbody></table></div>
-    <div class="note">Limite woodStore : <strong>0</strong> = Cut Rite ne peut pas utiliser plus que le stock ; <strong>9</strong> = il peut le dépasser (panneau à recommander).</div></div>`;
+    <div class="note">Panneaux entiers disponibles = en stock − réservés (case 302). Limite woodStore : <strong>0</strong> = Cut Rite ne peut pas utiliser plus que le stock ; <strong>9</strong> = il peut le dépasser (panneau à recommander).</div></div>`;
 }
 
 function htmlChutesQuiDorment(d) {
