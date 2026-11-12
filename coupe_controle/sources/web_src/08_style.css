@@ -645,6 +645,21 @@
   .stk-res td { color: #6b6a68; }
   .stk-res-mini { font-size: 0.75rem; color: #4b3a8a; font-weight: 700; }
   .stk-emp.stk-emp-res { background: #ece8f6; color: #4b3a8a; }
+  /* V6.6 : vérifier un pré-lancement */
+  .pl-puce.pl-rouge { background: var(--alerte-fond); color: var(--alerte-texte); }
+  .pl-puce.pl-mini { font-size: 0.72rem; padding: 1px 8px; vertical-align: 1px; }
+  .pl-pb { font-weight: 700; font-size: 0.86rem; line-height: 1.35; }
+  .pl-pb-rouge { color: var(--alerte-texte); }
+  .pl-pb-orange { color: var(--attention-texte); }
+  .pl-pb-info { color: var(--gris); font-weight: 400; }
+  .pl-sim .pl-etat { font-weight: 700; }
+  .pl-sim tr.pl-etat-rouge td { background: #fbefec; }
+  .pl-sim tr.pl-etat-rouge .pl-etat { color: var(--alerte-texte); }
+  .pl-sim tr.pl-etat-orange .pl-etat { color: var(--attention-texte); }
+  .pl-sim tr.pl-etat-vert .pl-etat { color: var(--ok-texte); }
+  .pl-saisie { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+  .pl-saisie input[type="text"] { flex: 1 1 150px; min-width: 120px; }
+  .pl-saisie input[type="number"] { width: 70px; }
   .stk-tri { cursor: pointer; user-select: none; white-space: nowrap; }
   .stk-tri:hover, .stk-tri.actif { color: var(--bordeaux); }
   .stk-fleche { margin-left: 4px; font-size: 0.72rem; opacity: 0.4; }

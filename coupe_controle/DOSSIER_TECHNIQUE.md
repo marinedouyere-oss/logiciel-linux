@@ -27,7 +27,7 @@ Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
 (`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
 (imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
 
-Version courante : **6.5.8** (le PC et l'APK partagent le même numéro ; l'agent suit).
+Version courante : **6.6.0** (le PC et l'APK partagent le même numéro ; l'agent suit).
 
 ### Glossaire métier
 
@@ -207,6 +207,30 @@ Activité par poste et bouton « Réinitialiser » : `htmlBandeauValidations()` 
   Seules des **chutes** y figurent : les feuilles entières (dont RCB / RCB-CRED14) n'y sont pas, les
   chutes de RCB restent.
 - **À venir** : simuler un lancement complet sur le stock.
+
+### Vérifier un pré-lancement (V6.6, `06j_pre_lancement.js`)
+
+- **Source** : la grille de l'écran « Lancement » de Diakonos exportée en Excel, une ligne par pièce, **19 colonnes sans
+  en-tête** : Qté à lancer, Semaine (livraison), Commande, Ligne, Catalogue, Article, Désignation, Qte, Longueur,
+  Largeur, Epaisseur (cotes finies), Code coloris, Coloris, Cp, Ville, com_transporteur, Transporteur, Blocage compta,
+  Blocage fab. Un export avec une ligne de titres est lu par le nom des colonnes. Gardé en mémoire
+  (`sentinelle-pre-lancement`). Page « Vérifier un pré-lancement » du menu (sous « Préparer un lancement »).
+- **Contrôle avant lancement** : bloquée compta / fab, en double, qté à lancer > commande (rouge) ; **déjà lancée**
+  (clé commande+ligne dans la bibliothèque, avec le lancement et la semaine), en retard (semaine < celle du
+  pré-lancement) (orange) ; en avance, lancée en partie, à 0 (info) ; **plus grande que les panneaux en stock** (rouge :
+  formats en stock ou Limite 9, chutes disponibles ; cas réel du 1136, pièces de 3 449 mm, seul le 2790 × 2060 en stock,
+  le 4110 × 2060 à 0). La semaine du pré-lancement = celle du plus de pièces.
+- **Ce que devient un article à la coupe** (matière d'âme, couches, dessous) : 1) **cas particuliers** saisis dans la
+  page (`sentinelle-cas-particuliers` ; par défaut RENF391001 = 2 panneaux SMELBLALIS19 19 mm, un seul stratifié
+  dessus, débit + 10 mm — à la main il faut mettre 2 agglos dans la liste de coupe) ; 2) **appris** dans la
+  bibliothèque, (article + coloris) puis article : colonne « agglo », coloris_inf (rien / RCB… / décor = même décor),
+  couches = épaisseur finie / épaisseur de la matière ; 3) règles par désignation et épaisseur, marquées « supposé ».
+- **Simulation** : par matériau (décor dessus et son « -PF », âme, dessous), surface des pièces × m² de stock pris pour
+  1 m² de pièces, **mesuré** sur les lancements de la bibliothèque qui ont leurs plans (panneaux entiers et chutes du
+  stock, pas les modules ; mesuré en 2026 : stratifié ≈ 2,1, agglo ≈ 1,6, contrebalancement ≈ 1,9 ; défauts 2,0 / 1,55
+  / 1,8). Comparé au **stock réel** (sans chutes réservées ni case 302) : OK (≤ 85 %), juste, il manque ≈ N panneaux
+  (rouge si Limite 0 « Cut Rite ne pourra pas tout placer », orange si Limite 9 « à commander »), pas dans woodStore.
+  C'est une estimation : l'optimisation réelle reste celle de Cut Rite.
 
 ### Lien PC → téléphone : savoir si le téléphone suit (V6.5.1)
 
