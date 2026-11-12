@@ -249,6 +249,16 @@ fichier de suivi : `lignesExtraction` garde la ligne brute et l'en-tête du fich
 recopie tels quels, lignes en jaune. Le calcul remplit `etat.horsDetail` ; affichage `htmlHors`, export `exporterHors`.
 Contrôlé sur l'extraction du 12/11/2026 et les 7 lancements S48 : 15 lignes, 78 pièces, comme le relevé à la main.
 
+**V6.7.3 : compter des pièces à la main dans un lancement.** Dans cette liste, on coche des lignes, on choisit un
+lancement de la bibliothèque, « Compter dans ce lancement » : Sentinelle ajoute ces pièces à celles du lancement pour
+tout le suivi (barres, vues, résumé du téléphone : champ `aj` = pièces ajoutées). **Le fichier LAN n'est jamais
+modifié.** Les ajouts sont gardés dans `localStorage` (`sentinelle-suivi-rajouts` : semaine de la bibliothèque `sid`,
+`cleNomLancement`, pièce `cleLigne`, quantité) et appliqués dans `calculer()` juste après la lecture des lancements. Une
+pièce entière : quantité = max(Qte lancement, Qte en cours) de Diakonos ; une ligne « en plus du lancement » : le
+surplus. Si la pièce ajoutée entière arrive ensuite dans un vrai fichier de lancement, l'ajout ne compte plus (pas de
+double compte, signalé dans la liste « Pièces ajoutées à la main », où « Retirer » annule). Premier cas réel :
+CVC26100844 (5 pièces F206-ST9) comptée dans LAN264801START.
+
 ### Claustras : saisie automatique depuis les confirmations de commande (V6.7, `06k_claustras.js`)
 
 - **Source** : les confirmations de commande (PDF) d'un dossier (« Lire un dossier de confirmations… », sous-dossiers

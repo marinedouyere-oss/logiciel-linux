@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.7.2 — Contrôle de coupe</title>
+<title>Sentinelle V6.7.3 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -685,6 +685,8 @@
   .sv-hors-outils { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
   .sv-hors-outils input { flex: 1 1 260px; }
   .sv-hors tr.sv-hors-ligne td { background: #fff7a6; }
+  .sv-rajouts { margin-top: 14px; padding-top: 10px; border-top: 1px solid #e3d9d3; }
+  .sv-hors-outils select { flex: 1 1 260px; max-width: 420px; }
   /* V6.7 : claustras */
   .cl-champs { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 6px 0; }
   .cl-champ { display: flex; flex-direction: column; font-size: 0.78rem; color: var(--gris); font-weight: 700; }
@@ -720,7 +722,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.7.2</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.7.3</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -842,7 +844,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.7.2 · Contrôle de coupe</span>
+    <span>Sentinelle V6.7.3 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -18087,6 +18089,8 @@ const SUIVI = (() => {
   const CLE_INCLUS = "sentinelle-suivi-inclus";
   const CLE_VUE = "sentinelle-suivi-vue"; // suivi par semaine, transporteur, coloris ou client (choix retenu)
   const CLE_RESUME = "sentinelle-suivi-resume"; // dernier résumé (le nôtre ou celui du fichier partagé, le plus récent)
+  // V6.7.3 : pièces de l'extraction comptées à la main dans un lancement (le fichier LAN n'est jamais modifié).
+  const CLE_RAJOUTS = "sentinelle-suivi-rajouts";
   let base = null;
   function ouvrirBase() {
     if (!base) {
@@ -18153,6 +18157,16 @@ const SUIVI = (() => {
     anciennesOuvertes: false,
     resume: null,
     cleResume: "",
+    // V6.7.3 : [{ id, sid (semaine de la bibliothèque), lancement (cleNomLancement), nom, semaine, k, commande, ligne, n,
+    // coloris, partiel, quand }] ; partiel = pièce déjà dans ce lancement, on ajoute le surplus de Diakonos.
+    rajouts: (() => {
+      const x = lireLocal(CLE_RAJOUTS, []);
+      return Array.isArray(x) ? x.filter((a) => a && a.id && a.k && a.sid && a.lancement && Number(a.n) > 0) : [];
+    })(),
+    rajoutsRev: 0,
+    rajoutsIgnores: new Set(), // ajouts entiers dont la pièce est arrivée dans un vrai fichier de lancement
+    horsCoches: new Set(), // pièces cochées dans « Pas dans les lancements »
+    horsLancement: "", // lancement choisi pour y compter les pièces cochées (« sid|cle »)
   };
 
   const idFichier = (f) => `${f.name}|${f.size}|${f.lastModified || 0}`;
@@ -18261,7 +18275,7 @@ const SUIVI = (() => {
   function calculer() {
     // Étiquettes reçues en direct des PC de validation (une étiquette imprimée = une pièce faite).
     const rev = typeof validations !== "undefined" ? validations.rev : 0;
-    const cle = `${bibliotheque.generation}|${etat.generation}|${JSON.stringify(etat.inclus)}|v${rev}`;
+    const cle = `${bibliotheque.generation}|${etat.generation}|${JSON.stringify(etat.inclus)}|v${rev}|a${etat.rajoutsRev}`;
     if (etat.resume && etat.cleResume === cle) return etat.resume;
     const ex = etat.extractions;
     if (!ex.length) return null;
@@ -18312,8 +18326,28 @@ const SUIVI = (() => {
           annee = n > semaine + 26 ? annee - 1 : n < semaine - 26 ? annee + 1 : annee;
           semaine = n;
         }
-        lancements.push({ cle: cleNomLancement(l.nom), nom: l.nom, poste: l.poste || "", casse, id: idSemaine(annee, semaine), annee, semaine,
+        lancements.push({ cle: cleNomLancement(l.nom), nom: l.nom, poste: l.poste || "", casse, id: idSemaine(annee, semaine), annee, semaine, sid: s.id, aj: 0,
           ordre: ordreSemaine(annee, semaine), pieces, infos, deduites: new Map(), vus: new Set(), histo: [], presents: null, f: 0, r: 0, h: 0, fPrec: null, couvert: false });
+      }
+    }
+    // V6.7.3 : les pièces comptées à la main dans un lancement (« Pas dans les lancements » → « Compter dans ce
+    // lancement ») : ajoutées à ses pièces comme si elles étaient dans le fichier, qui, lui, n'est pas modifié. Une pièce
+    // ajoutée entière qui arrive ensuite dans un vrai fichier de lancement n'est plus ajoutée (pas de double compte).
+    etat.rajoutsIgnores = new Set();
+    if (etat.rajouts.length) {
+      const reelles = new Set();
+      for (const L of lancements) for (const k of L.pieces.keys()) reelles.add(k);
+      const parLancement = new Map(lancements.map((L) => [`${L.sid}|${L.cle}`, L]));
+      for (const a of etat.rajouts) {
+        const L = parLancement.get(`${a.sid}|${a.lancement}`);
+        if (!L) continue;
+        if (!a.partiel && reelles.has(a.k)) {
+          etat.rajoutsIgnores.add(a.id);
+          continue;
+        }
+        L.pieces.set(a.k, (L.pieces.get(a.k) || 0) + Number(a.n));
+        if (!L.infos.has(a.k)) L.infos.set(a.k, [a.commande || "", a.coloris || "", "", ""]);
+        L.aj += Number(a.n);
       }
     }
     // Les pièces de production que Diakonos connaît mais qui ne sont dans AUCUN lancement de la bibliothèque (lancement pas
@@ -18456,7 +18490,7 @@ const SUIVI = (() => {
         if (!lancees.has(k) || !r0[0] || !r0[1] || perimetreDe(r0[4]) !== "production") continue;
         const surplus = Math.max(0, Math.max(0, v.cours) - (direct.get(k) || 0) - (dejaR.get(k) || 0));
         if (!surplus) continue;
-        horsDetail.push({ r: v.lignes[v.lignes.length - 1], n: surplus, partiel: true });
+        horsDetail.push({ r: v.lignes[v.lignes.length - 1], n: surplus, partiel: true, k, nAjout: surplus });
         const annee = r0[1];
         const semaine = Number(r0[0]);
         const id = idSemaine(annee, semaine);
@@ -18526,7 +18560,7 @@ const SUIVI = (() => {
       semaines.push({
         id: s.id, annee: s.annee, semaine: s.semaine, f, r, h, e: etatLancement(f, r, s.ordre, ordreFab, couverte, s.lancements.every((L) => L.casse)),
         lancements: s.lancements.map((L) => ({
-          cle: L.cle, nom: L.nom, poste: L.poste, f: L.f, r: L.r, h: L.h, x: L.x, xd: L.xd, e: etatLancement(L.f, L.r, L.ordre, ordreFab, L.couvert, L.casse),
+          cle: L.cle, nom: L.nom, poste: L.poste, f: L.f, r: L.r, h: L.h, x: L.x, xd: L.xd, aj: L.aj || 0, e: etatLancement(L.f, L.r, L.ordre, ordreFab, L.couvert, L.casse),
           d: L.fPrec === null ? null : L.f - L.fPrec, p: L.histo.slice(-10), c: commandes(L),
         })),
       });
@@ -18543,7 +18577,12 @@ const SUIVI = (() => {
       colonnes.set(cs, libelle);
       if (!dansLancement.has(cleLigne(r[2], r[3]))) {
         // Seulement la production : fournitures, Dibond et résine ne passent jamais par les fichiers de lancement.
-        if (r[6] > 0 && perimetreDe(r[4]) === "production") horsDetail.push({ r, n: r[6], partiel: false });
+        // nAjout (V6.7.3) : compter la pièce dans un lancement = toutes ses pièces Diakonos (lancées ou en cours).
+        if (r[6] > 0 && perimetreDe(r[4]) === "production") {
+          const k = cleLigne(r[2], r[3]);
+          const v = der.parCle.get(k);
+          horsDetail.push({ r, n: r[6], partiel: false, k, nAjout: Math.max(1, v ? Math.max(v.lanc, v.cours) : r[6]) });
+        }
         const x = hors.get(cs) || { libelle, pieces: 0, lignes: 0, commandes: new Set() };
         x.pieces += r[6];
         x.lignes++;
@@ -18926,7 +18965,9 @@ const SUIVI = (() => {
   function texteChiffres(L, resume) {
     if (L.e === "hors_extraction")
       return `${pluriel(L.h, "pièce", "pièces")} · sa semaine n'est pas dans l'extraction du ${echapper(jourCourt(resume.jour))}${resume.semaineMax ? ` (elle va jusqu'à la semaine ${resume.semaineMax})` : ""}`;
-    const relancees = L.x ? ` <span class="pale">· ${pluriel(L.x, "pièce relancée", "pièces relancées")} dans ${echapper(L.xd)} (comptée${L.x > 1 ? "s" : ""} là-bas)</span>` : "";
+    const relancees =
+      (L.x ? ` <span class="pale">· ${pluriel(L.x, "pièce relancée", "pièces relancées")} dans ${echapper(L.xd)} (comptée${L.x > 1 ? "s" : ""} là-bas)</span>` : "") +
+      (L.aj ? ` <span class="pale">· dont ${pluriel(L.aj, "pièce ajoutée", "pièces ajoutées")} à la main</span>` : "");
     if (L.f + L.r === 0) return `rien à suivre${relancees}`;
     return `<strong>${fmt(L.f)}</strong> faite${L.f > 1 ? "s" : ""} · <strong>${fmt(L.r)}</strong> à faire${relancees}`;
   }
@@ -19129,7 +19170,7 @@ const SUIVI = (() => {
     const dims = (r) => [texteBrut(r, "longueur"), texteBrut(r, "largeur"), texteBrut(r, "epaisseur")].filter(Boolean).join(" × ");
     const lignes = liste
       .map(
-        (x) => `<tr class="sv-hors-ligne"><td>S${x.r[0] || "?"}</td><td><strong>${echapper(x.r[2])}</strong></td><td class="nombre">${echapper(x.r[3])}</td><td>${echapper(x.r[4])}</td>
+        (x) => `<tr class="sv-hors-ligne"><td><input type="checkbox" data-sv-hors-coche="${echapper(x.k)}"${etat.horsCoches.has(x.k) ? " checked" : ""} aria-label="Cocher"></td><td>S${x.r[0] || "?"}</td><td><strong>${echapper(x.r[2])}</strong></td><td class="nombre">${echapper(x.r[3])}</td><td>${echapper(x.r[4])}</td>
         <td>${echapper(texteBrut(x.r, "article"))}<div class="pale">${echapper(texteBrut(x.r, "designation"))}</div></td>
         <td class="nombre"><strong>${fmt(x.n)}</strong>${x.partiel ? `<div class="pale">en plus du lancement</div>` : ""}</td><td class="nombre">${echapper(dims(x.r))}</td>
         <td>${echapper(x.r[10] || "")}<div class="pale">${echapper(texteBrut(x.r, "coloris"))}</div></td><td>${echapper(x.r[7])}</td><td>${echapper(x.r[8])}</td><td>${echapper(texteBrut(x.r, "groupement"))}</td></tr>`
@@ -19140,9 +19181,98 @@ const SUIVI = (() => {
       ${tout.length ? `<div class="sv-puces">${puces}</div>
       <div class="sv-hors-outils"><input type="search" id="svHorsRecherche" placeholder="Chercher : commande, article, coloris, transporteur…" value="${echapper(etat.horsRecherche || "")}" autocomplete="off">
         <button type="button" id="svHorsExport">Exporter en Excel (format du fichier de suivi)</button></div>
+      <div class="sv-hors-outils"><select id="svHorsLancement" aria-label="Lancement">${optionsLancements()}</select>
+        <button type="button" id="svHorsAjouter"${cochesVisibles() && etat.horsLancement ? "" : " disabled"}>${texteBoutonAjouter()}</button></div>
+      <div class="note">Cochez des lignes, choisissez un lancement : Sentinelle compte ces pièces dans ce lancement (barres, vues, téléphone). Le fichier de lancement n'est pas modifié.</div>
       <div class="note">${fmt(liste.length)} ligne${liste.length > 1 ? "s" : ""}, ${fmt(total)} pièce${total > 1 ? "s" : ""}${etat.horsSemaine ? ` en semaine ${echapper(etat.horsSemaine.split("-")[1])}` : ""}.</div>
-      <div class="defile"><table class="sv-table sv-hors"><thead><tr><th>Sem.</th><th>Commande</th><th class="nombre">Ligne</th><th>Catalogue</th><th>Article</th><th class="nombre">Pièces</th><th class="nombre">Dimensions</th><th>Coloris</th><th>Transporteur</th><th>Ville</th><th>Groupement</th></tr></thead>
-      <tbody>${lignes || '<tr><td colspan="11" class="pale">Rien ne correspond.</td></tr>'}</tbody></table></div>` : `<div class="sv-message">✔ Toutes les pièces de l'extraction sont dans un lancement.</div>`}</div>`;
+      <div class="defile"><table class="sv-table sv-hors"><thead><tr><th><input type="checkbox" id="svHorsTout" title="Tout cocher" aria-label="Tout cocher"></th><th>Sem.</th><th>Commande</th><th class="nombre">Ligne</th><th>Catalogue</th><th>Article</th><th class="nombre">Pièces</th><th class="nombre">Dimensions</th><th>Coloris</th><th>Transporteur</th><th>Ville</th><th>Groupement</th></tr></thead>
+      <tbody>${lignes || '<tr><td colspan="12" class="pale">Rien ne correspond.</td></tr>'}</tbody></table></div>` : `<div class="sv-message">✔ Toutes les pièces de l'extraction sont dans un lancement.</div>`}${htmlRajouts()}</div>`;
+  }
+
+  // V6.7.3 : la liste des lancements où compter des pièces (la semaine choisie d'abord, puis les plus récentes).
+  function optionsLancements() {
+    const ls = (etat.lancementsCalcul || []).filter((L) => !L.hors && L.sid);
+    const parSem = new Map();
+    for (const L of ls) {
+      const g = parSem.get(L.id) || { id: L.id, semaine: L.semaine, ordre: L.ordre, ls: [] };
+      g.ls.push(L);
+      parSem.set(L.id, g);
+    }
+    const [a, sem] = (etat.horsSemaine || "").split("-");
+    const choisie = etat.horsSemaine ? idSemaine(a, sem) : "";
+    const groupes = [...parSem.values()].sort((x, y) => (y.id === choisie) - (x.id === choisie) || y.ordre - x.ordre);
+    const valeurs = new Set(ls.map((L) => `${L.sid}|${L.cle}`));
+    if (etat.horsLancement && !valeurs.has(etat.horsLancement)) etat.horsLancement = "";
+    return `<option value="">Choisir un lancement…</option>${groupes
+      .map((g) => `<optgroup label="Semaine ${echapper(g.semaine)}">${g.ls
+        .map((L) => { const v = `${L.sid}|${L.cle}`; return `<option value="${echapper(v)}"${v === etat.horsLancement ? " selected" : ""}>${echapper(L.nom)}${L.poste && L.poste !== L.nom ? ` · ${echapper(L.poste)}` : ""}</option>`; })
+        .join("")}</optgroup>`)
+      .join("")}`;
+  }
+  // Les pièces cochées parmi les lignes affichées (filtre de semaine et recherche).
+  const cochesVisibles = () => new Set(horsFiltres().filter((x) => etat.horsCoches.has(x.k)).map((x) => x.k)).size;
+  function texteBoutonAjouter() {
+    const n = cochesVisibles();
+    return n ? `Compter ${n > 1 ? `les ${fmt(n)} pièces cochées` : "la pièce cochée"} dans ce lancement` : "Compter les pièces cochées dans ce lancement";
+  }
+
+  // Les pièces comptées à la main dans un lancement, avec « Retirer ».
+  function htmlRajouts() {
+    if (!etat.rajouts.length) return "";
+    const presents = new Set((etat.lancementsCalcul || []).filter((L) => !L.hors).map((L) => `${L.sid}|${L.cle}`));
+    const tri = [...etat.rajouts].sort((x, y) => String(y.sid).localeCompare(String(x.sid)) || String(x.nom).localeCompare(String(y.nom)) || String(x.commande).localeCompare(String(y.commande)) || Number(x.ligne) - Number(y.ligne));
+    const lignes = tri
+      .map((a) => {
+        const note = etat.rajoutsIgnores.has(a.id)
+          ? "maintenant dans un fichier de lancement : ne compte plus ici"
+          : !presents.has(`${a.sid}|${a.lancement}`)
+            ? "lancement absent de la bibliothèque : ne compte pas"
+            : a.partiel
+              ? "en plus des pièces du fichier"
+              : "";
+        return `<tr><td><strong>${echapper(a.nom)}</strong> <span class="pale">S${echapper(a.semaine)}</span></td><td>${echapper(a.commande)}</td><td class="nombre">${echapper(a.ligne)}</td>
+          <td class="nombre">${fmt(a.n)}</td><td>${echapper(a.quand ? new Date(a.quand).toLocaleDateString("fr-FR") : "")}</td><td class="pale">${echapper(note)}</td>
+          <td><button type="button" class="texte" data-sv-rajout-retirer="${echapper(a.id)}">Retirer</button></td></tr>`;
+      })
+      .join("");
+    const total = etat.rajouts.reduce((t, a) => t + Number(a.n), 0);
+    return `<div class="sv-rajouts" id="svRajouts"><div class="carte-titre">Pièces ajoutées à la main dans un lancement · ${fmt(total)}</div>
+      <div class="note">Comptées par Sentinelle dans ces lancements ; les fichiers de lancement ne sont pas modifiés. « Retirer » les remet dans la liste ci-dessus.</div>
+      <div class="defile"><table class="sv-table"><thead><tr><th>Lancement</th><th>Commande</th><th class="nombre">Ligne</th><th class="nombre">Pièces</th><th>Ajoutée le</th><th></th><th></th></tr></thead>
+      <tbody>${lignes}</tbody></table></div></div>`;
+  }
+
+  // Compte les pièces cochées (visibles) dans le lancement choisi.
+  function ajouterRajouts() {
+    const v = etat.horsLancement || "";
+    const i = v.indexOf("|");
+    const sid = v.slice(0, i);
+    const cleL = v.slice(i + 1);
+    const L = (etat.lancementsCalcul || []).find((x) => !x.hors && x.sid === sid && x.cle === cleL);
+    if (i < 0 || !L) return;
+    const quand = new Date().toISOString();
+    const vues = new Set();
+    let n = 0;
+    for (const x of horsFiltres()) {
+      if (!etat.horsCoches.has(x.k) || vues.has(x.k)) continue;
+      vues.add(x.k);
+      etat.rajouts.push({ id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${etat.rajouts.length}`, sid, lancement: cleL, nom: L.nom, semaine: L.semaine,
+        k: x.k, commande: x.r[2], ligne: x.r[3], n: x.nAjout, coloris: x.r[10] || "", partiel: Boolean(x.partiel), quand });
+      n++;
+    }
+    etat.horsCoches.clear();
+    if (!n) return;
+    ecrireLocal(CLE_RAJOUTS, etat.rajouts);
+    etat.rajoutsRev++;
+    apresChangementInclus();
+  }
+  function retirerRajout(id) {
+    const avant = etat.rajouts.length;
+    etat.rajouts = etat.rajouts.filter((a) => a.id !== id);
+    if (etat.rajouts.length === avant) return;
+    ecrireLocal(CLE_RAJOUTS, etat.rajouts);
+    etat.rajoutsRev++;
+    apresChangementInclus();
   }
 
   // Export : les colonnes du fichier de suivi Diakonos (en-tête de l'extraction), seulement les lignes de la liste, en jaune.
@@ -19236,6 +19366,38 @@ const SUIVI = (() => {
         }
       });
     if (q("svHorsExport")) q("svHorsExport").addEventListener("click", () => exporterHors());
+    // V6.7.3 : cocher des pièces et les compter dans un lancement (sans tout redessiner à chaque case).
+    const majBouton = () => {
+      const b = q("svHorsAjouter");
+      if (!b) return;
+      b.disabled = !(cochesVisibles() && etat.horsLancement);
+      b.textContent = texteBoutonAjouter();
+    };
+    page.querySelectorAll("[data-sv-hors-coche]").forEach((c) =>
+      c.addEventListener("change", () => {
+        if (c.checked) etat.horsCoches.add(c.dataset.svHorsCoche);
+        else etat.horsCoches.delete(c.dataset.svHorsCoche);
+        page.querySelectorAll("[data-sv-hors-coche]").forEach((d) => (d.checked = etat.horsCoches.has(d.dataset.svHorsCoche)));
+        majBouton();
+      })
+    );
+    if (q("svHorsTout"))
+      q("svHorsTout").addEventListener("change", (e) => {
+        const cases = [...page.querySelectorAll("[data-sv-hors-coche]")];
+        for (const c of cases) {
+          c.checked = e.target.checked;
+          if (e.target.checked) etat.horsCoches.add(c.dataset.svHorsCoche);
+          else etat.horsCoches.delete(c.dataset.svHorsCoche);
+        }
+        majBouton();
+      });
+    if (q("svHorsLancement"))
+      q("svHorsLancement").addEventListener("change", (e) => {
+        etat.horsLancement = e.target.value;
+        majBouton();
+      });
+    if (q("svHorsAjouter")) q("svHorsAjouter").addEventListener("click", () => ajouterRajouts());
+    page.querySelectorAll("[data-sv-rajout-retirer]").forEach((b) => b.addEventListener("click", () => retirerRajout(b.dataset.svRajoutRetirer)));
     if (q("svActualiser")) q("svActualiser").addEventListener("click", () => lireDossier(true));
     q("svFichier").addEventListener("click", () => q("svChampFichier").click());
     q("svChampFichier").addEventListener("change", (e) => chargerFichiers(e.target.files));

@@ -127,6 +127,66 @@ const LIGNES = [
   verifier(lu.length === 3, `export : 2 lignes (semaine 48) — ${lu.length - 1}`);
   verifier(lu.slice(1).every((l) => l.fill === "FFFFFF00"), "export : lignes en jaune");
   verifier(lu.slice(1).map((l) => l.v[1]).join(",") === "CVCTEST002,CVCTEST003", "export : CVCTEST002 et CVCTEST003, colonnes du fichier de suivi");
+
+  // 5. V6.7.3 : « tricher » — compter des pièces de la liste dans un lancement (le fichier LAN n'est pas touché).
+  const lan = () =>
+    page.evaluate(() => {
+      const L = SUIVI.etat.lancementsCalcul.find((x) => x.nom === "LAN264801START");
+      const R = SUIVI.calculer().semaines.flatMap((s) => s.lancements).find((x) => x.nom === "LAN264801START");
+      return { total: [...L.pieces.values()].reduce((t, q) => t + q, 0), p3: L.pieces.get(cleLigne("CVCTEST003", "1")) || 0, p2: L.pieces.get(cleLigne("CVCTEST002", "1")) || 0, aj: R.aj, r: R.r, f: R.f };
+    });
+  const avant = await lan();
+  verifier(avant.total === 9 && avant.aj === 0, `LAN264801START avant : 9 pièces (${avant.total})`);
+  verifier(await page.$eval("#svHorsAjouter", (b) => b.disabled), "bouton « Compter » grisé sans case cochée ni lancement");
+  await page.check('[data-sv-hors-coche="' + (await page.evaluate(() => cleLigne("CVCTEST003", "1"))) + '"]');
+  await page.check('[data-sv-hors-coche="' + (await page.evaluate(() => cleLigne("CVCTEST002", "1"))) + '"]');
+  const valeur = await page.$eval("#svHorsLancement", (s) => [...s.options].find((o) => o.textContent.startsWith("LAN264801START")).value);
+  await page.selectOption("#svHorsLancement", valeur);
+  const texteBouton = await page.$eval("#svHorsAjouter", (b) => [b.disabled, b.textContent]);
+  verifier(!texteBouton[0] && /les 2 pièces cochées/.test(texteBouton[1]), `bouton : « ${texteBouton[1]} »`);
+  await page.click("#svHorsAjouter");
+  await page.waitForTimeout(300);
+  const apres = await lan();
+  console.log(JSON.stringify({ avant, apres }));
+  verifier(apres.p3 === 4 && apres.p2 === 3 && apres.total === 14 && apres.aj === 5, `LAN264801START après : CVCTEST003 ×4 ajoutée, CVCTEST002 2+1, 14 pièces, dont 5 ajoutées (${apres.total}, ${apres.aj})`);
+  verifier(apres.r === avant.r + 5, `à faire du lancement : ${avant.r} → ${apres.r}`);
+  const reste = await page.evaluate(() => SUIVI.etat.horsDetail.map((x) => x.r[2]));
+  verifier(reste.join(",") === "CVCTEST004", `liste « Pas dans les lancements » : il ne reste que CVCTEST004 (${reste.join(",")})`);
+  const garde = await page.evaluate(() => JSON.parse(localStorage.getItem("sentinelle-suivi-rajouts") || "[]").map((a) => [a.commande, a.n, a.partiel, a.nom]));
+  verifier(garde.length === 2 && garde.some((a) => a[0] === "CVCTEST003" && a[1] === 4 && !a[2]) && garde.some((a) => a[0] === "CVCTEST002" && a[1] === 1 && a[2]), "ajouts gardés en mémoire");
+  const rajouts = await page.locator("#svRajouts").innerText();
+  verifier(/ajoutées à la main dans un lancement · 5/.test(rajouts) && /CVCTEST003/.test(rajouts), "liste des pièces ajoutées à la main affichée");
+  const ligneLan = await page.locator('[data-sv-lan] .sv-ligne', { hasText: "LAN264801START" }).first().innerText();
+  verifier(/dont 5 pièces ajoutées à la main/.test(ligneLan), "barre du lancement : « dont 5 pièces ajoutées à la main »");
+  if (sortie) await page.locator("#svHors").screenshot({ path: path.join(sortie, "hors_lancement_ajout.png") });
+
+  // La pièce arrive ensuite dans un vrai fichier de lancement : l'ajout ne compte plus (pas de double compte).
+  const double = await page.evaluate(() => {
+    const s = bibliotheque.semaines.get("2026-48");
+    const x = COLONNES_PIECES_BIBLIOTHEQUE.map(() => "");
+    x[0] = cleLigne("CVCTEST003", "1");
+    x[COLONNES_PIECES_BIBLIOTHEQUE.indexOf("commande")] = "CVCTEST003";
+    x[COLONNES_PIECES_BIBLIOTHEQUE.indexOf("pieces")] = 4;
+    s.lancements.push({ nom: "LAN2648CHANTIERS", poste: "Chantiers", casse: false, pieces: [x] });
+    bibliotheque.generation++;
+    const L = SUIVI.etat.lancementsCalcul;
+    SUIVI.calculer();
+    const A = SUIVI.etat.lancementsCalcul.find((y) => y.nom === "LAN264801START");
+    const res = { p3: A.pieces.get(cleLigne("CVCTEST003", "1")) || 0, aj: A.aj, ignores: SUIVI.etat.rajoutsIgnores.size };
+    s.lancements.pop();
+    bibliotheque.generation++;
+    return res;
+  });
+  verifier(double.p3 === 0 && double.aj === 1 && double.ignores === 1, `pièce arrivée dans un vrai lancement : l'ajout ne compte plus (${JSON.stringify(double)})`);
+
+  // « Retirer » : la pièce revient dans la liste.
+  await page.evaluate(() => SUIVI.afficher());
+  const id3 = await page.evaluate(() => SUIVI.etat.rajouts.find((a) => a.commande === "CVCTEST003").id);
+  await page.click(`[data-sv-rajout-retirer="${id3}"]`);
+  await page.waitForTimeout(300);
+  const fin = await lan();
+  const reste2 = await page.evaluate(() => SUIVI.etat.horsDetail.map((x) => x.r[2]).sort());
+  verifier(fin.p3 === 0 && fin.aj === 1 && reste2.join(",") === "CVCTEST003,CVCTEST004", `« Retirer » : CVCTEST003 revient dans la liste (${reste2.join(",")}), 1 pièce ajoutée reste`);
   await nav.close();
   console.log(echecs ? `${echecs} échec(s)` : "TOUT EST OK");
   process.exit(echecs ? 1 : 0);
