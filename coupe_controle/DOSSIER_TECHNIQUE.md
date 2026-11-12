@@ -235,6 +235,15 @@ semaine « en fabrication » (`resume.fabrication`, calendrier + 1) ; une livrai
 (`ordreFab`). Les vues par semaine / transporteur / coloris / client rangent chaque pièce dans sa semaine de livraison
 Diakonos (`livraisonCle`, colonne Semaine de la dernière extraction qui l'a), comme Diakonos ; une pièce sortie de
 toutes les extractions garde la semaine de son lancement. Cas réel : JMC semaine 46 absente côté téléphone.
+Noms de **Diakonos** dans les vues : transporteur Diakonos de la pièce (sinon de sa commande) ; pour une pièce déjà
+faite, le nom du fichier de lancement ramené au nom Diakonos connu (`versDiakonos` : « LOG 4 T1 » → « LOG 4 T1
+LAISNE ») ; une « dimension » en guise de transporteur (colonne décalée) est ignorée. Coloris : code Diakonos.
+**Surplus** : si Diakonos a plus de pièces en cours que le lancement (pièce relancée, relance dans aucun lancement
+scanné), le surplus va « à faire » dans « Pas dans un lancement » de sa semaine de livraison (`L.surplus`, ajouté dans
+les totaux). Contrôle permanent : `test_web_suivi_diakonos.js <index> <extraction[+…]> <dossiers semaine…>` —
+pièce par pièce, transporteur × semaine, semaine, coloris × semaine et tableau identiques à Diakonos (vérifié sur
+les extractions réelles du 07/11, 10/11 et 12/11 : 0 écart). Les pièces d'un lancement comptent quel que soit leur
+catalogue Diakonos (ex. Dibond d'un lancement chantier) ; hors lancement, la production seulement.
 
 **Tout lancement des cases entre dans la bibliothèque (6.5.5)** — cause réelle du lancement du 10/11 absent du
 téléphone : il était dans sa case sur le PC, mais un lancement n'entrait dans la bibliothèque (donc dans le fichier

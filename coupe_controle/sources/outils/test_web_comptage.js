@@ -111,6 +111,30 @@ const verifier = (ok, t) => {
       const jmc = (r.vues.semaine.find((g) => g[0] === "Semaine 46") || [])[4] || [];
       out.fab = { fab: r.fabrication, e46: etat(46), e47: etat(47), retard46: jmc.some((x) => x[3] === "retard") };
     }
+    // V6.5.6 : comme Diakonos. (1) Pièce relancée : Diakonos a 2 lignes de 2 en cours (4), le lancement n'en a qu'une :
+    // 1 à faire dans le lancement, le surplus (3) dans « Pas dans un lancement » ; total = 4, comme Diakonos.
+    // (2) Noms de transporteurs de Diakonos (« LOG 4 T1 LAISNE »), aussi pour une pièce déjà faite dont le fichier de
+    // lancement dit « LOG 4 T1 » ; un « transporteur » qui est une dimension est ignoré.
+    {
+      const iTr = cols.indexOf("transporteur");
+      const avecTr = (cmd, lig, q, tr) => {
+        const p = ligne(cmd, lig, q);
+        if (iTr >= 0) p[iTr] = tr;
+        return p;
+      };
+      const s47b = semaine(47, [{ nom: "LAN2647P2", poste: "P1", maj: iso(h(-20)), pieces: [avecTr("CVC55555555", "6", 1, "LOG 4 T1"), avecTr("CVC55555555", "7", 1, "LOG 4 T1"), avecTr("CVC66666666", "1", 1, "3045 X 1305 X30")] }]);
+      const r1 = [47, 2026, "CVC55555555", "6", "", 2, 2, "LOG 4 T1 LAISNE", "VILLE", "1"];
+      const r2 = [47, 2026, "CVC55555555", "6", "", 2, 2, "LOG 4 T1 LAISNE", "VILLE", "2"];
+      const exS = extraction([r1, r2, rangee(46, "CVC11111111", "1", 3, 3)]);
+      exS.ordreMax = ordreSemaine(2026, 47);
+      calcul([base(), s47b], exS, []);
+      const r = SUIVI.calculer();
+      const lan = r.semaines.flatMap((x) => x.lancements);
+      const p2 = lan.find((l) => l.nom === "LAN2647P2");
+      const hors = lan.find((l) => l.nom === "Pas dans un lancement" && r.semaines.find((x) => x.lancements.includes(l)).semaine === 47);
+      const tr = Object.fromEntries((r.vues.transporteur || []).map((g) => [g[0], [g[1], g[2]]]));
+      out.diak = { p2: p2 && [p2.f, p2.r], hors: hors && [hors.f, hors.r], total: r.totaux.restantes, tr };
+    }
     // Le bandeau compte les étiquettes (pièces), pas les lignes.
     validations.faites = Object.fromEntries([etiq("CVC11111111", "1", 1, 2, 3), etiq("CVC11111111", "2", 1)]);
     out.bandeau = nbEtiquettesRecues();
@@ -132,6 +156,11 @@ const verifier = (ok, t) => {
   verifier(res.fab.fab && res.fab.fab.semaine === 47, `extraction en semaine 46 : la livraison en fabrication est la 47 (${JSON.stringify(res.fab.fab)})`);
   verifier(res.fab.e46 === "retard" && res.fab.e47 === "en_cours", `livraison 46 pas finie : en retard ; livraison 47 : en cours (${res.fab.e46} / ${res.fab.e47})`);
   verifier(res.fab.retard46, `vue par semaine : la 46 marquée en retard`);
+  const d = res.diak;
+  verifier(d.p2 && d.p2[1] === 1 && d.hors && d.hors[1] === 3, `pièce relancée (Diakonos 2+2 en cours, lancement 1) : 1 à faire dans le lancement, 3 dans « Pas dans un lancement » (${JSON.stringify(d.p2)} / ${JSON.stringify(d.hors)})`);
+  verifier(d.total === 4 + 3, `total à faire = « Qte en cours » de Diakonos (4 + 3 = ${d.total})`);
+  verifier(d.tr["LOG 4 T1 LAISNE"] && d.tr["LOG 4 T1 LAISNE"][0] === 1 && d.tr["LOG 4 T1 LAISNE"][1] === 4 && !d.tr["LOG 4 T1"], `transporteur au nom Diakonos, pièce faite comprise (« LOG 4 T1 » → « LOG 4 T1 LAISNE ») : ${JSON.stringify(d.tr["LOG 4 T1 LAISNE"])}`);
+  verifier(!Object.keys(d.tr).some((t) => /X/.test(t) && /\d/.test(t)), `une dimension n'est jamais un transporteur (${Object.keys(d.tr).join(", ")})`);
 
   // Réception (mini-site simulé) : 3 étiquettes de la même ligne → 3 étiquettes rangées sur la pièce, poste à 3 ;
   // le même lot renvoyé par l'agent (avant l'accusé) n'est pas recompté.

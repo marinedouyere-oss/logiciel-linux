@@ -17021,6 +17021,44 @@ const SUIVI = (() => {
         if (couvert && f + r > 0) L.histo.push([e.jour, Math.round((100 * f) / (f + r))]);
       });
     });
+    // V6.5.6 : Diakonos donne PLUS de pièces en cours que le lancement n'en contient (pièce relancée dont la relance
+    // n'est dans aucun lancement scanné ; cas réel : CVC26100973 ligne 6, deux lignes Diakonos de 2, une seule pièce
+    // dans le lancement). Le surplus compte « à faire » dans « Pas dans un lancement » de sa semaine de livraison : aucune
+    // pièce en cours dans Diakonos n'est oubliée, et la barre du lancement reste juste.
+    if (etat.inclus.production) {
+      const dejaR = new Map(); // pièce → à faire déjà compté (tous lancements)
+      for (const L of lancements) if (L.detail) for (const [k, [, rk]] of L.detail) dejaR.set(k, (dejaR.get(k) || 0) + rk);
+      const horsParId = new Map(lancements.filter((L) => L.hors).map((L) => [L.id, L]));
+      for (const [k, v] of der.parCle) {
+        const r0 = v.lignes[0];
+        if (!lancees.has(k) || !r0[0] || !r0[1] || perimetreDe(r0[4]) !== "production") continue;
+        const surplus = Math.max(0, Math.max(0, v.cours) - (direct.get(k) || 0) - (dejaR.get(k) || 0));
+        if (!surplus) continue;
+        const annee = r0[1];
+        const semaine = Number(r0[0]);
+        const id = idSemaine(annee, semaine);
+        let L = horsParId.get(id);
+        if (!L) {
+          L = { cle: `hors-${id}`, nom: "Pas dans un lancement", poste: "Diakonos", casse: false, hors: true, id, annee, semaine, ordre: ordreSemaine(annee, semaine),
+            pieces: new Map(), infos: new Map(), debut: new Map(), deduites: new Map(), vus: new Set(), histo: [], presents: new Map(), detail: new Map(),
+            f: 0, r: 0, h: 0, fPrec: null, couvert: true };
+          horsParId.set(id, L);
+          lancements.push(L);
+        }
+        L.pieces.set(k, (L.pieces.get(k) || 0) + surplus);
+        if (!L.surplus) L.surplus = new Set();
+        L.surplus.add(k);
+        if (!L.infos.has(k)) L.infos.set(k, [r0[2], r0[10] || "", "", ""]);
+        if (!L.detail) L.detail = new Map();
+        const d = L.detail.get(k) || [0, 0];
+        L.detail.set(k, [d[0], d[1] + surplus]);
+        L.r += surplus;
+        L.couvert = true;
+        if (L.presents) L.presents.set(k, v); // ses commandes encore à faire
+      }
+      lancements.sort((a, b) => a.ordre - b.ordre || rangPoste(a.poste) - rangPoste(b.poste) || a.nom.localeCompare(b.nom));
+    }
+    etat.lancementsCalcul = lancements; // pour le contrôle « Sentinelle = Diakonos » (test_web_suivi_diakonos.js)
     const total = (L) => [...L.pieces.values()].reduce((t, q) => t + q, 0);
     for (const L of lancements) {
       L.h = Math.max(0, total(L) - L.f - L.r);
@@ -17102,14 +17140,20 @@ const SUIVI = (() => {
     const affiches = new Set(semaines.map((s) => s.id));
     const unique = (cle) => {
       const m = new Map();
+      const enPlus = [0, 0]; // V6.5.6 : le surplus Diakonos d'une pièce s'ajoute (ce n'est pas la même pièce comptée deux fois)
       for (const L of lancements) {
         if (!affiches.has(L.id) || !L[cle]) continue;
         for (const [k, v] of L[cle]) {
+          if (L.surplus && L.surplus.has(k) && cle === "detail") {
+            enPlus[0] += v[0];
+            enPlus[1] += v[1];
+            continue;
+          }
           const a = m.get(k);
           m.set(k, a ? [Math.max(a[0], v[0]), Math.max(a[1], v[1])] : v);
         }
       }
-      return [...m.values()].reduce((t, v) => [t[0] + v[0], t[1] + v[1]], [0, 0]);
+      return [...m.values()].reduce((t, v) => [t[0] + v[0], t[1] + v[1]], enPlus);
     };
     // Suivi par semaine, par transporteur, par coloris : les mêmes pièces et le même calcul que les barres (faites =
     // lancées − « Qte en cours », CVC plus dans l'extraction = faite ; une pièce relancée compte dans le plus récent).
@@ -17122,9 +17166,11 @@ const SUIVI = (() => {
     // les vues la rangent là, comme Diakonos (une pièce de livraison 46 dans un lancement casse ou d'une autre semaine
     // reste en semaine 46). Une pièce sortie de toutes les extractions garde la semaine de son lancement.
     const livraisonCle = new Map();
+    const colorisCle = new Map(); // V6.5.6 : le code coloris de Diakonos (comme dans Diakonos)
     for (const e of ex)
       for (const r of e.lignes) {
         if (r[0] && r[1]) livraisonCle.set(cleLigne(r[2], r[3]), { annee: Number(r[1]), semaine: Number(r[0]) });
+        if (r[10]) colorisCle.set(cleLigne(r[2], r[3]), r[10]);
         if (!r[7] || r[7] === "(sans transporteur)") continue;
         transpCle.set(cleLigne(r[2], r[3]), r[7]);
         transpCommande.set(r[2], r[7]);
@@ -17136,22 +17182,29 @@ const SUIVI = (() => {
       m.get(a).set(b, (m.get(a).get(b) || 0) + 1);
     };
     const lePlusSouvent = (m) => [...m.entries()].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))[0][0];
-    const appris = new Map(); // nom Diakonos → transporteur du fichier de lancement
+    // V6.5.6 : les noms de DIAKONOS (ceux que l'atelier voit et cherche dans Diakonos : « LOG 4 T1 LAISNE »,
+    // « MULTICOURSES »…). Une pièce dans l'extraction : le transporteur Diakonos de la pièce, sinon de sa commande.
+    // Une pièce déjà faite (sortie de l'extraction) : le nom du fichier de lancement, ramené au nom Diakonos qu'on lui
+    // connaît (« LOG 4 T1 » → « LOG 4 T1 LAISNE »). Un « transporteur » qui est une dimension (« 3045 X 1305 X30 »,
+    // colonne décalée dans un fichier de lancement) est ignoré.
+    const nomValide = (t) => Boolean(t) && !/\d\s*[xX×]\s*\d/.test(t);
+    const versDiakonos = new Map(); // nom du fichier de lancement → { nom Diakonos : nombre de pièces }
     for (const L of lancements) {
       if (!affiches.has(L.id) || !L.detail) continue;
       for (const k of L.detail.keys()) {
         const [commande, , tr] = L.infos.get(k) || ["", "", ""];
+        if (!nomValide(tr)) continue;
         const diak = transpCle.get(k) || transpCommande.get(commande);
-        if (tr) compter(ecritures, cleTr(tr), tr.replace(/\s+/g, " "));
-        if (tr && diak) compter(appris, diak, cleTr(tr));
+        compter(ecritures, cleTr(tr), tr.replace(/\s+/g, " "));
+        if (diak) compter(versDiakonos, cleTr(tr), diak);
       }
     }
     const transporteurDe = (k, commande, tr) => {
-      if (tr) return lePlusSouvent(ecritures.get(cleTr(tr)));
       const diak = transpCle.get(k) || transpCommande.get(commande);
-      if (!diak) return TRANSPORTEUR_INCONNU;
-      const c = appris.has(diak) ? lePlusSouvent(appris.get(diak)) : null;
-      return c && ecritures.has(c) ? lePlusSouvent(ecritures.get(c)) : diak;
+      if (diak) return diak;
+      if (!nomValide(tr)) return TRANSPORTEUR_INCONNU;
+      const c = versDiakonos.get(cleTr(tr));
+      return c ? lePlusSouvent(c) : lePlusSouvent(ecritures.get(cleTr(tr)));
     };
     const groupes = { semaine: new Map(), transporteur: new Map(), coloris: new Map(), client: new Map() };
     const ajouter = (vue, cle, nom, ordre, sCle, sNom, sOrdre, fk, rk, enRetard) => {
@@ -17172,7 +17225,7 @@ const SUIVI = (() => {
       for (const [k, [fk, rk]] of L.detail) {
         const [commande, coloris, trLan, client] = L.infos.get(k) || ["", "", "", ""];
         const tr = transporteurDe(k, commande, trLan);
-        const co = coloris || "Sans coloris";
+        const co = colorisCle.get(k) || coloris || "Sans coloris";
         const liv = livraisonCle.get(k) || { annee: L.annee, semaine: L.semaine };
         const sId = idSemaine(liv.annee, liv.semaine);
         const sOrdre = ordreSemaine(liv.annee, liv.semaine);
