@@ -204,6 +204,22 @@ const attendre = async (cond, ms = 15000) => {
     await maison.page.evaluate(() => synchroniserAvecLeSite());
     await maison.page.waitForTimeout(4000);
     verifier(true, `(version sur le site : ${avant === magasin.manifeste.version ? "inchangée" : "renvoyée une fois"})`);
+    // F. V6.5.4 : un lancement ajouté sans être parti (Sentinelle fermée dans les 3 secondes…) part au tour suivant.
+    await maison.page.waitForTimeout(3500);
+    const versionAvant = magasin.manifeste.version;
+    await maison.page.evaluate(async () => {
+      await enregistrerSemaineLocale({ id: idSemaine(2026, 49), annee: 2026, semaine: 49, maj: new Date().toISOString(), supprimeeLe: null, colonnesPieces: COLONNES_PIECES_BIBLIOTHEQUE, lancements: [{ nom: "LAN264901OUBLIE", maj: new Date().toISOString(), poste: "Agglo 1er tour", pieces: [] }] });
+      bibliotheque.generation++;
+    });
+    await maison.page.evaluate(() => synchroniserAvecLeSite());
+    const parti = await attendre(async () => magasin.manifeste.version !== versionAvant);
+    verifier(parti, `lancement pas encore parti : envoyé au tour suivant (toutes les 2 minutes et à l'ouverture)`);
+    await maison.page.click('[data-onglet="bibliotheque"]');
+    const carte = await maison.page.locator("#carteLienTelephone").innerText();
+    verifier(/Ce que le téléphone a reçu au dernier envoi/.test(carte), `carte Téléphone : la liste de ce qui est parti`);
+    await maison.page.click("#carteLienTelephone details.reprendre-code summary >> nth=0");
+    const liste = await maison.page.locator("#carteLienTelephone details.reprendre-code").first().innerText();
+    verifier(/S49 2026 : LAN264901OUBLIE/.test(liste), `… avec le lancement ajouté (S49 2026 : LAN264901OUBLIE)`);
     await bureau.ctx.close();
     await maison.ctx.close();
   }

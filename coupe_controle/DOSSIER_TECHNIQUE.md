@@ -27,7 +27,7 @@ Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
 (`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
 (imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
 
-Version courante : **6.5.3** (le PC et l'APK partagent le même numéro ; l'agent suit).
+Version courante : **6.5.4** (le PC et l'APK partagent le même numéro ; l'agent suit).
 
 ### Glossaire métier
 
@@ -229,6 +229,11 @@ toutes les 2 minutes, le PC relit le site (`reprendreDuSite`, `synchroniserAvecL
 (`SUIVI.recevoir`) et son stock s'il est plus récent (`recevoirStockDistant`). Le prochain envoi contient les
 lancements des deux PC. Le fichier partagé porte le nom du PC (`poste`, donné par `Sentinelle.exe` :
 route `/sentinelle/poste`) ; l'appli affiche « Données du PC « X » du … ».
+
+**Rien ne reste en route (6.5.4)** : un changement non envoyé (Sentinelle fermée dans les 3 s qui suivent, envoi
+raté…) part à l'ouverture suivante (`planifierEnvoiTelephone()` au démarrage) et à chaque synchro de 2 minutes
+(signature ≠ celle du dernier envoi). La carte Téléphone liste ce qui est parti au dernier envoi (`etat.envoye` :
+semaine → lancements). L'appli liste tous les noms de lancements dans la Bibliothèque (plus de coupure à 2 lignes).
 
 **Stock : aucune limite d'affichage (6.5.3)** — PC et téléphone affichent tous les matériaux (le vrai fichier :
 326 avec du stock), toutes les chutes, toutes les chutes qui dorment. Case « avec du stock seulement » (cochée).

@@ -877,8 +877,7 @@ final class PartageVue {
                         activite.allerA(MainActivity.ONGLET_CONTROLE);
                     });
             TextView lances = ui.texte(String.join(", ", noms), 11.5f, false, ui.couleur(R.color.gris_texte));
-            lances.setMaxLines(2);
-            lances.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            // V6.5.4 : tous les noms (avant : 2 lignes, la suite coupée par « … »).
             ((LinearLayout) r.getChildAt(0)).addView(lances);
             corps.addView(r);
         }

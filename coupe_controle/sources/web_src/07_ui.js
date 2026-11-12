@@ -2980,6 +2980,8 @@ document.querySelectorAll("img[data-logo]").forEach((img) => (img.src = img.data
   // V6.3 : les demandes du téléphone (plans modifiés, problèmes validés OK), lues toutes seules.
   demarrerRetourTelephone();
   if (typeof demarrerValidations === "function") demarrerValidations();
+  // V6.5.4 : à l'ouverture, ce qui n'était pas encore parti au téléphone part (rien si tout est déjà envoyé).
+  if (typeof planifierEnvoiTelephone === "function") planifierEnvoiTelephone();
 })();
 
 // N'a d'effet que servi en http(s)/localhost (ex. server/lancer_sentinelle.bat).

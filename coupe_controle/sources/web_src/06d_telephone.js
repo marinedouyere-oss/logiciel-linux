@@ -288,6 +288,9 @@ async function synchroniserAvecLeSite() {
     if (n) {
       changementBibliotheque();
       if (typeof afficher === "function") afficher();
+    } else if (signatureEnvoi() !== (etatLienTelephone() || {}).signature) {
+      // V6.5.4 : un changement pas encore parti (Sentinelle fermée trop tôt, envoi raté…) : il part maintenant.
+      envoyerAuTelephone(false);
     }
     return n;
   } catch (_e) {
@@ -336,7 +339,11 @@ function envoyerAuTelephone(forcer = false) {
       const paquet = await paquetChiffre(secrets.cle, await compresserJson(contenu));
       const version = await envoyerPaquetLien(secrets, paquet, contenu.genere);
       const nbSemaines = [...bibliotheque.semaines.values()].filter((s) => s.lancements.length).length;
-      ecrireLienTelephone({ ...etatLienTelephone(), signature, dernierEnvoi: new Date().toISOString(), version, nbSemaines, erreur: null });
+      // V6.5.4 : ce qui est parti, semaine par semaine (la carte Téléphone le montre : on voit tout de suite ce que le téléphone a).
+      const envoye = contenu.semaines
+        .filter((s) => !s.supprimeeLe && s.lancements.length)
+        .map((s) => ({ s: `S${s.semaine} ${s.annee}`, l: s.lancements.map((l) => l.nom) }));
+      ecrireLienTelephone({ ...etatLienTelephone(), signature, dernierEnvoi: new Date().toISOString(), version, nbSemaines, envoye, erreur: null });
       lienTelephone.essais = 0;
       return { ok: true };
     } catch (erreur) {
@@ -464,6 +471,7 @@ function htmlLienTelephone() {
       </div>
       <div class="compte-rendu ${etat.erreur && !lienTelephone.envoi ? "erreur" : ""}" id="etatLien">${echapper(statut)}</div>
       ${htmlLectureTelephone(etat)}
+      ${Array.isArray(etat.envoye) && etat.envoye.length ? `<details class="reprendre-code"><summary>Ce que le téléphone a reçu au dernier envoi (${etat.envoye.reduce((t, x) => t + x.l.length, 0)} lancements)</summary>${etat.envoye.map((x) => `<div class="note"><strong>${echapper(x.s)}</strong> : ${echapper(x.l.join(", "))}</div>`).join("")}</details>` : ""}
       ${etat.repriseLe ? `<div class="note">Lancements des autres PC sur ce code : relus sur le site ${echapper(date(etat.repriseLe))}${etat.repriseDe ? ` (dernier envoi de ${echapper(etat.repriseDe)})` : ""}${lienTelephone.recuesDuSite ? ` · ${lienTelephone.recuesDuSite} semaine(s) complétée(s)` : ""}.</div>` : ""}
       ${lienTelephone.poste ? `<div class="note">Ce PC : <strong>${echapper(lienTelephone.poste)}</strong>. Un autre PC peut envoyer au même téléphone : tapez-y le même code (« Reprenez son code ») ; les lancements des deux PC sont mis en commun.</div>` : ""}
       ${htmlReprendreCode(false)}
