@@ -81,18 +81,47 @@ const etiquette = (e) => `<span class="etiquette ${e.genre}">${echapper(e.texte)
 
 // ---- Contrôle : la liste des postes à gauche, un clic amène à la case ----
 
+// V6.8.2 : les lancements de la bibliothèque d'une semaine qui ne sont dans aucune case de l'onglet : créés dans
+// Sentinelle (Suivi de production → « Nouveau lancement »), ou ajoutés à la bibliothèque depuis un autre dossier (ex.
+// Trigano, pas lancé par le chemin standard). Ce sont des lancements de la semaine comme les autres.
+function lancementsHorsCasesDeLaSemaine(numero, cases) {
+  if (typeof bibliotheque === "undefined" || !numero) return [];
+  const w = bibliotheque.semaines.get(idSemaine(anneeDeSemaine(numero), numero));
+  if (!w) return [];
+  const dansLesCases = new Set((cases || []).filter((p) => p.strat).map((p) => cleNomLancement(p.strat.name)));
+  const cols = w.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
+  const iQ = cols.indexOf("pieces") >= 0 ? cols.indexOf("pieces") : 4;
+  return lancementsActifs(w)
+    .filter((l) => !dansLesCases.has(cleNomLancement(l.nom)))
+    .map((l) => ({ nom: l.nom, poste: l.poste || "Chantiers", manuel: Boolean(l.manuel), fichier: l.fichier || "", lignes: (l.pieces || []).length, pieces: (l.pieces || []).reduce((t, x) => t + (Number(x[iQ]) || 0), 0) }));
+}
+const ouvrirSuivi = () => {
+  const b = document.querySelector('[data-onglet="suivi"]');
+  if (b) b.click();
+};
+
 function majListePostes() {
   const zone = $("listePostes");
   if (!zone || !estOngletSemaine()) return;
-  zone.innerHTML = pairesDeLaSemaine(onglet)
-    .map(
-      (p) => `<button type="button" class="poste-item" data-case="${p.id}">
+  zone.innerHTML =
+    pairesDeLaSemaine(onglet)
+      .map(
+        (p) => `<button type="button" class="poste-item" data-case="${p.id}">
         <span class="poste-textes"><span class="poste-nom">${echapper(titreCase(p))}</span><span class="poste-fichier">${p.strat ? echapper(p.strat.name) : "Aucun lancement"}</span></span>
         ${etiquette(etatCase(p))}
       </button>`
-    )
-    .join("");
-  zone.querySelectorAll(".poste-item").forEach((b) => b.addEventListener("click", () => montrerCase(Number(b.dataset.case))));
+      )
+      .join("") +
+    lancementsHorsCasesDeLaSemaine(numeroSemaine(onglet), pairesDeLaSemaine(onglet))
+      .map(
+        (l) => `<button type="button" class="poste-item poste-cree" data-cree="1" title="${l.manuel ? "Lancement créé dans Sentinelle" : "Lancement ajouté à la bibliothèque (pas dans les dossiers de la semaine)"} : son avancement est dans le Suivi de production">
+        <span class="poste-textes"><span class="poste-nom">${echapper(l.poste)} · ${l.manuel ? "créé dans Sentinelle" : "bibliothèque"}</span><span class="poste-fichier">${echapper(l.nom)} · ${l.pieces} pièce${l.pieces > 1 ? "s" : ""}</span></span>
+        ${etiquette(l.manuel ? { texte: "Sans fichier", genre: "vide" } : { texte: "Hors dossiers", genre: "vide" })}
+      </button>`
+      )
+      .join("");
+  zone.querySelectorAll("[data-cree]").forEach((b) => b.addEventListener("click", ouvrirSuivi));
+  zone.querySelectorAll(".poste-item[data-case]").forEach((b) => b.addEventListener("click", () => montrerCase(Number(b.dataset.case))));
 }
 
 // Fait défiler jusqu'à la case et la met en avant un instant.
@@ -185,6 +214,7 @@ function afficherAccueil() {
   const cases = pairesDeLaSemaine(parite);
   const avecLancement = cases.filter((p) => p.strat);
   const controlees = avecLancement.filter((p) => p.rapport);
+  const crees = lancementsHorsCasesDeLaSemaine(numero, cases);
   const aRegarder = [];
   for (const p of cases) for (const t of problemesDeLaCase(p)) aRegarder.push({ p, titre: `${titreCase(p)} — ${t}`, genre: "souci" });
   for (const p of cases) if (!p.strat && !caseAjoutee(p)) aRegarder.push({ p, titre: `${titreCase(p)} — pas encore de lancement`, genre: "vide" });
@@ -199,7 +229,7 @@ function afficherAccueil() {
   const tuile = (valeur, legende, genre = "") => `<div class="tuile ${genre}"><span class="tuile-legende">${legende}</span><span class="tuile-valeur">${valeur}</span></div>`;
   let html = entetePage(enCours ? "Semaine en cours" : "Semaine", `Semaine ${numero} · ${anneeDeSemaine(numero)}`, datesSemaine(numero), actions);
   html += `<section class="tuiles" aria-label="Avancement de la semaine">
-    ${tuile(`${avecLancement.length} sur ${cases.length}`, "Lancements chargés")}
+    ${tuile(`${avecLancement.length} sur ${cases.length}${crees.length ? ` <span class="tuile-plus">+ ${crees.length} hors dossiers (bibliothèque)</span>` : ""}`, "Lancements chargés")}
     ${tuile('<span id="tuilePiecesAccueil">…</span>', "Pièces")}
     ${tuile(`${controlees.length} sur ${avecLancement.length}`, "Contrôles faits")}
     ${tuile(String(nbProblemes), "À regarder", nbProblemes ? "souci" : "")}
@@ -217,6 +247,19 @@ function afficherAccueil() {
         <div><dt>Contrôle</dt><dd>${etiquette(etatCase(p))}</dd></div>
       </dl>
       ${p.strat ? `<button type="button" class="contour" data-voir="${p.id}">Voir le contrôle</button>` : `<button type="button" class="contour" data-preparer="${p.id}">Préparer</button>`}
+    </article>`;
+  });
+  crees.forEach((l, i) => {
+    html += `<article class="carte-lancement carte-cree">
+      <div class="carte-lancement-tete"><span class="pastille">${String(cases.length + i + 1).padStart(2, "0")}</span><h3>${echapper(l.poste)} · ${l.manuel ? "créé dans Sentinelle" : "bibliothèque"}</h3></div>
+      <div class="carte-lancement-fichier"><span>${echapper(l.nom)}</span></div>
+      <dl class="carte-lancement-etats">
+        <div><dt>Lancement</dt><dd>${etiquette(l.manuel ? { texte: "Créé dans Sentinelle", genre: "bon" } : { texte: "Dans la bibliothèque", genre: "bon" })}</dd></div>
+        <div><dt>Pièces</dt><dd>${l.pieces}</dd></div>
+        <div><dt>Coupe</dt><dd>${etiquette({ texte: l.manuel ? "Sans fichier" : "Hors dossiers", genre: "vide" })}</dd></div>
+        <div><dt>Contrôle</dt><dd>${etiquette({ texte: l.manuel ? "Rien à contrôler" : "Pas dans les cases", genre: "vide" })}</dd></div>
+      </dl>
+      <button type="button" class="contour" data-suivi-cree="1">Voir dans le suivi</button>
     </article>`;
   });
   html += "</div>";
@@ -252,6 +295,7 @@ function afficherAccueil() {
   page.innerHTML = html;
   remplirPiecesAccueil(page, cases);
 
+  page.querySelectorAll("[data-suivi-cree]").forEach((b) => b.addEventListener("click", ouvrirSuivi));
   page.querySelectorAll(".choix-semaine button").forEach((b) =>
     b.addEventListener("click", () => {
       pariteAccueil = b.dataset.parite;

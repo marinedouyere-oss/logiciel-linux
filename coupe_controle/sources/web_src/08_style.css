@@ -665,6 +665,11 @@
   .sv-hors-outils { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
   .sv-hors-outils input { flex: 1 1 260px; }
   .sv-hors tr.sv-hors-ligne td { background: #fff7a6; }
+  .tuile-plus { display: block; font-size: 0.72rem; font-weight: 700; color: #797978; }
+  .carte-lancement.carte-cree { border-style: dashed; }
+  .sv-coller { margin-top: 12px; }
+  .sv-coller summary { cursor: pointer; font-weight: 700; color: var(--bordeaux, #78140c); }
+  .sv-coller textarea { width: 100%; box-sizing: border-box; font-family: ui-monospace, Consolas, monospace; font-size: 0.85rem; margin: 6px 0; }
   .sv-rajouts { margin-top: 14px; padding-top: 10px; border-top: 1px solid #e3d9d3; }
   .cl-avec-photo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 38%); gap: 18px; align-items: start; }
   .cl-photos { position: sticky; top: 10px; border-left: 1px solid #e3d9d3; padding-left: 14px; }

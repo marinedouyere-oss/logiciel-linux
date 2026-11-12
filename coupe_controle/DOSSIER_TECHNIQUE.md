@@ -270,6 +270,22 @@ du lancement » (surplus) va toujours dans le lancement qui a déjà la pièce :
 pièce ne compte que dans le lancement le plus récent qui l'a) fausserait le décompte. Aucun fichier LAN n'est créé ni
 modifié.
 
+### Coller des lignes et lancements hors dossiers (V6.8.2)
+
+**Coller des lignes.** Dans « Pas dans les lancements », « Coller des lignes » : des lignes copiées de Diakonos ou
+d'Excel (commande, ligne, catalogue, article, désignation, longueur, largeur, épaisseur, quantité, code coloris,
+coloris ; tabulations) pour des pièces qui ne sont pas dans l'extraction. Cas réel : Trigano (articles TRI-…), lancé
+hors du chemin standard (fichiers LAN26xxTRIGANO rangés dans d'autres dossiers). Les lignes (`etat.collees`,
+`localStorage` `sentinelle-suivi-collees`) s'ajoutent à la liste (puce « Collées »), à cocher puis mettre dans un
+lancement (nouveau ou existant), comme les autres. Une ligne déjà dans l'extraction ou dans un lancement n'est pas
+ajoutée (dit dans le message). Règle de l'atelier inchangée : une pièce collée dans le suivi de production est à faire,
+absente du suivi elle est faite. Le lancement créé garde la liste de ses pièces collées (`collees`) : « Retirer » les
+remet dans la liste. Export Excel : les lignes collées dans les colonnes de l'extraction.
+
+**Lancements hors dossiers.** « La semaine » et « Contrôler la coupe → Semaine NN » ne montraient que les cases (fichiers
+des dossiers de la semaine). `lancementsHorsCasesDeLaSemaine` y ajoute les lancements de la bibliothèque de cette
+semaine qui ne sont dans aucune case : créés dans Sentinelle, ou ajoutés à la bibliothèque depuis un autre dossier.
+
 ### Semaine retirée puis rescannée (V6.7.4, `lancementsActifs` dans `06b_bibliotheque.js`)
 
 « Retirer la semaine » vide ses lancements et pose `supprimeeLe` (date du retrait), gardée pour la fusion entre PC :

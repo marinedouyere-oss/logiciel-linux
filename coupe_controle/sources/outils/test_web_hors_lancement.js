@@ -254,6 +254,83 @@ const LIGNES = [
   await page.waitForTimeout(300);
   const e4 = await essai();
   verifier(!e4.biblio && !e4.suivi && e4.hors.join(",") === "CVCTEST003,CVCTEST004", `« Supprimer le lancement » : retiré de la bibliothèque, pièces revenues (${e4.hors.join(",")})`);
+
+  // 7. V6.8.2 : coller des lignes (pièces pas dans l'extraction, ex. Trigano) puis les mettre dans un lancement.
+  const colle = [
+    "CVCTEST010\t1\tStratifié\tTRI-229532-H1242\t2114 X 600 X 29 MM\t2 114\t600\t29\t15\tH1242-ST10\tAcacia Sheffield Naturel",
+    "CVCTEST003\t1\tStratifié\tTRI-ESSAI\t2398 X 600 X 29 MM\t2 398\t600\t29\t4\t9002\tBois essai",
+    "n'importe quoi",
+  ].join("\n");
+  await page.click(".sv-coller summary");
+  await page.fill("#svColler", colle);
+  await page.click("#svCollerLire");
+  await page.waitForTimeout(300);
+  const apresColle = await page.evaluate(() => ({ hors: SUIVI.etat.horsDetail.map((x) => `${x.r[2]}${x.collee ? "*" : ""}`).sort(), filtre: SUIVI.etat.horsSemaine, msg: SUIVI.etat.horsMessage }));
+  console.log(JSON.stringify(apresColle));
+  verifier(apresColle.hors.join(",") === "CVCTEST003,CVCTEST004,CVCTEST010*", `lignes collées : CVCTEST010 ajoutée à la liste (${apresColle.hors.join(",")})`);
+  verifier(/1 ligne ajoutée/.test(apresColle.msg.texte) && /CVCTEST003 l\.1 : déjà dans la liste/.test(apresColle.msg.texte) && /ligne 3 : pas de n° de commande/.test(apresColle.msg.texte), `message : 1 ajoutée, CVCTEST003 déjà dans la liste, ligne 3 illisible`);
+  const puces2 = await page.$$eval("[data-sv-hors-sem]", (b) => b.map((x) => x.textContent.trim()));
+  verifier(apresColle.filtre === "collees" && puces2.includes("Collées · 15"), `puce « Collées · 15 » choisie (${puces2.join(" | ")})`);
+  const cle10 = await page.evaluate(() => cleLigne("CVCTEST010", "1"));
+  verifier(/collée/.test(await page.locator("#svHors tr.sv-hors-ligne").first().innerText()), "ligne collée marquée « collée »");
+  // Export : la ligne collée dans les colonnes du fichier de suivi.
+  const [dl2] = await Promise.all([page.waitForEvent("download"), page.click("#svHorsExport")]);
+  const f2 = path.join(sortie, "colle_" + dl2.suggestedFilename());
+  await dl2.saveAs(f2);
+  const lu2 = await page.evaluate(async (b64) => {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)));
+    const ws = wb.worksheets[0];
+    return [ws.getRow(1).values.slice(1), ws.getRow(2).values.slice(1)];
+  }, fs.readFileSync(f2).toString("base64"));
+  const col2 = (n) => lu2[1][lu2[0].indexOf(n)];
+  verifier(lu2[0][0] === "Semaine" && col2("Commande") === "CVCTEST010" && col2("Qte en cours") === 15 && col2("Article") === "TRI-229532-H1242" && col2("Code Coloris") === "H1242-ST10", "export : la ligne collée dans les colonnes de l'extraction");
+  // Nouveau lancement LAN2648TRIGANO en semaine 48.
+  await page.check(`[data-sv-hors-coche="${cle10}"]`);
+  await page.selectOption("#svHorsLancement", "__nouveau__");
+  await page.fill("#svHorsNomNouveau", "LAN2648TRIGANO");
+  await page.selectOption("#svHorsSemNouveau", "2026-48");
+  await page.click("#svHorsAjouter");
+  await page.waitForFunction(() => (bibliotheque.semaines.get("2026-48").lancements || []).some((l) => l.nom === "LAN2648TRIGANO"), null, { timeout: 10000 });
+  await page.waitForTimeout(300);
+  const trig = await page.evaluate(() => {
+    const l = bibliotheque.semaines.get("2026-48").lancements.find((x) => x.nom === "LAN2648TRIGANO");
+    const R = SUIVI.calculer().semaines.flatMap((s) => s.lancements).find((x) => x.nom === "LAN2648TRIGANO");
+    const C = COLONNES_PIECES_BIBLIOTHEQUE;
+    return { pieces: l.pieces.map((p) => [p[C.indexOf("commande")], p[C.indexOf("pieces")], p[C.indexOf("article")], p[C.indexOf("longueur")], p[C.indexOf("coloris")]]), collees: l.collees, f: R.f, r: R.r, restantes: SUIVI.etat.collees.length, hors: SUIVI.etat.horsDetail.map((x) => x.r[2]).sort() };
+  });
+  console.log(JSON.stringify(trig));
+  verifier(trig.pieces.length === 1 && trig.pieces[0].join("|") === "CVCTEST010|15|TRI-229532-H1242|2114|H1242-ST10" && trig.collees.length === 1, "LAN2648TRIGANO créé : CVCTEST010 ×15, article, longueur, coloris");
+  verifier(trig.f === 15 && trig.r === 0, `pas dans le suivi de production : comptée faite (${trig.f} faites, ${trig.r} à faire)`);
+  verifier(trig.restantes === 0 && trig.hors.join(",") === "CVCTEST003,CVCTEST004", "la ligne collée sort de la liste");
+  // V6.8.2 : le lancement créé se voit dans « La semaine » (S48) et dans « Contrôler la coupe → Semaine 48 ».
+  await page.click('[data-onglet="accueil"]');
+  await page.waitForTimeout(200);
+  const b48 = await page.$$eval(".choix-semaine button", (bs) => bs.map((b) => b.textContent.trim()));
+  if (b48.includes("S48")) {
+    await page.click('.choix-semaine button:text-is("S48")');
+    await page.waitForTimeout(200);
+    const acc = await page.locator("#pageAccueil").innerText();
+    verifier(/LAN2648TRIGANO/.test(acc) && /créé dans Sentinelle/i.test(acc) && /\+ 2 hors dossiers/.test(acc), "« La semaine » S48 : LAN2648TRIGANO affiché (créé dans Sentinelle), + 2 hors dossiers (avec LAN264801START d'essai)");
+    const onglet48 = await page.evaluate(() => [...document.querySelectorAll(".onglet-btn")].find((b) => /Semaine 48/.test(b.textContent))?.dataset.onglet);
+    if (onglet48) {
+      await page.click(`[data-onglet="${onglet48}"]`);
+      await page.waitForTimeout(300);
+      const postes = await page.locator("#listePostes").innerText();
+      verifier(/LAN2648TRIGANO · 15 pièces/.test(postes) && /créé dans Sentinelle/.test(postes), "« Semaine 48 » : LAN2648TRIGANO dans la liste des postes");
+    } else verifier(false, "onglet Semaine 48 introuvable");
+    await page.click('[data-onglet="suivi"]');
+    await page.waitForSelector("#svHors");
+  } else console.log(`(semaine 48 pas dans les onglets de ce jour : ${b48.join(" ")})`);
+  // Retirer : elle revient dans les lignes collées.
+  await page.click(`[data-sv-manuel-retirer="2026-48|LAN2648TRIGANO"][data-k="${cle10}"]`);
+  await page.waitForFunction(() => !(bibliotheque.semaines.get("2026-48").lancements || []).some((l) => l.nom === "LAN2648TRIGANO"), null, { timeout: 10000 });
+  await page.waitForTimeout(300);
+  const retour = await page.evaluate(() => SUIVI.etat.horsDetail.filter((x) => x.collee).map((x) => `${x.r[2]}:${x.n}`));
+  verifier(retour.join(",") === "CVCTEST010:15", `retirée du lancement : revenue dans les lignes collées (${retour.join(",")})`);
+  await page.click(`[data-sv-collee-retirer="${cle10}"]`);
+  await page.waitForTimeout(300);
+  verifier((await page.evaluate(() => SUIVI.etat.collees.length)) === 0, "« Retirer » une ligne collée : enlevée");
   await nav.close();
   console.log(echecs ? `${echecs} échec(s)` : "TOUT EST OK");
   process.exit(echecs ? 1 : 0);

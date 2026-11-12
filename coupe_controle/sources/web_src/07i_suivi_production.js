@@ -244,6 +244,8 @@ const SUIVI = (() => {
   const CLE_RESUME = "sentinelle-suivi-resume"; // dernier résumé (le nôtre ou celui du fichier partagé, le plus récent)
   // V6.7.3 : pièces de l'extraction comptées à la main dans un lancement (le fichier LAN n'est jamais modifié).
   const CLE_RAJOUTS = "sentinelle-suivi-rajouts";
+  // V6.8.2 : lignes collées (copiées de Diakonos) pour des pièces qui ne sont pas dans l'extraction (ex. Trigano).
+  const CLE_COLLEES = "sentinelle-suivi-collees";
   let base = null;
   function ouvrirBase() {
     if (!base) {
@@ -324,6 +326,13 @@ const SUIVI = (() => {
     horsSemNouveau: "",
     horsPosteNouveau: "Chantiers",
     horsMessage: null, // { genre: bon | alerte, texte }
+    // V6.8.2 : [{ k, commande, ligne, catalogue, article, designation, L, l, e, n, coloris, colorisNom, quand }]
+    collees: (() => {
+      const x = lireLocal(CLE_COLLEES, []);
+      return Array.isArray(x) ? x.filter((c) => c && c.k && c.commande && Number(c.n) > 0) : [];
+    })(),
+    colleesRev: 0,
+    texteColle: "",
   };
 
   const idFichier = (f) => `${f.name}|${f.size}|${f.lastModified || 0}`;
@@ -432,7 +441,7 @@ const SUIVI = (() => {
   function calculer() {
     // Étiquettes reçues en direct des PC de validation (une étiquette imprimée = une pièce faite).
     const rev = typeof validations !== "undefined" ? validations.rev : 0;
-    const cle = `${bibliotheque.generation}|${etat.generation}|${JSON.stringify(etat.inclus)}|v${rev}|a${etat.rajoutsRev}`;
+    const cle = `${bibliotheque.generation}|${etat.generation}|${JSON.stringify(etat.inclus)}|v${rev}|a${etat.rajoutsRev}|c${etat.colleesRev}`;
     if (etat.resume && etat.cleResume === cle) return etat.resume;
     const ex = etat.extractions;
     if (!ex.length) return null;
@@ -484,7 +493,7 @@ const SUIVI = (() => {
           annee = n > semaine + 26 ? annee - 1 : n < semaine - 26 ? annee + 1 : annee;
           semaine = n;
         }
-        lancements.push({ cle: cleNomLancement(l.nom), nom: l.nom, poste: l.poste || "", casse, id: idSemaine(annee, semaine), annee, semaine, sid: s.id, aj: 0, manuel: Boolean(l.manuel),
+        lancements.push({ cle: cleNomLancement(l.nom), nom: l.nom, poste: l.poste || "", casse, id: idSemaine(annee, semaine), annee, semaine, sid: s.id, aj: 0, manuel: Boolean(l.manuel), collees: Array.isArray(l.collees) ? l.collees : null,
           ordre: ordreSemaine(annee, semaine), pieces, infos, deduites: new Map(), vus: new Set(), histo: [], presents: null, f: 0, r: 0, h: 0, fPrec: null, couvert: false });
       }
     }
@@ -914,6 +923,12 @@ const SUIVI = (() => {
     };
     etat.resume = resume;
     etat.cleResume = cle;
+    // V6.8.2 : les lignes collées (pas dans l'extraction), sauf celles déjà dans un lancement ou dans l'extraction.
+    for (const c of etat.collees) {
+      if (lancees.has(c.k) || der.parCle.has(c.k)) continue;
+      horsDetail.push({ r: ligneDeCollee(c), n: Number(c.n), partiel: false, k: c.k, nAjout: Number(c.n), collee: c });
+    }
+    etat.lanceesCalcul = lancees;
     etat.horsDetail = horsDetail.sort((a, b) => (a.r[1] || 0) * 100 + (a.r[0] || 0) - ((b.r[1] || 0) * 100 + (b.r[0] || 0)) || String(a.r[2]).localeCompare(String(b.r[2])) || Number(a.r[3]) - Number(b.r[3]));
     etat.horsLancements = lancees.size;
     return resume;
@@ -1295,10 +1310,94 @@ const SUIVI = (() => {
     const v = champBrut(r, ...noms);
     return v === null || v === undefined ? "" : String(v).trim();
   };
+  // ---------- V6.8.2 : lignes collées (copiées de Diakonos), pour les pièces qui ne sont pas dans l'extraction ----------
+  // Cas réel : les pièces Trigano (articles TRI-…) ne passent pas par le chemin standard des lancements ; certaines ne
+  // sont pas encore dans l'extraction. Format collé (tabulations, comme une copie de Diakonos ou d'Excel) :
+  // commande, ligne, catalogue, article, désignation, longueur, largeur, épaisseur, quantité, code coloris, coloris.
+  const ENTETE_COLLEE = ["Commande", "Ligne", "Catalogue", "Article", "Désignation", "Longueur", "Largeur", "Epaisseur", "Qte", "Code Coloris", "Coloris"];
+  function ligneDeCollee(c) {
+    const brut = [c.commande, c.ligne, c.catalogue, c.article, c.designation, c.L, c.l, c.e, Number(c.n), c.coloris, c.colorisNom];
+    return [null, null, c.commande, String(c.ligne), c.catalogue || "(sans catalogue)", Number(c.n), Number(c.n), "", "", "", c.coloris || "", brut, ENTETE_COLLEE];
+  }
+  function lireLignesCollees(texte) {
+    const lignes = [];
+    const refus = [];
+    const nombre = (t) => {
+      const v = String(t ?? "").replace(/[\s\u00a0\u202f]/g, "").replace(",", ".");
+      return /^\d+(\.\d+)?$/.test(v) ? Number(v) : null;
+    };
+    String(texte || "")
+      .split(/\r?\n/)
+      .forEach((brut, i) => {
+        if (!brut.trim()) return;
+        let t = brut.split("\t").map((x) => x.trim());
+        if (t.length < 6) t = brut.split(";").map((x) => x.trim());
+        const iCmd = t.findIndex((x) => /^CVC[0-9A-Z]{5,}$/i.test(x));
+        if (iCmd < 0) {
+          refus.push(`ligne ${i + 1} : pas de n° de commande (CVC + 8 chiffres)`);
+          return;
+        }
+        const commande = t[iCmd].toUpperCase();
+        const ligne = nombre(t[iCmd + 1]);
+        // Après la désignation : longueur, largeur, épaisseur, quantité (nombres), puis code coloris et coloris.
+        const nums = [];
+        let j = iCmd + 5;
+        for (; j < t.length && nums.length < 4; j++) {
+          const v = nombre(t[j]);
+          if (v !== null) nums.push(v);
+        }
+        if (!Number.isInteger(ligne) || nums.length < 4 || !Number.isInteger(nums[3]) || nums[3] < 1) {
+          refus.push(`ligne ${i + 1} (${commande}) : il faut ligne, longueur, largeur, épaisseur et quantité`);
+          return;
+        }
+        lignes.push({ k: cleLigne(commande, String(ligne)), commande, ligne: String(ligne), catalogue: t[iCmd + 2] || "", article: t[iCmd + 3] || "", designation: t[iCmd + 4] || "",
+          L: nums[0], l: nums[1], e: nums[2], n: nums[3], coloris: (t[j] || "").toUpperCase(), colorisNom: t[j + 1] || "", quand: new Date().toISOString() });
+      });
+    return { lignes, refus };
+  }
+  function ajouterLignesCollees() {
+    const { lignes, refus } = lireLignesCollees(etat.texteColle);
+    const der = etat.extractions[etat.extractions.length - 1];
+    const lancees = etat.lanceesCalcul || new Set();
+    let n = 0;
+    const deja = [];
+    for (const c of lignes) {
+      if (lancees.has(c.k)) {
+        deja.push(`${c.commande} l.${c.ligne} : déjà dans un lancement`);
+        continue;
+      }
+      if (der && der.parCle.has(c.k)) {
+        deja.push(`${c.commande} l.${c.ligne} : déjà dans la liste (extraction)`);
+        continue;
+      }
+      etat.collees = etat.collees.filter((x) => x.k !== c.k);
+      etat.collees.push(c);
+      n++;
+    }
+    ecrireLocal(CLE_COLLEES, etat.collees);
+    etat.colleesRev++;
+    if (n) {
+      etat.texteColle = "";
+      etat.horsSemaine = "collees";
+    }
+    const morceaux = [n ? `✔ ${n} ligne${n > 1 ? "s" : ""} ajoutée${n > 1 ? "s" : ""} à la liste : cochez-les et choisissez le lancement` : "Aucune ligne ajoutée", ...deja, ...refus];
+    etat.horsMessage = { genre: n && !refus.length ? "bon" : "alerte", texte: morceaux.join(" ; ") };
+    afficher();
+  }
+  function retirerCollee(k) {
+    etat.collees = etat.collees.filter((x) => x.k !== k);
+    etat.horsCoches.delete(k);
+    ecrireLocal(CLE_COLLEES, etat.collees);
+    etat.colleesRev++;
+    afficher();
+  }
+
   function horsFiltres() {
     const q = sansAccents(etat.horsRecherche || "");
     return (etat.horsDetail || []).filter((x) => {
-      if (etat.horsSemaine && `${x.r[1]}-${x.r[0]}` !== etat.horsSemaine) return false;
+      if (etat.horsSemaine === "collees") {
+        if (!x.collee) return false;
+      } else if (etat.horsSemaine && `${x.r[1]}-${x.r[0]}` !== etat.horsSemaine) return false;
       if (!q) return true;
       return sansAccents([x.r[2], x.r[3], x.r[4], x.r[7], x.r[8], x.r[10], texteBrut(x.r, "article"), texteBrut(x.r, "designation"), texteBrut(x.r, "coloris"), texteBrut(x.r, "groupement")].join(" ")).includes(q);
     });
@@ -1315,6 +1414,7 @@ const SUIVI = (() => {
     const tout = etat.horsDetail;
     const parSem = new Map();
     for (const x of tout) {
+      if (x.collee) continue;
       const id = `${x.r[1]}-${x.r[0]}`;
       const g = parSem.get(id) || { id, annee: x.r[1], semaine: x.r[0], pieces: 0, lignes: 0 };
       g.pieces += x.n;
@@ -1322,16 +1422,18 @@ const SUIVI = (() => {
       parSem.set(id, g);
     }
     const semaines = [...parSem.values()].sort((a, b) => (a.annee || 0) * 100 + (a.semaine || 0) - ((b.annee || 0) * 100 + (b.semaine || 0)));
-    if (etat.horsSemaine && !parSem.has(etat.horsSemaine)) etat.horsSemaine = "";
+    const nbCollees = tout.filter((x) => x.collee).reduce((t, x) => t + x.n, 0);
+    if (etat.horsSemaine && !parSem.has(etat.horsSemaine) && !(etat.horsSemaine === "collees" && nbCollees)) etat.horsSemaine = "";
     const liste = horsFiltres();
     const total = liste.reduce((t, x) => t + x.n, 0);
     const puces = [`<button type="button" class="sv-puce${etat.horsSemaine ? "" : " actif"}" data-sv-hors-sem="">Toutes · ${fmt(tout.reduce((t, x) => t + x.n, 0))}</button>`]
       .concat(semaines.map((g) => `<button type="button" class="sv-puce${etat.horsSemaine === g.id ? " actif" : ""}" data-sv-hors-sem="${echapper(g.id)}">S${g.semaine || "?"} · ${fmt(g.pieces)}</button>`))
+      .concat(nbCollees ? [`<button type="button" class="sv-puce${etat.horsSemaine === "collees" ? " actif" : ""}" data-sv-hors-sem="collees">Collées · ${fmt(nbCollees)}</button>`] : [])
       .join("");
     const dims = (r) => [texteBrut(r, "longueur"), texteBrut(r, "largeur"), texteBrut(r, "epaisseur")].filter(Boolean).join(" × ");
     const lignes = liste
       .map(
-        (x) => `<tr class="sv-hors-ligne"><td><input type="checkbox" data-sv-hors-coche="${echapper(x.k)}"${etat.horsCoches.has(x.k) ? " checked" : ""} aria-label="Cocher"></td><td>S${x.r[0] || "?"}</td><td><strong>${echapper(x.r[2])}</strong></td><td class="nombre">${echapper(x.r[3])}</td><td>${echapper(x.r[4])}</td>
+        (x) => `<tr class="sv-hors-ligne"><td><input type="checkbox" data-sv-hors-coche="${echapper(x.k)}"${etat.horsCoches.has(x.k) ? " checked" : ""} aria-label="Cocher"></td><td>${x.collee ? `<span class="pale">collée</span><div><button type="button" class="texte" data-sv-collee-retirer="${echapper(x.k)}">Retirer</button></div>` : `S${x.r[0] || "?"}`}</td><td><strong>${echapper(x.r[2])}</strong></td><td class="nombre">${echapper(x.r[3])}</td><td>${echapper(x.r[4])}</td>
         <td>${echapper(texteBrut(x.r, "article"))}<div class="pale">${echapper(texteBrut(x.r, "designation"))}</div></td>
         <td class="nombre"><strong>${fmt(x.n)}</strong>${x.partiel ? `<div class="pale">en plus du lancement${x.proprio ? ` ${echapper(x.proprio.nom)}` : ""}</div>` : ""}</td><td class="nombre">${echapper(dims(x.r))}</td>
         <td>${echapper(x.r[10] || "")}<div class="pale">${echapper(texteBrut(x.r, "coloris"))}</div></td><td>${echapper(x.r[7])}</td><td>${echapper(x.r[8])}</td><td>${echapper(texteBrut(x.r, "groupement"))}</td></tr>`
@@ -1353,7 +1455,11 @@ const SUIVI = (() => {
       <div class="note">Cochez des lignes, puis choisissez un lancement, ou « Nouveau lancement » en lui donnant le nom que vous voulez. Un nouveau lancement entre dans la bibliothèque et compte comme un lancement normal (suivi, vues, téléphone, recherche) ; dans un lancement existant, les pièces comptent dans son suivi. Aucun fichier de lancement n'est créé ni modifié. Une ligne « en plus du lancement » va toujours dans le lancement qui a déjà la pièce.</div>
       <div class="note">${fmt(liste.length)} ligne${liste.length > 1 ? "s" : ""}, ${fmt(total)} pièce${total > 1 ? "s" : ""}${etat.horsSemaine ? ` en semaine ${echapper(etat.horsSemaine.split("-")[1])}` : ""}.</div>
       <div class="defile"><table class="sv-table sv-hors"><thead><tr><th><input type="checkbox" id="svHorsTout" title="Tout cocher" aria-label="Tout cocher"></th><th>Sem.</th><th>Commande</th><th class="nombre">Ligne</th><th>Catalogue</th><th>Article</th><th class="nombre">Pièces</th><th class="nombre">Dimensions</th><th>Coloris</th><th>Transporteur</th><th>Ville</th><th>Groupement</th></tr></thead>
-      <tbody>${lignes || '<tr><td colspan="12" class="pale">Rien ne correspond.</td></tr>'}</tbody></table></div>` : `<div class="sv-message">✔ Toutes les pièces de l'extraction sont dans un lancement.</div>`}${htmlRajouts()}</div>`;
+      <tbody>${lignes || '<tr><td colspan="12" class="pale">Rien ne correspond.</td></tr>'}</tbody></table></div>` : `<div class="sv-message">✔ Toutes les pièces de l'extraction sont dans un lancement.</div>${etat.horsMessage ? `<div class="sv-message ${etat.horsMessage.genre}">${echapper(etat.horsMessage.texte)}</div>` : ""}`}
+      <details class="sv-coller"${etat.texteColle || !tout.length ? " open" : ""}><summary>Coller des lignes (pièces qui ne sont pas dans l'extraction, ex. Trigano)</summary>
+        <div class="note">Copiez les lignes dans Diakonos ou Excel (commande, ligne, catalogue, article, désignation, longueur, largeur, épaisseur, quantité, code coloris, coloris) et collez-les ici. Elles s'ajoutent à la liste ci-dessus : cochez-les, puis choisissez un lancement ou « Nouveau lancement » (ex. LAN2648TRIGANO). Elle compte comme les autres : à faire si elle est dans le suivi de production, faite si elle n'y est pas.</div>
+        <textarea id="svColler" rows="4" spellcheck="false" placeholder="CVC26100002&#9;1&#9;Stratifié&#9;TRI-229532-H1242&#9;2114 X 600 X 29 MM&#9;2 114&#9;600&#9;29&#9;15&#9;H1242-ST10&#9;Acacia Sheffield Naturel">${echapper(etat.texteColle || "")}</textarea>
+        <div class="sv-hors-outils"><button type="button" id="svCollerLire">Ajouter à la liste</button></div></details>${htmlRajouts()}</div>`;
   }
 
   // V6.7.3 : la liste des lancements où compter des pièces (la semaine choisie d'abord, puis les plus récentes).
@@ -1550,7 +1656,9 @@ const SUIVI = (() => {
     const quand = new Date().toISOString();
     const nouvelId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${etat.rajouts.length}`;
     const rajout = (x, c, partiel) =>
-      etat.rajouts.push({ id: nouvelId(), sid: c.sid, lancement: c.cle, nom: c.nom, semaine: c.semaine, k: x.k, commande: x.r[2], ligne: x.r[3], n: x.nAjout, coloris: x.r[10] || "", partiel, quand });
+      etat.rajouts.push({ id: nouvelId(), sid: c.sid, lancement: c.cle, nom: c.nom, semaine: c.semaine, k: x.k, commande: x.r[2], ligne: x.r[3], n: x.nAjout, coloris: x.r[10] || "", partiel, quand,
+        ...(x.collee ? { collee: true, donnees: x.collee } : {}) });
+    const colleesAjoutees = new Set(coches.filter((x) => x.collee && !x.partiel).map((x) => x.k));
     let n = 0;
     let surplus = 0;
     let suivi = false;
@@ -1581,9 +1689,10 @@ const SUIVI = (() => {
         n++;
       }
       const nbPieces = pieces.reduce((t, p) => t + (Number(p[iQ]) || 0), 0);
+      const collees = [...new Set([...((existant && existant.collees) || []), ...versBibliotheque.filter((x) => x.collee).map((x) => x.k)])];
       const fiche = existant
-        ? { ...existant, pieces, nbPieces }
-        : { nom: cible.nom, fichier: "", poste: cible.poste, dossier: "Créé dans Sentinelle", casse: false, manuel: true, creeLe: quand, fichiers: {}, recap: null, controle: null, problemes: [], plans: null, nbPieces, pieces };
+        ? { ...existant, pieces, nbPieces, collees }
+        : { nom: cible.nom, fichier: "", poste: cible.poste, dossier: "Créé dans Sentinelle", casse: false, manuel: true, creeLe: quand, fichiers: {}, recap: null, controle: null, problemes: [], plans: null, nbPieces, pieces, collees };
       await archiverLancements([{ annee: w ? w.annee : cible.annee, semaine: w ? w.semaine : cible.semaine, lancement: fiche }]);
       etat.horsLancement = `${cible.sid}|${cible.cle}`;
       etat.horsNomNouveau = "";
@@ -1592,6 +1701,11 @@ const SUIVI = (() => {
     if (suivi) {
       ecrireLocal(CLE_RAJOUTS, etat.rajouts);
       etat.rajoutsRev++;
+    }
+    if (colleesAjoutees.size) {
+      etat.collees = etat.collees.filter((c) => !colleesAjoutees.has(c.k));
+      ecrireLocal(CLE_COLLEES, etat.collees);
+      etat.colleesRev++;
     }
     if (!n && !surplus) return;
     const morceaux = [];
@@ -1609,7 +1723,18 @@ const SUIVI = (() => {
     const pieces = (l.pieces || []).filter((p) => p[0] !== k);
     if (pieces.length === l.pieces.length) return;
     const iQ = COLONNES_PIECES_BIBLIOTHEQUE.indexOf("pieces");
-    if (pieces.length) await archiverLancements([{ annee: w.annee, semaine: w.semaine, lancement: { ...l, pieces, nbPieces: pieces.reduce((t, p) => t + (Number(p[iQ]) || 0), 0) } }]);
+    if ((l.collees || []).includes(k)) {
+      // Pièce collée (pas dans l'extraction) : elle revient dans les lignes collées, sinon elle disparaîtrait.
+      const cols = w.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
+      const p = l.pieces.find((x) => x[0] === k);
+      const v = (nom) => (cols.indexOf(nom) >= 0 ? p[cols.indexOf(nom)] : "");
+      etat.collees = etat.collees.filter((x) => x.k !== k);
+      etat.collees.push({ k, commande: String(v("commande")), ligne: String(v("ligne")), catalogue: "", article: String(v("article") || ""), designation: "", L: v("longueur"), l: v("largeur"), e: v("epaisseur"), n: Number(v("pieces")) || 1, coloris: String(v("coloris") || ""), colorisNom: "", quand: new Date().toISOString() });
+      ecrireLocal(CLE_COLLEES, etat.collees);
+      etat.colleesRev++;
+    }
+    const resteCollees = (l.collees || []).filter((x) => x !== k);
+    if (pieces.length) await archiverLancements([{ annee: w.annee, semaine: w.semaine, lancement: { ...l, pieces, nbPieces: pieces.reduce((t, p) => t + (Number(p[iQ]) || 0), 0), collees: resteCollees } }]);
     else await retirerLancementBibliotheque(w.id, l.nom);
     etat.horsMessage = null;
     apresChangementInclus();
@@ -1619,14 +1744,32 @@ const SUIVI = (() => {
     const w = bibliotheque.semaines.get(cleL.slice(0, i));
     const l = w ? lancementsActifs(w).find((x) => x.manuel && cleNomLancement(x.nom) === cleL.slice(i + 1)) : null;
     if (!l || !window.confirm(`Supprimer le lancement ${l.nom} (semaine ${w.semaine}) ? Ses pièces reviennent dans « Pas dans les lancements ».`)) return;
+    if ((l.collees || []).length) {
+      const cols = w.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
+      for (const p of l.pieces || []) {
+        if (!l.collees.includes(p[0])) continue;
+        const v = (nom) => (cols.indexOf(nom) >= 0 ? p[cols.indexOf(nom)] : "");
+        etat.collees = etat.collees.filter((x) => x.k !== p[0]);
+        etat.collees.push({ k: p[0], commande: String(v("commande")), ligne: String(v("ligne")), catalogue: "", article: String(v("article") || ""), designation: "", L: v("longueur"), l: v("largeur"), e: v("epaisseur"), n: Number(v("pieces")) || 1, coloris: String(v("coloris") || ""), colorisNom: "", quand: new Date().toISOString() });
+      }
+      ecrireLocal(CLE_COLLEES, etat.collees);
+      etat.colleesRev++;
+    }
     await retirerLancementBibliotheque(w.id, l.nom);
     etat.horsMessage = null;
     apresChangementInclus();
   }
   function retirerRajout(id) {
     const avant = etat.rajouts.length;
-    etat.rajouts = etat.rajouts.filter((a) => a.id !== id);
+    const a = etat.rajouts.find((x) => x.id === id);
+    etat.rajouts = etat.rajouts.filter((x) => x.id !== id);
     if (etat.rajouts.length === avant) return;
+    if (a && a.collee && a.donnees) {
+      etat.collees = etat.collees.filter((x) => x.k !== a.k);
+      etat.collees.push(a.donnees);
+      ecrireLocal(CLE_COLLEES, etat.collees);
+      etat.colleesRev++;
+    }
     ecrireLocal(CLE_RAJOUTS, etat.rajouts);
     etat.rajoutsRev++;
     apresChangementInclus();
@@ -1636,7 +1779,19 @@ const SUIVI = (() => {
   async function exporterHors() {
     const liste = horsFiltres();
     if (!liste.length) return;
-    const entete = (liste.find((x) => x.r[12]) || {}).r?.[12] || null;
+    // Les colonnes du fichier de suivi (celles de l'extraction), même si on n'exporte que des lignes collées.
+    const derniere = etat.extractions[etat.extractions.length - 1];
+    const entete =
+      ((etat.horsDetail || []).find((x) => x.r[12] && !x.collee) || {}).r?.[12] ||
+      (derniere && derniere.lignes.length && derniere.lignes[0][12]) ||
+      (liste.find((x) => x.collee) || {}).r?.[12] ||
+      null;
+    const valeurCollee = (x, h) => {
+      const n = sansAccents(h);
+      if (n === "qtelancement" || n === "qteencours") return x.n;
+      const v = champBrut(x.r, n);
+      return v === undefined ? null : v;
+    };
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet("Pas dans les lancements");
     const jaune = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFF00" } };
@@ -1644,7 +1799,8 @@ const SUIVI = (() => {
       ws.addRow(entete.map((v) => (v === null || v === undefined ? "" : v)));
       for (const x of liste) {
         const brut = x.r[11] || [];
-        ws.addRow(entete.map((_, i) => (brut[i] === undefined ? null : brut[i])));
+        if (x.collee && entete !== x.r[12]) ws.addRow(entete.map((h) => valeurCollee(x, h)));
+        else ws.addRow(entete.map((_, i) => (brut[i] === undefined ? null : brut[i])));
       }
     } else {
       ws.addRow(["Semaine", "Commande", "Ligne", "Catalogue", "Qte Lancement", "Qte en cours", "Transporteur", "Ville", "Code Coloris"]);
@@ -1769,6 +1925,13 @@ const SUIVI = (() => {
       });
     if (q("svHorsSemNouveau")) q("svHorsSemNouveau").addEventListener("change", (e) => (etat.horsSemNouveau = e.target.value));
     if (q("svHorsPosteNouveau")) q("svHorsPosteNouveau").addEventListener("change", (e) => (etat.horsPosteNouveau = e.target.value));
+    if (q("svColler")) q("svColler").addEventListener("input", (e) => (etat.texteColle = e.target.value));
+    if (q("svCollerLire"))
+      q("svCollerLire").addEventListener("click", () => {
+        etat.texteColle = q("svColler").value;
+        ajouterLignesCollees();
+      });
+    page.querySelectorAll("[data-sv-collee-retirer]").forEach((b) => b.addEventListener("click", () => retirerCollee(b.dataset.svColleeRetirer)));
     page.querySelectorAll("[data-sv-manuel-retirer]").forEach((b) => b.addEventListener("click", () => retirerPieceManuelle(b.dataset.svManuelRetirer, b.dataset.k)));
     page.querySelectorAll("[data-sv-manuel-supprimer]").forEach((b) => b.addEventListener("click", () => supprimerLancementManuel(b.dataset.svManuelSupprimer)));
     if (q("svHorsAjouter"))
