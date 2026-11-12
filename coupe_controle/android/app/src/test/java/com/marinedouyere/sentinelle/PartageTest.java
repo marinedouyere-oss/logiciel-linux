@@ -963,6 +963,7 @@ public class PartageTest {
         for (String o : new String[] {MainActivity.ONGLET_SEMAINE, MainActivity.ONGLET_CONTROLE, MainActivity.ONGLET_PLANS, MainActivity.ONGLET_SUIVI, MainActivity.ONGLET_STOCK}) {
             a.allerA(o);
             ShadowLooper.idleMainLooper();
+            capturerSiDemande(a, "reel_" + o + ".png");
         }
         assertTrue(ecran(a), ecran(a).contains("tous affichés"));
     }
