@@ -660,6 +660,13 @@
   .pl-saisie { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
   .pl-saisie input[type="text"] { flex: 1 1 150px; min-width: 120px; }
   .pl-saisie input[type="number"] { width: 70px; }
+  /* V6.7.2 : suivi — pas dans les lancements */
+  .sv-puces { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  .sv-puce { border-radius: 999px; padding: 4px 12px; font-weight: 700; font-size: 0.88rem; background: var(--gris-clair); color: var(--noir); border: 1px solid transparent; cursor: pointer; }
+  .sv-puce.actif { background: #fff200; border-color: #c9b800; }
+  .sv-hors-outils { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+  .sv-hors-outils input { flex: 1 1 260px; }
+  .sv-hors tr.sv-hors-ligne td { background: #fff7a6; }
   /* V6.7 : claustras */
   .cl-champs { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 6px 0; }
   .cl-champ { display: flex; flex-direction: column; font-size: 0.78rem; color: var(--gris); font-weight: 700; }

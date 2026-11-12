@@ -238,6 +238,17 @@ La page « Strats : panneaux et restes » range les codes en ordre croissant, le
 975, 982, 1047-PF, 1049…) puis les codes en lettres (RCB…) ; Cut Rite les trie comme du texte (891 à 982 après 1138).
 `ordreCodeStrat` dans `04d_sommaire.js`.
 
+### Suivi : pièces « Pas dans les lancements » (V6.7.2, `07i_suivi_production.js`)
+
+Dans Suivi de production (PC, extraction chargée sur le poste), une carte liste chaque pièce de **production** de la
+dernière extraction Diakonos (Qte en cours > 0) qui n'est dans **aucun fichier de lancement** de la bibliothèque, plus
+le surplus d'une pièce lancée quand Diakonos en a plus en cours que le lancement (« en plus du lancement »). Mêmes
+nombres que les lignes « Pas dans un lancement » des barres. Fournitures, Dibond et résine ne sont pas listés : ils ne
+passent jamais par les fichiers de lancement. Puces par semaine de livraison, recherche, et export Excel au format du
+fichier de suivi : `lignesExtraction` garde la ligne brute et l'en-tête du fichier (index 11 et 12), l'export les
+recopie tels quels, lignes en jaune. Le calcul remplit `etat.horsDetail` ; affichage `htmlHors`, export `exporterHors`.
+Contrôlé sur l'extraction du 12/11/2026 et les 7 lancements S48 : 15 lignes, 78 pièces, comme le relevé à la main.
+
 ### Claustras : saisie automatique depuis les confirmations de commande (V6.7, `06k_claustras.js`)
 
 - **Source** : les confirmations de commande (PDF) d'un dossier (« Lire un dossier de confirmations… », sous-dossiers
@@ -384,6 +395,8 @@ node outils/test_web.js ../web/index.html <…dossiers semaine…>
 node outils/test_web_suivi.js ../web/index.html <Semaine 47> <LAN…48.xlsx> <extraction.xlsx> <ref.json> <python> <fabriquer_extraction.py> <sortie> [capture] [Semaine 46]
 # Comptage du suivi en direct (autonome, données fabriquées) :
 node outils/test_web_comptage.js ../web/index.html
+# Pièces « Pas dans les lancements » (autonome, extraction inventée) :
+node outils/test_web_hors_lancement.js ../web/index.html <sortie>
 # Stock (autonome, fichier fabriqué) + page du rapport (optionnel : une vraie sauvegarde .bkp) :
 node outils/test_web_stock.js ../web/index.html <sortie> [LAN…backup.bkp]
 # Suivi en direct (autonome, données anonymes générées) :

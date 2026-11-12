@@ -193,7 +193,8 @@ const SUIVI = (() => {
   const perimetreDe = (catalogue) => (/r[ée]sine/i.test(catalogue) ? "resine" : /fourniture|dibond/i.test(catalogue) ? "fournitures" : "production");
 
   // Les lignes de l'extraction, en tableaux courts : [semaine, année, commande, ligne, catalogue, qté lancement,
-  // qté en cours, transporteur, ville, n° de lancement Diakonos, code coloris].
+  // qté en cours, transporteur, ville, n° de lancement Diakonos, code coloris, ligne brute du fichier, en-tête du fichier]
+  // (V6.7.2 : la ligne brute et l'en-tête servent à la liste « Pas dans les lancements » et à son export Excel).
   function lignesExtraction(feuilles, date) {
     const courante = semaineIso(date);
     const txt = (v) => (v === null || v === undefined ? "" : String(v).trim());
@@ -217,7 +218,7 @@ const SUIVI = (() => {
         const commande = txt(get("commande")) || "(sans commande)";
         const annee = sem ? sem.annee || anneeDeLaSemaine(sem.semaine, commande, courante) : null;
         lignes.push([sem ? sem.semaine : null, annee, commande, txt(get("ligne")), txt(get("catalogue")) || "(sans catalogue)", num(get("qteLanc")), num(get("qteCours")),
-          txt(get("transporteur")) || txt(get("codeTransp")) || "(sans transporteur)", txt(get("ville")), txt(get("lancement")), txt(get("coloris"))]);
+          txt(get("transporteur")) || txt(get("codeTransp")) || "(sans transporteur)", txt(get("ville")), txt(get("lancement")), txt(get("coloris")), l, brutes[iEntete]]);
       }
     }
     if (!lue) throw new Error("colonnes « Semaine » et « Commande » introuvables : est-ce bien l'extraction « Suivi production » de Diakonos ?");
@@ -600,6 +601,7 @@ const SUIVI = (() => {
     // n'est dans aucun lancement scanné ; cas réel : CVC26100973 ligne 6, deux lignes Diakonos de 2, une seule pièce
     // dans le lancement). Le surplus compte « à faire » dans « Pas dans un lancement » de sa semaine de livraison : aucune
     // pièce en cours dans Diakonos n'est oubliée, et la barre du lancement reste juste.
+    const horsDetail = []; // V6.7.2 : { r, n, partiel } — la liste « Pas dans les lancements »
     if (etat.inclus.production) {
       const dejaR = new Map(); // pièce → à faire déjà compté (tous lancements)
       for (const L of lancements) if (L.detail) for (const [k, [, rk]] of L.detail) dejaR.set(k, (dejaR.get(k) || 0) + rk);
@@ -609,6 +611,7 @@ const SUIVI = (() => {
         if (!lancees.has(k) || !r0[0] || !r0[1] || perimetreDe(r0[4]) !== "production") continue;
         const surplus = Math.max(0, Math.max(0, v.cours) - (direct.get(k) || 0) - (dejaR.get(k) || 0));
         if (!surplus) continue;
+        horsDetail.push({ r: v.lignes[v.lignes.length - 1], n: surplus, partiel: true });
         const annee = r0[1];
         const semaine = Number(r0[0]);
         const id = idSemaine(annee, semaine);
@@ -694,6 +697,8 @@ const SUIVI = (() => {
       const { cle: cs, libelle } = libelleCle(r[0], r[1], fab);
       colonnes.set(cs, libelle);
       if (!dansLancement.has(cleLigne(r[2], r[3]))) {
+        // Seulement la production : fournitures, Dibond et résine ne passent jamais par les fichiers de lancement.
+        if (r[6] > 0 && perimetreDe(r[4]) === "production") horsDetail.push({ r, n: r[6], partiel: false });
         const x = hors.get(cs) || { libelle, pieces: 0, lignes: 0, commandes: new Set() };
         x.pieces += r[6];
         x.lignes++;
@@ -865,6 +870,8 @@ const SUIVI = (() => {
     };
     etat.resume = resume;
     etat.cleResume = cle;
+    etat.horsDetail = horsDetail.sort((a, b) => (a.r[1] || 0) * 100 + (a.r[0] || 0) - ((b.r[1] || 0) * 100 + (b.r[0] || 0)) || String(a.r[2]).localeCompare(String(b.r[2])) || Number(a.r[3]) - Number(b.r[3]));
+    etat.horsLancements = lancees.size;
     return resume;
   }
 
@@ -1228,12 +1235,97 @@ const SUIVI = (() => {
       <div class="note">Somme de « Qté en cours » de toute l'extraction du ${echapper(jourLong(resume.jour))} (lancements ou pas), comme dans Excel : pour contrôler avec Diakonos.</div></div>`;
   }
 
-  function htmlHors(resume) {
-    if (!resume.hors || !resume.hors.length) return "";
-    return `<div class="carte"><div class="carte-titre">Dans Diakonos, dans aucun lancement</div>
-      <div class="note">Pièces de l'extraction qui ne sont dans aucun lancement de la bibliothèque (pas encore lancées, ou lancement pas scanné). Les pièces de production sont comptées dans le suivi, ligne « Pas dans un lancement » de leur semaine.</div>
+  // V6.7.2 : « Pas dans les lancements » — toutes les lignes de la dernière extraction (ce qui est compté : production,
+  // et fournitures / résine si cochées) dont la pièce (commande + ligne) n'est dans aucun fichier de lancement de la
+  // bibliothèque, plus le surplus d'une pièce lancée (Diakonos en a plus en cours que le lancement). Fond jaune ; filtre
+  // par semaine de livraison et recherche ; export Excel avec les colonnes du fichier de suivi, lignes en jaune.
+  const champBrut = (r, ...noms) => {
+    if (!r[11] || !r[12]) return null;
+    const i = r[12].findIndex((v) => noms.includes(sansAccents(v)));
+    return i < 0 ? null : r[11][i];
+  };
+  const texteBrut = (r, ...noms) => {
+    const v = champBrut(r, ...noms);
+    return v === null || v === undefined ? "" : String(v).trim();
+  };
+  function horsFiltres() {
+    const q = sansAccents(etat.horsRecherche || "");
+    return (etat.horsDetail || []).filter((x) => {
+      if (etat.horsSemaine && `${x.r[1]}-${x.r[0]}` !== etat.horsSemaine) return false;
+      if (!q) return true;
+      return sansAccents([x.r[2], x.r[3], x.r[4], x.r[7], x.r[8], x.r[10], texteBrut(x.r, "article"), texteBrut(x.r, "designation"), texteBrut(x.r, "coloris"), texteBrut(x.r, "groupement")].join(" ")).includes(q);
+    });
+  }
+
+  function htmlHors(resume, local) {
+    if (!local || !etat.horsDetail) {
+      if (!resume.hors || !resume.hors.length) return "";
+      return `<div class="carte"><div class="carte-titre">Pas dans les lancements</div>
+      <div class="note">Pièces de l'extraction qui ne sont dans aucun lancement de la bibliothèque (pas encore lancées, ou lancement pas scanné). Chargez l'extraction sur ce PC pour en voir la liste.</div>
       <table class="sv-table"><thead><tr><th>Semaine Diakonos</th><th class="nombre">Pièces à faire</th><th class="nombre">Lignes</th><th class="nombre">Commandes</th></tr></thead>
       <tbody>${resume.hors.map((h) => `<tr><td>${echapper(h[0])}</td><td class="nombre">${fmt(h[1])}</td><td class="nombre">${fmt(h[2])}</td><td class="nombre">${fmt(h[3])}</td></tr>`).join("")}</tbody></table></div>`;
+    }
+    const tout = etat.horsDetail;
+    const parSem = new Map();
+    for (const x of tout) {
+      const id = `${x.r[1]}-${x.r[0]}`;
+      const g = parSem.get(id) || { id, annee: x.r[1], semaine: x.r[0], pieces: 0, lignes: 0 };
+      g.pieces += x.n;
+      g.lignes++;
+      parSem.set(id, g);
+    }
+    const semaines = [...parSem.values()].sort((a, b) => (a.annee || 0) * 100 + (a.semaine || 0) - ((b.annee || 0) * 100 + (b.semaine || 0)));
+    if (etat.horsSemaine && !parSem.has(etat.horsSemaine)) etat.horsSemaine = "";
+    const liste = horsFiltres();
+    const total = liste.reduce((t, x) => t + x.n, 0);
+    const puces = [`<button type="button" class="sv-puce${etat.horsSemaine ? "" : " actif"}" data-sv-hors-sem="">Toutes · ${fmt(tout.reduce((t, x) => t + x.n, 0))}</button>`]
+      .concat(semaines.map((g) => `<button type="button" class="sv-puce${etat.horsSemaine === g.id ? " actif" : ""}" data-sv-hors-sem="${echapper(g.id)}">S${g.semaine || "?"} · ${fmt(g.pieces)}</button>`))
+      .join("");
+    const dims = (r) => [texteBrut(r, "longueur"), texteBrut(r, "largeur"), texteBrut(r, "epaisseur")].filter(Boolean).join(" × ");
+    const lignes = liste
+      .map(
+        (x) => `<tr class="sv-hors-ligne"><td>S${x.r[0] || "?"}</td><td><strong>${echapper(x.r[2])}</strong></td><td class="nombre">${echapper(x.r[3])}</td><td>${echapper(x.r[4])}</td>
+        <td>${echapper(texteBrut(x.r, "article"))}<div class="pale">${echapper(texteBrut(x.r, "designation"))}</div></td>
+        <td class="nombre"><strong>${fmt(x.n)}</strong>${x.partiel ? `<div class="pale">en plus du lancement</div>` : ""}</td><td class="nombre">${echapper(dims(x.r))}</td>
+        <td>${echapper(x.r[10] || "")}<div class="pale">${echapper(texteBrut(x.r, "coloris"))}</div></td><td>${echapper(x.r[7])}</td><td>${echapper(x.r[8])}</td><td>${echapper(texteBrut(x.r, "groupement"))}</td></tr>`
+      )
+      .join("");
+    return `<div class="carte" id="svHors"><div class="carte-titre">Pas dans les lancements</div>
+      <div class="note">Les pièces de production de l'extraction du ${echapper(jourLong(resume.jour))} qui ne sont dans <strong>aucun fichier de lancement</strong> de la bibliothèque : pas encore lancées, lancement pas encore scanné, ou plus de pièces en cours dans Diakonos que dans le lancement. Toutes sont listées. Fournitures, Dibond et résine ne passent pas par les fichiers de lancement : pas listés.</div>
+      ${tout.length ? `<div class="sv-puces">${puces}</div>
+      <div class="sv-hors-outils"><input type="search" id="svHorsRecherche" placeholder="Chercher : commande, article, coloris, transporteur…" value="${echapper(etat.horsRecherche || "")}" autocomplete="off">
+        <button type="button" id="svHorsExport">Exporter en Excel (format du fichier de suivi)</button></div>
+      <div class="note">${fmt(liste.length)} ligne${liste.length > 1 ? "s" : ""}, ${fmt(total)} pièce${total > 1 ? "s" : ""}${etat.horsSemaine ? ` en semaine ${echapper(etat.horsSemaine.split("-")[1])}` : ""}.</div>
+      <div class="defile"><table class="sv-table sv-hors"><thead><tr><th>Sem.</th><th>Commande</th><th class="nombre">Ligne</th><th>Catalogue</th><th>Article</th><th class="nombre">Pièces</th><th class="nombre">Dimensions</th><th>Coloris</th><th>Transporteur</th><th>Ville</th><th>Groupement</th></tr></thead>
+      <tbody>${lignes || '<tr><td colspan="11" class="pale">Rien ne correspond.</td></tr>'}</tbody></table></div>` : `<div class="sv-message">✔ Toutes les pièces de l'extraction sont dans un lancement.</div>`}</div>`;
+  }
+
+  // Export : les colonnes du fichier de suivi Diakonos (en-tête de l'extraction), seulement les lignes de la liste, en jaune.
+  async function exporterHors() {
+    const liste = horsFiltres();
+    if (!liste.length) return;
+    const entete = (liste.find((x) => x.r[12]) || {}).r?.[12] || null;
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet("Pas dans les lancements");
+    const jaune = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFFFF00" } };
+    if (entete) {
+      ws.addRow(entete.map((v) => (v === null || v === undefined ? "" : v)));
+      for (const x of liste) {
+        const brut = x.r[11] || [];
+        ws.addRow(entete.map((_, i) => (brut[i] === undefined ? null : brut[i])));
+      }
+    } else {
+      ws.addRow(["Semaine", "Commande", "Ligne", "Catalogue", "Qte Lancement", "Qte en cours", "Transporteur", "Ville", "Code Coloris"]);
+      for (const x of liste) ws.addRow([x.r[0], x.r[2], Number(x.r[3]) || x.r[3], x.r[4], x.r[5], x.r[6], x.r[7], x.r[8], x.r[10]]);
+    }
+    ws.getRow(1).font = { bold: true };
+    for (let i = 2; i <= ws.rowCount; i++) ws.getRow(i).eachCell({ includeEmpty: true }, (c) => (c.fill = jaune));
+    ws.columns.forEach((c) => (c.width = 14));
+    ws.views = [{ state: "frozen", ySplit: 1 }];
+    const octets = new Uint8Array(await wb.xlsx.writeBuffer());
+    const jour = String((etat.resume && etat.resume.jour) || "").replace(/-/g, "");
+    const nom = `pas_dans_les_lancements_${jour}${etat.horsSemaine ? `_S${etat.horsSemaine.split("-")[1]}` : ""}.xlsx`;
+    telecharger(nom, octets, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   }
 
   function htmlExtractions() {
@@ -1264,7 +1356,7 @@ const SUIVI = (() => {
         <div class="sv-legende"><span><i class="sv-l-en_cours"></i>En cours</span><span><i class="sv-l-termine"></i>Terminé</span><span><i class="sv-l-retard"></i>En retard (semaine passée)</span><span><i class="sv-l-attente"></i>Pas dans cette extraction</span></div>
         ${resume.semaines.length ? resume.semaines.map((s) => htmlSemaine(s, resume)).join("") : '<div class="note">Aucun lancement dans la bibliothèque des semaines autour de cette extraction : scannez les semaines dans « Contrôler la coupe ».</div>'}
         ${resume.anciennes ? `<div class="note">${pluriel(resume.anciennes, "semaine plus ancienne : finie", "semaines plus anciennes : finies")}.</div>` : ""}</div>`;
-      html += htmlHors(resume);
+      html += htmlHors(resume, Boolean(local));
       html += htmlTableau(resume, Boolean(local));
     }
     html += htmlExtractions();
@@ -1279,6 +1371,26 @@ const SUIVI = (() => {
         if (window.confirm("Remettre à zéro le suivi en direct ? Les pièces reviendront à l'état de la dernière extraction (les nouvelles validations seront de nouveau comptées).") && typeof reinitialiserValidations === "function") reinitialiserValidations();
       });
     q("svDossier").addEventListener("click", choisirDossier);
+    page.querySelectorAll("[data-sv-hors-sem]").forEach((b) =>
+      b.addEventListener("click", () => {
+        etat.horsSemaine = b.dataset.svHorsSem;
+        afficher();
+        const c = page.querySelector("#svHors");
+        if (c) c.scrollIntoView({ block: "start" });
+      })
+    );
+    if (q("svHorsRecherche"))
+      q("svHorsRecherche").addEventListener("input", (e) => {
+        etat.horsRecherche = e.target.value;
+        const pos = e.target.selectionStart;
+        afficher();
+        const c = page.querySelector("#svHorsRecherche");
+        if (c) {
+          c.focus();
+          c.setSelectionRange(pos, pos);
+        }
+      });
+    if (q("svHorsExport")) q("svHorsExport").addEventListener("click", () => exporterHors());
     if (q("svActualiser")) q("svActualiser").addEventListener("click", () => lireDossier(true));
     q("svFichier").addEventListener("click", () => q("svChampFichier").click());
     q("svChampFichier").addEventListener("change", (e) => chargerFichiers(e.target.files));
