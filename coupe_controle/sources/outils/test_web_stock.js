@@ -27,6 +27,9 @@ const FICHIER = [
   ligne("X3988/260911065549-0014", 1, "9002", "2620.0", "930.0", "0.8", 0, "STRAT ESSAI GRIS", 0, 1, "6027(1)"),
   // V6.5.7 : panneaux entiers réservés pour un lancement, rangés dans la case 302 (cas réel du 1063 le 12/11 : 48 − 3 = 45).
   ligne("9003_4100_1300", 48, "9003", "4100.0", "1300.0", "0.8", 0, "STRAT ESSAI HAMILTON 4100*1310", 1, 0, "302(3) 1042(21) 1043(24)", "STRAT"),
+  // V6.5.8 : un coloris à zéro (cas réel du 1136, seul le 1136-PF a du stock) reste dans la liste.
+  ligne("9004_4110_2060", 0, "9004", "4110.0", "2060.0", "0.7", 0, "STRAT ESSAI CASELLA 4110*2060", 1, 0, ""),
+  ligne("9004_5_2790_2060", 14, "9004-PF", "2790.0", "2060.0", "0.8", 0, "STRAT ESSAI CASELLA 2790*2060", 1, 0, "7107(14)"),
   ligne("SAGTEST_4150_2070", 34, "SAGTEST", "4150.0", "2070.0", "38.0", 0, "AGGLO ESSAI 38MM", 0, 0, "1205(10) 1206(24)"),
   // Liste d'emplacements coupée dans le fichier (« 1005(11 » sans parenthèse) : la quantité reste juste.
   ligne("CAISSE_4290_1690", 55, "CAISSE", "4290", "1690", "19", 0, "CAISSE ESSAI", 0, 0, "1000(10) 1001(11) 1002(11) 1003(6) 1004(6) 1005(11"),
@@ -66,7 +69,7 @@ const FICHIER = [
     };
   }, FICHIER);
   console.log(JSON.stringify(lu));
-  verifier(lu.nbMat === 5, `5 matériaux lus (${lu.nbMat})`);
+  verifier(lu.nbMat === 7, `7 matériaux lus (${lu.nbMat})`);
   verifier(JSON.stringify(lu.r302) === "[45,3,0]", `case 302 : 48 en stock, 3 réservés pour un lancement → 45 panneaux disponibles (${lu.r302})`);
   verifier(lu.entiers === 21 && lu.dispo === 1 && lu.reservees === 1, `9001 : 21 panneaux entiers, 1 chute disponible, 1 réservée (statut 2) — stock réel = stock − réservé`);
   verifier(lu.chutesListees === 2, `chute sortie (quantité 0) écartée`);
@@ -82,6 +85,18 @@ const FICHIER = [
   const texte = await page.locator("#pageStock").innerText();
   verifier(/1 chutes? réservées?/.test(texte) && /chutes disponibles/.test(texte), `page : chutes disponibles et réservées à part`);
   verifier(/3 panneaux réservés/.test(texte) && /case 302/.test(texte), `page : panneaux entiers réservés (case 302) comptés à part`);
+  // Coloris à zéro : affiché par défaut ; case « avec du stock seulement » : caché, sauf son code tapé en entier.
+  await page.fill("#champStock", "9004");
+  const a0 = await page.$$eval("#pageStock tr.stk-ligne", (trs) => trs.map((tr) => tr.dataset.stkMat).join(" "));
+  await page.check("#caseAvecStock");
+  await page.fill("#champStock", "900");
+  const coche = await page.$$eval("#pageStock tr.stk-ligne", (trs) => trs.map((tr) => tr.dataset.stkMat).join(" "));
+  await page.fill("#champStock", "9004");
+  const exact = await page.$$eval("#pageStock tr.stk-ligne", (trs) => trs.map((tr) => tr.dataset.stkMat).join(" "));
+  await page.uncheck("#caseAvecStock");
+  verifier(a0 === "9004 9004-PF", `coloris à zéro affiché par défaut avec son PF (${a0})`);
+  verifier(!/9004\b(?!-)/.test(coche.replace("9004-PF", "")) && /9004-PF/.test(coche), `case cochée : le coloris à zéro est caché (${coche})`);
+  verifier(/^9004\b/.test(exact), `case cochée, code tapé en entier : affiché quand même (${exact})`);
   await page.fill("#champStock", "9003");
   const ligne9003 = await page.locator('tr[data-stk-mat="9003"]').innerText();
   await page.click('tr[data-stk-mat="9003"]');
@@ -148,7 +163,7 @@ const FICHIER = [
     envoyerPaquetLien = vrai;
     const canalAncien = (await secretsLien("AAAA-BBBB-CCCC-DDDD")).canal;
     return {
-      stock: Boolean(s && s.formats.length === 9),
+      stock: Boolean(s && s.formats.length === 11),
       f9001: f9001 && f9001[1] === 21 && f9001[6] === 9 && f9001[11] === "1041(9) 1042(12)",
       reservee: reservee && reservee[9] === 1,
       signature: signatureStock() !== "",

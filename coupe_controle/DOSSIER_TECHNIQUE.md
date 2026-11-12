@@ -27,7 +27,7 @@ Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
 (`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
 (imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
 
-Version courante : **6.5.7** (le PC et l'APK partagent le même numéro ; l'agent suit).
+Version courante : **6.5.8** (le PC et l'APK partagent le même numéro ; l'agent suit).
 
 ### Glossaire métier
 
@@ -181,6 +181,9 @@ Activité par poste et bouton « Réinitialiser » : `htmlBandeauValidations()` 
   pour un lancement à débiter), 15 emplacements `case(qté) case(qté)` (liste parfois coupée par
   woodStore : la dernière parenthèse peut manquer), 17 famille.
 - **Règle** : stock réel = stock − réservé. Les chutes réservées sont comptées et listées à part.
+- **Liste (6.5.8)** : tous les matériaux par défaut, même à zéro (cas du 1136 à zéro, seul le 1136-PF en stock : il
+  n'apparaissait pas). La case « avec du stock seulement » n'est plus cochée d'office ; cochée, un code tapé en
+  entier s'affiche quand même.
 - **Panneaux entiers réservés (6.5.7)** : woodStore range les panneaux entiers réservés pour un lancement
   dans la **case 302** (`CASES_RESERVATION`). Cas réel du 12/11 : 1063 = `302(3) 1042(21) 1043(24)` = 48
   en stock, **45** disponibles. Par format : `reserve` (case 302, jamais plus que la quantité) et

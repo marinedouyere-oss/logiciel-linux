@@ -102,7 +102,8 @@ final class EcranStock {
     private String recherche = "";
     private boolean lettres = false;
     /** Comme sur le PC : « avec du stock seulement » (cochée au départ). */
-    private boolean avecStock = true;
+    /** V6.5.8 : tous les matériaux par défaut, même à zéro (comme sur le PC). */
+    private boolean avecStock = false;
     private String famille = "tous";
     private String tri = "entiers";
     private int sens = -1;
@@ -274,7 +275,7 @@ final class EcranStock {
         List<Materiau> res = new ArrayList<>();
         for (Materiau m : tous) {
             if (!"tous".equals(famille) && !famille.equals(m.famille)) continue;
-            if (avecStock && m.entiers + m.entiersReserves + m.chutes + m.reservees == 0) continue;
+            if (avecStock && m.entiers + m.entiersReserves + m.chutes + m.reservees == 0 && !(!q.isEmpty() && m.mat.toUpperCase(Locale.FRANCE).equals(q))) continue;
             if (!q.isEmpty() && !m.mat.toUpperCase(Locale.FRANCE).contains(q) && !m.desc.toUpperCase(Locale.FRANCE).contains(q)) continue;
             res.add(m);
         }

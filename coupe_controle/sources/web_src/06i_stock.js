@@ -23,7 +23,8 @@ function reserveEnCase(emplacements, qte) {
 }
 
 const stock = {
-  donnees: null, lu: false, recherche: "", famille: "tous", avecStock: true, ouvert: null, erreur: null,
+  // V6.5.8 : tous les matériaux par défaut, même à zéro (le 1136 sans stock n'apparaissait pas, seul le 1136-PF).
+  donnees: null, lu: false, recherche: "", famille: "tous", avecStock: false, ouvert: null, erreur: null,
   // Tri choisi en cliquant sur les en-têtes de colonnes (sens : 1 croissant, -1 décroissant).
   tri: { liste: { col: "entiers", sens: -1 }, entiers: { col: "qte", sens: -1 }, chutes: { col: "taille", sens: -1 } },
 };
@@ -369,7 +370,8 @@ function materiauxFiltres(d) {
   const q = stock.recherche.trim().toUpperCase();
   const liste = d.materiaux
     .filter((m) => stock.famille === "tous" || m.famille === stock.famille)
-    .filter((m) => !stock.avecStock || m.nbEntiers + m.nbEntiersReserves + m.nbChutes + m.nbReservees > 0)
+    // Le code tapé en entier s'affiche toujours, même à zéro et la case « avec du stock seulement » cochée.
+    .filter((m) => !stock.avecStock || m.nbEntiers + m.nbEntiersReserves + m.nbChutes + m.nbReservees > 0 || (q && m.mat.toUpperCase() === q))
     .filter((m) => !q || m.mat.toUpperCase().includes(q) || m.desc.toUpperCase().includes(q))
     .sort((a, b) => comparerTexteFr(a.mat, b.mat));
   const res = trierStock(liste, "liste");

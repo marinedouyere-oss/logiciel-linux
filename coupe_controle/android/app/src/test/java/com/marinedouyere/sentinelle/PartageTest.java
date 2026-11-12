@@ -850,10 +850,11 @@ public class PartageTest {
                 + "[\"XLAN264601STRAT_9001/0002\",1,\"9001\",2000,620,0.8,0,\"STRAT ESSAI CHENE\",1,1,\"strat\",\"5986(1)\",\"LAN264601STRAT (semaine 46)\",0],"
                 + "[\"XLAN260202_9001/0003\",0,\"9001\",1800,600,0.8,0,\"\",1,1,\"strat\",\"\",\"\",0],"
                 + "[\"9003_4100_1300\",48,\"9003\",4100,1310,0.8,0,\"STRAT ESSAI HAMILTON\",1,0,\"strat\",\"302(3) 1042(21) 1043(24)\",\"\",0],"
+                + "[\"9004_4110_2060\",0,\"9004\",4110,2060,0.7,0,\"STRAT ESSAI CASELLA\",1,0,\"strat\",\"\",\"\",0],"
                 + "[\"SAGTEST_4150_2070\",34,\"SAGTEST\",4150,2070,38,0,\"AGGLO ESSAI 38MM\",0,0,\"agglo\",\"1205(10) 1206(24)\",\"\",0]]}}";
         FichierPartage f = FichierPartage.lire(new ByteArrayInputStream(gzip(json)));
         assertNotNull(f.stock);
-        assertEquals(6, f.stock.formats.size());
+        assertEquals(7, f.stock.formats.size());
         List<EcranStock.Materiau> ms = EcranStock.materiaux(f.stock);
         EcranStock.Materiau m = null;
         for (EcranStock.Materiau x : ms) if ("9001".equals(x.mat)) m = x;
@@ -879,6 +880,7 @@ public class PartageTest {
         assertTrue(texte, texte.contains("Stock des panneaux"));
         assertTrue(texte, texte.contains("Chutes réservées"));
         assertTrue(texte, texte.contains("Stock réel = stock − réservé"));
+        assertTrue("V6.5.8 : un coloris à zéro reste dans la liste (cas du 1136)", texte.contains("9004"));
         assertTrue("matériau sans stock caché", !texte.contains("SAGTEST") || texte.contains("34"));
         // Ouvrir 9001 : Limite 9, cases, chute réservée.
         View ligne = vueAvecTexte(a.getWindow().getDecorView(), "9001");
