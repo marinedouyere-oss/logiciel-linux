@@ -105,7 +105,13 @@ function avertissementSommaire(s) {
 }
 
 const aggloSommaire = (s) => s.materiaux.filter(estAggloMateriau);
-const stratsSommaire = (s) => s.materiaux.filter((m) => !estAggloMateriau(m));
+// V6.7.1 : strats rangés par code croissant, les nombres comme des nombres (891, 941, 975, 982, 1047-PF, 1049…) ; Cut Rite
+// les trie comme du texte (891 à 982 après 1138). Les codes en lettres (PROTECTION, RCB…) à la fin.
+const ordreCodeStrat = (a, b) => {
+  const [lA, lB] = [/^\d/.test(a.code) ? 0 : 1, /^\d/.test(b.code) ? 0 : 1];
+  return lA - lB || String(a.code).localeCompare(String(b.code), "fr", { numeric: true, sensitivity: "base" });
+};
+const stratsSommaire = (s) => s.materiaux.filter((m) => !estAggloMateriau(m)).sort(ordreCodeStrat);
 const couleursFeuilleSommaire = (s) => COULEURS_FEUILLE.map((c) => s.materiaux.find((m) => m.code === c)).filter(Boolean);
 const couleursAbsentesSommaire = (s) => COULEURS_FEUILLE.filter((c) => !s.materiaux.some((m) => m.code === c));
 // Hors gamme : couleur dont le code commence par une lettre (le contrebalancement RCB n'en est pas une).

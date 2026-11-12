@@ -1,6 +1,7 @@
 // Sommaire Cut Rite avec un panneau à zéro dont les quantités ne sont pas imprimées : le sommaire se lit
 // (panneau compté 0, signalé), et le rapport du lancement sort même avec un sommaire illisible.
 // Code matériau avec un tiret bas (RCB_0003_PORTES, 0 panneau et 1 reste) : lu, totaux comme Cut Rite.
+// V6.7.1 : la page Strats du rapport range les codes en ordre croissant (891 avant 1047).
 // Usage : node test_web_sommaire_zero.js <index.html> <SOMMAIRE…pdf> [<SOMMAIRE LAN264701STRAT.pdf de la S47>]
 const { chromium } = require("playwright"); const fs = require("fs");
 const [pageHtml, pdf, pdfS47] = process.argv.slice(2);
@@ -10,6 +11,9 @@ let echecs = 0; const verifier = (ok, t) => { console.log(`${ok ? "OK  " : "ÉCH
   page.on("pageerror", (e) => { console.log("ERREUR JS:", e.message); echecs++; });
   await page.route("https://s.test/**", (r) => r.fulfill({ status: 200, body: fs.readFileSync(pageHtml), headers: { "content-type": "text/html; charset=utf-8" } }));
   await page.goto("https://s.test/index.html");
+  // V6.7.1 : strats par code croissant, les nombres comme des nombres (Cut Rite met 891 à 982 après 1138).
+  const ordre = await page.evaluate(() => stratsSommaire({ materiaux: ["1138", "891", "RCB-CRED14", "1047-PF", "982", "1047", "RCB", "941", "1063"].map((code) => ({ code, description: "STRAT ESSAI Epaisseur 0.8", panneaux: 1, restes: 1 })) }).map((m) => m.code).join(" "));
+  verifier(ordre === "891 941 982 1047 1047-PF 1063 1138 RCB RCB-CRED14", `strats par code croissant (${ordre})`);
   const r = await page.evaluate(async (o) => {
     const lignes = await extraireLignesTextePDF(await chargerDocumentPDF(new File([new Uint8Array(o)], "SOMMAIRE.pdf")));
     const normal = lireSommaireCutRite(lignes);

@@ -27,7 +27,7 @@ Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
 (`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
 (imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
 
-Version courante : **6.7.0** (le PC et l'APK partagent le même numéro ; l'agent suit).
+Version courante : **6.7.1** (le PC et l'APK partagent le même numéro ; l'agent suit).
 
 ### Glossaire métier
 
@@ -231,6 +231,12 @@ Activité par poste et bouton « Réinitialiser » : `htmlBandeauValidations()` 
   / 1,8). Comparé au **stock réel** (sans chutes réservées ni case 302) : OK (≤ 85 %), juste, il manque ≈ N panneaux
   (rouge si Limite 0 « Cut Rite ne pourra pas tout placer », orange si Limite 9 « à commander »), pas dans woodStore.
   C'est une estimation : l'optimisation réelle reste celle de Cut Rite.
+
+### Rapport du lancement : strats par code croissant (V6.7.1)
+
+La page « Strats : panneaux et restes » range les codes en ordre croissant, les nombres comme des nombres (891, 941,
+975, 982, 1047-PF, 1049…) puis les codes en lettres (RCB…) ; Cut Rite les trie comme du texte (891 à 982 après 1138).
+`ordreCodeStrat` dans `04d_sommaire.js`.
 
 ### Claustras : saisie automatique depuis les confirmations de commande (V6.7, `06k_claustras.js`)
 
