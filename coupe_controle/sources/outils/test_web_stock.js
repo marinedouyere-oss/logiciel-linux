@@ -91,6 +91,25 @@ const FICHIER = [
   const memo = await page.evaluate(() => Boolean(JSON.parse(localStorage.getItem("sentinelle-stock") || "null")));
   verifier(memo, `dernier fichier gardé en mémoire`);
 
+  // Tous les matériaux sont affichés (aucune limite : le vrai fichier en a 326 avec du stock).
+  const tous = await page.evaluate((lignes) => {
+    const memo = stock.donnees;
+    stock.donnees = { ...lireFichierStock(lignes.join("\r\n")), nom: "gros.bdx", modifie: Date.now(), charge: Date.now() };
+    stock.recherche = "";
+    stock.famille = "tous";
+    afficherStock();
+    const n = document.querySelectorAll("#pageStock tr.stk-ligne").length;
+    const vieilles = document.querySelectorAll("#pageStock .stk-puce-mat").length;
+    stock.donnees = memo;
+    afficherStock();
+    return { n, vieilles };
+  }, Array.from({ length: 150 }, (_, i) => [
+    [`M${1000 + i}_4100_1300`, 3, `M${1000 + i}`, "4100.0", "1300.0", "0.8", "100.000", "0", "", `STRAT ESSAI ${i}`, "0", "0", "", "0.000", "0", "1041(3)", "", "STRAT", "", ""].join(","),
+    [`X3988/250101065549-${i}`, 1, `M${1000 + i}`, "1000.0", "500.0", "0.8", "100.000", "0", "", "", "0", "0", "", "0.000", "1", "6027(1)", "", "", "", ""].join(","),
+  ]).flat());
+  verifier(tous.n === 150, `liste : les 150 matériaux affichés, sans limite (${tous.n})`);
+  verifier(tous.vieilles === 150, `chutes qui dorment : toutes listées, sans limite (${tous.vieilles})`);
+
   // 3. V6.5.1 : le stock part au téléphone (fichier partagé), le PC voit si le téléphone a lu le dernier envoi,
   // et un nouveau code prévient le téléphone resté sur l'ancien.
   const lien = await page.evaluate(async () => {

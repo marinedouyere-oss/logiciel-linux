@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.5.2 — Contrôle de coupe</title>
+<title>Sentinelle V6.5.3 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -682,7 +682,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.5.2</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.5.3</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -794,7 +794,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.5.2 · Contrôle de coupe</span>
+    <span>Sentinelle V6.5.3 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -6216,6 +6216,8 @@ function contenuFichierPartage() {
     format: FORMAT_PARTAGE,
     genere: new Date().toISOString(),
     par: `${document.title.split(" — ")[0]} (page web)`,
+    // V6.5.3 : le PC qui envoie (plusieurs PC peuvent partager le même code).
+    poste: typeof lienTelephone !== "undefined" && lienTelephone.poste ? lienTelephone.poste : "",
     colonnesPieces: COLONNES_PIECES_BIBLIOTHEQUE,
     explications: Object.fromEntries(PROBLEMES.map(([type, sens, queFaire]) => [type, { sens, queFaire }])),
     semaines,
@@ -7981,6 +7983,86 @@ async function diagnosticLien(secrets) {
   }
 }
 
+const signatureEnvoi = () =>
+  signaturePartage([...bibliotheque.semaines.values()], typeof suiviPourPartage === "function" ? suiviPourPartage() : null, typeof retourPourPartage === "function" ? retourPourPartage() : null) +
+  `|stock:${typeof signatureStock === "function" ? signatureStock() : ""}`;
+
+// ---- V6.5.3 : plusieurs PC sur le même code (bureau, maison…) ----
+// Le site garde le dernier envoi. Si un AUTRE PC l'a publié, ses semaines sont fusionnées dans notre bibliothèque
+// (comme le fichier partagé du Drive : lancement par lancement, le plus récent), avec son suivi et son stock s'ils sont
+// plus récents. Le prochain envoi contient alors les lancements des deux PC : le téléphone a tout.
+async function reprendreDuSite(secrets) {
+  const etat = etatLienTelephone();
+  if (!etat || !etat.code) return 0;
+  const api = `${ADRESSE_LIEN_TELEPHONE}/api/partage?canal=${secrets.canal}`;
+  const r = await demandeLien(api, { method: "GET" }, 20000);
+  if (!r.ok) return 0; // rien sur le site (404) ou site injoignable : on continue
+  const m = JSON.parse(r.texte);
+  if (!m || !m.version || m.version === etat.version || m.version === etat.versionReprise || !(m.parties >= 1 && m.parties <= 60)) return 0;
+  const parties = [];
+  for (let i = 0; i < m.parties; i++) parties.push(await partieRetour(`${api}&version=${m.version}&partie=${i}`));
+  const paquet = new Uint8Array(parties.reduce((t, p) => t + p.length, 0));
+  let k = 0;
+  for (const p of parties) {
+    paquet.set(p, k);
+    k += p.length;
+  }
+  const contenu = await dechiffrerPaquetLien(secrets.cle, paquet);
+  let recues = 0;
+  if (contenu && Array.isArray(contenu.semaines) && !contenu.lien) {
+    for (const d of contenu.semaines) {
+      if (!d || !d.id || !Array.isArray(d.lancements)) continue;
+      const locale = bibliotheque.semaines.get(d.id) || null;
+      const fusion = fusionnerSemaines(locale ? { ...locale } : null, d);
+      if (!locale || signatureSemaine(fusion) !== signatureSemaine(locale)) {
+        await enregistrerSemaineLocale(fusion);
+        recues++;
+      }
+    }
+    if (typeof SUIVI !== "undefined" && contenu.suiviProduction) SUIVI.recevoir(contenu.suiviProduction);
+    if (typeof recevoirRetourDistant === "function") recevoirRetourDistant(contenu.retourTelephone);
+    if (typeof recevoirStockDistant === "function") recevoirStockDistant(contenu.stock);
+  }
+  ecrireLienTelephone({ ...etatLienTelephone(), versionReprise: m.version, repriseLe: new Date().toISOString(), repriseDe: String((contenu && contenu.poste) || "") });
+  if (recues) {
+    bibliotheque.generation++;
+    bibliotheque.index = null;
+    lienTelephone.recuesDuSite = (lienTelephone.recuesDuSite || 0) + recues;
+  }
+  return recues;
+}
+
+// Toutes les 2 minutes (page ouverte) : ce qu'un autre PC a publié revient ici ; s'il y a du nouveau, on renvoie
+// l'ensemble au téléphone.
+async function synchroniserAvecLeSite() {
+  const etat = etatLienTelephone();
+  if (!etat || !etat.code || lienTelephone.envoi || lienTelephone.synchro) return 0;
+  lienTelephone.synchro = true;
+  try {
+    const n = await reprendreDuSite(await secretsLien(etat.code));
+    if (n) {
+      changementBibliotheque();
+      if (typeof afficher === "function") afficher();
+    }
+    return n;
+  } catch (_e) {
+    return 0;
+  } finally {
+    lienTelephone.synchro = false;
+  }
+}
+
+// Le nom de ce PC (donné par Sentinelle.exe) : le téléphone dit de quel PC viennent ses données.
+async function chargerNomPoste() {
+  if (!servieParLExe()) return;
+  try {
+    const r = await fetch("/sentinelle/poste", { headers: { "X-Sentinelle": "lien" }, cache: "no-store" });
+    if (r.ok) lienTelephone.poste = (await r.text()).trim().slice(0, 60);
+  } catch (_e) {
+    // ancienne version du .exe
+  }
+}
+
 // Envoie la bibliothèque au téléphone si elle a changé depuis le dernier envoi (ou si forcer).
 function envoyerAuTelephone(forcer = false) {
   const etat = etatLienTelephone();
@@ -7990,9 +8072,7 @@ function envoyerAuTelephone(forcer = false) {
     return lienTelephone.envoi;
   }
   // Rien n'a changé depuis le dernier envoi réussi : rien à faire (et surtout rien qui reste « en cours »).
-  const signature =
-    signaturePartage([...bibliotheque.semaines.values()], typeof suiviPourPartage === "function" ? suiviPourPartage() : null, typeof retourPourPartage === "function" ? retourPourPartage() : null) +
-    `|stock:${typeof signatureStock === "function" ? signatureStock() : ""}`;
+  const signature = signatureEnvoi();
   if (!forcer && etat.signature === signature && !etat.erreur) return Promise.resolve({ ok: true, inchange: true });
   clearTimeout(lienTelephone.relance);
   const envoi = (async () => {
@@ -8003,6 +8083,10 @@ function envoyerAuTelephone(forcer = false) {
     try {
       etapeLien("préparation");
       secrets = await secretsLien(etat.code);
+      // V6.5.3 : un autre PC sur le même code a pu publier : ses lancements sont repris avant d'envoyer.
+      etapeLien("lecture du site");
+      await reprendreDuSite(secrets).catch(() => 0);
+      const signature = signatureEnvoi();
       const contenu = contenuFichierPartage();
       const paquet = await paquetChiffre(secrets.cle, await compresserJson(contenu));
       const version = await envoyerPaquetLien(secrets, paquet, contenu.genere);
@@ -8135,6 +8219,8 @@ function htmlLienTelephone() {
       </div>
       <div class="compte-rendu ${etat.erreur && !lienTelephone.envoi ? "erreur" : ""}" id="etatLien">${echapper(statut)}</div>
       ${htmlLectureTelephone(etat)}
+      ${etat.repriseLe ? `<div class="note">Lancements des autres PC sur ce code : relus sur le site ${echapper(date(etat.repriseLe))}${etat.repriseDe ? ` (dernier envoi de ${echapper(etat.repriseDe)})` : ""}${lienTelephone.recuesDuSite ? ` · ${lienTelephone.recuesDuSite} semaine(s) complétée(s)` : ""}.</div>` : ""}
+      ${lienTelephone.poste ? `<div class="note">Ce PC : <strong>${echapper(lienTelephone.poste)}</strong>. Un autre PC peut envoyer au même téléphone : tapez-y le même code (« Reprenez son code ») ; les lancements des deux PC sont mis en commun.</div>` : ""}
       ${htmlReprendreCode(false)}
       ${typeof htmlRetourTelephone === "function" ? htmlRetourTelephone() : ""}
       <div class="boutons-carte">
@@ -9306,9 +9392,14 @@ async function planDuTelephone(d) {
 
 function demarrerRetourTelephone() {
   lireRetourTelephone();
+  // V6.5.3 : ce qu'un autre PC a publié sur le même code (au démarrage, puis toutes les 2 minutes).
+  if (typeof synchroniserAvecLeSite === "function") synchroniserAvecLeSite();
+  let tour = 0;
   clearInterval(retourTelephone.minuteur);
   retourTelephone.minuteur = setInterval(() => {
-    if (!document.hidden) lireRetourTelephone();
+    if (document.hidden) return;
+    lireRetourTelephone();
+    if (++tour % 2 === 0 && typeof synchroniserAvecLeSite === "function") synchroniserAvecLeSite();
   }, DELAI_RETOUR_TELEPHONE_MS);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) lireRetourTelephone();
@@ -9751,10 +9842,16 @@ async function chargerFichierStock(fichier) {
 
 // V6.5.1 : le stock part aussi au téléphone, dans le fichier partagé, déjà lu (le téléphone n'a qu'à l'afficher).
 // Une ligne par format : [code, qté, matériau, L, l, ép., limite, désignation, fil, réservée, famille, cases, origine, depuis].
+// Le stock envoyé par un autre PC (lu sur le site) : gardé tel quel et renvoyé s'il est plus récent que le nôtre.
+let stockDistant = null;
+function recevoirStockDistant(s) {
+  if (s && Array.isArray(s.formats) && (!stockDistant || (s.charge || 0) > (stockDistant.charge || 0))) stockDistant = s;
+}
+
 function stockPourPartage() {
   lireStockMemoire();
   const d = stock.donnees;
-  if (!d) return null;
+  if (!d || (stockDistant && (stockDistant.charge || 0) > (d.charge || 0))) return stockDistant;
   return {
     nom: d.nom || "",
     modifie: d.modifie || 0,
@@ -9770,7 +9867,7 @@ function stockPourPartage() {
 // Change quand un autre fichier de stock est chargé (déclenche l'envoi au téléphone).
 function signatureStock() {
   lireStockMemoire();
-  return stock.donnees ? String(stock.donnees.charge || 0) : "";
+  return `${stock.donnees ? String(stock.donnees.charge || 0) : ""}/${stockDistant ? stockDistant.charge || 0 : ""}`;
 }
 
 // Le stock d'un matériau (pour la simulation d'un lancement, plus tard).
@@ -9940,7 +10037,7 @@ function materiauxFiltres(d) {
   const q = stock.recherche.trim().toUpperCase();
   const liste = d.materiaux
     .filter((m) => stock.famille === "tous" || m.famille === stock.famille)
-    .filter((m) => !stock.avecStock || m.nbEntiers + m.nbChutes > 0)
+    .filter((m) => !stock.avecStock || m.nbEntiers + m.nbChutes + m.nbReservees > 0)
     .filter((m) => !q || m.mat.toUpperCase().includes(q) || m.desc.toUpperCase().includes(q))
     .sort((a, b) => comparerTexteFr(a.mat, b.mat));
   const res = trierStock(liste, "liste");
@@ -9950,10 +10047,9 @@ function materiauxFiltres(d) {
 }
 
 function htmlRechercheStock(d) {
+  // Tous les matériaux (aucune limite) : la liste défile.
   const liste = materiauxFiltres(d);
-  const MAX = 60;
   const lignes = liste
-    .slice(0, MAX)
     .map((m) => {
       const lim = m.limites.size === 1 ? puceLimite([...m.limites][0]) : m.limites.size ? '<span class="stk-lim">0 et 9</span>' : "";
       return `<tr class="stk-ligne${stock.ouvert === m.mat ? " visee" : ""}" data-stk-mat="${echapper(m.mat)}">
@@ -9969,7 +10065,7 @@ function htmlRechercheStock(d) {
     <div class="stk-filtres">${filtres}</div>
     <div class="defilement"><table class="fp-table"><thead><tr>${enteteTri("liste", "mat", "Matériau")}${enteteTri("liste", "desc", "Description", "stk-col-desc")}${enteteTri("liste", "entiers", '<span class="stk-long">Panneaux entiers</span><span class="stk-court">Entiers</span>', "d")}${enteteTri("liste", "chutes", "Chutes", "d")}${enteteTri("liste", "limite", '<span class="stk-long">Limite woodStore</span><span class="stk-court">Limite</span>')}</tr></thead>
       <tbody>${lignes || '<tr><td colspan="5" class="pale">Rien ne correspond.</td></tr>'}</tbody></table></div>
-    <div class="note">${nbFr(liste.length)} matériau${liste.length > 1 ? "x" : ""}${liste.length > MAX ? ` (les ${MAX} premiers affichés : précisez la recherche)` : ""} · cliquez sur une ligne pour le détail.</div></div>`;
+    <div class="note">${nbFr(liste.length)} matériau${liste.length > 1 ? "x" : ""}, tous affichés · cliquez sur une ligne pour le détail.</div></div>`;
 }
 
 function htmlMateriauStock(m) {
@@ -10013,8 +10109,9 @@ function htmlChutesQuiDorment(d) {
   if (!vieilles.length) return "";
   const parMat = new Map();
   for (const v of vieilles) parMat.set(v.m.mat, (parMat.get(v.m.mat) || 0) + v.f.qte);
-  const top = [...parMat.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
-  const plusVieilles = vieilles.sort((a, b) => b.j - a.j).slice(0, 5);
+  // Toutes (aucune limite) : par matériau, puis chaque chute, la plus vieille d'abord.
+  const top = [...parMat.entries()].sort((a, b) => b[1] - a[1]);
+  const plusVieilles = vieilles.sort((a, b) => b.j - a.j);
   return `<div class="carte"><div class="carte-titre">Chutes qui dorment</div>
     <p><strong>${nbFr(vieilles.reduce((t, v) => t + v.f.qte, 0))}</strong> chutes sont en stock depuis plus de 4 mois.</p>
     <div class="pl-puces">${top.map(([mat, n]) => `<button type="button" class="pl-puce stk-puce-mat" data-stk-mat="${echapper(mat)}">${echapper(mat)} · ${n}</button>`).join("")}</div>
@@ -13058,6 +13155,7 @@ document.querySelectorAll("img[data-logo]").forEach((img) => (img.src = img.data
   await rangerSemainesMemorisees();
   // V6.5.2 : le code de liaison gardé par Sentinelle.exe revient si le navigateur l'a perdu.
   await restaurerLienTelephone().catch(() => {});
+  await chargerNomPoste().catch(() => {});
   await chargerBibliotheque();
   await chargerReecriture().catch(() => {});
   afficher();

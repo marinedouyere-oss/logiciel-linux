@@ -165,6 +165,8 @@ final class FichierPartage {
     String par;
     /** V6.5.1 : « remplace » (le PC a pris un nouveau code de liaison) ou « arrete » (envoi arrêté) ; vide sinon. */
     String lien = "";
+    /** V6.5.3 : le nom du PC qui a envoyé (plusieurs PC peuvent partager le même code). */
+    String poste = "";
     /** V6.5.1 : le stock des panneaux (fichier woodStore chargé sur le PC) ; null : pas de fichier de stock. */
     Stock stock;
 
@@ -257,6 +259,7 @@ final class FichierPartage {
         f.genere = texte(racine, "genere");
         f.par = texte(racine, "par");
         f.lien = texte(racine, "lien");
+        f.poste = texte(racine, "poste");
         f.stock = stock(racine.optJSONObject("stock"));
         JSONArray colonnes = racine.optJSONArray("colonnesPieces");
         if (colonnes != null) for (int i = 0; i < colonnes.length(); i++) f.colonnes.add(colonnes.optString(i));

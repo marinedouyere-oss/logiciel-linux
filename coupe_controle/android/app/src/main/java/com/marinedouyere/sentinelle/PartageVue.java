@@ -933,7 +933,7 @@ final class PartageVue {
             String sous = "Code " + code;
             if (donnees != null) {
                 String quand = dateLisible(donnees.genere);
-                sous = "Données du PC du " + (quand.isEmpty() ? "?" : quand) + " · " + donnees.semaines.size() + " semaine(s)\n" + sous
+                sous = "Données du PC" + (donnees.poste.isEmpty() ? "" : " « " + donnees.poste + " »") + " du " + (quand.isEmpty() ? "?" : quand) + " · " + donnees.semaines.size() + " semaine(s)\n" + sous
                         + (donnees.par.isEmpty() ? "" : " · " + donnees.par);
             }
             LinearLayout etat = ui.ligne(point, enLecture ? "Lecture des données du PC…" : "✔ Relié au PC", sous, null, null, null);
@@ -1062,7 +1062,8 @@ final class PartageVue {
     private void ligneDonneesDuPc() {
         if (donnees == null || codeLien() == null) return;
         String quand = dateLisible(donnees.genere);
-        TextView t = ui.texte("Données du PC du " + (quand.isEmpty() ? "?" : quand) + (avertissement != null ? " · pas de connexion au site" : ""), 12, false, ui.couleur(R.color.gris_texte));
+        TextView t = ui.texte("Données du PC" + (donnees.poste.isEmpty() ? "" : " « " + donnees.poste + " »") + " du " + (quand.isEmpty() ? "?" : quand)
+                + (avertissement != null ? " · pas de connexion au site" : ""), 12, false, ui.couleur(R.color.gris_texte));
         racine.addView(t, ui.marges(0, 4));
     }
 

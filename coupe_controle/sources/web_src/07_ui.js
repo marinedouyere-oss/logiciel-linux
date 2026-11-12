@@ -2971,6 +2971,7 @@ document.querySelectorAll("img[data-logo]").forEach((img) => (img.src = img.data
   await rangerSemainesMemorisees();
   // V6.5.2 : le code de liaison gardé par Sentinelle.exe revient si le navigateur l'a perdu.
   await restaurerLienTelephone().catch(() => {});
+  await chargerNomPoste().catch(() => {});
   await chargerBibliotheque();
   await chargerReecriture().catch(() => {});
   afficher();

@@ -228,6 +228,86 @@ async function diagnosticLien(secrets) {
   }
 }
 
+const signatureEnvoi = () =>
+  signaturePartage([...bibliotheque.semaines.values()], typeof suiviPourPartage === "function" ? suiviPourPartage() : null, typeof retourPourPartage === "function" ? retourPourPartage() : null) +
+  `|stock:${typeof signatureStock === "function" ? signatureStock() : ""}`;
+
+// ---- V6.5.3 : plusieurs PC sur le même code (bureau, maison…) ----
+// Le site garde le dernier envoi. Si un AUTRE PC l'a publié, ses semaines sont fusionnées dans notre bibliothèque
+// (comme le fichier partagé du Drive : lancement par lancement, le plus récent), avec son suivi et son stock s'ils sont
+// plus récents. Le prochain envoi contient alors les lancements des deux PC : le téléphone a tout.
+async function reprendreDuSite(secrets) {
+  const etat = etatLienTelephone();
+  if (!etat || !etat.code) return 0;
+  const api = `${ADRESSE_LIEN_TELEPHONE}/api/partage?canal=${secrets.canal}`;
+  const r = await demandeLien(api, { method: "GET" }, 20000);
+  if (!r.ok) return 0; // rien sur le site (404) ou site injoignable : on continue
+  const m = JSON.parse(r.texte);
+  if (!m || !m.version || m.version === etat.version || m.version === etat.versionReprise || !(m.parties >= 1 && m.parties <= 60)) return 0;
+  const parties = [];
+  for (let i = 0; i < m.parties; i++) parties.push(await partieRetour(`${api}&version=${m.version}&partie=${i}`));
+  const paquet = new Uint8Array(parties.reduce((t, p) => t + p.length, 0));
+  let k = 0;
+  for (const p of parties) {
+    paquet.set(p, k);
+    k += p.length;
+  }
+  const contenu = await dechiffrerPaquetLien(secrets.cle, paquet);
+  let recues = 0;
+  if (contenu && Array.isArray(contenu.semaines) && !contenu.lien) {
+    for (const d of contenu.semaines) {
+      if (!d || !d.id || !Array.isArray(d.lancements)) continue;
+      const locale = bibliotheque.semaines.get(d.id) || null;
+      const fusion = fusionnerSemaines(locale ? { ...locale } : null, d);
+      if (!locale || signatureSemaine(fusion) !== signatureSemaine(locale)) {
+        await enregistrerSemaineLocale(fusion);
+        recues++;
+      }
+    }
+    if (typeof SUIVI !== "undefined" && contenu.suiviProduction) SUIVI.recevoir(contenu.suiviProduction);
+    if (typeof recevoirRetourDistant === "function") recevoirRetourDistant(contenu.retourTelephone);
+    if (typeof recevoirStockDistant === "function") recevoirStockDistant(contenu.stock);
+  }
+  ecrireLienTelephone({ ...etatLienTelephone(), versionReprise: m.version, repriseLe: new Date().toISOString(), repriseDe: String((contenu && contenu.poste) || "") });
+  if (recues) {
+    bibliotheque.generation++;
+    bibliotheque.index = null;
+    lienTelephone.recuesDuSite = (lienTelephone.recuesDuSite || 0) + recues;
+  }
+  return recues;
+}
+
+// Toutes les 2 minutes (page ouverte) : ce qu'un autre PC a publié revient ici ; s'il y a du nouveau, on renvoie
+// l'ensemble au téléphone.
+async function synchroniserAvecLeSite() {
+  const etat = etatLienTelephone();
+  if (!etat || !etat.code || lienTelephone.envoi || lienTelephone.synchro) return 0;
+  lienTelephone.synchro = true;
+  try {
+    const n = await reprendreDuSite(await secretsLien(etat.code));
+    if (n) {
+      changementBibliotheque();
+      if (typeof afficher === "function") afficher();
+    }
+    return n;
+  } catch (_e) {
+    return 0;
+  } finally {
+    lienTelephone.synchro = false;
+  }
+}
+
+// Le nom de ce PC (donné par Sentinelle.exe) : le téléphone dit de quel PC viennent ses données.
+async function chargerNomPoste() {
+  if (!servieParLExe()) return;
+  try {
+    const r = await fetch("/sentinelle/poste", { headers: { "X-Sentinelle": "lien" }, cache: "no-store" });
+    if (r.ok) lienTelephone.poste = (await r.text()).trim().slice(0, 60);
+  } catch (_e) {
+    // ancienne version du .exe
+  }
+}
+
 // Envoie la bibliothèque au téléphone si elle a changé depuis le dernier envoi (ou si forcer).
 function envoyerAuTelephone(forcer = false) {
   const etat = etatLienTelephone();
@@ -237,9 +317,7 @@ function envoyerAuTelephone(forcer = false) {
     return lienTelephone.envoi;
   }
   // Rien n'a changé depuis le dernier envoi réussi : rien à faire (et surtout rien qui reste « en cours »).
-  const signature =
-    signaturePartage([...bibliotheque.semaines.values()], typeof suiviPourPartage === "function" ? suiviPourPartage() : null, typeof retourPourPartage === "function" ? retourPourPartage() : null) +
-    `|stock:${typeof signatureStock === "function" ? signatureStock() : ""}`;
+  const signature = signatureEnvoi();
   if (!forcer && etat.signature === signature && !etat.erreur) return Promise.resolve({ ok: true, inchange: true });
   clearTimeout(lienTelephone.relance);
   const envoi = (async () => {
@@ -250,6 +328,10 @@ function envoyerAuTelephone(forcer = false) {
     try {
       etapeLien("préparation");
       secrets = await secretsLien(etat.code);
+      // V6.5.3 : un autre PC sur le même code a pu publier : ses lancements sont repris avant d'envoyer.
+      etapeLien("lecture du site");
+      await reprendreDuSite(secrets).catch(() => 0);
+      const signature = signatureEnvoi();
       const contenu = contenuFichierPartage();
       const paquet = await paquetChiffre(secrets.cle, await compresserJson(contenu));
       const version = await envoyerPaquetLien(secrets, paquet, contenu.genere);
@@ -382,6 +464,8 @@ function htmlLienTelephone() {
       </div>
       <div class="compte-rendu ${etat.erreur && !lienTelephone.envoi ? "erreur" : ""}" id="etatLien">${echapper(statut)}</div>
       ${htmlLectureTelephone(etat)}
+      ${etat.repriseLe ? `<div class="note">Lancements des autres PC sur ce code : relus sur le site ${echapper(date(etat.repriseLe))}${etat.repriseDe ? ` (dernier envoi de ${echapper(etat.repriseDe)})` : ""}${lienTelephone.recuesDuSite ? ` · ${lienTelephone.recuesDuSite} semaine(s) complétée(s)` : ""}.</div>` : ""}
+      ${lienTelephone.poste ? `<div class="note">Ce PC : <strong>${echapper(lienTelephone.poste)}</strong>. Un autre PC peut envoyer au même téléphone : tapez-y le même code (« Reprenez son code ») ; les lancements des deux PC sont mis en commun.</div>` : ""}
       ${htmlReprendreCode(false)}
       ${typeof htmlRetourTelephone === "function" ? htmlRetourTelephone() : ""}
       <div class="boutons-carte">

@@ -33,8 +33,6 @@ final class EcranStock {
     static final long JOUR = 86_400_000L;
     static final int STOCK_VIEUX_JOURS = 7;
     static final int CHUTE_DORT_JOURS = 120;
-    private static final int MAX_MATERIAUX = 60;
-    private static final int MAX_CHUTES = 40;
 
     /** Un matériau du stock (tous ses formats). */
     static final class Materiau {
@@ -101,6 +99,8 @@ final class EcranStock {
 
     private String recherche = "";
     private boolean lettres = false;
+    /** Comme sur le PC : « avec du stock seulement » (cochée au départ). */
+    private boolean avecStock = true;
     private String famille = "tous";
     private String tri = "entiers";
     private int sens = -1;
@@ -195,7 +195,17 @@ final class EcranStock {
             puces.addView(p, lp);
         }
         defile.addView(puces);
-        racine.addView(defile, ui.marges(2, 6));
+        racine.addView(defile, ui.marges(2, 2));
+        android.widget.CheckBox caseStock = new android.widget.CheckBox(activite);
+        caseStock.setText("Avec du stock seulement");
+        caseStock.setTextSize(14);
+        caseStock.setTypeface(ui.lato());
+        caseStock.setChecked(avecStock);
+        caseStock.setOnCheckedChangeListener((b, coche) -> {
+            avecStock = coche;
+            remplirListe();
+        });
+        racine.addView(caseStock, ui.marges(0, 4));
 
         MaterialCardView carte = ui.carte();
         LinearLayout c = corps(carte);
@@ -259,9 +269,8 @@ final class EcranStock {
         List<Materiau> res = new ArrayList<>();
         for (Materiau m : tous) {
             if (!"tous".equals(famille) && !famille.equals(m.famille)) continue;
-            if (q.isEmpty()) {
-                if (m.entiers + m.chutes + m.reservees == 0) continue; // sans stock : seulement si on le cherche
-            } else if (!m.mat.toUpperCase(Locale.FRANCE).contains(q) && !m.desc.toUpperCase(Locale.FRANCE).contains(q)) continue;
+            if (avecStock && m.entiers + m.chutes + m.reservees == 0) continue;
+            if (!q.isEmpty() && !m.mat.toUpperCase(Locale.FRANCE).contains(q) && !m.desc.toUpperCase(Locale.FRANCE).contains(q)) continue;
             res.add(m);
         }
         Comparator<Materiau> cmp;
@@ -298,12 +307,9 @@ final class EcranStock {
             liste.addView(ui.note(recherche.trim().isEmpty() ? "Aucun matériau dans cette famille." : "Aucun matériau ne correspond à « " + recherche.trim() + " »."), ui.marges(6, 4));
             return;
         }
-        int n = 0;
+        // Tous les matériaux, sans limite : la liste défile.
+        liste.addView(ui.note(res.size() + " matériau" + (res.size() > 1 ? "x" : "") + ", tous affichés · touchez une ligne pour le détail."), ui.marges(0, 4));
         for (Materiau m : res) {
-            if (n++ >= MAX_MATERIAUX) {
-                liste.addView(ui.note("… et " + (res.size() - MAX_MATERIAUX) + " autre(s) : précisez la recherche."), ui.marges(6, 0));
-                break;
-            }
             liste.addView(ui.filet());
             liste.addView(ligneMateriau(m));
             if (m.mat.equals(ouvert)) liste.addView(detail(m));
@@ -370,15 +376,8 @@ final class EcranStock {
     }
 
     private void ajouterChutes(LinearLayout d, Materiau m, boolean reservees) {
-        int n = 0;
-        int total = 0;
-        for (FichierPartage.FormatStock f : m.lesChutes) if (f.reservee == reservees) total++;
         for (FichierPartage.FormatStock f : m.lesChutes) {
             if (f.reservee != reservees) continue;
-            if (n++ >= MAX_CHUTES) {
-                d.addView(ui.note("… et " + (total - MAX_CHUTES) + " autre(s)."));
-                break;
-            }
             long jours = f.depuis > 0 ? (System.currentTimeMillis() - f.depuis) / JOUR : -1;
             String sous = (f.cases.isEmpty() ? "Case ?" : "Case " + cases(f.cases)) + (f.origine.isEmpty() ? "" : " · " + f.origine)
                     + (jours > CHUTE_DORT_JOURS && !f.reservee ? " · dort depuis " + jours + " j" : "");
@@ -402,12 +401,7 @@ final class EcranStock {
         LinearLayout c = corps(carte);
         c.addView(ui.titreCarte("Chutes qui dorment (" + vieilles.size() + ")"));
         c.addView(ui.note("En stock depuis plus de 4 mois : à utiliser en priorité, ou à sortir."));
-        int n = 0;
         for (Object[] x : vieilles) {
-            if (n++ >= 15) {
-                c.addView(ui.note("… et " + (vieilles.size() - 15) + " autre(s)."));
-                break;
-            }
             Materiau m = (Materiau) x[0];
             FichierPartage.FormatStock f = (FichierPartage.FormatStock) x[1];
             long jours = (maintenant - f.depuis) / JOUR;

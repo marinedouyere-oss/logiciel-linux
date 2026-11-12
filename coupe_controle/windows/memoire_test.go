@@ -59,4 +59,14 @@ func TestMemoireLien(t *testing.T) {
 	if w2.Code != http.StatusForbidden {
 		t.Fatalf("autre adresse : interdit attendu, reçu %d", w2.Code)
 	}
+
+	// Le nom du poste (avec l'en-tête seulement).
+	r3 := httptest.NewRequest(http.MethodGet, "http://"+adresse+nomPoste, nil)
+	r3.Host = adresse
+	r3.Header.Set("X-Sentinelle", "lien")
+	w3 := httptest.NewRecorder()
+	servir(w3, r3)
+	if nom, _ := os.Hostname(); w3.Code != http.StatusOK || w3.Body.String() != nom {
+		t.Fatalf("nom du poste : %d %q", w3.Code, w3.Body.String())
+	}
 }

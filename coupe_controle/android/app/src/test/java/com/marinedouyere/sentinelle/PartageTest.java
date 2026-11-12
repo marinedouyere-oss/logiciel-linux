@@ -889,6 +889,16 @@ public class PartageTest {
         entete.performClick();
         ShadowLooper.idleMainLooper();
         assertTrue(ecran(a), ecran(a).contains("Matériau ▲"));
+        // Tous les matériaux affichés, sans limite (le vrai fichier en a 326 avec du stock).
+        StringBuilder gros = new StringBuilder(EXEMPLE.substring(0, EXEMPLE.length() - 1)).append(",\"stock\":{\"nom\":\"gros.bdx\",\"charge\":1,\"formats\":[");
+        for (int i = 0; i < 150; i++)
+            gros.append(i > 0 ? "," : "").append("[\"M").append(1000 + i).append("_4100_1300\",3,\"M").append(1000 + i).append("\",4100,1300,0.8,0,\"STRAT ESSAI\",0,0,\"strat\",\"1041(3)\",\"\",0]");
+        gros.append("]}}");
+        a.partage().afficherDonnees(FichierPartage.lire(new ByteArrayInputStream(gzip(gros.toString()))), "essai");
+        ShadowLooper.idleMainLooper();
+        texte = ecran(a);
+        assertTrue(texte, texte.contains("150 matériaux, tous affichés"));
+        assertTrue("le dernier matériau est dans la liste", texte.contains("M1149"));
         // Sans fichier de stock : le dire.
         a.partage().afficherDonnees(FichierPartage.lire(new ByteArrayInputStream(gzip(EXEMPLE))), "essai");
         ShadowLooper.idleMainLooper();
@@ -935,5 +945,25 @@ public class PartageTest {
         assertEquals("vieux", lectures.optJSONObject("autre12345678").optString("version"));
         d.accuseEnvoye("mwchjn8ta28b75fc");
         assertFalse(d.accuseAEnvoyer());
+    }
+
+    /** V6.5.2 : un fichier partagé réaliste fabriqué par le PC (semaines, plans, suivi, stock) se lit sur le téléphone. */
+    @Test
+    public void fichierReelDuPc() throws Exception {
+        String chemin = System.getProperty("sentinelle.partage_reel", "");
+        assumeTrue(!chemin.isEmpty());
+        byte[] octets = java.nio.file.Files.readAllBytes(new File(chemin).toPath());
+        FichierPartage f = FichierPartage.lire(new ByteArrayInputStream(octets));
+        System.out.println("LU : " + f.semaines.size() + " semaines, stock " + (f.stock == null ? "absent" : f.stock.formats.size() + " formats") + ", suivi " + (f.suivi != null));
+        assertTrue(f.semaines.size() >= 3);
+        assertNotNull(f.stock);
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
+        ShadowLooper.idleMainLooper();
+        a.partage().afficherDonnees(f, "essai");
+        for (String o : new String[] {MainActivity.ONGLET_SEMAINE, MainActivity.ONGLET_CONTROLE, MainActivity.ONGLET_PLANS, MainActivity.ONGLET_SUIVI, MainActivity.ONGLET_STOCK}) {
+            a.allerA(o);
+            ShadowLooper.idleMainLooper();
+        }
+        assertTrue(ecran(a), ecran(a).contains("tous affichés"));
     }
 }

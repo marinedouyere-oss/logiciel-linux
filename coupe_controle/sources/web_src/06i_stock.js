@@ -150,10 +150,16 @@ async function chargerFichierStock(fichier) {
 
 // V6.5.1 : le stock part aussi au téléphone, dans le fichier partagé, déjà lu (le téléphone n'a qu'à l'afficher).
 // Une ligne par format : [code, qté, matériau, L, l, ép., limite, désignation, fil, réservée, famille, cases, origine, depuis].
+// Le stock envoyé par un autre PC (lu sur le site) : gardé tel quel et renvoyé s'il est plus récent que le nôtre.
+let stockDistant = null;
+function recevoirStockDistant(s) {
+  if (s && Array.isArray(s.formats) && (!stockDistant || (s.charge || 0) > (stockDistant.charge || 0))) stockDistant = s;
+}
+
 function stockPourPartage() {
   lireStockMemoire();
   const d = stock.donnees;
-  if (!d) return null;
+  if (!d || (stockDistant && (stockDistant.charge || 0) > (d.charge || 0))) return stockDistant;
   return {
     nom: d.nom || "",
     modifie: d.modifie || 0,
@@ -169,7 +175,7 @@ function stockPourPartage() {
 // Change quand un autre fichier de stock est chargé (déclenche l'envoi au téléphone).
 function signatureStock() {
   lireStockMemoire();
-  return stock.donnees ? String(stock.donnees.charge || 0) : "";
+  return `${stock.donnees ? String(stock.donnees.charge || 0) : ""}/${stockDistant ? stockDistant.charge || 0 : ""}`;
 }
 
 // Le stock d'un matériau (pour la simulation d'un lancement, plus tard).
@@ -339,7 +345,7 @@ function materiauxFiltres(d) {
   const q = stock.recherche.trim().toUpperCase();
   const liste = d.materiaux
     .filter((m) => stock.famille === "tous" || m.famille === stock.famille)
-    .filter((m) => !stock.avecStock || m.nbEntiers + m.nbChutes > 0)
+    .filter((m) => !stock.avecStock || m.nbEntiers + m.nbChutes + m.nbReservees > 0)
     .filter((m) => !q || m.mat.toUpperCase().includes(q) || m.desc.toUpperCase().includes(q))
     .sort((a, b) => comparerTexteFr(a.mat, b.mat));
   const res = trierStock(liste, "liste");
@@ -349,10 +355,9 @@ function materiauxFiltres(d) {
 }
 
 function htmlRechercheStock(d) {
+  // Tous les matériaux (aucune limite) : la liste défile.
   const liste = materiauxFiltres(d);
-  const MAX = 60;
   const lignes = liste
-    .slice(0, MAX)
     .map((m) => {
       const lim = m.limites.size === 1 ? puceLimite([...m.limites][0]) : m.limites.size ? '<span class="stk-lim">0 et 9</span>' : "";
       return `<tr class="stk-ligne${stock.ouvert === m.mat ? " visee" : ""}" data-stk-mat="${echapper(m.mat)}">
@@ -368,7 +373,7 @@ function htmlRechercheStock(d) {
     <div class="stk-filtres">${filtres}</div>
     <div class="defilement"><table class="fp-table"><thead><tr>${enteteTri("liste", "mat", "Matériau")}${enteteTri("liste", "desc", "Description", "stk-col-desc")}${enteteTri("liste", "entiers", '<span class="stk-long">Panneaux entiers</span><span class="stk-court">Entiers</span>', "d")}${enteteTri("liste", "chutes", "Chutes", "d")}${enteteTri("liste", "limite", '<span class="stk-long">Limite woodStore</span><span class="stk-court">Limite</span>')}</tr></thead>
       <tbody>${lignes || '<tr><td colspan="5" class="pale">Rien ne correspond.</td></tr>'}</tbody></table></div>
-    <div class="note">${nbFr(liste.length)} matériau${liste.length > 1 ? "x" : ""}${liste.length > MAX ? ` (les ${MAX} premiers affichés : précisez la recherche)` : ""} · cliquez sur une ligne pour le détail.</div></div>`;
+    <div class="note">${nbFr(liste.length)} matériau${liste.length > 1 ? "x" : ""}, tous affichés · cliquez sur une ligne pour le détail.</div></div>`;
 }
 
 function htmlMateriauStock(m) {
@@ -412,8 +417,9 @@ function htmlChutesQuiDorment(d) {
   if (!vieilles.length) return "";
   const parMat = new Map();
   for (const v of vieilles) parMat.set(v.m.mat, (parMat.get(v.m.mat) || 0) + v.f.qte);
-  const top = [...parMat.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
-  const plusVieilles = vieilles.sort((a, b) => b.j - a.j).slice(0, 5);
+  // Toutes (aucune limite) : par matériau, puis chaque chute, la plus vieille d'abord.
+  const top = [...parMat.entries()].sort((a, b) => b[1] - a[1]);
+  const plusVieilles = vieilles.sort((a, b) => b.j - a.j);
   return `<div class="carte"><div class="carte-titre">Chutes qui dorment</div>
     <p><strong>${nbFr(vieilles.reduce((t, v) => t + v.f.qte, 0))}</strong> chutes sont en stock depuis plus de 4 mois.</p>
     <div class="pl-puces">${top.map(([mat, n]) => `<button type="button" class="pl-puce stk-puce-mat" data-stk-mat="${echapper(mat)}">${echapper(mat)} · ${n}</button>`).join("")}</div>

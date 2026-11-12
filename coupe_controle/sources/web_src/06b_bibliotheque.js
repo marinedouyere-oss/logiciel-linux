@@ -464,6 +464,8 @@ function contenuFichierPartage() {
     format: FORMAT_PARTAGE,
     genere: new Date().toISOString(),
     par: `${document.title.split(" — ")[0]} (page web)`,
+    // V6.5.3 : le PC qui envoie (plusieurs PC peuvent partager le même code).
+    poste: typeof lienTelephone !== "undefined" && lienTelephone.poste ? lienTelephone.poste : "",
     colonnesPieces: COLONNES_PIECES_BIBLIOTHEQUE,
     explications: Object.fromEntries(PROBLEMES.map(([type, sens, queFaire]) => [type, { sens, queFaire }])),
     semaines,

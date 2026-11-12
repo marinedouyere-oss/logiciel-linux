@@ -318,9 +318,14 @@ async function planDuTelephone(d) {
 
 function demarrerRetourTelephone() {
   lireRetourTelephone();
+  // V6.5.3 : ce qu'un autre PC a publié sur le même code (au démarrage, puis toutes les 2 minutes).
+  if (typeof synchroniserAvecLeSite === "function") synchroniserAvecLeSite();
+  let tour = 0;
   clearInterval(retourTelephone.minuteur);
   retourTelephone.minuteur = setInterval(() => {
-    if (!document.hidden) lireRetourTelephone();
+    if (document.hidden) return;
+    lireRetourTelephone();
+    if (++tour % 2 === 0 && typeof synchroniserAvecLeSite === "function") synchroniserAvecLeSite();
   }, DELAI_RETOUR_TELEPHONE_MS);
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) lireRetourTelephone();

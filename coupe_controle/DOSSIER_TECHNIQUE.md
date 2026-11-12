@@ -27,7 +27,7 @@ Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
 (`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
 (imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
 
-Version courante : **6.5.2** (le PC et l'APK partagent le même numéro ; l'agent suit).
+Version courante : **6.5.3** (le PC et l'APK partagent le même numéro ; l'agent suit).
 
 ### Glossaire métier
 
@@ -221,6 +221,17 @@ démarrage si la mémoire de Chrome l'a perdu (`restaurerLienTelephone`, puis en
 « Reprenez son code » : on tape le code affiché dans l'appli (en gros sur la carte « Lien avec le PC ») et le PC
 reprend ce code — le téléphone et les PC de validation n'ont rien à refaire (`reprendreCodeLienTelephone`).
 « Créer un code » n'est que pour un premier téléphone. Test : `test_web_lien_tient.js`.
+
+**Plusieurs PC sur le même code (6.5.3)** — cas réel du 12/11 : un PC au bureau et un PC à la maison, chacun
+sa bibliothèque ; le téléphone ne voyait que celle du dernier PC qui envoyait. Désormais, avant chaque envoi et
+toutes les 2 minutes, le PC relit le site (`reprendreDuSite`, `synchroniserAvecLeSite`) : si un AUTRE PC a publié
+(version ≠ la sienne), ses semaines sont fusionnées (`fusionnerSemaines`, comme le Drive), avec son suivi
+(`SUIVI.recevoir`) et son stock s'il est plus récent (`recevoirStockDistant`). Le prochain envoi contient les
+lancements des deux PC. Le fichier partagé porte le nom du PC (`poste`, donné par `Sentinelle.exe` :
+route `/sentinelle/poste`) ; l'appli affiche « Données du PC « X » du … ».
+
+**Stock : aucune limite d'affichage (6.5.3)** — PC et téléphone affichent tous les matériaux (le vrai fichier :
+326 avec du stock), toutes les chutes, toutes les chutes qui dorment. Case « avec du stock seulement » (cochée).
 
 ### Clavier de l'APK (V6.5)
 

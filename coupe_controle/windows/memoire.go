@@ -16,7 +16,23 @@ import (
 	"path/filepath"
 )
 
-const memoireLien = "/sentinelle/lien"
+const (
+	memoireLien = "/sentinelle/lien"
+	nomPoste    = "/sentinelle/poste" // V6.5.3 : le nom de cet ordinateur (le téléphone dit de quel PC viennent ses données)
+)
+
+func servirNomPoste(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-Sentinelle") != "lien" {
+		http.Error(w, "interdit", http.StatusForbidden)
+		return
+	}
+	nom, err := os.Hostname()
+	if err != nil {
+		nom = ""
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	io.WriteString(w, nom)
+}
 
 func fichierLien() string {
 	base := os.Getenv("LOCALAPPDATA")
