@@ -259,6 +259,17 @@ surplus. Si la pièce ajoutée entière arrive ensuite dans un vrai fichier de l
 double compte, signalé dans la liste « Pièces ajoutées à la main », où « Retirer » annule). Premier cas réel :
 CVC26100844 (5 pièces F206-ST9) comptée dans LAN264801START.
 
+**V6.7.5 : nouveau lancement nommé par l'utilisateur.** Dans la même liste, « + Nouveau lancement (nom au choix)… » :
+nom, semaine (par défaut celle des pièces cochées) et poste (Chantiers par défaut). Le lancement est rangé dans la
+**bibliothèque** comme un lancement scanné (`archiverLancements`, fiche avec `manuel: true`, `dossier: "Créé dans
+Sentinelle"`, pas de fichier, pièces au format `COLONNES_PIECES_BIBLIOTHEQUE` depuis la ligne de l'extraction) : il
+compte comme un lancement normal partout (suivi, vues, validations, recherche, fichier partagé et téléphone). On peut
+ensuite y ajouter d'autres pièces (choisi dans la liste), retirer une pièce ou supprimer le lancement
+(`retirerLancementBibliotheque`, retrait daté). Un nom déjà pris dans une autre semaine est refusé. Une ligne « en plus
+du lancement » (surplus) va toujours dans le lancement qui a déjà la pièce : sinon la règle des pièces relancées (une
+pièce ne compte que dans le lancement le plus récent qui l'a) fausserait le décompte. Aucun fichier LAN n'est créé ni
+modifié.
+
 ### Semaine retirée puis rescannée (V6.7.4, `lancementsActifs` dans `06b_bibliotheque.js`)
 
 « Retirer la semaine » vide ses lancements et pose `supprimeeLe` (date du retrait), gardée pour la fusion entre PC :

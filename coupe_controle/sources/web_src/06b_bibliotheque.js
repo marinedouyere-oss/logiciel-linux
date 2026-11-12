@@ -753,6 +753,20 @@ async function retirerLancementDesAutresSemaines(nomFichier, idGarde) {
   return true;
 }
 
+// V6.7.5 : retire un lancement d'une semaine (lancement créé dans Sentinelle qu'on supprime). Le retrait est daté pour
+// qu'une ancienne copie du fichier partagé ne le fasse pas revenir.
+async function retirerLancementBibliotheque(id, nom) {
+  const s = bibliotheque.semaines.get(id);
+  const k = cleNomLancement(nom);
+  if (!s || !s.lancements.some((l) => cleNomLancement(l.nom) === k)) return false;
+  const maintenant = new Date().toISOString();
+  await enregistrerSemaineLocale({ ...s, lancements: s.lancements.filter((l) => cleNomLancement(l.nom) !== k), retraits: { ...(s.retraits || {}), [k]: maintenant }, maj: maintenant });
+  changementBibliotheque();
+  if (bibliotheque.dossier) await synchroniserBibliotheque(false);
+  rafraichirBibliotheque();
+  return true;
+}
+
 async function retirerSemaineBibliotheque(id) {
   const s = bibliotheque.semaines.get(id);
   if (!s) return;

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.7.4 — Contrôle de coupe</title>
+<title>Sentinelle V6.7.5 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -686,6 +686,10 @@
   .sv-hors-outils input { flex: 1 1 260px; }
   .sv-hors tr.sv-hors-ligne td { background: #fff7a6; }
   .sv-rajouts { margin-top: 14px; padding-top: 10px; border-top: 1px solid #e3d9d3; }
+  .sv-hors-nouveau { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .sv-hors-nouveau[hidden] { display: none; }
+  .sv-hors-nouveau input { min-width: 240px; }
+  .sv-rajouts tr.sv-manuel-tete td { background: #f6f1ee; }
   .sv-hors-outils select { flex: 1 1 260px; max-width: 420px; }
   /* V6.7 : claustras */
   .cl-champs { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 6px 0; }
@@ -722,7 +726,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.7.4</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.7.5</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -844,7 +848,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.7.4 · Contrôle de coupe</span>
+    <span>Sentinelle V6.7.5 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -6555,6 +6559,20 @@ async function retirerLancementDesAutresSemaines(nomFichier, idGarde) {
     touche = true;
   }
   if (!touche) return false;
+  changementBibliotheque();
+  if (bibliotheque.dossier) await synchroniserBibliotheque(false);
+  rafraichirBibliotheque();
+  return true;
+}
+
+// V6.7.5 : retire un lancement d'une semaine (lancement créé dans Sentinelle qu'on supprime). Le retrait est daté pour
+// qu'une ancienne copie du fichier partagé ne le fasse pas revenir.
+async function retirerLancementBibliotheque(id, nom) {
+  const s = bibliotheque.semaines.get(id);
+  const k = cleNomLancement(nom);
+  if (!s || !s.lancements.some((l) => cleNomLancement(l.nom) === k)) return false;
+  const maintenant = new Date().toISOString();
+  await enregistrerSemaineLocale({ ...s, lancements: s.lancements.filter((l) => cleNomLancement(l.nom) !== k), retraits: { ...(s.retraits || {}), [k]: maintenant }, maj: maintenant });
   changementBibliotheque();
   if (bibliotheque.dossier) await synchroniserBibliotheque(false);
   rafraichirBibliotheque();
@@ -18173,7 +18191,11 @@ const SUIVI = (() => {
     rajoutsRev: 0,
     rajoutsIgnores: new Set(), // ajouts entiers dont la pièce est arrivée dans un vrai fichier de lancement
     horsCoches: new Set(), // pièces cochées dans « Pas dans les lancements »
-    horsLancement: "", // lancement choisi pour y compter les pièces cochées (« sid|cle »)
+    horsLancement: "", // lancement choisi pour y compter les pièces cochées (« sid|cle », ou « __nouveau__ »)
+    horsNomNouveau: "", // V6.7.5 : nouveau lancement nommé par l'utilisateur
+    horsSemNouveau: "",
+    horsPosteNouveau: "Chantiers",
+    horsMessage: null, // { genre: bon | alerte, texte }
   };
 
   const idFichier = (f) => `${f.name}|${f.size}|${f.lastModified || 0}`;
@@ -18334,7 +18356,7 @@ const SUIVI = (() => {
           annee = n > semaine + 26 ? annee - 1 : n < semaine - 26 ? annee + 1 : annee;
           semaine = n;
         }
-        lancements.push({ cle: cleNomLancement(l.nom), nom: l.nom, poste: l.poste || "", casse, id: idSemaine(annee, semaine), annee, semaine, sid: s.id, aj: 0,
+        lancements.push({ cle: cleNomLancement(l.nom), nom: l.nom, poste: l.poste || "", casse, id: idSemaine(annee, semaine), annee, semaine, sid: s.id, aj: 0, manuel: Boolean(l.manuel),
           ordre: ordreSemaine(annee, semaine), pieces, infos, deduites: new Map(), vus: new Set(), histo: [], presents: null, f: 0, r: 0, h: 0, fPrec: null, couvert: false });
       }
     }
@@ -18498,7 +18520,9 @@ const SUIVI = (() => {
         if (!lancees.has(k) || !r0[0] || !r0[1] || perimetreDe(r0[4]) !== "production") continue;
         const surplus = Math.max(0, Math.max(0, v.cours) - (direct.get(k) || 0) - (dejaR.get(k) || 0));
         if (!surplus) continue;
-        horsDetail.push({ r: v.lignes[v.lignes.length - 1], n: surplus, partiel: true, k, nAjout: surplus });
+        const iProprio = (proprietaires.get(k) || [])[0];
+        const P = iProprio === undefined ? null : lancements[iProprio];
+        horsDetail.push({ r: v.lignes[v.lignes.length - 1], n: surplus, partiel: true, k, nAjout: surplus, proprio: P && P.sid ? { sid: P.sid, cle: P.cle, nom: P.nom, semaine: P.semaine } : null });
         const annee = r0[1];
         const semaine = Number(r0[0]);
         const id = idSemaine(annee, semaine);
@@ -18568,7 +18592,7 @@ const SUIVI = (() => {
       semaines.push({
         id: s.id, annee: s.annee, semaine: s.semaine, f, r, h, e: etatLancement(f, r, s.ordre, ordreFab, couverte, s.lancements.every((L) => L.casse)),
         lancements: s.lancements.map((L) => ({
-          cle: L.cle, nom: L.nom, poste: L.poste, f: L.f, r: L.r, h: L.h, x: L.x, xd: L.xd, aj: L.aj || 0, e: etatLancement(L.f, L.r, L.ordre, ordreFab, L.couvert, L.casse),
+          cle: L.cle, nom: L.nom, poste: L.poste, f: L.f, r: L.r, h: L.h, x: L.x, xd: L.xd, aj: L.aj || 0, m: L.manuel ? 1 : 0, e: etatLancement(L.f, L.r, L.ordre, ordreFab, L.couvert, L.casse),
           d: L.fPrec === null ? null : L.f - L.fPrec, p: L.histo.slice(-10), c: commandes(L),
         })),
       });
@@ -18975,7 +18999,8 @@ const SUIVI = (() => {
       return `${pluriel(L.h, "pièce", "pièces")} · sa semaine n'est pas dans l'extraction du ${echapper(jourCourt(resume.jour))}${resume.semaineMax ? ` (elle va jusqu'à la semaine ${resume.semaineMax})` : ""}`;
     const relancees =
       (L.x ? ` <span class="pale">· ${pluriel(L.x, "pièce relancée", "pièces relancées")} dans ${echapper(L.xd)} (comptée${L.x > 1 ? "s" : ""} là-bas)</span>` : "") +
-      (L.aj ? ` <span class="pale">· dont ${pluriel(L.aj, "pièce ajoutée", "pièces ajoutées")} à la main</span>` : "");
+      (L.aj ? ` <span class="pale">· dont ${pluriel(L.aj, "pièce ajoutée", "pièces ajoutées")} à la main</span>` : "") +
+      (L.m ? ` <span class="pale">· lancement créé dans Sentinelle</span>` : "");
     if (L.f + L.r === 0) return `rien à suivre${relancees}`;
     return `<strong>${fmt(L.f)}</strong> faite${L.f > 1 ? "s" : ""} · <strong>${fmt(L.r)}</strong> à faire${relancees}`;
   }
@@ -19180,7 +19205,7 @@ const SUIVI = (() => {
       .map(
         (x) => `<tr class="sv-hors-ligne"><td><input type="checkbox" data-sv-hors-coche="${echapper(x.k)}"${etat.horsCoches.has(x.k) ? " checked" : ""} aria-label="Cocher"></td><td>S${x.r[0] || "?"}</td><td><strong>${echapper(x.r[2])}</strong></td><td class="nombre">${echapper(x.r[3])}</td><td>${echapper(x.r[4])}</td>
         <td>${echapper(texteBrut(x.r, "article"))}<div class="pale">${echapper(texteBrut(x.r, "designation"))}</div></td>
-        <td class="nombre"><strong>${fmt(x.n)}</strong>${x.partiel ? `<div class="pale">en plus du lancement</div>` : ""}</td><td class="nombre">${echapper(dims(x.r))}</td>
+        <td class="nombre"><strong>${fmt(x.n)}</strong>${x.partiel ? `<div class="pale">en plus du lancement${x.proprio ? ` ${echapper(x.proprio.nom)}` : ""}</div>` : ""}</td><td class="nombre">${echapper(dims(x.r))}</td>
         <td>${echapper(x.r[10] || "")}<div class="pale">${echapper(texteBrut(x.r, "coloris"))}</div></td><td>${echapper(x.r[7])}</td><td>${echapper(x.r[8])}</td><td>${echapper(texteBrut(x.r, "groupement"))}</td></tr>`
       )
       .join("");
@@ -19190,8 +19215,14 @@ const SUIVI = (() => {
       <div class="sv-hors-outils"><input type="search" id="svHorsRecherche" placeholder="Chercher : commande, article, coloris, transporteur…" value="${echapper(etat.horsRecherche || "")}" autocomplete="off">
         <button type="button" id="svHorsExport">Exporter en Excel (format du fichier de suivi)</button></div>
       <div class="sv-hors-outils"><select id="svHorsLancement" aria-label="Lancement">${optionsLancements()}</select>
-        <button type="button" id="svHorsAjouter"${cochesVisibles() && etat.horsLancement ? "" : " disabled"}>${texteBoutonAjouter()}</button></div>
-      <div class="note">Cochez des lignes, choisissez un lancement : Sentinelle compte ces pièces dans ce lancement (barres, vues, téléphone). Le fichier de lancement n'est pas modifié.</div>
+        <span id="svHorsNouveau" class="sv-hors-nouveau"${etat.horsLancement === NOUVEAU ? "" : " hidden"}>
+          <input type="text" id="svHorsNomNouveau" placeholder="Nom du lancement (ex. LAN2648LONGUES)" value="${echapper(etat.horsNomNouveau || "")}" autocomplete="off" aria-label="Nom du nouveau lancement">
+          <label>Semaine <select id="svHorsSemNouveau">${optionsSemainesNouveau()}</select></label>
+          <label>Poste <select id="svHorsPosteNouveau">${POSTES_NOUVEAU.map((x) => `<option${x === (etat.horsPosteNouveau || "Chantiers") ? " selected" : ""}>${echapper(x)}</option>`).join("")}</select></label>
+        </span>
+        <button type="button" id="svHorsAjouter"${boutonAjouterActif() ? "" : " disabled"}>${texteBoutonAjouter()}</button></div>
+      ${etat.horsMessage ? `<div class="sv-message ${etat.horsMessage.genre}">${echapper(etat.horsMessage.texte)}</div>` : ""}
+      <div class="note">Cochez des lignes, puis choisissez un lancement, ou « Nouveau lancement » en lui donnant le nom que vous voulez. Un nouveau lancement entre dans la bibliothèque et compte comme un lancement normal (suivi, vues, téléphone, recherche) ; dans un lancement existant, les pièces comptent dans son suivi. Aucun fichier de lancement n'est créé ni modifié. Une ligne « en plus du lancement » va toujours dans le lancement qui a déjà la pièce.</div>
       <div class="note">${fmt(liste.length)} ligne${liste.length > 1 ? "s" : ""}, ${fmt(total)} pièce${total > 1 ? "s" : ""}${etat.horsSemaine ? ` en semaine ${echapper(etat.horsSemaine.split("-")[1])}` : ""}.</div>
       <div class="defile"><table class="sv-table sv-hors"><thead><tr><th><input type="checkbox" id="svHorsTout" title="Tout cocher" aria-label="Tout cocher"></th><th>Sem.</th><th>Commande</th><th class="nombre">Ligne</th><th>Catalogue</th><th>Article</th><th class="nombre">Pièces</th><th class="nombre">Dimensions</th><th>Coloris</th><th>Transporteur</th><th>Ville</th><th>Groupement</th></tr></thead>
       <tbody>${lignes || '<tr><td colspan="12" class="pale">Rien ne correspond.</td></tr>'}</tbody></table></div>` : `<div class="sv-message">✔ Toutes les pièces de l'extraction sont dans un lancement.</div>`}${htmlRajouts()}</div>`;
@@ -19210,10 +19241,10 @@ const SUIVI = (() => {
     const choisie = etat.horsSemaine ? idSemaine(a, sem) : "";
     const groupes = [...parSem.values()].sort((x, y) => (y.id === choisie) - (x.id === choisie) || y.ordre - x.ordre);
     const valeurs = new Set(ls.map((L) => `${L.sid}|${L.cle}`));
-    if (etat.horsLancement && !valeurs.has(etat.horsLancement)) etat.horsLancement = "";
-    return `<option value="">Choisir un lancement…</option>${groupes
+    if (etat.horsLancement && etat.horsLancement !== NOUVEAU && !valeurs.has(etat.horsLancement)) etat.horsLancement = "";
+    return `<option value="">Choisir un lancement…</option><option value="${NOUVEAU}"${etat.horsLancement === NOUVEAU ? " selected" : ""}>+ Nouveau lancement (nom au choix)…</option>${groupes
       .map((g) => `<optgroup label="Semaine ${echapper(g.semaine)}">${g.ls
-        .map((L) => { const v = `${L.sid}|${L.cle}`; return `<option value="${echapper(v)}"${v === etat.horsLancement ? " selected" : ""}>${echapper(L.nom)}${L.poste && L.poste !== L.nom ? ` · ${echapper(L.poste)}` : ""}</option>`; })
+        .map((L) => { const v = `${L.sid}|${L.cle}`; return `<option value="${echapper(v)}"${v === etat.horsLancement ? " selected" : ""}>${echapper(L.nom)}${L.poste && L.poste !== L.nom ? ` · ${echapper(L.poste)}` : ""}${L.manuel ? " · créé dans Sentinelle" : ""}</option>`; })
         .join("")}</optgroup>`)
       .join("")}`;
   }
@@ -19221,12 +19252,111 @@ const SUIVI = (() => {
   const cochesVisibles = () => new Set(horsFiltres().filter((x) => etat.horsCoches.has(x.k)).map((x) => x.k)).size;
   function texteBoutonAjouter() {
     const n = cochesVisibles();
-    return n ? `Compter ${n > 1 ? `les ${fmt(n)} pièces cochées` : "la pièce cochée"} dans ce lancement` : "Compter les pièces cochées dans ce lancement";
+    const quoi = n > 1 ? `les ${fmt(n)} pièces cochées` : n ? "la pièce cochée" : "les pièces cochées";
+    if (etat.horsLancement === NOUVEAU) {
+      const nom = nomNouveau();
+      return `Créer le lancement${nom ? ` « ${nom} »` : ""} avec ${quoi}`;
+    }
+    return `Compter ${quoi} dans ce lancement`;
+  }
+  const nomNouveau = () => String(etat.horsNomNouveau || "").trim().replace(/\s+/g, " ");
+  const boutonAjouterActif = () => Boolean(cochesVisibles() && etat.horsLancement && (etat.horsLancement !== NOUVEAU || nomNouveau()));
+
+  // V6.7.5 : « Nouveau lancement » — un lancement nommé par l'utilisateur, rangé dans la bibliothèque comme les autres.
+  const NOUVEAU = "__nouveau__";
+  const POSTES_NOUVEAU = ["Chantiers", "Agglo 1er tour", "Agglo 2ème tour", "Recyclage", "Feno"];
+  // Les semaines proposées : celles des pièces de la liste, des lancements suivis et la semaine en fabrication.
+  function semainesNouveau() {
+    const par = new Map();
+    const ajouter = (a, n) => {
+      if (a && n) par.set(`${Number(a)}-${Number(n)}`, { a: Number(a), n: Number(n) });
+    };
+    for (const x of etat.horsDetail || []) ajouter(x.r[1], x.r[0]);
+    for (const L of etat.lancementsCalcul || []) if (!L.hors) ajouter(L.annee, L.semaine);
+    if (etat.resume && etat.resume.fabrication) ajouter(etat.resume.fabrication.annee, etat.resume.fabrication.semaine);
+    return [...par.entries()].sort((x, y) => x[1].a * 100 + x[1].n - (y[1].a * 100 + y[1].n));
+  }
+  // Par défaut : la semaine choisie, sinon celle de la plupart des pièces cochées (ou affichées).
+  function semaineNouveauParDefaut() {
+    if (etat.horsSemNouveau) return etat.horsSemNouveau;
+    if (etat.horsSemaine) return etat.horsSemaine;
+    const liste = horsFiltres();
+    const cochees = liste.filter((x) => etat.horsCoches.has(x.k));
+    const compte = new Map();
+    for (const x of cochees.length ? cochees : liste) if (x.r[0] && x.r[1]) compte.set(`${x.r[1]}-${x.r[0]}`, (compte.get(`${x.r[1]}-${x.r[0]}`) || 0) + 1);
+    const best = [...compte.entries()].sort((x, y) => y[1] - x[1])[0];
+    if (best) return best[0];
+    const f = etat.resume && etat.resume.fabrication;
+    return f ? `${f.annee}-${f.semaine}` : "";
+  }
+  function optionsSemainesNouveau() {
+    const choisie = semaineNouveauParDefaut();
+    return semainesNouveau().map(([v, x]) => `<option value="${v}"${v === choisie ? " selected" : ""}>S${x.n} ${x.a}</option>`).join("");
+  }
+  // Une ligne de pièce de la bibliothèque, depuis la ligne de l'extraction.
+  function ligneBibliotheque(x, n) {
+    const r = x.r;
+    const c = COLONNES_PIECES_BIBLIOTHEQUE;
+    const ligne = c.map(() => "");
+    const met = (nom, v) => {
+      const i = c.indexOf(nom);
+      if (i >= 0) ligne[i] = v === null || v === undefined ? "" : v;
+    };
+    const nombre = (v) => {
+      const t = String(v ?? "").trim().replace(",", ".");
+      return t && Number.isFinite(Number(t)) ? Number(t) : "";
+    };
+    met("cle", x.k);
+    met("commande", r[2]);
+    met("ligne", String(r[3]));
+    met("article", texteBrut(r, "article"));
+    met("pieces", n);
+    met("longueur", nombre(champBrut(r, "longueur")));
+    met("largeur", nombre(champBrut(r, "largeur")));
+    met("epaisseur", nombre(champBrut(r, "epaisseur")));
+    met("coloris", r[10] || "");
+    met("livraison", r[0] && r[1] ? `${r[1]}-${r[0]}` : "");
+    met("transporteur", r[7] && r[7] !== "(sans transporteur)" ? r[7] : "");
+    return ligne;
+  }
+  // Les lancements créés dans Sentinelle (toutes les semaines de la bibliothèque).
+  function lancementsManuels() {
+    const out = [];
+    for (const w of bibliotheque.semaines.values())
+      for (const l of lancementsActifs(w)) if (l.manuel) out.push({ w, l });
+    return out.sort((x, y) => ordreSemaine(y.w.annee, y.w.semaine) - ordreSemaine(x.w.annee, x.w.semaine) || x.l.nom.localeCompare(y.l.nom));
   }
 
-  // Les pièces comptées à la main dans un lancement, avec « Retirer ».
+  // Les lancements créés dans Sentinelle et les pièces comptées à la main dans un lancement, avec « Retirer ».
   function htmlRajouts() {
-    if (!etat.rajouts.length) return "";
+    const manuels = lancementsManuels();
+    if (!etat.rajouts.length && !manuels.length) return "";
+    let html = "";
+    if (manuels.length) {
+      const lignes = manuels
+        .map(({ w, l }) => {
+          const cols = w.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
+          const iCmd = cols.indexOf("commande");
+          const iLig = cols.indexOf("ligne");
+          const iQ = cols.indexOf("pieces") >= 0 ? cols.indexOf("pieces") : 4;
+          const total = (l.pieces || []).reduce((t, x) => t + (Number(x[iQ]) || 0), 0);
+          const cleL = `${w.id}|${cleNomLancement(l.nom)}`;
+          const tete = `<tr class="sv-manuel-tete"><td colspan="3"><strong>${echapper(l.nom)}</strong> <span class="pale">S${echapper(w.semaine)} · ${echapper(l.poste || "")}</span></td>
+            <td class="nombre"><strong>${fmt(total)}</strong></td><td>${echapper(l.creeLe ? new Date(l.creeLe).toLocaleDateString("fr-FR") : "")}</td><td></td>
+            <td><button type="button" class="texte" data-sv-manuel-supprimer="${echapper(cleL)}">Supprimer le lancement</button></td></tr>`;
+          const pieces = (l.pieces || [])
+            .map((x) => `<tr><td></td><td>${echapper(x[iCmd])}</td><td class="nombre">${echapper(x[iLig])}</td><td class="nombre">${fmt(Number(x[iQ]) || 0)}</td><td></td><td></td>
+              <td><button type="button" class="texte" data-sv-manuel-retirer="${echapper(cleL)}" data-k="${echapper(x[0])}">Retirer</button></td></tr>`)
+            .join("");
+          return tete + pieces;
+        })
+        .join("");
+      html += `<div class="sv-rajouts" id="svManuels"><div class="carte-titre">Lancements créés dans Sentinelle · ${fmt(manuels.length)}</div>
+      <div class="note">Rangés dans la bibliothèque comme les autres lancements (suivi, vues, téléphone, recherche). Aucun fichier de lancement : ils n'existent que dans Sentinelle. « Retirer » remet la pièce dans la liste ci-dessus.</div>
+      <div class="defile"><table class="sv-table"><thead><tr><th>Lancement</th><th>Commande</th><th class="nombre">Ligne</th><th class="nombre">Pièces</th><th>Créé le</th><th></th><th></th></tr></thead>
+      <tbody>${lignes}</tbody></table></div></div>`;
+    }
+    if (!etat.rajouts.length) return html;
     const presents = new Set((etat.lancementsCalcul || []).filter((L) => !L.hors).map((L) => `${L.sid}|${L.cle}`));
     const tri = [...etat.rajouts].sort((x, y) => String(y.sid).localeCompare(String(x.sid)) || String(x.nom).localeCompare(String(y.nom)) || String(x.commande).localeCompare(String(y.commande)) || Number(x.ligne) - Number(y.ligne));
     const lignes = tri
@@ -19244,34 +19374,125 @@ const SUIVI = (() => {
       })
       .join("");
     const total = etat.rajouts.reduce((t, a) => t + Number(a.n), 0);
-    return `<div class="sv-rajouts" id="svRajouts"><div class="carte-titre">Pièces ajoutées à la main dans un lancement · ${fmt(total)}</div>
-      <div class="note">Comptées par Sentinelle dans ces lancements ; les fichiers de lancement ne sont pas modifiés. « Retirer » les remet dans la liste ci-dessus.</div>
+    return `${html}<div class="sv-rajouts" id="svRajouts"><div class="carte-titre">Pièces ajoutées à la main dans un lancement existant · ${fmt(total)}</div>
+      <div class="note">Comptées par Sentinelle dans le suivi de ces lancements ; les fichiers de lancement ne sont pas modifiés. « Retirer » les remet dans la liste ci-dessus.</div>
       <div class="defile"><table class="sv-table"><thead><tr><th>Lancement</th><th>Commande</th><th class="nombre">Ligne</th><th class="nombre">Pièces</th><th>Ajoutée le</th><th></th><th></th></tr></thead>
       <tbody>${lignes}</tbody></table></div></div>`;
   }
 
-  // Compte les pièces cochées (visibles) dans le lancement choisi.
-  function ajouterRajouts() {
-    const v = etat.horsLancement || "";
-    const i = v.indexOf("|");
-    const sid = v.slice(0, i);
-    const cleL = v.slice(i + 1);
-    const L = (etat.lancementsCalcul || []).find((x) => !x.hors && x.sid === sid && x.cle === cleL);
-    if (i < 0 || !L) return;
-    const quand = new Date().toISOString();
+  // Compte les pièces cochées (visibles) dans le lancement choisi :
+  // - nouveau lancement, ou lancement déjà créé dans Sentinelle : ses pièces vont dans la bibliothèque (lancement normal) ;
+  // - lancement d'un fichier : les pièces s'ajoutent à son suivi (V6.7.3), le fichier n'est pas touché ;
+  // - une ligne « en plus du lancement » va toujours dans le lancement qui a déjà la pièce (sinon la règle des pièces
+  //   relancées la compterait dans un seul des deux et le décompte serait faux).
+  async function ajouterRajouts() {
+    const choix = etat.horsLancement || "";
+    const coches = [];
     const vues = new Set();
-    let n = 0;
     for (const x of horsFiltres()) {
       if (!etat.horsCoches.has(x.k) || vues.has(x.k)) continue;
       vues.add(x.k);
-      etat.rajouts.push({ id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${etat.rajouts.length}`, sid, lancement: cleL, nom: L.nom, semaine: L.semaine,
-        k: x.k, commande: x.r[2], ligne: x.r[3], n: x.nAjout, coloris: x.r[10] || "", partiel: Boolean(x.partiel), quand });
-      n++;
+      coches.push(x);
+    }
+    if (!coches.length || !choix) return;
+    const ls = (etat.lancementsCalcul || []).filter((L) => !L.hors && L.sid);
+    const trouver = (sid, cle) => ls.find((L) => L.sid === sid && L.cle === cle);
+    let cible;
+    if (choix === NOUVEAU) {
+      const nom = nomNouveau();
+      const [an, sem] = String(semaineNouveauParDefaut()).split("-").map(Number);
+      if (!nom || !an || !sem) return;
+      const sid = idSemaine(an, sem);
+      const cle = cleNomLancement(nom);
+      const ailleurs = [...bibliotheque.semaines.values()].find((w) => w.id !== sid && lancementsActifs(w).some((l) => cleNomLancement(l.nom) === cle));
+      if (ailleurs) {
+        etat.horsMessage = { genre: "alerte", texte: `Le lancement ${nom} existe déjà en semaine ${ailleurs.semaine} : choisissez-le dans la liste ou donnez un autre nom.` };
+        afficher();
+        return;
+      }
+      const L = trouver(sid, cle);
+      cible = L ? { sid, cle, nom: L.nom, semaine: sem, annee: an, manuel: L.manuel } : { sid, cle, nom, semaine: sem, annee: an, manuel: true, nouveau: true, poste: etat.horsPosteNouveau || "Chantiers" };
+    } else {
+      const i = choix.indexOf("|");
+      const L = i < 0 ? null : trouver(choix.slice(0, i), choix.slice(i + 1));
+      if (!L) return;
+      const w = bibliotheque.semaines.get(L.sid);
+      cible = { sid: L.sid, cle: L.cle, nom: L.nom, semaine: w ? w.semaine : L.semaine, annee: w ? w.annee : L.annee, manuel: L.manuel };
+    }
+    const quand = new Date().toISOString();
+    const nouvelId = () => `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}-${etat.rajouts.length}`;
+    const rajout = (x, c, partiel) =>
+      etat.rajouts.push({ id: nouvelId(), sid: c.sid, lancement: c.cle, nom: c.nom, semaine: c.semaine, k: x.k, commande: x.r[2], ligne: x.r[3], n: x.nAjout, coloris: x.r[10] || "", partiel, quand });
+    let n = 0;
+    let surplus = 0;
+    let suivi = false;
+    const versBibliotheque = [];
+    for (const x of coches) {
+      if (x.partiel) {
+        if (!x.proprio) continue;
+        rajout(x, x.proprio, true);
+        surplus++;
+        suivi = true;
+      } else if (cible.manuel) versBibliotheque.push(x);
+      else {
+        rajout(x, cible, false);
+        n++;
+        suivi = true;
+      }
     }
     etat.horsCoches.clear();
-    if (!n) return;
-    ecrireLocal(CLE_RAJOUTS, etat.rajouts);
-    etat.rajoutsRev++;
+    if (versBibliotheque.length) {
+      const w = bibliotheque.semaines.get(cible.sid);
+      const existant = w ? lancementsActifs(w).find((l) => cleNomLancement(l.nom) === cible.cle) : null;
+      const iQ = COLONNES_PIECES_BIBLIOTHEQUE.indexOf("pieces");
+      const pieces = existant ? (existant.pieces || []).map((p) => [...p]) : [];
+      for (const x of versBibliotheque) {
+        const deja = pieces.find((p) => p[0] === x.k);
+        if (deja) deja[iQ] = (Number(deja[iQ]) || 0) + x.nAjout;
+        else pieces.push(ligneBibliotheque(x, x.nAjout));
+        n++;
+      }
+      const nbPieces = pieces.reduce((t, p) => t + (Number(p[iQ]) || 0), 0);
+      const fiche = existant
+        ? { ...existant, pieces, nbPieces }
+        : { nom: cible.nom, fichier: "", poste: cible.poste, dossier: "Créé dans Sentinelle", casse: false, manuel: true, creeLe: quand, fichiers: {}, recap: null, controle: null, problemes: [], plans: null, nbPieces, pieces };
+      await archiverLancements([{ annee: w ? w.annee : cible.annee, semaine: w ? w.semaine : cible.semaine, lancement: fiche }]);
+      etat.horsLancement = `${cible.sid}|${cible.cle}`;
+      etat.horsNomNouveau = "";
+      etat.horsSemNouveau = "";
+    }
+    if (suivi) {
+      ecrireLocal(CLE_RAJOUTS, etat.rajouts);
+      etat.rajoutsRev++;
+    }
+    if (!n && !surplus) return;
+    const morceaux = [];
+    if (n) morceaux.push(`${pluriel(n, "ligne comptée", "lignes comptées")} dans ${cible.nom} (semaine ${cible.semaine})${cible.nouveau ? " : lancement créé" : ""}`);
+    if (surplus) morceaux.push(`${pluriel(surplus, "ligne « en plus du lancement » comptée", "lignes « en plus du lancement » comptées")} dans le lancement qui a déjà la pièce`);
+    etat.horsMessage = { genre: "bon", texte: `✔ ${morceaux.join(" ; ")}.` };
+    apresChangementInclus();
+  }
+  // Retire une pièce d'un lancement créé dans Sentinelle (le lancement disparaît avec sa dernière pièce).
+  async function retirerPieceManuelle(cleL, k) {
+    const i = cleL.indexOf("|");
+    const w = bibliotheque.semaines.get(cleL.slice(0, i));
+    const l = w ? lancementsActifs(w).find((x) => x.manuel && cleNomLancement(x.nom) === cleL.slice(i + 1)) : null;
+    if (!l) return;
+    const pieces = (l.pieces || []).filter((p) => p[0] !== k);
+    if (pieces.length === l.pieces.length) return;
+    const iQ = COLONNES_PIECES_BIBLIOTHEQUE.indexOf("pieces");
+    if (pieces.length) await archiverLancements([{ annee: w.annee, semaine: w.semaine, lancement: { ...l, pieces, nbPieces: pieces.reduce((t, p) => t + (Number(p[iQ]) || 0), 0) } }]);
+    else await retirerLancementBibliotheque(w.id, l.nom);
+    etat.horsMessage = null;
+    apresChangementInclus();
+  }
+  async function supprimerLancementManuel(cleL) {
+    const i = cleL.indexOf("|");
+    const w = bibliotheque.semaines.get(cleL.slice(0, i));
+    const l = w ? lancementsActifs(w).find((x) => x.manuel && cleNomLancement(x.nom) === cleL.slice(i + 1)) : null;
+    if (!l || !window.confirm(`Supprimer le lancement ${l.nom} (semaine ${w.semaine}) ? Ses pièces reviennent dans « Pas dans les lancements ».`)) return;
+    await retirerLancementBibliotheque(w.id, l.nom);
+    etat.horsMessage = null;
     apresChangementInclus();
   }
   function retirerRajout(id) {
@@ -19378,8 +19599,14 @@ const SUIVI = (() => {
     const majBouton = () => {
       const b = q("svHorsAjouter");
       if (!b) return;
-      b.disabled = !(cochesVisibles() && etat.horsLancement);
+      b.disabled = !boutonAjouterActif();
       b.textContent = texteBoutonAjouter();
+      // La semaine du nouveau lancement suit les pièces cochées tant qu'elle n'a pas été choisie.
+      const sem = q("svHorsSemNouveau");
+      if (sem && !etat.horsSemNouveau) {
+        const v = semaineNouveauParDefaut();
+        if ([...sem.options].some((o) => o.value === v)) sem.value = v;
+      }
     };
     page.querySelectorAll("[data-sv-hors-coche]").forEach((c) =>
       c.addEventListener("change", () => {
@@ -19402,9 +19629,28 @@ const SUIVI = (() => {
     if (q("svHorsLancement"))
       q("svHorsLancement").addEventListener("change", (e) => {
         etat.horsLancement = e.target.value;
+        etat.horsMessage = null;
+        if (q("svHorsNouveau")) q("svHorsNouveau").hidden = etat.horsLancement !== NOUVEAU;
+        majBouton();
+        if (etat.horsLancement === NOUVEAU && q("svHorsNomNouveau")) q("svHorsNomNouveau").focus();
+      });
+    if (q("svHorsNomNouveau"))
+      q("svHorsNomNouveau").addEventListener("input", (e) => {
+        etat.horsNomNouveau = e.target.value;
         majBouton();
       });
-    if (q("svHorsAjouter")) q("svHorsAjouter").addEventListener("click", () => ajouterRajouts());
+    if (q("svHorsSemNouveau")) q("svHorsSemNouveau").addEventListener("change", (e) => (etat.horsSemNouveau = e.target.value));
+    if (q("svHorsPosteNouveau")) q("svHorsPosteNouveau").addEventListener("change", (e) => (etat.horsPosteNouveau = e.target.value));
+    page.querySelectorAll("[data-sv-manuel-retirer]").forEach((b) => b.addEventListener("click", () => retirerPieceManuelle(b.dataset.svManuelRetirer, b.dataset.k)));
+    page.querySelectorAll("[data-sv-manuel-supprimer]").forEach((b) => b.addEventListener("click", () => supprimerLancementManuel(b.dataset.svManuelSupprimer)));
+    if (q("svHorsAjouter"))
+      q("svHorsAjouter").addEventListener("click", () => {
+        q("svHorsAjouter").disabled = true;
+        ajouterRajouts().catch((e) => {
+          etat.horsMessage = { genre: "alerte", texte: `Ajout impossible : ${e && e.message ? e.message : e}` };
+          afficher();
+        });
+      });
     page.querySelectorAll("[data-sv-rajout-retirer]").forEach((b) => b.addEventListener("click", () => retirerRajout(b.dataset.svRajoutRetirer)));
     if (q("svActualiser")) q("svActualiser").addEventListener("click", () => lireDossier(true));
     q("svFichier").addEventListener("click", () => q("svChampFichier").click());

@@ -668,6 +668,10 @@
   .sv-hors-outils input { flex: 1 1 260px; }
   .sv-hors tr.sv-hors-ligne td { background: #fff7a6; }
   .sv-rajouts { margin-top: 14px; padding-top: 10px; border-top: 1px solid #e3d9d3; }
+  .sv-hors-nouveau { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .sv-hors-nouveau[hidden] { display: none; }
+  .sv-hors-nouveau input { min-width: 240px; }
+  .sv-rajouts tr.sv-manuel-tete td { background: #f6f1ee; }
   .sv-hors-outils select { flex: 1 1 260px; max-width: 420px; }
   /* V6.7 : claustras */
   .cl-champs { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 6px 0; }
