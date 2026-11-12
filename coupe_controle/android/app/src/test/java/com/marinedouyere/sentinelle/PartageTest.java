@@ -911,6 +911,12 @@ public class PartageTest {
         assertNotNull(bouton(a.getWindow().getDecorView(), "Scanner le nouveau QR code du PC"));
         assertTrue("date des données du PC visible", texte.contains("Données du PC du"));
         capturerSiDemande(a, "appli_code_remplace.png");
+        // V6.5.2 : le code du téléphone en gros, à retaper sur le PC si celui-ci l'a perdu.
+        onglet(a, MainActivity.ONGLET_BIBLIOTHEQUE);
+        texte = ecran(a);
+        assertTrue(texte, texte.contains("TEST-TEST-TEST-TEST"));
+        assertTrue(texte, texte.contains("Reprenez son code"));
+        capturerSiDemande(a, "appli_code_gros.png");
     }
 
     /** V6.5.1 : le téléphone dit au PC quelle version il a lue (le PC voit s'il est à jour), sans effacer celles d'un autre. */

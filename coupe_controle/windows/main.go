@@ -136,6 +136,9 @@ func servir(w http.ResponseWriter, r *http.Request) {
 	case testerReseau:
 		servirTestReseau(w, r)
 		return
+	case memoireLien:
+		servirLien(w, r)
+		return
 	case quiEstLa:
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		io.WriteString(w, version)

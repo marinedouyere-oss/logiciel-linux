@@ -27,7 +27,7 @@ Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
 (`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
 (imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
 
-Version courante : **6.5.1** (le PC et l'APK partagent le même numéro ; l'agent suit).
+Version courante : **6.5.2** (le PC et l'APK partagent le même numéro ; l'agent suit).
 
 ### Glossaire métier
 
@@ -213,6 +213,14 @@ Cas réel du 11/11 : le PC envoyait sur un **nouveau code**, le téléphone lisa
   sur tous les écrans, avec « Scanner le nouveau QR code du PC ».
 - **Date des données** : l'écran Semaine du téléphone affiche « Données du PC du … ».
 Le téléphone suit **un seul PC** : celui dont il a scanné le QR code.
+
+**Le code tient (6.5.2)** : `Sentinelle.exe` garde le code dans `%LOCALAPPDATA%\Sentinelle\lien-telephone.json`
+(route locale `/sentinelle/lien`, en-tête `X-Sentinelle: lien` obligatoire, `windows/memoire.go`, test
+`memoire_test.go`). La page y recopie le code à chaque changement (`garderCodeDansLExe`) et le reprend au
+démarrage si la mémoire de Chrome l'a perdu (`restaurerLienTelephone`, puis envoi). Sur la carte Téléphone,
+« Reprenez son code » : on tape le code affiché dans l'appli (en gros sur la carte « Lien avec le PC ») et le PC
+reprend ce code — le téléphone et les PC de validation n'ont rien à refaire (`reprendreCodeLienTelephone`).
+« Créer un code » n'est que pour un premier téléphone. Test : `test_web_lien_tient.js`.
 
 ### Clavier de l'APK (V6.5)
 

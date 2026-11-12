@@ -939,6 +939,13 @@ final class PartageVue {
             LinearLayout etat = ui.ligne(point, enLecture ? "Lecture des données du PC…" : "✔ Relié au PC", sous, null, null, null);
             etat.setPadding(0, ui.dp(4), 0, ui.dp(4));
             corps.addView(etat);
+            // V6.5.2 : le code en gros : si le PC l'a perdu, on le retape sur le PC (Bibliothèque → Téléphone →
+            // « Reprenez son code ») ; rien à refaire ici.
+            TextView codeGros = ui.texte(code, 20, true, Ui.BORDEAUX);
+            codeGros.setTypeface(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD);
+            codeGros.setTextIsSelectable(true);
+            corps.addView(codeGros, ui.marges(2, 0));
+            corps.addView(ui.note("Code de ce téléphone. Si le PC ne l'a plus : sur le PC, Bibliothèque des semaines → Téléphone → « Reprenez son code », et tapez-le. Rien à refaire ici."), ui.marges(0, 6));
             if (avertissement != null) corps.addView(ui.bandeau("⚠ " + avertissement, ui.couleur(R.color.attention_fond), ui.couleur(R.color.attention_texte)), ui.marges(4, 6));
             if (erreur != null) corps.addView(ui.bandeau("❌ " + erreur, ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)), ui.marges(4, 6));
             LinearLayout boutons = ui.rangee();

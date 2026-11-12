@@ -61,6 +61,84 @@ function ecrireLienTelephone(etat) {
     // sans stockage : le lien dure le temps de la page
   }
   lienTelephone.memoire = etat;
+  garderCodeDansLExe(etat ? etat.code : null);
+}
+
+// ---- V6.5.2 : le code tient. Sentinelle.exe le garde aussi dans un fichier de l'ordinateur ----
+// (%LOCALAPPDATA%\Sentinelle\lien-telephone.json). Si Chrome perd sa mémoire, le même code revient tout seul :
+// le téléphone et les PC de validation n'ont rien à refaire.
+const MEMOIRE_LIEN_EXE = "/sentinelle/lien";
+const servieParLExe = () => location.protocol === "http:" && (location.hostname === "127.0.0.1" || location.hostname === "localhost");
+
+function garderCodeDansLExe(code) {
+  if (!servieParLExe() || lienTelephone.codeGarde === (code || null)) return;
+  lienTelephone.codeGarde = code || null;
+  fetch(MEMOIRE_LIEN_EXE, {
+    method: "PUT",
+    headers: { "X-Sentinelle": "lien", "Content-Type": "application/json" },
+    body: JSON.stringify({ code: code || null, quand: new Date().toISOString() }),
+  }).catch(() => {
+    lienTelephone.codeGarde = undefined; // réessayé au prochain changement
+  });
+}
+
+// Au démarrage : le code gardé par le .exe revient si la mémoire du navigateur l'a perdu.
+async function restaurerLienTelephone() {
+  if (!servieParLExe()) return;
+  const local = etatLienTelephone();
+  let fichier = null;
+  try {
+    const r = await fetch(MEMOIRE_LIEN_EXE, { headers: { "X-Sentinelle": "lien" }, cache: "no-store" });
+    if (r.ok) fichier = await r.json();
+  } catch (_e) {
+    fichier = null; // ancienne version du .exe ou page ouverte autrement
+  }
+  const code = fichier && typeof fichier.code === "string" && normaliserCodeLien(fichier.code).length === 16 ? formaterCodeLien(fichier.code) : null;
+  if (local && local.code) {
+    lienTelephone.codeGarde = code;
+    garderCodeDansLExe(local.code); // première fois en 6.5.2 : le code du navigateur part dans le fichier
+    return;
+  }
+  if (!code) return;
+  lienTelephone.codeGarde = code;
+  lienTelephone.memoire = undefined;
+  ecrireLienTelephone({ code, signature: null, dernierEnvoi: null, erreur: null, repris: new Date().toISOString() });
+  planifierEnvoiTelephone(); // le téléphone reçoit les nouveautés dès l'ouverture
+}
+
+const formaterCodeLien = (code) => normaliserCodeLien(code).replace(/(.{4})(?!$)/g, "$1-");
+
+// Reprendre le code d'un téléphone déjà relié (affiché dans l'appli) : rien à refaire sur le téléphone.
+async function reprendreCodeLienTelephone() {
+  const champ = document.getElementById("champCodeLien");
+  const n = normaliserCodeLien(champ ? champ.value : "");
+  if (n.length !== 16 || [...n].some((c) => !ALPHABET_CODE_LIEN.includes(c))) {
+    lienTelephone.erreurCode = "Le code a 16 lettres et chiffres (ABCD-EFGH-JKLM-NPQR) : recopiez celui de l'appli (icône du livre → Lien avec le PC).";
+    rafraichirBibliotheque();
+    return;
+  }
+  const actuel = etatLienTelephone();
+  if (actuel && actuel.code && normaliserCodeLien(actuel.code) === n) {
+    lienTelephone.erreurCode = null;
+    await envoyerAuTelephone(true);
+    return;
+  }
+  lienTelephone.erreurCode = null;
+  ecrireLienTelephone({ code: formaterCodeLien(n), signature: null, dernierEnvoi: null, erreur: null, repris: new Date().toISOString() });
+  rafraichirBibliotheque();
+  await envoyerAuTelephone(true);
+}
+
+function htmlReprendreCode(ouvert) {
+  return `<details class="reprendre-code"${ouvert ? " open" : ""}>
+      <summary>${ouvert ? "Un téléphone est déjà relié ? Reprenez son code" : "Le téléphone a un autre code ? Reprenez-le ici"}</summary>
+      <div class="note">Dans l'appli : icône du livre en haut → carte « Lien avec le PC » → « Code ABCD-… ». Tapez ce code ici : le téléphone et les PC de validation n'ont <strong>rien à refaire</strong>.</div>
+      <div class="ligne-code-lien">
+        <input type="text" id="champCodeLien" placeholder="ABCD-EFGH-JKLM-NPQR" maxlength="24" autocomplete="off" spellcheck="false">
+        <button type="button" id="btnReprendreLien">Reprendre ce code</button>
+      </div>
+      ${lienTelephone.erreurCode ? `<div class="compte-rendu erreur">${echapper(lienTelephone.erreurCode)}</div>` : ""}
+    </details>`;
 }
 
 const etatLienTelephone = () => lienTelephone.memoire !== undefined ? lienTelephone.memoire : lireLienTelephone();
@@ -235,7 +313,7 @@ async function prevenirAncienCode(etat, avis) {
 }
 
 async function nouveauCodeLienTelephone() {
-  if (!(await demanderConfirmation("Nouveau code pour le téléphone ?", "L'ancien code ne marchera plus : il faudra rescanner le QR code avec l'appli.", "Nouveau code"))) return;
+  if (!(await demanderConfirmation("Nouveau code pour le téléphone ?", "L'ancien code ne marchera plus : il faudra rescanner le QR code avec l'appli ET refaire le réglage des PC de validation. À ne faire que si le code a été donné à quelqu'un qui ne doit plus l'avoir.", "Nouveau code"))) return;
   const ancien = etatLienTelephone();
   await activerLienTelephone();
   prevenirAncienCode(ancien, "remplace");
@@ -276,7 +354,9 @@ function htmlLienTelephone() {
   let html = `<div class="carte" id="carteLienTelephone"><div class="carte-titre">Téléphone (envoi automatique)</div>`;
   if (!etat || !etat.code) {
     html += `<div class="note">Sentinelle envoie toute seule la bibliothèque au téléphone, chiffrée, à chaque changement : plus besoin du Drive. Le site de Sentinelle ne garde qu'un fichier illisible.</div>
-      <div class="boutons-carte"><button type="button" id="btnActiverLien">Activer l'envoi au téléphone</button></div>`;
+      ${htmlReprendreCode(true)}
+      <div class="note">Premier téléphone seulement :</div>
+      <div class="boutons-carte"><button type="button" class="contour" id="btnActiverLien">Créer un code (nouveau téléphone)</button></div>`;
   } else {
     const heure = (ms) => new Date(ms).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
     const statut = lienTelephone.envoi
@@ -302,6 +382,7 @@ function htmlLienTelephone() {
       </div>
       <div class="compte-rendu ${etat.erreur && !lienTelephone.envoi ? "erreur" : ""}" id="etatLien">${echapper(statut)}</div>
       ${htmlLectureTelephone(etat)}
+      ${htmlReprendreCode(false)}
       ${typeof htmlRetourTelephone === "function" ? htmlRetourTelephone() : ""}
       <div class="boutons-carte">
         <button type="button" id="btnEnvoyerLien" ${lienTelephone.envoi ? "disabled" : ""}>Envoyer maintenant</button>
@@ -324,5 +405,11 @@ function brancherLienTelephone(page) {
     return p;
   });
   b("btnNouveauCodeLien", nouveauCodeLienTelephone);
+  b("btnReprendreLien", reprendreCodeLienTelephone);
+  const champ = page.querySelector("#champCodeLien");
+  if (champ)
+    champ.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") reprendreCodeLienTelephone();
+    });
   b("btnArreterLien", arreterLienTelephone);
 }

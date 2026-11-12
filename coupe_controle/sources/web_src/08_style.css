@@ -133,6 +133,10 @@
   .compte-rendu { margin-top: 8px; font-size: 0.86rem; color: var(--noir); line-height: 1.5; }
   .compte-rendu.erreur { color: var(--alerte-texte); }
   .compte-rendu.attention { color: var(--attention-texte); }
+  .reprendre-code { margin-top: 10px; }
+  .reprendre-code summary { cursor: pointer; font-weight: 700; color: var(--bordeaux); font-size: 0.9rem; }
+  .ligne-code-lien { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+  .ligne-code-lien input { flex: 1 1 200px; font-family: ui-monospace, Consolas, monospace; font-size: 1rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 8px 10px; border: 1px solid var(--bord); border-radius: 8px; }
   /* Tableaux : en-tête bordeaux en capitales espacées, lignes alternées gris clair, pas de filets verticaux, total en aplat bordeaux. */
   table.recap { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
   table.recap th {
