@@ -2573,7 +2573,7 @@ function basculerValidation(p, e, oui) {
 
 // V6.5.5 : les lancements des cases (les deux onglets) qui ne sont pas dans la bibliothèque y entrent.
 async function archiverLancementsManquants() {
-  const connus = new Set([...bibliotheque.semaines.values()].filter((s) => !s.supprimeeLe).flatMap((s) => s.lancements.map((l) => cleNomLancement(l.nom))));
+  const connus = new Set([...bibliotheque.semaines.values()].flatMap((s) => lancementsActifs(s).map((l) => cleNomLancement(l.nom))));
   let n = 0;
   for (const parite of ["paire", "impaire"]) {
     const manquants = pairesDeLaSemaine(parite).filter((p) => p.strat && !estDiakonos(p) && !connus.has(cleNomLancement(p.strat.name)));

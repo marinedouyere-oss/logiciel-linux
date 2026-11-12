@@ -341,8 +341,8 @@ function envoyerAuTelephone(forcer = false) {
       const nbSemaines = [...bibliotheque.semaines.values()].filter((s) => s.lancements.length).length;
       // V6.5.4 : ce qui est parti, semaine par semaine (la carte Téléphone le montre : on voit tout de suite ce que le téléphone a).
       const envoye = contenu.semaines
-        .filter((s) => !s.supprimeeLe && s.lancements.length)
-        .map((s) => ({ s: `S${s.semaine} ${s.annee}`, l: s.lancements.map((l) => l.nom) }));
+        .filter((s) => lancementsActifs(s).length)
+        .map((s) => ({ s: `S${s.semaine} ${s.annee}`, l: lancementsActifs(s).map((l) => l.nom) }));
       ecrireLienTelephone({ ...etatLienTelephone(), signature, dernierEnvoi: new Date().toISOString(), version, nbSemaines, envoye, erreur: null });
       lienTelephone.essais = 0;
       return { ok: true };

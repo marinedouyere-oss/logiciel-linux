@@ -259,6 +259,15 @@ surplus. Si la pièce ajoutée entière arrive ensuite dans un vrai fichier de l
 double compte, signalé dans la liste « Pièces ajoutées à la main », où « Retirer » annule). Premier cas réel :
 CVC26100844 (5 pièces F206-ST9) comptée dans LAN264801START.
 
+### Semaine retirée puis rescannée (V6.7.4, `lancementsActifs` dans `06b_bibliotheque.js`)
+
+« Retirer la semaine » vide ses lancements et pose `supprimeeLe` (date du retrait), gardée pour la fusion entre PC :
+`fusionnerSemaines` n'efface que les lancements plus anciens que le retrait. Une semaine rescannée après coup a donc
+`supprimeeLe` ET des lancements valables. Le suivi, les validations, les plans du fichier partagé et l'archivage des
+lancements manquants sautaient toute semaine marquée : cas réel, semaine 46 retirée le 01/11 à 21:06:54 et rescannée
+20 s plus tard, ses 9 lancements absents du suivi (pièces en « Pas dans un lancement »). Partout, on lit maintenant
+`lancementsActifs(s)` : les lancements scannés après le retrait. Test : `test_web_semaine_retiree.js` (autonome).
+
 ### Claustras : saisie automatique depuis les confirmations de commande (V6.7, `06k_claustras.js`)
 
 - **Source** : les confirmations de commande (PDF) d'un dossier (« Lire un dossier de confirmations… », sous-dossiers
@@ -407,6 +416,8 @@ node outils/test_web_suivi.js ../web/index.html <Semaine 47> <LAN…48.xlsx> <ex
 node outils/test_web_comptage.js ../web/index.html
 # Pièces « Pas dans les lancements » (autonome, extraction inventée) :
 node outils/test_web_hors_lancement.js ../web/index.html <sortie>
+# Semaine retirée puis rescannée (autonome) :
+node outils/test_web_semaine_retiree.js ../web/index.html
 # Stock (autonome, fichier fabriqué) + page du rapport (optionnel : une vraie sauvegarde .bkp) :
 node outils/test_web_stock.js ../web/index.html <sortie> [LAN…backup.bkp]
 # Suivi en direct (autonome, données anonymes générées) :

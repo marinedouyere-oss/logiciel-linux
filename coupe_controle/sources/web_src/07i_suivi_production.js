@@ -449,7 +449,8 @@ const SUIVI = (() => {
     // Les lancements de la bibliothèque (6 mois autour de la dernière extraction).
     const lancements = [];
     for (const s of bibliotheque.semaines.values()) {
-      if (s.supprimeeLe || !s.lancements.length) continue;
+      const actifs = lancementsActifs(s); // V6.7.4 : semaine retirée puis rescannée : ses lancements d'après le retrait
+      if (!actifs.length) continue;
       if (Math.abs(ecartSemaines(der.courante, { annee: s.annee, semaine: Number(s.semaine) })) > 26) continue;
       const cols = s.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
       const iCle = Math.max(0, cols.indexOf("cle"));
@@ -458,7 +459,7 @@ const SUIVI = (() => {
       const iCol = cols.indexOf("coloris");
       const iTr = cols.indexOf("transporteur");
       const iCli = cols.indexOf("client");
-      for (const l of s.lancements) {
+      for (const l of actifs) {
         const pieces = new Map();
         const infos = new Map(); // pièce → [commande, coloris, transporteur, client] (suivi par transporteur, coloris, client)
         for (const p of l.pieces || []) {

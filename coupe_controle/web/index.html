@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.7.3 — Contrôle de coupe</title>
+<title>Sentinelle V6.7.4 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -722,7 +722,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.7.3</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.7.4</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -844,7 +844,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.7.3 · Contrôle de coupe</span>
+    <span>Sentinelle V6.7.4 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -6102,6 +6102,12 @@ function ficheLancementBibliotheque(nomFichier, strat, infos) {
   };
 }
 
+// V6.7.4 : une semaine retirée puis rescannée garde sa date de retrait (supprimeeLe) : à la fusion entre PC, les
+// lancements plus anciens que le retrait restent effacés. Mais ceux scannés APRÈS le retrait sont bien là et comptent
+// partout (suivi, validations, plans, téléphone). Cas réel : semaine 46 retirée le 01/11 à 21:06:54, rescannée 20 s
+// plus tard ; le suivi de production l'ignorait entièrement (ses 9 lancements passaient en « Pas dans un lancement »).
+const lancementsActifs = (s) => (!s ? [] : s.supprimeeLe ? s.lancements.filter((l) => l.maj && l.maj > s.supprimeeLe) : s.lancements);
+
 const nouvelleSemaineBibliotheque = (annee, semaine) => ({
   id: idSemaine(annee, semaine), annee, semaine, maj: "", supprimeeLe: null, colonnesPieces: COLONNES_PIECES_BIBLIOTHEQUE, lancements: [],
 });
@@ -6285,7 +6291,7 @@ function contenuFichierPartage() {
     .map(({ drive: _drive, ...s }) => s)
     .sort((a, b) => ordreSemaine(a.annee, a.semaine) - ordreSemaine(b.annee, b.semaine));
   // Plans de coupe : seulement les semaines les plus récentes.
-  const avecPlans = new Set(semaines.filter((s) => !s.supprimeeLe && s.lancements.length).slice(-SEMAINES_AVEC_PLANS).map((s) => s.id));
+  const avecPlans = new Set(semaines.filter((s) => lancementsActifs(s).length).slice(-SEMAINES_AVEC_PLANS).map((s) => s.id));
   for (let i = 0; i < semaines.length; i++)
     if (!avecPlans.has(semaines[i].id) && semaines[i].lancements.some((l) => l.plans)) semaines[i] = { ...semaines[i], lancements: semaines[i].lancements.map(({ plans: _p, ...l }) => l) };
   return {
@@ -8172,8 +8178,8 @@ function envoyerAuTelephone(forcer = false) {
       const nbSemaines = [...bibliotheque.semaines.values()].filter((s) => s.lancements.length).length;
       // V6.5.4 : ce qui est parti, semaine par semaine (la carte Téléphone le montre : on voit tout de suite ce que le téléphone a).
       const envoye = contenu.semaines
-        .filter((s) => !s.supprimeeLe && s.lancements.length)
-        .map((s) => ({ s: `S${s.semaine} ${s.annee}`, l: s.lancements.map((l) => l.nom) }));
+        .filter((s) => lancementsActifs(s).length)
+        .map((s) => ({ s: `S${s.semaine} ${s.annee}`, l: lancementsActifs(s).map((l) => l.nom) }));
       ecrireLienTelephone({ ...etatLienTelephone(), signature, dernierEnvoi: new Date().toISOString(), version, nbSemaines, envoye, erreur: null });
       lienTelephone.essais = 0;
       return { ok: true };
@@ -9565,11 +9571,12 @@ async function canalValidationsLien(code, poste) {
 function commandesLancees() {
   const par = new Map();
   for (const s of bibliotheque.semaines.values()) {
-    if (s.supprimeeLe || !s.lancements.length) continue;
+    const actifs = lancementsActifs(s);
+    if (!actifs.length) continue;
     const cols = s.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
     const iCmd = cols.indexOf("commande");
     const iLig = cols.indexOf("ligne");
-    for (const l of s.lancements)
+    for (const l of actifs)
       for (const p of l.pieces || []) {
         const cmd = iCmd >= 0 ? String(p[iCmd] ?? "").trim() : "";
         if (!/^CVC\d{8}$/.test(cmd)) continue;
@@ -14204,7 +14211,7 @@ function basculerValidation(p, e, oui) {
 
 // V6.5.5 : les lancements des cases (les deux onglets) qui ne sont pas dans la bibliothèque y entrent.
 async function archiverLancementsManquants() {
-  const connus = new Set([...bibliotheque.semaines.values()].filter((s) => !s.supprimeeLe).flatMap((s) => s.lancements.map((l) => cleNomLancement(l.nom))));
+  const connus = new Set([...bibliotheque.semaines.values()].flatMap((s) => lancementsActifs(s).map((l) => cleNomLancement(l.nom))));
   let n = 0;
   for (const parite of ["paire", "impaire"]) {
     const manquants = pairesDeLaSemaine(parite).filter((p) => p.strat && !estDiakonos(p) && !connus.has(cleNomLancement(p.strat.name)));
@@ -18296,7 +18303,8 @@ const SUIVI = (() => {
     // Les lancements de la bibliothèque (6 mois autour de la dernière extraction).
     const lancements = [];
     for (const s of bibliotheque.semaines.values()) {
-      if (s.supprimeeLe || !s.lancements.length) continue;
+      const actifs = lancementsActifs(s); // V6.7.4 : semaine retirée puis rescannée : ses lancements d'après le retrait
+      if (!actifs.length) continue;
       if (Math.abs(ecartSemaines(der.courante, { annee: s.annee, semaine: Number(s.semaine) })) > 26) continue;
       const cols = s.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
       const iCle = Math.max(0, cols.indexOf("cle"));
@@ -18305,7 +18313,7 @@ const SUIVI = (() => {
       const iCol = cols.indexOf("coloris");
       const iTr = cols.indexOf("transporteur");
       const iCli = cols.indexOf("client");
-      for (const l of s.lancements) {
+      for (const l of actifs) {
         const pieces = new Map();
         const infos = new Map(); // pièce → [commande, coloris, transporteur, client] (suivi par transporteur, coloris, client)
         for (const p of l.pieces || []) {

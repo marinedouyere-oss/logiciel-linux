@@ -61,11 +61,12 @@ async function canalValidationsLien(code, poste) {
 function commandesLancees() {
   const par = new Map();
   for (const s of bibliotheque.semaines.values()) {
-    if (s.supprimeeLe || !s.lancements.length) continue;
+    const actifs = lancementsActifs(s);
+    if (!actifs.length) continue;
     const cols = s.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
     const iCmd = cols.indexOf("commande");
     const iLig = cols.indexOf("ligne");
-    for (const l of s.lancements)
+    for (const l of actifs)
       for (const p of l.pieces || []) {
         const cmd = iCmd >= 0 ? String(p[iCmd] ?? "").trim() : "";
         if (!/^CVC\d{8}$/.test(cmd)) continue;

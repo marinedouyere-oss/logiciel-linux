@@ -294,6 +294,12 @@ function ficheLancementBibliotheque(nomFichier, strat, infos) {
   };
 }
 
+// V6.7.4 : une semaine retirée puis rescannée garde sa date de retrait (supprimeeLe) : à la fusion entre PC, les
+// lancements plus anciens que le retrait restent effacés. Mais ceux scannés APRÈS le retrait sont bien là et comptent
+// partout (suivi, validations, plans, téléphone). Cas réel : semaine 46 retirée le 01/11 à 21:06:54, rescannée 20 s
+// plus tard ; le suivi de production l'ignorait entièrement (ses 9 lancements passaient en « Pas dans un lancement »).
+const lancementsActifs = (s) => (!s ? [] : s.supprimeeLe ? s.lancements.filter((l) => l.maj && l.maj > s.supprimeeLe) : s.lancements);
+
 const nouvelleSemaineBibliotheque = (annee, semaine) => ({
   id: idSemaine(annee, semaine), annee, semaine, maj: "", supprimeeLe: null, colonnesPieces: COLONNES_PIECES_BIBLIOTHEQUE, lancements: [],
 });
@@ -477,7 +483,7 @@ function contenuFichierPartage() {
     .map(({ drive: _drive, ...s }) => s)
     .sort((a, b) => ordreSemaine(a.annee, a.semaine) - ordreSemaine(b.annee, b.semaine));
   // Plans de coupe : seulement les semaines les plus récentes.
-  const avecPlans = new Set(semaines.filter((s) => !s.supprimeeLe && s.lancements.length).slice(-SEMAINES_AVEC_PLANS).map((s) => s.id));
+  const avecPlans = new Set(semaines.filter((s) => lancementsActifs(s).length).slice(-SEMAINES_AVEC_PLANS).map((s) => s.id));
   for (let i = 0; i < semaines.length; i++)
     if (!avecPlans.has(semaines[i].id) && semaines[i].lancements.some((l) => l.plans)) semaines[i] = { ...semaines[i], lancements: semaines[i].lancements.map(({ plans: _p, ...l }) => l) };
   return {
