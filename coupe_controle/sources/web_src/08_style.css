@@ -660,6 +660,21 @@
   .pl-saisie { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
   .pl-saisie input[type="text"] { flex: 1 1 150px; min-width: 120px; }
   .pl-saisie input[type="number"] { width: 70px; }
+  /* V6.7 : claustras */
+  .cl-champs { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 6px 0; }
+  .cl-champ { display: flex; flex-direction: column; font-size: 0.78rem; color: var(--gris); font-weight: 700; }
+  .cl-champ input { font-size: 0.95rem; padding: 4px 6px; margin-top: 2px; }
+  .cl-cases { display: flex; flex-wrap: wrap; gap: 14px; margin: 4px 0 8px; font-size: 0.9rem; }
+  .cl-claustra { border-top: 1px solid var(--gris-filet); padding-top: 10px; margin-top: 10px; }
+  .cl-claustra.cl-off { opacity: 0.55; }
+  .cl-titre { font-weight: 700; color: var(--bordeaux); }
+  .cl-source { font-size: 0.8rem; font-weight: 400; margin-left: 8px; }
+  .cl-pieces { max-width: 640px; }
+  .cl-plan-bloc { margin-top: 8px; }
+  .cl-plan-bloc summary { cursor: pointer; font-weight: 700; color: var(--bordeaux); }
+  .cl-plan-bloc svg { display: block; width: 100%; max-width: 1000px; height: auto; border: 1px solid var(--gris-filet); margin: 8px 0; }
+  .cl-liste { margin: 4px 0 0 18px; }
+  .cl-bas { margin: 4px 0 24px; }
   .stk-tri { cursor: pointer; user-select: none; white-space: nowrap; }
   .stk-tri:hover, .stk-tri.actif { color: var(--bordeaux); }
   .stk-fleche { margin-left: 4px; font-size: 0.72rem; opacity: 0.4; }

@@ -184,6 +184,13 @@ func servir(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
 	case ".webmanifest":
 		w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
+	case ".js":
+		// V6.7 : lecture des confirmations en image (ocr/) ; un worker refuse un script servi en text/plain.
+		w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	case ".wasm":
+		w.Header().Set("Content-Type", "application/wasm")
+	case ".traineddata", ".txt":
+		w.Header().Set("Content-Type", "application/octet-stream")
 	}
 	w.Write(contenu)
 }

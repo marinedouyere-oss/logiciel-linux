@@ -698,6 +698,7 @@ function afficher() {
   $("pageWoodstore").classList.toggle("inactif", onglet !== "woodstore");
   $("pageStock").classList.toggle("inactif", onglet !== "stock");
   $("pagePreLancement").classList.toggle("inactif", onglet !== "prelancement");
+  $("pageClaustras").classList.toggle("inactif", onglet !== "claustras");
   majMenuDossier();
   if (estOngletSemaine()) construireSemaine(onglet);
   else if (onglet === "accueil") afficherAccueil();
@@ -709,6 +710,7 @@ function afficher() {
   else if (onglet === "woodstore") afficherWoodstore();
   else if (onglet === "stock") afficherStock();
   else if (onglet === "prelancement") afficherPreLancement();
+  else if (onglet === "claustras") afficherClaustras();
 }
 
 function majOnglets() {

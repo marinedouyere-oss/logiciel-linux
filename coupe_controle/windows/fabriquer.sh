@@ -15,6 +15,9 @@ rm -rf "$ici/page"
 mkdir -p "$ici/page/icons"
 cp "$web/index.html" "$web/manifest.webmanifest" "$ici/page/"
 cp "$web/icons/icon-192.png" "$web/icons/icon-512.png" "$ici/page/icons/"
+# V6.7 : la lecture des confirmations de commande en image (claustras), chargée seulement quand il le faut.
+mkdir -p "$ici/page/ocr"
+cp "$web/ocr/"* "$ici/page/ocr/"
 
 # Icône Laisné, fiche « Propriétés » (version, nom) et manifeste du .exe.
 cd "$ici"

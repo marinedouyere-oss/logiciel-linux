@@ -27,7 +27,7 @@ Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
 (`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
 (imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
 
-Version courante : **6.6.0** (le PC et l'APK partagent le même numéro ; l'agent suit).
+Version courante : **6.7.0** (le PC et l'APK partagent le même numéro ; l'agent suit).
 
 ### Glossaire métier
 
@@ -231,6 +231,32 @@ Activité par poste et bouton « Réinitialiser » : `htmlBandeauValidations()` 
   / 1,8). Comparé au **stock réel** (sans chutes réservées ni case 302) : OK (≤ 85 %), juste, il manque ≈ N panneaux
   (rouge si Limite 0 « Cut Rite ne pourra pas tout placer », orange si Limite 9 « à commander »), pas dans woodStore.
   C'est une estimation : l'optimisation réelle reste celle de Cut Rite.
+
+### Claustras : saisie automatique depuis les confirmations de commande (V6.7, `06k_claustras.js`)
+
+- **Source** : les confirmations de commande (PDF) d'un dossier (« Lire un dossier de confirmations… », sous-dossiers
+  compris) ou des PDF choisis. Une ligne de commande est un claustra si son bloc parle de « claustra » (« Réalisation
+  d'un claustra en aggloméré stratifié double face ») ; les autres lignes (îlots, plans…) sont comptées et laissées aux
+  lancements habituels.
+- **Lecture** : texte du PDF (pdf.js) ; s'il n'y en a pas — PDF « Microsoft Print to PDF », où le texte est dessiné —
+  la page est rendue à 300 dpi et lue par **Tesseract** (tesseract.js 7, cœur simd-lstm, modèle `fra`), fichiers
+  dans `web/ocr/` (≈ 5,3 Mo), copiés dans le .exe par `fabriquer.sh` et chargés seulement à ce moment-là
+  (`main.go` sert `.js` en `text/javascript` : un worker refuse `text/plain`). Environ 3 s par page. Les mots
+  gardent leur position : l'en-tête est lu dans la **moitié gauche** (la droite porte l'adresse du client sur les
+  mêmes lignes).
+- **Champs lus** : commande (CVC + 8 chiffres), référence, code client, représentant, transporteur, semaine/année
+  de livraison ; par claustra : ligne, quantité (colonne QTE), coloris (code + nom), épaisseur, longueur et hauteur
+  totales, lames droites / obliques et leurs largeurs, épaisseur des lames, profondeur des lisses, emballage et
+  montage (inclus / non inclus). Agglo d'après l'épaisseur (29 → SAG28HYBR, 39 → SAG38HYBR, 21-22 → SAG19HYBR).
+  Tout est modifiable à l'écran et gardé en mémoire (`sentinelle-claustras`).
+- **Fichier de lancement** : règles du logiciel Claustra (lisses, lames hauteur − 60, surcote 25, idPlan C, CBD,
+  chants PVC, A MONTER / ENKIT, protections), quantités × nombre de claustras, `trans_nomcourt` = transporteur.
+  Un nouveau classeur (nom par défaut `LAN{AA}{SS}CLAUSTRA`) : aucun fichier existant n'est modifié.
+- **Plan du claustra** (`svgPlanClaustra`) : vue de face et côté (1:20 en général), vue de dessus (1:5), cotes et
+  pièces ; imprimable en A4 paysage. Les lames sont dessinées à espaces égaux, bouts compris (supposé : la
+  confirmation ne donne pas leur position).
+- Test : `test_web_claustras.js` (confirmation fabriquée ; vraie confirmation en image avec
+  `SENTINELLE_CLAUSTRA_PDF`, donnée client hors dépôt).
 
 ### Lien PC → téléphone : savoir si le téléphone suit (V6.5.1)
 
