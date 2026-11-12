@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- V6.8 : où l'appareil photo enregistre la photo du plan (cache de l'appli, effacée après envoi). -->
+<paths>
+    <cache-path name="photos" path="photos/" />
+</paths>

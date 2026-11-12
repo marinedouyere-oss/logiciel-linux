@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.7.5 — Contrôle de coupe</title>
+<title>Sentinelle V6.8.0 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -686,6 +686,26 @@
   .sv-hors-outils input { flex: 1 1 260px; }
   .sv-hors tr.sv-hors-ligne td { background: #fff7a6; }
   .sv-rajouts { margin-top: 14px; padding-top: 10px; border-top: 1px solid #e3d9d3; }
+  .cl-avec-photo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 38%); gap: 18px; align-items: start; }
+  .cl-photos { position: sticky; top: 10px; border-left: 1px solid #e3d9d3; padding-left: 14px; }
+  .cl-photos-titre { font-weight: 700; color: var(--bordeaux, #78140c); margin-bottom: 6px; }
+  .cl-photo { margin: 0 0 10px; }
+  .cl-photo img { display: block; max-width: 100%; max-height: 62vh; border: 1px solid #ddd; border-radius: 4px; cursor: zoom-in; background: #fff; }
+  .cl-photo figcaption { font-size: 0.82rem; color: #797978; margin-top: 3px; }
+  .cl-photos-seules { display: flex; flex-wrap: wrap; gap: 14px; }
+  .cl-photos-seules .cl-photo img { max-height: 180px; }
+  .cl-visionneuse { position: fixed; inset: 0; z-index: 1000; background: rgba(20, 20, 20, 0.88); display: flex; flex-direction: column; }
+  .cl-vis-barre { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 14px; background: #fff; }
+  .cl-vis-actions { display: flex; gap: 8px; }
+  .cl-vis-zone { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 10px; }
+  .cl-vis-zone img { max-width: 100%; max-height: 100%; transition: transform 0.2s; background: #fff; }
+  .cl-visionneuse.reelle .cl-vis-zone { display: block; }
+  .cl-visionneuse.reelle .cl-vis-zone img { max-width: none; max-height: none; }
+  @media (max-width: 900px) { .cl-avec-photo { grid-template-columns: 1fr; } .cl-photos { position: static; border-left: 0; padding-left: 0; } }
+  .cl-lames { margin: 6px 0 8px; }
+  .cl-lames-titre { font-weight: 700; margin-bottom: 4px; }
+  .cl-lames-table { border-collapse: collapse; margin: 4px 0; }
+  .cl-lames-table th, .cl-lames-table td { padding: 3px 8px 3px 0; text-align: left; font-size: 0.9rem; }
   .sv-hors-nouveau { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .sv-hors-nouveau[hidden] { display: none; }
   .sv-hors-nouveau input { min-width: 240px; }
@@ -726,7 +746,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.7.5</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.8.0</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -848,7 +868,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.7.5 · Contrôle de coupe</span>
+    <span>Sentinelle V6.8.0 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -6315,6 +6335,8 @@ function contenuFichierPartage() {
     retourValidations: typeof accusesValidations === "function" ? { traitees: accusesValidations() } : null,
     // V6.5.1 : le stock des panneaux (fichier woodStore chargé sur la page Stock).
     stock: typeof stockPourPartage === "function" ? stockPourPartage() : null,
+    // V6.8 : les commandes claustras lues sur ce PC (le téléphone y rattache la photo du plan).
+    claustras: typeof claustrasPourTelephone === "function" ? claustrasPourTelephone() : null,
   };
 }
 
@@ -8085,7 +8107,8 @@ async function diagnosticLien(secrets) {
 
 const signatureEnvoi = () =>
   signaturePartage([...bibliotheque.semaines.values()], typeof suiviPourPartage === "function" ? suiviPourPartage() : null, typeof retourPourPartage === "function" ? retourPourPartage() : null) +
-  `|stock:${typeof signatureStock === "function" ? signatureStock() : ""}`;
+  `|stock:${typeof signatureStock === "function" ? signatureStock() : ""}` +
+  `|claustras:${typeof claustrasPourTelephone === "function" ? JSON.stringify(claustrasPourTelephone()) : ""}`;
 
 // ---- V6.5.3 : plusieurs PC sur le même code (bureau, maison…) ----
 // Le site garde le dernier envoi. Si un AUTRE PC l'a publié, ses semaines sont fusionnées dans notre bibliothèque
@@ -9346,6 +9369,7 @@ async function traiterDemandesTelephone(contenu) {
     try {
       if (d.type === "validation") res = await validationDuTelephone(d);
       else if (d.type === "plan") res = await planDuTelephone(d);
+      else if (d.type === "photoClaustra") res = await photoClaustraDuTelephone(d); // V6.8 : photo du plan d'un claustra
       else res = { ok: false, texte: `demande inconnue (${d.type})` };
     } catch (erreur) {
       res = { ok: false, texte: `pas reprise : ${erreur && erreur.message ? erreur.message : erreur}` };
@@ -9519,7 +9543,7 @@ function demarrerRetourTelephone() {
 function htmlRetourTelephone() {
   const t = lireEtatRetour().traitees;
   const liste = Object.values(t).sort((a, b) => String(b.quand).localeCompare(String(a.quand))).slice(0, 5);
-  if (!liste.length && !retourTelephone.erreur) return `<div class="note">Le téléphone peut renvoyer des plans de coupe modifiés et des problèmes validés OK : Sentinelle les reprend tout seul.</div>`;
+  if (!liste.length && !retourTelephone.erreur) return `<div class="note">Le téléphone peut renvoyer des plans de coupe modifiés, des problèmes validés OK et des photos de plans de claustras : Sentinelle les reprend tout seul.</div>`;
   const date = (iso) => (iso ? new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
   return `<div class="retour-telephone"><div class="note"><strong>Reçu du téléphone</strong> (repris tout seul)</div>${liste
     .map((x) => `<div class="retour-ligne ${x.ok ? "ok" : "refus"}">${x.ok ? "✔" : "⚠"} ${echapper(date(x.quand))} — ${echapper(x.texte)}</div>`)
@@ -10960,6 +10984,8 @@ function brancherPreLancement() {
 // Rien n'est écrit ailleurs que dans le nouveau fichier : ni les confirmations, ni les fichiers de lancement existants.
 
 const CLE_CLAUSTRAS = "sentinelle-claustras";
+// V6.7.6 : version de la lecture ; une confirmation lue avec une version plus ancienne est relue (ex. lames « 80 et 77 »).
+const LECTURE_CL = 2;
 const COLONNES_LAN_CLAUSTRA = [
   "conf_commande", "conf_ligne", "conf_article", "conf_epaisseur", "conf_longueur", "conf_largeur", "longueur", "largeur", "surepaisseur",
   "coloris", "agglo", "coloris_inf", "comdet_qte", "com_livsem", "com_livan", "comprod_lancement", "com_clientcom", "com_reference",
@@ -10969,7 +10995,7 @@ const COLONNES_LAN_CLAUSTRA = [
 ];
 const CL = { SURCOTE: 25, LISSE: 30, ID_PLAN: "C", OCR_ECHELLE: 300 / 72 };
 
-const claustras = { confirmations: [], lu: false, enCours: null, erreur: null, nomFichier: "", message: null };
+const claustras = { confirmations: [], lu: false, enCours: null, erreur: null, nomFichier: "", message: null, photos: new Map(), photosChargees: false, nbPhotos: {} };
 
 // ---------- Lecture du PDF : des mots placés sur la page ----------
 
@@ -11128,7 +11154,10 @@ function lireConfirmationClaustra(pages) {
 
 function lireBlocClaustra(bloc, ligne) {
   const c = { ligne: String(ligne), coloris: "", colorisNom: "", epaisseur: "", longueur: "", hauteur: "", droites: "", largeurDroites: "", obliques: "", largeurObliques: "", epaisseurLames: "", profondeurLisses: "", montage: true, protection: true, qte: "1", agglo: "", aLancer: true };
-  let largeurLames = null;
+  // V6.8 : « Largeur des lames : 80 et 77 mm » : la confirmation ne dit pas quelles lames font 77 et lesquelles 80 ;
+  // seul le plan le dit. Les deux largeurs sont gardées (largeursLames) et la largeur de chaque lame se saisit en
+  // regardant le plan (photo prise par le téléphone). Avant, seul le premier nombre était lu (cas réel CVC26100433).
+  let largeursLames = null;
   for (const brut of bloc) {
     const t = chiffresCl(brut);
     const n = sansAccentsCl(t);
@@ -11141,15 +11170,20 @@ function lireBlocClaustra(bloc, ligne) {
     if ((m = /(\d+)\s*lames?\s*obliques?/.exec(n))) c.obliques = m[1];
     if ((m = /largeur des lames droites?\s*:?\s*(\d+)/.exec(n))) c.largeurDroites = m[1];
     else if ((m = /largeur des lames obliques?\s*:?\s*(\d+)/.exec(n))) c.largeurObliques = m[1];
-    else if ((m = /largeur des lames\s*:?\s*(\d+)/.exec(n))) largeurLames = m[1];
+    else if ((m = /largeur des lames\s*:?\s*(.*)$/.exec(n))) {
+      const nombres = (m[1].split("mm")[0].match(/\d+/g) || []).filter((x) => Number(x) > 0);
+      if (nombres.length) largeursLames = nombres;
+    }
     if ((m = /profondeur des lisses\s*:?\s*(\d+)/.exec(n))) c.profondeurLisses = m[1];
     if ((m = /emballage\s*:?\s*(non)?/.exec(n))) c.protection = !m[1];
     if ((m = /montage\s*:?\s*(non)?/.exec(n))) c.montage = !m[1];
     if ((m = /(\d+[.,]\d{2})\s+(\d+)[.,]\d{2}\s+(\d+[.,]\d{2})/.exec(t))) c.qte = String(Number(m[2]) || 1);
   }
-  if (largeurLames) {
-    if (c.droites && !c.largeurDroites) c.largeurDroites = largeurLames;
-    if (c.obliques && !c.largeurObliques) c.largeurObliques = largeurLames;
+  if (largeursLames && largeursLames.length > 1) c.largeursLames = [...new Set(largeursLames)];
+  else if (largeursLames) {
+    // Une seule largeur : toutes les lames.
+    if (c.droites && !c.largeurDroites) c.largeurDroites = largeursLames[0];
+    if (c.obliques && !c.largeurObliques) c.largeurObliques = largeursLames[0];
   }
   c.agglo = aggloDuClaustra(c.epaisseur);
   return c;
@@ -11163,16 +11197,42 @@ const nombreCl = (v) => {
 };
 const codeCouleurCl = (c) => String(c || "").trim().split(/\s+/)[0].toUpperCase();
 
+// V6.8 : les lames en lignes { sorte: droite | oblique, nombre, largeur } — plusieurs largeurs pour une même sorte
+// possibles (ex. 6 obliques à 77 et 2 à 80, lu sur le plan). Sans lignes saisies : celles de la confirmation.
+function lamesDe(c) {
+  if (Array.isArray(c.lames)) return c.lames;
+  const r = [];
+  if (String(c.droites || "").trim()) r.push({ sorte: "droite", nombre: String(c.droites), largeur: String(c.largeurDroites || "") });
+  if (String(c.obliques || "").trim()) r.push({ sorte: "oblique", nombre: String(c.obliques), largeur: String(c.largeurObliques || "") });
+  return r;
+}
+const pluralCl = (n, mot) => `${n} ${mot}${n > 1 ? "s" : ""}`;
+
+// Ce qui ne colle pas avec la confirmation (n'empêche pas de créer le fichier : le plan fait foi).
+function avertissementsLames(c) {
+  const a = [];
+  const somme = (sorte) => lamesDe(c).filter((x) => x.sorte === sorte).reduce((t, x) => t + (nombreCl(x.nombre) || 0), 0);
+  for (const [sorte, conf] of [["droite", c.droites], ["oblique", c.obliques]]) {
+    const n = nombreCl(conf);
+    if (n === null) continue;
+    const saisi = somme(sorte);
+    if (saisi !== n) a.push(`la confirmation dit ${n} lame${n > 1 ? "s" : ""} ${sorte}${n > 1 ? "s" : ""}, ${saisi} saisie${saisi > 1 ? "s" : ""}`);
+  }
+  const permises = (c.largeursLames || []).map(Number);
+  if (permises.length)
+    for (const x of lamesDe(c)) {
+      const lg = nombreCl(x.largeur);
+      if (lg !== null && !permises.includes(lg)) a.push(`largeur ${lg} mm : pas sur la confirmation (${c.largeursLames.join(" et ")} mm)`);
+    }
+  return [...new Set(a)];
+}
+
 function piecesClaustra(c) {
   const erreurs = [];
   const L = nombreCl(c.longueur);
   const H = nombreCl(c.hauteur);
   const ep = nombreCl(c.epaisseur);
   const prof = nombreCl(c.profondeurLisses);
-  const nd = nombreCl(c.droites) || 0;
-  const no = nombreCl(c.obliques) || 0;
-  const ld = nombreCl(c.largeurDroites);
-  const lo = nombreCl(c.largeurObliques);
   const q = Math.max(1, Math.round(nombreCl(c.qte) || 1));
   const positif = (v) => v !== null && Number.isFinite(v) && v > 0;
   if (!codeCouleurCl(c.coloris)) erreurs.push("coloris");
@@ -11180,14 +11240,33 @@ function piecesClaustra(c) {
   if (!positif(H) || H <= 2 * CL.LISSE) erreurs.push("hauteur");
   if (!positif(ep)) erreurs.push("épaisseur");
   if (!positif(prof)) erreurs.push("profondeur des lisses");
-  if (nd + no < 1) erreurs.push("nombre de lames");
-  if (nd > 0 && !positif(ld)) erreurs.push("largeur des lames droites");
-  if (no > 0 && !positif(lo)) erreurs.push("largeur des lames obliques");
-  if (!Number.isInteger(nd) || !Number.isInteger(no) || nd < 0 || no < 0) erreurs.push("nombre de lames (entier)");
-  if (erreurs.length) return { pieces: [], erreurs };
+  // Les lames, regroupées par sorte et largeur (obliques puis droites, comme le logiciel Claustra).
+  const groupes = new Map();
+  let total = 0;
+  const plusieurs = (c.largeursLames || []).length > 1;
+  for (const x of lamesDe(c)) {
+    const nb = nombreCl(x.nombre);
+    const lg = nombreCl(x.largeur);
+    if (nb === null && lg === null) continue; // ligne vide
+    if (nb === null || !Number.isInteger(nb) || nb < 0) {
+      erreurs.push("nombre de lames (entier)");
+      continue;
+    }
+    if (nb === 0) continue;
+    const sorte = x.sorte === "droite" ? "droite" : "oblique";
+    if (!positif(lg)) {
+      erreurs.push(`largeur des lames ${sorte}s${plusieurs ? ` (voir le plan : ${c.largeursLames.join(" ou ")} mm)` : ""}`);
+      continue;
+    }
+    const k = `${sorte}|${lg}`;
+    groupes.set(k, { sorte, l: lg, n: (groupes.has(k) ? groupes.get(k).n : 0) + nb });
+    total += nb;
+  }
+  if (!total && !erreurs.some((e) => /lames/.test(e))) erreurs.push("nombre de lames");
+  if (erreurs.length) return { pieces: [], erreurs: [...new Set(erreurs)] };
   const pieces = [{ nom: "Lisse", L, l: prof, e: ep, qte: 2 * q, chants: 4 }];
-  if (no > 0) pieces.push({ nom: "Lame oblique", L: H - 2 * CL.LISSE, l: lo, e: ep, qte: no * q, chants: 2 });
-  if (nd > 0) pieces.push({ nom: "Lame droite", L: H - 2 * CL.LISSE, l: ld, e: ep, qte: nd * q, chants: 2 });
+  const ordre = [...groupes.values()].sort((a, b) => (a.sorte === b.sorte ? b.l - a.l : a.sorte === "oblique" ? -1 : 1));
+  for (const g of ordre) pieces.push({ nom: g.sorte === "oblique" ? "Lame oblique" : "Lame droite", L: H - 2 * CL.LISSE, l: g.l, e: ep, qte: g.n * q, chants: 2 });
   if (c.protection) {
     pieces.push({ nom: "Protection", L: H + 50, l: L + 50, e: 19, qte: 2 * q, protection: true });
     pieces.push({ nom: "Protection", L: H + 50, l: 85, e: 19, qte: 2 * q, protection: true });
@@ -11318,17 +11397,160 @@ function lireClaustrasMemoire() {
   claustras.lu = true;
   try {
     const v = JSON.parse(localStorage.getItem(CLE_CLAUSTRAS) || "null");
-    if (v && Array.isArray(v.confirmations)) Object.assign(claustras, { confirmations: v.confirmations, nomFichier: v.nomFichier || "" });
+    if (v && Array.isArray(v.confirmations)) Object.assign(claustras, { confirmations: v.confirmations, nomFichier: v.nomFichier || "", nbPhotos: v.nbPhotos && typeof v.nbPhotos === "object" ? v.nbPhotos : {} });
   } catch (_e) {
     // rien de gardé
   }
 }
 function garderClaustras() {
+  lireClaustrasMemoire(); // jamais écrire par-dessus ce qui est gardé sans l'avoir lu
   try {
-    localStorage.setItem(CLE_CLAUSTRAS, JSON.stringify({ confirmations: claustras.confirmations, nomFichier: claustras.nomFichier }));
+    localStorage.setItem(CLE_CLAUSTRAS, JSON.stringify({ confirmations: claustras.confirmations, nomFichier: claustras.nomFichier, nbPhotos: claustras.nbPhotos }));
   } catch (_e) {
     // sans place : gardé le temps de la page
   }
+  // V6.8 : le téléphone reçoit la liste des commandes claustras (pour y prendre le plan en photo).
+  if (typeof planifierEnvoiTelephone === "function") planifierEnvoiTelephone();
+}
+
+// ---------- V6.8 : photos du plan du claustra (prises par le téléphone, ou ajoutées sur ce PC) ----------
+// La confirmation ne dit pas toujours quelle lame a quelle largeur (« 80 et 77 mm ») : le plan le dit. Le téléphone le
+// prend en photo et l'envoie au PC par le canal retour (chiffré) ; la photo est gardée dans ce navigateur (IndexedDB),
+// rangée par n° de commande, et affichée à côté de la saisie des lames.
+const BASE_PHOTOS_CL = "sentinelle-claustras-photos";
+const MAX_PHOTO_CL = 12 * 1024 * 1024;
+let basePhotosCl = null;
+function ouvrirPhotosCl() {
+  if (!basePhotosCl) {
+    basePhotosCl = new Promise((ok, ko) => {
+      if (!window.indexedDB) return ko(new Error("IndexedDB indisponible"));
+      const q = indexedDB.open(BASE_PHOTOS_CL, 1);
+      q.onupgradeneeded = () => q.result.createObjectStore("photos", { keyPath: "id" });
+      q.onsuccess = () => ok(q.result);
+      q.onerror = () => ko(q.error);
+    });
+    basePhotosCl.catch(() => (basePhotosCl = null));
+  }
+  return basePhotosCl;
+}
+async function transactionPhotosCl(mode, faire) {
+  const db = await ouvrirPhotosCl();
+  return new Promise((ok, ko) => {
+    const tx = db.transaction("photos", mode);
+    const q = faire(tx.objectStore("photos"));
+    tx.oncomplete = () => ok(q && "result" in q ? q.result : undefined);
+    tx.onerror = () => ko(tx.error);
+    tx.onabort = () => ko(tx.error);
+  });
+}
+// Recharge les photos (adresses d'affichage) et le nombre par commande (pour le téléphone).
+async function chargerPhotosClaustras() {
+  let toutes = [];
+  try {
+    toutes = (await transactionPhotosCl("readonly", (st) => st.getAll())) || [];
+  } catch (_e) {
+    toutes = [];
+  }
+  for (const liste of claustras.photos.values()) for (const p of liste) URL.revokeObjectURL(p.url);
+  claustras.photos = new Map();
+  for (const p of toutes.sort((a, b) => String(a.quand).localeCompare(String(b.quand)))) {
+    if (!claustras.photos.has(p.commande)) claustras.photos.set(p.commande, []);
+    claustras.photos.get(p.commande).push({ id: p.id, commande: p.commande, quand: p.quand, source: p.source, url: URL.createObjectURL(p.donnees) });
+  }
+  claustras.photosChargees = true;
+  const nb = Object.fromEntries([...claustras.photos.entries()].map(([k, v]) => [k, v.length]));
+  if (JSON.stringify(nb) !== JSON.stringify(claustras.nbPhotos || {})) {
+    claustras.nbPhotos = nb;
+    garderClaustras();
+  }
+}
+async function enregistrerPhotoClaustra(p) {
+  await transactionPhotosCl("readwrite", (st) => st.put(p));
+  await chargerPhotosClaustras();
+}
+async function supprimerPhotoClaustra(id) {
+  await transactionPhotosCl("readwrite", (st) => st.delete(id));
+  await chargerPhotosClaustras();
+}
+const typeImageCl = (o) => (o[0] === 0xff && o[1] === 0xd8 ? "image/jpeg" : o[0] === 0x89 && o[1] === 0x50 && o[2] === 0x4e && o[3] === 0x47 ? "image/png" : null);
+
+// Demande du téléphone « photoClaustra » : { id, commande, image (JPEG en base64), quand }.
+async function photoClaustraDuTelephone(d) {
+  const commande = String(d.commande || "").trim().toUpperCase().replace(/\s+/g, "");
+  if (!/^CVC\d{8}$/.test(commande)) return { ok: false, texte: `photo du plan : n° de commande « ${String(d.commande || "").slice(0, 20)} » invalide` };
+  let octets;
+  try {
+    octets = Uint8Array.from(atob(String(d.image || "")), (x) => x.charCodeAt(0));
+  } catch (_e) {
+    return { ok: false, texte: `photo du plan ${commande} : image illisible` };
+  }
+  const type = typeImageCl(octets);
+  if (!type || octets.length > MAX_PHOTO_CL) return { ok: false, texte: `photo du plan ${commande} : ce n'est pas une photo (JPEG ou PNG de moins de 12 Mo)` };
+  await enregistrerPhotoClaustra({ id: `tel-${String(d.id).slice(0, 60)}`, commande, quand: String(d.quand || new Date().toISOString()), source: "telephone", type, donnees: new Blob([octets], { type }) });
+  lireClaustrasMemoire();
+  const connue = claustras.confirmations.some((c) => String(c.commande || "").toUpperCase() === commande);
+  if (typeof onglet !== "undefined" && onglet === "claustras") afficherClaustras();
+  return { ok: true, texte: `Photo du plan reçue pour ${commande}${connue ? " (Claustras)" : " : elle attend la confirmation de commande dans Claustras"}` };
+}
+
+// Ce que le téléphone reçoit : les commandes claustras lues sur ce PC (pour y rattacher la photo du plan).
+function claustrasPourTelephone() {
+  lireClaustrasMemoire();
+  return claustras.confirmations
+    .filter((c) => /^CVC\d{8}$/i.test(String(c.commande || "")) && c.claustras && c.claustras.length)
+    .map((c) => ({
+      commande: String(c.commande).toUpperCase(),
+      reference: String(c.reference || ""),
+      client: String(c.client || ""),
+      semaine: String(c.semaine || ""),
+      annee: String(c.annee || ""),
+      lignes: c.claustras.length,
+      plusieursLargeurs: c.claustras.some((x) => (x.largeursLames || []).length > 1),
+      photos: (claustras.nbPhotos || {})[String(c.commande).toUpperCase()] || 0,
+    }));
+}
+
+function htmlPhotosClaustra(cmd, i) {
+  const photos = claustras.photos.get(String(cmd.commande || "").toUpperCase()) || [];
+  const date = (iso) => (iso ? new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
+  const ajout = `<button type="button" class="texte" data-cl-photo-ajouter="${i}">Ajouter une photo du plan (fichier)…</button><input type="file" accept="image/*" multiple hidden data-cl-photo-fichier="${i}">`;
+  if (!photos.length)
+    return `<aside class="cl-photos cl-photos-vide"><div class="cl-photos-titre">Plan du claustra</div><div class="note">Pas encore de photo. Sur le téléphone : <strong>Claustras</strong> → cette commande → <strong>Photo du plan</strong> ; elle arrive ici toute seule (une minute environ).</div>${ajout}</aside>`;
+  return `<aside class="cl-photos"><div class="cl-photos-titre">Plan du claustra · ${photos.length} photo${photos.length > 1 ? "s" : ""}</div>${photos
+    .map((p) => `<figure class="cl-photo"><img src="${p.url}" alt="Plan ${echapper(p.commande)}" data-cl-photo-voir="${echapper(p.id)}" title="Cliquer pour agrandir">
+      <figcaption>${p.source === "telephone" ? "du téléphone" : "ajoutée sur le PC"} · ${echapper(date(p.quand))} <button type="button" class="texte" data-cl-photo-suppr="${echapper(p.id)}">Supprimer</button></figcaption></figure>`)
+    .join("")}${ajout}</aside>`;
+}
+
+// Visionneuse : la photo en grand (taille réelle, tourner), par-dessus la page.
+function voirPhotoClaustra(id) {
+  const p = [...claustras.photos.values()].flat().find((x) => x.id === id);
+  if (!p) return;
+  const fond = document.createElement("div");
+  fond.className = "cl-visionneuse";
+  fond.innerHTML = `<div class="cl-vis-barre"><strong>Plan ${echapper(p.commande)}</strong><span class="cl-vis-actions"><button type="button" data-a="taille">Taille réelle</button><button type="button" data-a="tourner">Tourner</button><button type="button" data-a="fermer">Fermer</button></span></div><div class="cl-vis-zone"><img src="${p.url}" alt="Plan ${echapper(p.commande)}"></div>`;
+  let angle = 0;
+  const img = fond.querySelector("img");
+  const fermer = () => {
+    fond.remove();
+    document.removeEventListener("keydown", touche);
+  };
+  const touche = (e) => {
+    if (e.key === "Escape") fermer();
+  };
+  fond.addEventListener("click", (e) => {
+    const a = e.target && e.target.dataset ? e.target.dataset.a : "";
+    if (a === "fermer" || e.target === fond) fermer();
+    else if (a === "taille") {
+      fond.classList.toggle("reelle");
+      e.target.textContent = fond.classList.contains("reelle") ? "Ajuster à l'écran" : "Taille réelle";
+    } else if (a === "tourner") {
+      angle = (angle + 90) % 360;
+      img.style.transform = `rotate(${angle}deg)`;
+    }
+  });
+  document.addEventListener("keydown", touche);
+  document.body.appendChild(fond);
 }
 
 async function pdfsDuDossierClaustras(dossier, chemin = "") {
@@ -11348,7 +11570,7 @@ async function lireConfirmationsClaustras(entrees) {
   for (const { fichier, chemin } of entrees) {
     n++;
     const cle = `${chemin || fichier.name}|${fichier.size}|${fichier.lastModified}`;
-    if (deja.has(cle)) continue;
+    if (deja.has(cle) && deja.get(cle).lecture === LECTURE_CL) continue;
     claustras.enCours = `Lecture ${n} / ${entrees.length} : ${chemin || fichier.name}`;
     afficherClaustras();
     try {
@@ -11365,12 +11587,13 @@ async function lireConfirmationsClaustras(entrees) {
         pages.push(p);
       }
       const lu = lireConfirmationClaustra(pages);
-      const cmd = { cle, fichier: chemin || fichier.name, image, ...lu };
-      // Une commande déjà lue (même CVC, autre fichier) : la plus récente remplace l'ancienne.
-      claustras.confirmations = claustras.confirmations.filter((c) => !(cmd.commande && c.commande === cmd.commande));
+      const cmd = { cle, fichier: chemin || fichier.name, image, lecture: LECTURE_CL, ...lu };
+      // Une commande déjà lue (même CVC, autre fichier, ou lue avec une version plus ancienne) : la plus récente remplace l'ancienne.
+      claustras.confirmations = claustras.confirmations.filter((c) => c.cle !== cle && !(cmd.commande && c.commande === cmd.commande));
       claustras.confirmations.push(cmd);
     } catch (e) {
-      claustras.confirmations.push({ cle, fichier: chemin || fichier.name, erreur: e && e.message ? e.message : String(e), claustras: [], autres: 0 });
+      claustras.confirmations = claustras.confirmations.filter((c) => c.cle !== cle);
+      claustras.confirmations.push({ cle, lecture: LECTURE_CL, fichier: chemin || fichier.name, erreur: e && e.message ? e.message : String(e), claustras: [], autres: 0 });
     }
     garderClaustras();
   }
@@ -11384,6 +11607,10 @@ function afficherClaustras() {
   lireClaustrasMemoire();
   const page = $("pageClaustras");
   if (!page) return;
+  if (!claustras.photosChargees) {
+    claustras.photosChargees = true;
+    chargerPhotosClaustras().then(() => afficherClaustras(), () => {});
+  }
   const actions = `<button type="button" id="btnClDossier">Lire un dossier de confirmations…</button>
     <button type="button" class="secondaire" id="btnClFichiers">Ajouter des PDF…</button>
     <input type="file" id="fichiersCl" accept=".pdf" multiple hidden>`;
@@ -11406,6 +11633,13 @@ function afficherClaustras() {
     html += `<div class="carte"><div class="carte-titre">Sans claustra</div><ul class="cl-liste">${sans
       .map((c) => `<li>${echapper(c.fichier)}${c.commande ? ` · ${echapper(c.commande)}` : ""} — ${c.erreur ? `<span class="message-alerte">illisible : ${echapper(c.erreur)}</span>` : `aucun claustra (${c.autres || 0} autre${(c.autres || 0) > 1 ? "s" : ""} ligne${(c.autres || 0) > 1 ? "s" : ""})`}</li>`)
       .join("")}</ul></div>`;
+  // Photos reçues pour une commande pas (encore) lue ici.
+  const lues = new Set(claustras.confirmations.map((c) => String(c.commande || "").toUpperCase()));
+  const seules = [...claustras.photos.entries()].filter(([k]) => !lues.has(k));
+  if (seules.length)
+    html += `<div class="carte"><div class="carte-titre">Photos de plan sans confirmation lue</div><div class="note">Elles se rangent toutes seules dans leur commande quand sa confirmation est lue.</div><div class="cl-photos-seules">${seules
+      .map(([k, ps]) => `<div><strong>${echapper(k)}</strong>${ps.map((p) => `<figure class="cl-photo"><img src="${p.url}" alt="Plan ${echapper(k)}" data-cl-photo-voir="${echapper(p.id)}"><figcaption><button type="button" class="texte" data-cl-photo-suppr="${echapper(p.id)}">Supprimer</button></figcaption></figure>`).join("")}</div>`)
+      .join("")}</div></div>`;
   if (avec.length) html += htmlFichierClaustras();
   if (claustras.confirmations.length) html += `<div class="cl-bas"><button type="button" class="texte" id="btnClVider">Tout effacer (les PDF ne sont pas touchés)</button></div>`;
   page.innerHTML = html;
@@ -11413,7 +11647,28 @@ function afficherClaustras() {
 }
 
 const CHAMPS_CMD_CL = [["commande", "Commande", 12], ["client", "Code client", 11], ["representant", "Représentant", 10], ["reference", "Référence", 14], ["transporteur", "Transporteur", 10], ["semaine", "Semaine", 4], ["annee", "Année", 5]];
-const CHAMPS_CL = [["ligne", "Ligne", 3], ["qte", "Qté", 3], ["coloris", "Coloris", 8], ["epaisseur", "Ép.", 3], ["longueur", "Longueur", 5], ["hauteur", "Hauteur", 5], ["droites", "Lames droites", 3], ["largeurDroites", "Larg. droites", 4], ["obliques", "Lames obliques", 3], ["largeurObliques", "Larg. obliques", 4], ["profondeurLisses", "Prof. lisses", 4], ["agglo", "Agglo", 10]];
+const CHAMPS_CL = [["ligne", "Ligne", 3], ["qte", "Qté", 3], ["coloris", "Coloris", 8], ["epaisseur", "Ép.", 3], ["longueur", "Longueur", 5], ["hauteur", "Hauteur", 5], ["profondeurLisses", "Prof. lisses", 4], ["agglo", "Agglo", 10]];
+
+// V6.8 : les lames, une ligne par sorte et largeur ; avec deux largeurs sur la confirmation, à lire sur le plan.
+function htmlLamesClaustra(c, i, j) {
+  const lames = lamesDe(c);
+  const plusieurs = (c.largeursLames || []).length > 1;
+  const conf = [String(c.droites || "").trim() ? pluralCl(Number(c.droites), "droite") : "", String(c.obliques || "").trim() ? pluralCl(Number(c.obliques), "oblique") : ""].filter(Boolean).join(", ");
+  const largeursConf = plusieurs ? c.largeursLames.join(" et ") : [...new Set([c.largeurDroites, c.largeurObliques].filter(Boolean))].join(" et ");
+  const liste = plusieurs ? `<datalist id="cl-larg-${i}-${j}">${c.largeursLames.map((x) => `<option value="${echapper(x)}">`).join("")}</datalist>` : "";
+  const lignes = lames
+    .map((x, r) => `<tr><td><select data-cl-lame="${i}:${j}:${r}:sorte"><option value="droite"${x.sorte === "droite" ? " selected" : ""}>droites</option><option value="oblique"${x.sorte !== "droite" ? " selected" : ""}>obliques</option></select></td>
+      <td><input type="text" size="3" data-cl-lame="${i}:${j}:${r}:nombre" value="${echapper(x.nombre || "")}" aria-label="Nombre de lames"></td>
+      <td><input type="text" size="4" data-cl-lame="${i}:${j}:${r}:largeur" value="${echapper(x.largeur || "")}"${plusieurs ? ` list="cl-larg-${i}-${j}" placeholder="${echapper(c.largeursLames.join(" ou "))}"` : ""} aria-label="Largeur"> mm</td>
+      <td><button type="button" class="texte" data-cl-lame-retirer="${i}:${j}:${r}">Retirer</button></td></tr>`)
+    .join("");
+  const avert = avertissementsLames(c);
+  return `<div class="cl-lames"><div class="cl-lames-titre">Lames${conf ? ` <span class="pale">· confirmation : ${echapper(conf)}${largeursConf ? `, largeur ${echapper(largeursConf)} mm` : ""}</span>` : ""}</div>
+    ${plusieurs ? `<div class="bandeau attention normal">La confirmation donne ${c.largeursLames.length} largeurs (${echapper(c.largeursLames.join(" et "))} mm) sans dire quelles lames font quoi : regardez le plan (photo) et indiquez la largeur de chaque lame. Pour une même sorte en deux largeurs, faites deux lignes (ex. 6 obliques à 77 et 2 obliques à 80).</div>` : ""}
+    <table class="cl-lames-table"><thead><tr><th>Sorte</th><th>Nombre</th><th>Largeur</th><th></th></tr></thead><tbody>${lignes}</tbody></table>${liste}
+    <button type="button" class="texte" data-cl-lame-ajouter="${i}:${j}">+ Ajouter une ligne de lames</button>
+    ${avert.length ? `<div class="bandeau attention normal">À vérifier : ${echapper(avert.join(" ; "))}</div>` : ""}</div>`;
+}
 
 function htmlConfirmationClaustra(cmd, i) {
   const champsCmd = CHAMPS_CMD_CL.map(([k, lib, taille]) => `<label class="cl-champ"><span>${lib}</span><input type="text" size="${taille}" data-cl-cmd="${i}:${k}" value="${echapper(cmd[k] || "")}"></label>`).join("");
@@ -11431,16 +11686,17 @@ function htmlConfirmationClaustra(cmd, i) {
             .join("")}</tbody></table>`
         : `<div class="bandeau alerte normal">À compléter : ${echapper(r.erreurs.join(", "))}</div>`;
       return `<div class="cl-claustra${c.aLancer ? "" : " cl-off"}"><div class="cl-titre">Ligne ${echapper(c.ligne)} — claustra ${echapper(c.coloris)} ${echapper(c.colorisNom || "")}${c.epaisseurLames && c.epaisseur && c.epaisseurLames !== c.epaisseur ? ` <span class="pl-puce att pl-mini">lames de ${echapper(c.epaisseurLames)} mm</span>` : ""}</div>
-        <div class="cl-champs">${champs}</div><div class="cl-cases">${cases}</div>${pieces}
+        <div class="cl-champs">${champs}</div>${htmlLamesClaustra(c, i, j)}<div class="cl-cases">${cases}</div>${pieces}
         ${r.pieces.length ? `<details class="cl-plan-bloc"><summary>Voir le plan du claustra</summary>${svgPlanClaustra(c, cmd)}<button type="button" class="secondaire" data-cl-imprimer="${i}:${j}">Imprimer le plan</button></details>` : ""}</div>`;
     })
     .join("");
   return `<div class="carte"><div class="carte-titre">${echapper(cmd.commande || "Commande ?")} <span class="pale cl-source">${echapper(cmd.fichier)}${cmd.image ? " · lu dans l'image" : ""}</span>
       <button type="button" class="texte" data-cl-retirer="${i}" style="float:right">Retirer</button></div>
+    <div class="cl-avec-photo"><div class="cl-corps">
     <div class="cl-champs">${champsCmd}</div>
     ${erreursCmd.length ? `<div class="bandeau alerte normal">À compléter : ${echapper(erreursCmd.join(", "))}</div>` : ""}
     ${cmd.autres ? `<div class="note">${cmd.autres} autre${cmd.autres > 1 ? "s" : ""} ligne${cmd.autres > 1 ? "s" : ""} de la commande (pas des claustras) : elles partent dans les lancements habituels.</div>` : ""}
-    ${blocs}</div>`;
+    ${blocs}</div>${htmlPhotosClaustra(cmd, i)}</div></div>`;
 }
 
 function htmlFichierClaustras() {
@@ -11499,6 +11755,37 @@ function brancherClaustras() {
       afficherClaustras();
     })
   );
+  // V6.8 : lignes de lames (la première modification fige les lignes tirées de la confirmation).
+  const claustraDe = (i, j) => claustras.confirmations[Number(i)].claustras[Number(j)];
+  const lignesModifiables = (c) => (c.lames = lamesDe(c).map((x) => ({ ...x })));
+  page.querySelectorAll("[data-cl-lame]").forEach((el) =>
+    el.addEventListener("change", () => {
+      const [i, j, r, k] = el.dataset.clLame.split(":");
+      const c = claustraDe(i, j);
+      const lames = lignesModifiables(c);
+      if (lames[Number(r)]) lames[Number(r)][k] = el.value.trim();
+      garderClaustras();
+      afficherClaustras();
+    })
+  );
+  page.querySelectorAll("[data-cl-lame-ajouter]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const [i, j] = b.dataset.clLameAjouter.split(":");
+      const c = claustraDe(i, j);
+      lignesModifiables(c).push({ sorte: "oblique", nombre: "", largeur: "" });
+      garderClaustras();
+      afficherClaustras();
+    })
+  );
+  page.querySelectorAll("[data-cl-lame-retirer]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const [i, j, r] = b.dataset.clLameRetirer.split(":");
+      const c = claustraDe(i, j);
+      lignesModifiables(c).splice(Number(r), 1);
+      garderClaustras();
+      afficherClaustras();
+    })
+  );
   page.querySelectorAll("[data-cl-case]").forEach((el) =>
     el.addEventListener("change", () => {
       const [i, j, k] = el.dataset.clCase.split(":");
@@ -11533,6 +11820,38 @@ function brancherClaustras() {
       setTimeout(() => f.print(), 300);
     })
   );
+  page.querySelectorAll("[data-cl-photo-voir]").forEach((im) => im.addEventListener("click", () => voirPhotoClaustra(im.dataset.clPhotoVoir)));
+  page.querySelectorAll("[data-cl-photo-suppr]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      if (!window.confirm("Supprimer cette photo du plan ?")) return;
+      await supprimerPhotoClaustra(b.dataset.clPhotoSuppr).catch(() => null);
+      afficherClaustras();
+    })
+  );
+  page.querySelectorAll("[data-cl-photo-ajouter]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const champ = page.querySelector(`[data-cl-photo-fichier="${b.dataset.clPhotoAjouter}"]`);
+      if (champ) champ.click();
+    })
+  );
+  page.querySelectorAll("[data-cl-photo-fichier]").forEach((champ) =>
+    champ.addEventListener("change", async () => {
+      const cmd = claustras.confirmations[Number(champ.dataset.clPhotoFichier)];
+      const commande = String((cmd && cmd.commande) || "").toUpperCase();
+      if (!/^CVC\d{8}$/.test(commande)) {
+        claustras.erreur = "Indiquez d'abord le n° de commande (CVC + 8 chiffres) pour y ranger la photo.";
+        afficherClaustras();
+        return;
+      }
+      for (const f of [...champ.files]) {
+        const octets = new Uint8Array(await f.arrayBuffer());
+        const type = typeImageCl(octets);
+        if (!type || octets.length > MAX_PHOTO_CL) continue;
+        await enregistrerPhotoClaustra({ id: `pc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`, commande, quand: new Date().toISOString(), source: "pc", type, donnees: new Blob([octets], { type }) });
+      }
+      afficherClaustras();
+    })
+  );
   const creer = $("btnClCreer");
   if (creer) creer.addEventListener("click", () => creerFichierClaustras());
   const vider = $("btnClVider");
@@ -11554,10 +11873,11 @@ function svgPlanClaustra(c, cmd) {
   const H = nombreCl(c.hauteur) || 0;
   const ep = nombreCl(c.epaisseurLames) || nombreCl(c.epaisseur) || 29;
   const prof = nombreCl(c.profondeurLisses) || 0;
-  const nd = nombreCl(c.droites) || 0;
-  const no = nombreCl(c.obliques) || 0;
+  const lignesLames = lamesDe(c).map((x) => ({ sorte: x.sorte === "droite" ? "droite" : "oblique", n: Math.max(0, Math.round(nombreCl(x.nombre) || 0)), l: nombreCl(x.largeur) || 0 }));
+  const nd = lignesLames.filter((x) => x.sorte === "droite").reduce((t, x) => t + x.n, 0);
+  const no = lignesLames.filter((x) => x.sorte === "oblique").reduce((t, x) => t + x.n, 0);
   const n = nd + no;
-  const largeurs = [...Array(nd).fill(nombreCl(c.largeurDroites) || 0), ...Array(no).fill(nombreCl(c.largeurObliques) || 0)];
+  const largeurs = [...lignesLames.filter((x) => x.sorte === "droite"), ...lignesLames.filter((x) => x.sorte === "oblique")].flatMap((x) => Array(x.n).fill(x.l));
   const lisse = CL.LISSE;
   const lame = H - 2 * lisse;
   const espace = n ? (L - n * ep) / (n + 1) : 0;
@@ -11629,7 +11949,8 @@ function svgPlanClaustra(c, cmd) {
     const cy = yD + (prof / 2) * sD;
     coteV(cy - (lg0 / 2) * sD, cy + (lg0 / 2) * sD, xD + L * sD, `${fr(lg0)}`, 6);
   }
-  texte(xD, yD + prof * sD + 15, `${n} lame${n > 1 ? "s" : ""} de ${fr(ep)} mm${nd && no ? ` (${nd} droite${nd > 1 ? "s" : ""}, ${no} oblique${no > 1 ? "s" : ""})` : no ? " obliques" : " droites"}, espace ${fr(espace)} mm entre les lames et aux bouts (supposé : réparties à espaces égaux).`, 2.4, 'fill="#797978"');
+  const largeursTexte = [...new Set(largeurs)].map(fr).join(" et ");
+  texte(xD, yD + prof * sD + 15, `${n} lame${n > 1 ? "s" : ""} de ${fr(ep)} mm${nd && no ? ` (${nd} droite${nd > 1 ? "s" : ""}, ${no} oblique${no > 1 ? "s" : ""})` : no ? " obliques" : " droites"}, largeur ${largeursTexte} mm, espace ${fr(espace)} mm entre les lames et aux bouts (supposé : réparties à espaces égaux ; la photo du plan fait foi).`, 2.4, 'fill="#797978"');
 
   // Pièces.
   const r = piecesClaustra(c);

@@ -305,6 +305,28 @@ lancements manquants sautaient toute semaine marquée : cas réel, semaine 46 re
 - Test : `test_web_claustras.js` (confirmation fabriquée ; vraie confirmation en image avec
   `SENTINELLE_CLAUSTRA_PDF`, donnée client hors dépôt).
 
+### Claustras : largeur lame par lame et photo du plan (V6.8)
+
+**Largeurs.** Une confirmation peut dire « 1 lame droite / 8 lames obliques », « Largeur des lames : 80 et 77 mm »
+sans dire quelles lames font quoi : seul le plan le dit (cas réel CVC26100433). `lireBlocClaustra` garde alors les deux
+largeurs (`largeursLames`) sans deviner. Les lames se saisissent en lignes `{ sorte: droite | oblique, nombre, largeur }`
+(`lamesDe(c)` : les lignes saisies, sinon celles tirées de la confirmation), plusieurs largeurs possibles pour une même
+sorte (ex. 6 obliques à 77 + 2 à 80). Tant qu'une largeur manque : « À compléter : largeur … (voir le plan : 80 ou 77
+mm) », pas de fichier. `avertissementsLames` signale (sans bloquer) un nombre différent de la confirmation ou une largeur
+qui n'y est pas. Pièces, plan SVG et fichier de lancement sont faits à partir des lignes. Chaque confirmation gardée
+porte la version de lecture (`LECTURE_CL`) : une confirmation lue par une version plus ancienne est relue.
+
+**Photo du plan.** Sur le téléphone : icône appareil photo en haut → écran Claustras (`EcranClaustras.java`) : les
+commandes claustras lues sur le PC (champ `claustras` du fichier partagé, `claustrasPourTelephone()`) ou un n° tapé ;
+« Photo du plan » (appareil photo : `TakePicture` + `FileProvider` `${applicationId}.photos`, autorisation CAMERA
+demandée) ou « Choisir une photo » (galerie). `PhotoPlan.preparer` remet la photo à l'endroit (EXIF), la réduit à
+2400 px au plus, en JPEG 85. Elle attend dans `files/photos_plan/` ; `DemandesPc` l'envoie au PC dans une demande
+`photoClaustra` (image en base64, canal retour chiffré, comme les plans modifiés) et l'efface quand le PC a répondu. Le
+PC (`photoClaustraDuTelephone`, appelé par `traiterDemandesTelephone`) vérifie le n° CVC et que c'est un JPEG/PNG de
+moins de 12 Mo, la range dans IndexedDB (`sentinelle-claustras-photos`, par commande) et l'affiche à droite de la
+saisie des lames (visionneuse : taille réelle, tourner). On peut aussi ajouter une photo depuis le PC. Une photo reçue
+avant la confirmation attend dans « Photos de plan sans confirmation lue ».
+
 ### Lien PC → téléphone : savoir si le téléphone suit (V6.5.1)
 
 Cas réel du 11/11 : le PC envoyait sur un **nouveau code**, le téléphone lisait toujours l'**ancien**

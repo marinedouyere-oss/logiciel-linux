@@ -163,6 +163,7 @@ async function traiterDemandesTelephone(contenu) {
     try {
       if (d.type === "validation") res = await validationDuTelephone(d);
       else if (d.type === "plan") res = await planDuTelephone(d);
+      else if (d.type === "photoClaustra") res = await photoClaustraDuTelephone(d); // V6.8 : photo du plan d'un claustra
       else res = { ok: false, texte: `demande inconnue (${d.type})` };
     } catch (erreur) {
       res = { ok: false, texte: `pas reprise : ${erreur && erreur.message ? erreur.message : erreur}` };
@@ -336,7 +337,7 @@ function demarrerRetourTelephone() {
 function htmlRetourTelephone() {
   const t = lireEtatRetour().traitees;
   const liste = Object.values(t).sort((a, b) => String(b.quand).localeCompare(String(a.quand))).slice(0, 5);
-  if (!liste.length && !retourTelephone.erreur) return `<div class="note">Le téléphone peut renvoyer des plans de coupe modifiés et des problèmes validés OK : Sentinelle les reprend tout seul.</div>`;
+  if (!liste.length && !retourTelephone.erreur) return `<div class="note">Le téléphone peut renvoyer des plans de coupe modifiés, des problèmes validés OK et des photos de plans de claustras : Sentinelle les reprend tout seul.</div>`;
   const date = (iso) => (iso ? new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
   return `<div class="retour-telephone"><div class="note"><strong>Reçu du téléphone</strong> (repris tout seul)</div>${liste
     .map((x) => `<div class="retour-ligne ${x.ok ? "ok" : "refus"}">${x.ok ? "✔" : "⚠"} ${echapper(date(x.quand))} — ${echapper(x.texte)}</div>`)

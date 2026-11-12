@@ -88,6 +88,30 @@ const motsDe = (lignes) => {
   verifier(c.droites === "5" && c.largeurDroites === "90" && c.obliques === "3" && c.largeurObliques === "70" && c.profondeurLisses === "110", `lames droites / obliques et leurs largeurs, profondeur des lisses`);
   verifier(c.montage === false && c.protection === false && c.qte === "2" && c.agglo === "SAG28HYBR", `montage et emballage non inclus, quantité 2, agglo 29 mm`);
 
+  // 1 bis. V6.8 : « Largeur des lames : 80 et 77 mm » : la confirmation ne dit pas quelles lames font 77 et
+  // lesquelles 80 (cas réel CVC26100433) ; seul le plan le dit. Sentinelle ne devine pas : largeur à saisir, lame par
+  // lame (lignes sorte / nombre / largeur), et le fichier ne se crée pas avant.
+  const deux = await page.evaluate(() => {
+    const bloc = (lignes) => lireBlocClaustra(lignes, 1);
+    const a = bloc(["Coloris: 1047 Chêne Halifax Naturel", "Épaisseur : 29 mm", "Dimensions totales : longueur 1001 mm / hauteur 1397 mm", "1 lame droite / 8 lames obliques", "Largeur des lames : 80 et 77 mm", "Épaisseur des lames : 29 mm", "Profondeur des lisses : 80 mm"]);
+    const avant = piecesClaustra(a);
+    // Lu sur le plan : la droite à 80, 6 obliques à 77 et 2 obliques à 80.
+    const saisi = { ...a, lames: [{ sorte: "droite", nombre: "1", largeur: "80" }, { sorte: "oblique", nombre: "6", largeur: "77" }, { sorte: "oblique", nombre: "2", largeur: "80" }] };
+    const p = piecesClaustra(saisi).pieces.filter((x) => /Lame/.test(x.nom)).map((x) => `${x.nom}:${x.l}x${x.qte}`).join(" ");
+    const faux = avertissementsLames({ ...a, lames: [{ sorte: "droite", nombre: "1", largeur: "80" }, { sorte: "oblique", nombre: "7", largeur: "75" }] });
+    const s = bloc(["5 lames droites", "3 lames obliques", "Largeur des lames : 90 mm"]);
+    const o = bloc(["4 lames obliques", "Largeur des lames : 75 mm"]);
+    const svg = svgPlanClaustra(saisi, { commande: "CVC99001234" });
+    return { a: [a.droites, a.largeurDroites, a.obliques, a.largeurObliques, (a.largeursLames || []).join("/")], erreurs: avant.erreurs, n: avant.pieces.length, p, faux, s: [s.largeurDroites, s.largeurObliques, s.largeursLames], o: [o.largeurDroites, o.largeurObliques], svg: /largeur 80 et 77 mm/.test(svg) && /9 lames/.test(svg) };
+  });
+  console.log(JSON.stringify(deux));
+  verifier(deux.a.join(",") === "1,,8,,80/77", `« 80 et 77 mm » : pas de largeur devinée, les deux largeurs gardées (${deux.a.join(",")})`);
+  verifier(deux.n === 0 && deux.erreurs.join(" | ") === "largeur des lames droites (voir le plan : 80 ou 77 mm) | largeur des lames obliques (voir le plan : 80 ou 77 mm)", `sans saisie : « À compléter : largeur… (voir le plan : 80 ou 77 mm) », pas de fichier (${deux.erreurs.join(" | ")})`);
+  verifier(deux.p === "Lame oblique:80x2 Lame oblique:77x6 Lame droite:80x1", `saisi d'après le plan (1 droite 80, 6 obliques 77, 2 obliques 80) : pièces ${deux.p}`);
+  verifier(deux.faux.length === 2 && /8 lames obliques, 7 saisies/.test(deux.faux.join()) && /largeur 75 mm : pas sur la confirmation/.test(deux.faux.join()), `à vérifier : nombre différent de la confirmation, largeur pas sur la confirmation`);
+  verifier(deux.s[0] === "90" && deux.s[1] === "90" && !deux.s[2] && deux.o.join(",") === ",75", `une seule largeur : pour toutes les lames`);
+  verifier(deux.svg, "plan : 9 lames, largeur 80 et 77 mm");
+
   // 2. Pièces et lignes du fichier de lancement.
   const r = await page.evaluate(([c, cmd]) => {
     const p = piecesClaustra(c);
@@ -141,6 +165,83 @@ const motsDe = (lignes) => {
   verifier(garde.confirmations && garde.confirmations[0].claustras[0].hauteur === "2500", `corrections gardées en mémoire`);
   await page.screenshot({ path: path.join(sortie, "claustras.png"), fullPage: true });
 
+  // 5 bis. V6.8 : deux largeurs sur la confirmation : lignes de lames saisies à l'écran.
+  await page.evaluate((lu) => {
+    const deuxL = lireBlocClaustra(["Coloris: 1047 Chêne Halifax Naturel", "Épaisseur : 29 mm", "Dimensions totales : longueur 1001 mm / hauteur 1397 mm", "1 lame droite / 8 lames obliques", "Largeur des lames : 80 et 77 mm", "Profondeur des lisses : 80 mm"], 1);
+    claustras.confirmations = [{ cle: "essai2", fichier: "essai2.pdf", image: false, lecture: LECTURE_CL, ...lu, claustras: [deuxL] }];
+    afficherClaustras();
+  }, lu);
+  await page.waitForSelector('[data-cl-lame="0:0:0:largeur"]');
+  const texteAvant = await page.locator("#pageClaustras").innerText();
+  verifier(/2 largeurs \(80 et 77 mm\)/.test(texteAvant) && (await page.isDisabled("#btnClCreer")), "écran : « 2 largeurs (80 et 77 mm) … regardez le plan », création impossible");
+  await page.fill('[data-cl-lame="0:0:0:largeur"]', "80");
+  await page.dispatchEvent('[data-cl-lame="0:0:0:largeur"]', "change");
+  await page.waitForFunction(() => document.querySelector('[data-cl-lame="0:0:1:largeur"]'));
+  await page.fill('[data-cl-lame="0:0:1:nombre"]', "6");
+  await page.dispatchEvent('[data-cl-lame="0:0:1:nombre"]', "change");
+  await page.waitForFunction(() => document.querySelector('[data-cl-lame="0:0:1:nombre"]').value === "6");
+  await page.fill('[data-cl-lame="0:0:1:largeur"]', "77");
+  await page.dispatchEvent('[data-cl-lame="0:0:1:largeur"]', "change");
+  await page.waitForFunction(() => document.querySelector('[data-cl-lame="0:0:1:largeur"]').value === "77");
+  verifier(/8 lames obliques, 6 saisies/.test(await page.locator("#pageClaustras").innerText()), "écran : « la confirmation dit 8 lames obliques, 6 saisies »");
+  await page.click('[data-cl-lame-ajouter="0:0"]');
+  await page.waitForSelector('[data-cl-lame="0:0:2:nombre"]');
+  await page.fill('[data-cl-lame="0:0:2:nombre"]', "2");
+  await page.dispatchEvent('[data-cl-lame="0:0:2:nombre"]', "change");
+  await page.waitForFunction(() => document.querySelector('[data-cl-lame="0:0:2:nombre"]').value === "2");
+  await page.fill('[data-cl-lame="0:0:2:largeur"]', "80");
+  await page.dispatchEvent('[data-cl-lame="0:0:2:largeur"]', "change");
+  await page.waitForFunction(() => !document.querySelector("#btnClCreer").disabled, null, { timeout: 5000 });
+  const lignesEcran = await page.evaluate(() => piecesClaustra(claustras.confirmations[0].claustras[0]).pieces.filter((x) => /Lame/.test(x.nom)).map((x) => `${x.l}x${x.qte}`).join(" "));
+  verifier(lignesEcran === "80x2 77x6 80x1" && !/À vérifier/.test(await page.locator("#pageClaustras").innerText()), `écran : 3 lignes saisies, plus rien à vérifier, fichier possible (${lignesEcran})`);
+  await page.screenshot({ path: path.join(sortie, "claustras_deux_largeurs.png"), fullPage: true });
+
+  // 5 ter. V6.8 : photo du plan envoyée par le téléphone (canal retour), rangée par commande, affichée à côté.
+  const photo = await page.evaluate(async () => {
+    const cv = document.createElement("canvas");
+    cv.width = 300;
+    cv.height = 200;
+    const g = cv.getContext("2d");
+    g.fillStyle = "#fff";
+    g.fillRect(0, 0, 300, 200);
+    g.fillStyle = "#000";
+    g.fillText("PLAN 80 / 77", 20, 100);
+    const b64 = cv.toDataURL("image/jpeg", 0.8).split(",")[1];
+    const n0 = await traiterDemandesTelephone({ format: "sentinelle-demandes-1", demandes: [
+      { id: "essai-1", type: "photoClaustra", commande: "cvc99001234", image: b64, quand: "2026-11-12T20:15:00Z", titre: "Photo du plan" },
+      { id: "essai-2", type: "photoClaustra", commande: "CVC1", image: b64 },
+      { id: "essai-3", type: "photoClaustra", commande: "CVC99001234", image: btoa("pas une image") },
+    ] });
+    const rep = lireEtatRetour().traitees;
+    afficherClaustras();
+    await new Promise((r) => setTimeout(r, 300));
+    return { n0, r1: rep["essai-1"], r2: rep["essai-2"], r3: rep["essai-3"], nb: (claustras.photos.get("CVC99001234") || []).length, tel: claustrasPourTelephone(), partage: contenuFichierPartage().claustras };
+  });
+  console.log(JSON.stringify({ ...photo, tel: photo.tel, partage: undefined }));
+  verifier(photo.n0 === 3 && photo.r1.ok && /Photo du plan reçue pour CVC99001234/.test(photo.r1.texte), `demande du téléphone reprise : « ${photo.r1.texte} »`);
+  verifier(!photo.r2.ok && !photo.r3.ok, `refusées : n° de commande invalide (${photo.r2.texte}) ; pas une image (${photo.r3.texte})`);
+  verifier(photo.nb === 1 && photo.tel.length === 1 && photo.tel[0].commande === "CVC99001234" && photo.tel[0].photos === 1 && photo.tel[0].plusieursLargeurs, "pour le téléphone : la commande, 1 photo, deux largeurs à voir");
+  verifier(Array.isArray(photo.partage) && photo.partage[0].commande === "CVC99001234", "fichier partagé : liste des commandes claustras");
+  await page.waitForSelector(".cl-photos img[data-cl-photo-voir]");
+  verifier(/Plan du claustra · 1 photo/.test(await page.locator("#pageClaustras").innerText()), "écran : la photo du plan à côté de la saisie");
+  await page.screenshot({ path: path.join(sortie, "claustras_photo.png"), fullPage: true });
+  await page.click(".cl-photos img[data-cl-photo-voir]");
+  await page.waitForSelector(".cl-visionneuse img");
+  await page.click('.cl-visionneuse [data-a="tourner"]');
+  verifier(/rotate\(90deg\)/.test(await page.$eval(".cl-visionneuse img", (i) => i.style.transform)), "visionneuse : en grand, tourner");
+  await page.keyboard.press("Escape");
+  verifier(!(await page.$(".cl-visionneuse")), "visionneuse fermée (Échap)");
+  // Gardée après rechargement de la page (IndexedDB).
+  await page.reload();
+  await page.waitForFunction(() => typeof afficherClaustras === "function");
+  await page.click('[data-onglet="claustras"]');
+  await page.waitForSelector(".cl-photos img[data-cl-photo-voir]", { timeout: 10000 });
+  verifier(true, "photo gardée après rechargement de la page");
+  page.once("dialog", (d) => d.accept());
+  await page.click(".cl-photos [data-cl-photo-suppr]");
+  await page.waitForFunction(() => !document.querySelector(".cl-photos img[data-cl-photo-voir]"), null, { timeout: 10000 });
+  verifier(/Pas encore de photo/.test(await page.locator("#pageClaustras").innerText()), "photo supprimée : « Pas encore de photo »");
+
   // 6. Facultatif : une vraie confirmation en image, lue par Tesseract.
   if (vraiPdf) {
     await page.evaluate(() => {
@@ -152,6 +253,18 @@ const motsDe = (lignes) => {
     const vrai = await page.evaluate(() => claustras.confirmations[0]);
     console.log(JSON.stringify(vrai));
     verifier(vrai.image && /^CVC\d{8}$/.test(vrai.commande) && vrai.claustras.length >= 1 && vrai.claustras.every((x) => x.longueur && x.hauteur && x.coloris), `vraie confirmation en image : lue par Tesseract (${vrai.commande}, ${vrai.claustras.length} claustra(s))`);
+    // V6.7.6 : la même confirmation, lue avec une version plus ancienne (gardée en mémoire), est relue.
+    await page.evaluate(() => {
+      const c = claustras.confirmations[0];
+      delete c.lecture;
+      c.claustras[0].largeurObliques = "1";
+      c.claustras[0].largeurDroites = "1";
+    });
+    await page.setInputFiles("#fichiersCl", []);
+    await page.setInputFiles("#fichiersCl", vraiPdf);
+    await page.waitForFunction(() => claustras.confirmations.length && claustras.confirmations[0].lecture === LECTURE_CL && !claustras.enCours, null, { timeout: 180000 });
+    const relu = await page.evaluate(() => ({ n: claustras.confirmations.length, c: claustras.confirmations[0].claustras[0] }));
+    verifier(relu.n === 1 && relu.c.largeurDroites !== "1" && relu.c.largeurObliques !== "1", `lue avec une ancienne version : relue, pas en double (${relu.c.largeurDroites} / ${relu.c.largeurObliques})`);
   } else console.log("(SENTINELLE_CLAUSTRA_PDF absent : lecture d'une vraie confirmation en image non testée)");
 
   await nav.close();

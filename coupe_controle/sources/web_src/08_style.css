@@ -668,6 +668,26 @@
   .sv-hors-outils input { flex: 1 1 260px; }
   .sv-hors tr.sv-hors-ligne td { background: #fff7a6; }
   .sv-rajouts { margin-top: 14px; padding-top: 10px; border-top: 1px solid #e3d9d3; }
+  .cl-avec-photo { display: grid; grid-template-columns: minmax(0, 1fr) minmax(220px, 38%); gap: 18px; align-items: start; }
+  .cl-photos { position: sticky; top: 10px; border-left: 1px solid #e3d9d3; padding-left: 14px; }
+  .cl-photos-titre { font-weight: 700; color: var(--bordeaux, #78140c); margin-bottom: 6px; }
+  .cl-photo { margin: 0 0 10px; }
+  .cl-photo img { display: block; max-width: 100%; max-height: 62vh; border: 1px solid #ddd; border-radius: 4px; cursor: zoom-in; background: #fff; }
+  .cl-photo figcaption { font-size: 0.82rem; color: #797978; margin-top: 3px; }
+  .cl-photos-seules { display: flex; flex-wrap: wrap; gap: 14px; }
+  .cl-photos-seules .cl-photo img { max-height: 180px; }
+  .cl-visionneuse { position: fixed; inset: 0; z-index: 1000; background: rgba(20, 20, 20, 0.88); display: flex; flex-direction: column; }
+  .cl-vis-barre { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 14px; background: #fff; }
+  .cl-vis-actions { display: flex; gap: 8px; }
+  .cl-vis-zone { flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 10px; }
+  .cl-vis-zone img { max-width: 100%; max-height: 100%; transition: transform 0.2s; background: #fff; }
+  .cl-visionneuse.reelle .cl-vis-zone { display: block; }
+  .cl-visionneuse.reelle .cl-vis-zone img { max-width: none; max-height: none; }
+  @media (max-width: 900px) { .cl-avec-photo { grid-template-columns: 1fr; } .cl-photos { position: static; border-left: 0; padding-left: 0; } }
+  .cl-lames { margin: 6px 0 8px; }
+  .cl-lames-titre { font-weight: 700; margin-bottom: 4px; }
+  .cl-lames-table { border-collapse: collapse; margin: 4px 0; }
+  .cl-lames-table th, .cl-lames-table td { padding: 3px 8px 3px 0; text-align: left; font-size: 0.9rem; }
   .sv-hors-nouveau { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .sv-hors-nouveau[hidden] { display: none; }
   .sv-hors-nouveau input { min-width: 240px; }

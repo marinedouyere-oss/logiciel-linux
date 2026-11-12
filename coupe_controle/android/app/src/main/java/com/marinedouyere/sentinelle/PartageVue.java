@@ -47,7 +47,7 @@ import java.util.TimeZone;
  */
 final class PartageVue {
 
-    enum Ecran { SEMAINE, CONTROLE, RECHERCHE, BIBLIOTHEQUE, SUIVI, PLANS, STOCK }
+    enum Ecran { SEMAINE, CONTROLE, RECHERCHE, BIBLIOTHEQUE, SUIVI, PLANS, STOCK, CLAUSTRAS }
 
     private static final String PREFERENCES = "sentinelle_partage";
     private static final String CLE_URI = "uri";
@@ -92,6 +92,8 @@ final class PartageVue {
     private final EcranPlans plans;
     /** V6.5.1 : le stock des panneaux (envoyé par le PC dans le fichier partagé). */
     private final EcranStock stockEcran;
+    /** V6.8 : photo du plan d'un claustra pour le PC. */
+    private final EcranClaustras claustrasEcran;
 
     PartageVue(MainActivity activite, Ui ui, SentinelleApp app) {
         this.activite = activite;
@@ -100,6 +102,32 @@ final class PartageVue {
         racine = ui.colonne();
         demandes = new DemandesPc(activite);
         stockEcran = new EcranStock(activite, ui, this);
+        claustrasEcran = new EcranClaustras(activite, ui, new EcranClaustras.Hote() {
+            @Override
+            public FichierPartage donnees() {
+                return donnees;
+            }
+
+            @Override
+            public DemandesPc demandes() {
+                return demandes;
+            }
+
+            @Override
+            public boolean relie() {
+                return codeLien() != null;
+            }
+
+            @Override
+            public void prendrePhoto(String commande) {
+                activite.prendrePhotoPlan(commande);
+            }
+
+            @Override
+            public void choisirPhoto(String commande) {
+                activite.choisirPhotoPlan(commande);
+            }
+        });
         plans = new EcranPlans(activite, ui, new EcranPlans.Hote() {
             @Override
             public FichierPartage donnees() {
@@ -411,6 +439,9 @@ final class PartageVue {
                 break;
             case STOCK:
                 ecranStock();
+                break;
+            case CLAUSTRAS:
+                ecranClaustras();
                 break;
             default:
                 ecranSemaine();
@@ -1029,6 +1060,57 @@ final class PartageVue {
     // ---- Plans de coupe (V6.3) : comme l'onglet du PC ; un plan modifié ici part au PC ----
 
     // ---- Stock des panneaux (V6.5.1) : comme la page du PC, lu dans le fichier partagé ----
+
+    // ---- V6.8 : Claustras — photo du plan, envoyée au PC ----
+
+    private void ecranClaustras() {
+        entete("Préparer un lancement", "Claustras : photo du plan", "Prenez le plan du claustra en photo : il part sur le PC, dans Claustras, à côté de la commande, pour y lire la largeur de chaque lame.");
+        claustrasEcran.construire(racine);
+    }
+
+    /** La photo prise (fichier) : préparée, gardée, puis envoyée au PC. */
+    void photoDuPlan(String commande, java.io.File source) {
+        app.annexe.execute(() -> preparerEtEnvoyer(commande, source));
+    }
+
+    /** La photo choisie dans la galerie : copiée, préparée, gardée, puis envoyée au PC. */
+    void photoDuPlan(String commande, Uri uri) {
+        app.annexe.execute(() -> {
+            java.io.File d = new java.io.File(activite.getCacheDir(), "photos");
+            if (!d.isDirectory()) d.mkdirs();
+            java.io.File copie = new java.io.File(d, "plan_choisie.jpg");
+            try (java.io.InputStream in = activite.getContentResolver().openInputStream(uri); java.io.FileOutputStream out = new java.io.FileOutputStream(copie)) {
+                if (in == null) throw new java.io.IOException("photo introuvable");
+                byte[] t = new byte[65536];
+                for (int n; (n = in.read(t)) > 0; ) out.write(t, 0, n);
+            } catch (Exception e) {
+                principal.post(() -> android.widget.Toast.makeText(activite, "Photo illisible : " + e.getMessage(), android.widget.Toast.LENGTH_LONG).show());
+                return;
+            }
+            preparerEtEnvoyer(commande, copie);
+        });
+    }
+
+    private void preparerEtEnvoyer(String commande, java.io.File source) {
+        try {
+            byte[] jpeg = PhotoPlan.preparer(source);
+            String nom = "plan_" + System.currentTimeMillis() + ".jpg";
+            try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(demandes.dossierPhotos(), nom))) {
+                out.write(jpeg);
+            }
+            JSONObject d = new JSONObject();
+            d.put("type", "photoClaustra");
+            d.put("commande", commande);
+            d.put("titre", "Photo du plan " + commande);
+            d.put("fichierPhoto", nom);
+            d.put("taille", jpeg.length);
+            principal.post(() -> envoyerDemande(d));
+        } catch (Exception e) {
+            principal.post(() -> android.widget.Toast.makeText(activite, "Photo impossible : " + (e.getMessage() != null ? e.getMessage() : e), android.widget.Toast.LENGTH_LONG).show());
+        } finally {
+            source.delete();
+        }
+    }
 
     private void ecranStock() {
         entete("Outils", "Stock des panneaux", "Le stock woodStore chargé sur le PC : panneaux entiers, chutes disponibles, chutes réservées, cases.");

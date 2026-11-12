@@ -230,7 +230,8 @@ async function diagnosticLien(secrets) {
 
 const signatureEnvoi = () =>
   signaturePartage([...bibliotheque.semaines.values()], typeof suiviPourPartage === "function" ? suiviPourPartage() : null, typeof retourPourPartage === "function" ? retourPourPartage() : null) +
-  `|stock:${typeof signatureStock === "function" ? signatureStock() : ""}`;
+  `|stock:${typeof signatureStock === "function" ? signatureStock() : ""}` +
+  `|claustras:${typeof claustrasPourTelephone === "function" ? JSON.stringify(claustrasPourTelephone()) : ""}`;
 
 // ---- V6.5.3 : plusieurs PC sur le même code (bureau, maison…) ----
 // Le site garde le dernier envoi. Si un AUTRE PC l'a publié, ses semaines sont fusionnées dans notre bibliothèque

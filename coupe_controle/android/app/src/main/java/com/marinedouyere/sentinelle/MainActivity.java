@@ -39,6 +39,9 @@ public class MainActivity extends AppCompatActivity {
     static final String ONGLET_SUIVI = "suivi";
     static final String ONGLET_PLANS = "plans";
     static final String ONGLET_STOCK = "stock";
+    /** V6.8 : prendre le plan d'un claustra en photo pour le PC. */
+    static final String ONGLET_CLAUSTRAS = "claustras";
+    private static final String PREFS_PHOTO = "sentinelle_photo";
 
     /** Le menu du bas : { onglet, libellé court, icône } dans l'ordre du menu du PC. */
     static final Object[][] MENU = {
@@ -60,6 +63,9 @@ public class MainActivity extends AppCompatActivity {
     private ActivityResultLauncher<String[]> choixPartage;
     private ActivityResultLauncher<String> creationPdf;
     private ActivityResultLauncher<ScanOptions> lecteurQr;
+    private ActivityResultLauncher<String> permissionPhoto;
+    private ActivityResultLauncher<Uri> prisePhoto;
+    private ActivityResultLauncher<String> choixPhoto;
 
     @Override
     protected void onCreate(Bundle etat) {
@@ -72,6 +78,12 @@ public class MainActivity extends AppCompatActivity {
         lecteurQr = registerForActivityResult(new ScanContract(), r -> {
             if (r != null && r.getContents() != null) partage().qrScanne(r.getContents());
         });
+        permissionPhoto = registerForActivityResult(new ActivityResultContracts.RequestPermission(), ok -> {
+            if (Boolean.TRUE.equals(ok)) lancerAppareilPhoto();
+            else Snackbar.make(defilement, "Sans l'appareil photo : utilisez « Choisir une photo ».", Snackbar.LENGTH_LONG).show();
+        });
+        prisePhoto = registerForActivityResult(new ActivityResultContracts.TakePicture(), ok -> photoPrise(Boolean.TRUE.equals(ok)));
+        choixPhoto = registerForActivityResult(new ActivityResultContracts.GetContent(), this::photoChoisie);
 
         LinearLayout racine = ui.colonne();
         racine.setBackgroundColor(ui.couleur(R.color.fond));
@@ -162,6 +174,16 @@ public class MainActivity extends AppCompatActivity {
         titres.addView(ui.titre("Sentinelle", 17, 0xFFFFFFFF));
         titres.addView(ui.texte("Contrôle de coupe · " + version(), 11, false, 0xDDFFFFFF));
         barre.addView(titres, ui.poids(1));
+        // V6.8 : Claustras — prendre le plan en photo pour le PC.
+        android.widget.ImageButton claustras = new android.widget.ImageButton(this);
+        claustras.setImageResource(R.drawable.ic_claustra);
+        claustras.setColorFilter(0xFFFFFFFF);
+        claustras.setContentDescription("Claustras : photo du plan");
+        android.util.TypedValue fondC = new android.util.TypedValue();
+        getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, fondC, true);
+        claustras.setBackgroundResource(fondC.resourceId);
+        claustras.setOnClickListener(v -> allerA(ONGLET_CLAUSTRAS));
+        barre.addView(claustras, new LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)));
         // V6.5.1 : le stock des panneaux (le menu du bas est plein : 5 onglets au plus).
         android.widget.ImageButton stock = new android.widget.ImageButton(this);
         stock.setImageResource(R.drawable.ic_stock);
@@ -256,6 +278,8 @@ public class MainActivity extends AppCompatActivity {
                 return PartageVue.Ecran.PLANS;
             case ONGLET_STOCK:
                 return PartageVue.Ecran.STOCK;
+            case ONGLET_CLAUSTRAS:
+                return PartageVue.Ecran.CLAUSTRAS;
             default:
                 return PartageVue.Ecran.SEMAINE;
         }
@@ -286,6 +310,60 @@ public class MainActivity extends AppCompatActivity {
             for (View x = v; x != null && x != contenu; x = (View) x.getParent()) y += x.getTop();
             defilement.smoothScrollTo(0, Math.max(0, y - ui.dp(8)));
         });
+    }
+
+    // ---- V6.8 : photo du plan d'un claustra (appareil photo ou galerie) ----
+
+    private android.content.SharedPreferences prefsPhoto() {
+        return getSharedPreferences(PREFS_PHOTO, MODE_PRIVATE);
+    }
+
+    private java.io.File fichierPrise() {
+        java.io.File d = new java.io.File(getCacheDir(), "photos");
+        if (!d.isDirectory()) d.mkdirs();
+        return new java.io.File(d, "plan_prise.jpg");
+    }
+
+    /** Ouvre l'appareil photo pour le plan de cette commande (demande l'autorisation la première fois). */
+    void prendrePhotoPlan(String commande) {
+        prefsPhoto().edit().putString("commande", commande).apply();
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) == android.content.pm.PackageManager.PERMISSION_GRANTED)
+            lancerAppareilPhoto();
+        else permissionPhoto.launch(android.Manifest.permission.CAMERA);
+    }
+
+    private void lancerAppareilPhoto() {
+        java.io.File f = fichierPrise();
+        f.delete();
+        try {
+            Uri u = androidx.core.content.FileProvider.getUriForFile(this, getPackageName() + ".photos", f);
+            prisePhoto.launch(u);
+        } catch (Exception e) {
+            Snackbar.make(defilement, "Appareil photo indisponible : utilisez « Choisir une photo ».", Snackbar.LENGTH_LONG).show();
+        }
+    }
+
+    private void photoPrise(boolean ok) {
+        String commande = prefsPhoto().getString("commande", null);
+        java.io.File f = fichierPrise();
+        if (!ok || commande == null || !f.isFile() || f.length() == 0) return;
+        partage().photoDuPlan(commande, f);
+    }
+
+    /** Ouvre la galerie (ou les fichiers) pour choisir une photo déjà prise du plan. */
+    void choisirPhotoPlan(String commande) {
+        prefsPhoto().edit().putString("commande", commande).apply();
+        try {
+            choixPhoto.launch("image/*");
+        } catch (Exception e) {
+            Snackbar.make(defilement, "Galerie indisponible.", Snackbar.LENGTH_LONG).show();
+        }
+    }
+
+    private void photoChoisie(Uri uri) {
+        String commande = prefsPhoto().getString("commande", null);
+        if (uri == null || commande == null) return;
+        partage().photoDuPlan(commande, uri);
     }
 
     // ---- enregistrement d'un PDF (compte rendu de la semaine) ----

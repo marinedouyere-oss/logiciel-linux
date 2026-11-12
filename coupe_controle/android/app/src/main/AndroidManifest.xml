@@ -4,7 +4,7 @@
 
     <!-- Lien avec le PC sans Drive : les données (chiffrées) viennent du site de Sentinelle. -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- Appareil photo : seulement pour scanner le QR code du PC (rien n'est enregistré). -->
+    <!-- Appareil photo : scanner le QR code du PC, et (V6.8) prendre le plan d'un claustra en photo pour le PC. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
@@ -26,6 +26,17 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- V6.8 : l'appareil photo écrit la photo du plan dans le cache de l'appli. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.photos"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/chemins_photos" />
+        </provider>
 
         <!-- Lecteur de QR code (ZXing) : debout comme le reste de l'appli. -->
         <activity

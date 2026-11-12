@@ -503,6 +503,8 @@ function contenuFichierPartage() {
     retourValidations: typeof accusesValidations === "function" ? { traitees: accusesValidations() } : null,
     // V6.5.1 : le stock des panneaux (fichier woodStore chargé sur la page Stock).
     stock: typeof stockPourPartage === "function" ? stockPourPartage() : null,
+    // V6.8 : les commandes claustras lues sur ce PC (le téléphone y rattache la photo du plan).
+    claustras: typeof claustrasPourTelephone === "function" ? claustrasPourTelephone() : null,
   };
 }
 

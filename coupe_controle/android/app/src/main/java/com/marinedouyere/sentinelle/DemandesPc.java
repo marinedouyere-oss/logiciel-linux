@@ -33,9 +33,37 @@ final class DemandesPc {
     private static final int MAX_RESULTATS = 30;
 
     private final SharedPreferences prefs;
+    /** V6.8 : les photos de plans de claustras en attente d'envoi (effacées quand le PC les a reprises). */
+    private final java.io.File dossierPhotos;
 
     DemandesPc(Context c) {
         prefs = c.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE);
+        dossierPhotos = new java.io.File(c.getFilesDir(), "photos_plan");
+    }
+
+    /** Le dossier des photos en attente (créé au besoin). */
+    java.io.File dossierPhotos() {
+        if (!dossierPhotos.isDirectory()) dossierPhotos.mkdirs();
+        return dossierPhotos;
+    }
+
+    /** Les photos de plans en attente de réponse du PC (la plus ancienne d'abord). */
+    synchronized List<JSONObject> photosEnAttente() {
+        List<JSONObject> l = new ArrayList<>();
+        for (JSONObject d : enAttente()) if ("photoClaustra".equals(d.optString("type"))) l.add(d);
+        return l;
+    }
+
+    /** Les dernières réponses du PC aux photos de plans (la plus récente d'abord). */
+    synchronized List<JSONObject> resultatsPhotos() {
+        List<JSONObject> l = new ArrayList<>();
+        for (JSONObject x : resultats()) if ("photoClaustra".equals(x.optString("type"))) l.add(x);
+        return l;
+    }
+
+    private void effacerPhoto(JSONObject d) {
+        String nom = d.optString("fichierPhoto", "");
+        if (!nom.isEmpty() && !nom.contains("/") && !nom.contains("..")) new java.io.File(dossierPhotos, nom).delete();
     }
 
     /** L'identifiant de ce téléphone (tiré au hasard une fois). */
@@ -94,6 +122,8 @@ final class DemandesPc {
 
     /** Ce sur quoi porte une demande (deux demandes sur le même plan : la dernière compte). */
     static String cleDe(JSONObject d) {
+        // V6.8 : chaque photo est une demande à part (plusieurs photos d'un même plan possibles).
+        if ("photoClaustra".equals(d.optString("type"))) return "photo|" + d.optString("id");
         if ("plan".equals(d.optString("type")))
             return "plan|" + d.optString("lancement") + "|" + (d.optInt("module") == 1 ? "module " + d.optString("nom") : d.optString("matiere") + "|" + d.optInt("pdc"));
         return "validation|" + d.optString("lancement") + "|" + d.optString("cle") + "|" + d.optString("probleme");
@@ -192,6 +222,7 @@ final class DemandesPc {
                 continue;
             }
             n++;
+            effacerPhoto(d);
             JSONObject x = new JSONObject();
             try {
                 x.put("id", d.optString("id"));
@@ -252,6 +283,13 @@ final class DemandesPc {
             for (JSONObject d : enAttente()) {
                 JSONObject c = new JSONObject(d.toString());
                 c.remove("envoyee");
+                if ("photoClaustra".equals(d.optString("type"))) {
+                    // V6.8 : la photo voyage dans la demande (JPEG en base64), pas son nom de fichier local.
+                    byte[] photo = lirePhoto(d.optString("fichierPhoto", ""));
+                    if (photo == null) continue;
+                    c.remove("fichierPhoto");
+                    c.put("image", android.util.Base64.encodeToString(photo, android.util.Base64.NO_WRAP));
+                }
                 liste.put(c);
             }
             if (autres != null) for (int i = 0; i < autres.length(); i++) liste.put(autres.get(i));
@@ -263,6 +301,21 @@ final class DemandesPc {
             return b.toByteArray();
         } catch (JSONException e) {
             throw new IOException(e);
+        }
+    }
+
+    /** Les octets d'une photo en attente (null : fichier disparu). */
+    private byte[] lirePhoto(String nom) {
+        if (nom.isEmpty() || nom.contains("/") || nom.contains("..")) return null;
+        java.io.File f = new java.io.File(dossierPhotos, nom);
+        if (!f.isFile()) return null;
+        try (java.io.FileInputStream in = new java.io.FileInputStream(f)) {
+            ByteArrayOutputStream b = new ByteArrayOutputStream((int) f.length());
+            byte[] t = new byte[65536];
+            for (int n; (n = in.read(t)) > 0; ) b.write(t, 0, n);
+            return b.toByteArray();
+        } catch (IOException e) {
+            return null;
         }
     }
 

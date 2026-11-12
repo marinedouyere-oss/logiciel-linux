@@ -227,6 +227,20 @@ final class FichierPartage {
     }
     /** null : aucune extraction Diakonos lue sur le PC. */
     Suivi suivi;
+    /** V6.8 : une commande claustra lue sur le PC (le téléphone y rattache la photo du plan). */
+    static final class ClaustraCmd {
+        String commande = "";
+        String reference = "";
+        String client = "";
+        String semaine = "";
+        String annee = "";
+        int lignes;
+        boolean plusieursLargeurs;
+        int photos;
+    }
+
+    /** V6.8 : les commandes claustras du PC (vide : aucune, ou PC d'avant la V6.8). */
+    final List<ClaustraCmd> claustras = new ArrayList<>();
     /** V6.3 : les réponses du PC aux demandes du téléphone : identifiant → { ok ("true"/"false"), texte, quand }. */
     final Map<String, String[]> reponsesPc = new HashMap<>();
     final List<String> colonnes = new ArrayList<>();
@@ -315,6 +329,22 @@ final class FichierPartage {
         }
         Collections.sort(f.semaines, (a, b) -> Integer.compare(b.annee * 100 + b.semaine, a.annee * 100 + a.semaine));
         f.suivi = suivi(racine.optJSONObject("suiviProduction"));
+        JSONArray cl = racine.optJSONArray("claustras");
+        if (cl != null)
+            for (int i = 0; i < cl.length(); i++) {
+                JSONObject o = cl.optJSONObject(i);
+                if (o == null || texte(o, "commande").isEmpty()) continue;
+                ClaustraCmd c = new ClaustraCmd();
+                c.commande = texte(o, "commande");
+                c.reference = texte(o, "reference");
+                c.client = texte(o, "client");
+                c.semaine = texte(o, "semaine");
+                c.annee = texte(o, "annee");
+                c.lignes = o.optInt("lignes");
+                c.plusieursLargeurs = o.optBoolean("plusieursLargeurs");
+                c.photos = o.optInt("photos");
+                f.claustras.add(c);
+            }
         JSONObject retour = racine.optJSONObject("retourTelephone");
         JSONObject traitees = retour == null ? null : retour.optJSONObject("traitees");
         if (traitees != null)
