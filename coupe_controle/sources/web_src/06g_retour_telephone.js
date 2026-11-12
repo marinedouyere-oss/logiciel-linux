@@ -8,6 +8,37 @@ const CLE_RETOUR_TELEPHONE = "sentinelle-retour-telephone"; // { version, traite
 const DELAI_RETOUR_TELEPHONE_MS = 60000;
 const MAX_REPONSES_RETOUR = 300;
 const retourTelephone = { lecture: null, minuteur: null, erreur: null, distant: {} };
+// V6.5.1 : ce que chaque téléphone a lu (il le dit en déposant dans le canal retour) : { code, lectures: { appareil: { version, genere, quand } } }.
+const CLE_LECTURES_TELEPHONE = "sentinelle-lectures-telephone";
+
+function noterLecturesTelephone(code, lectures) {
+  if (!code || !lectures || typeof lectures !== "object") return;
+  const propres = {};
+  for (const [appareil, l] of Object.entries(lectures))
+    if (l && typeof l === "object" && typeof l.version === "string") propres[String(appareil)] = { version: l.version, genere: String(l.genere || ""), quand: String(l.quand || "") };
+  retourTelephone.lectures = { code, lectures: propres };
+  try {
+    localStorage.setItem(CLE_LECTURES_TELEPHONE, JSON.stringify(retourTelephone.lectures));
+  } catch (_e) {
+    // sans stockage : le temps de la page
+  }
+}
+
+// Les téléphones qui ont lu CE code (le plus récent d'abord).
+function lecturesTelephone(code) {
+  let x = retourTelephone.lectures;
+  if (!x) {
+    try {
+      x = JSON.parse(localStorage.getItem(CLE_LECTURES_TELEPHONE) || "null");
+    } catch (_e) {
+      x = null;
+    }
+  }
+  if (!x || x.code !== code || !x.lectures) return [];
+  return Object.entries(x.lectures)
+    .map(([appareil, l]) => ({ appareil, ...l }))
+    .sort((a, b) => String(b.quand).localeCompare(String(a.quand)));
+}
 
 function lireEtatRetour() {
   try {
@@ -102,7 +133,9 @@ function lireRetourTelephone() {
         k += p.length;
       }
       const secrets = await secretsLien(etat.code);
-      const n = await traiterDemandesTelephone(await dechiffrerPaquetLien(secrets.cle, paquet));
+      const contenu = await dechiffrerPaquetLien(secrets.cle, paquet);
+      noterLecturesTelephone(etat.code, contenu && contenu.lectures);
+      const n = await traiterDemandesTelephone(contenu);
       ecrireEtatRetour({ ...lireEtatRetour(), version: m.version });
       retourTelephone.erreur = null;
       return n;

@@ -38,6 +38,7 @@ public class MainActivity extends AppCompatActivity {
     static final String ONGLET_BIBLIOTHEQUE = "bibliotheque";
     static final String ONGLET_SUIVI = "suivi";
     static final String ONGLET_PLANS = "plans";
+    static final String ONGLET_STOCK = "stock";
 
     /** Le menu du bas : { onglet, libellé court, icône } dans l'ordre du menu du PC. */
     static final Object[][] MENU = {
@@ -161,6 +162,16 @@ public class MainActivity extends AppCompatActivity {
         titres.addView(ui.titre("Sentinelle", 17, 0xFFFFFFFF));
         titres.addView(ui.texte("Contrôle de coupe · " + version(), 11, false, 0xDDFFFFFF));
         barre.addView(titres, ui.poids(1));
+        // V6.5.1 : le stock des panneaux (le menu du bas est plein : 5 onglets au plus).
+        android.widget.ImageButton stock = new android.widget.ImageButton(this);
+        stock.setImageResource(R.drawable.ic_stock);
+        stock.setColorFilter(0xFFFFFFFF);
+        stock.setContentDescription("Stock des panneaux");
+        android.util.TypedValue fondS = new android.util.TypedValue();
+        getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, fondS, true);
+        stock.setBackgroundResource(fondS.resourceId);
+        stock.setOnClickListener(v -> allerA(ONGLET_STOCK));
+        barre.addView(stock, new LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)));
         android.widget.ImageButton biblio = new android.widget.ImageButton(this);
         biblio.setImageResource(R.drawable.ic_nav_bibliotheque);
         biblio.setColorFilter(0xFFFFFFFF);
@@ -243,6 +254,8 @@ public class MainActivity extends AppCompatActivity {
                 return PartageVue.Ecran.SUIVI;
             case ONGLET_PLANS:
                 return PartageVue.Ecran.PLANS;
+            case ONGLET_STOCK:
+                return PartageVue.Ecran.STOCK;
             default:
                 return PartageVue.Ecran.SEMAINE;
         }

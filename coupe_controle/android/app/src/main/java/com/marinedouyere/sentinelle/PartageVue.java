@@ -47,7 +47,7 @@ import java.util.TimeZone;
  */
 final class PartageVue {
 
-    enum Ecran { SEMAINE, CONTROLE, RECHERCHE, BIBLIOTHEQUE, SUIVI, PLANS }
+    enum Ecran { SEMAINE, CONTROLE, RECHERCHE, BIBLIOTHEQUE, SUIVI, PLANS, STOCK }
 
     private static final String PREFERENCES = "sentinelle_partage";
     private static final String CLE_URI = "uri";
@@ -90,6 +90,8 @@ final class PartageVue {
     /** V6.3 : ce que le téléphone demande au PC (plans modifiés, problèmes validés OK), en attente de réponse. */
     private final DemandesPc demandes;
     private final EcranPlans plans;
+    /** V6.5.1 : le stock des panneaux (envoyé par le PC dans le fichier partagé). */
+    private final EcranStock stockEcran;
 
     PartageVue(MainActivity activite, Ui ui, SentinelleApp app) {
         this.activite = activite;
@@ -97,6 +99,7 @@ final class PartageVue {
         this.app = app;
         racine = ui.colonne();
         demandes = new DemandesPc(activite);
+        stockEcran = new EcranStock(activite, ui, this);
         plans = new EcranPlans(activite, ui, new EcranPlans.Hote() {
             @Override
             public FichierPartage donnees() {
@@ -148,16 +151,21 @@ final class PartageVue {
     /** Dépose les demandes en attente sur le site (canal retour), sans effacer celles d'un autre téléphone. */
     void envoyerAuPc() {
         final String code = codeLien();
-        if (code == null || demandes.enAttente().isEmpty()) return;
+        // V6.5.1 : on dépose aussi pour dire au PC quelle version on a lue (il voit si le téléphone est à jour).
+        if (code == null || (demandes.enAttente().isEmpty() && !demandes.accuseAEnvoyer())) return;
         final java.util.Map<String, String[]> reponses = donnees != null ? new java.util.HashMap<>(donnees.reponsesPc) : null;
         app.annexe.execute(() -> {
+            final boolean avecDemandes = !demandes.enAttente().isEmpty();
             try {
                 byte[] cle = cleDe(code);
                 String canal = LienPc.canalRetour(code);
                 org.json.JSONArray autres = new org.json.JSONArray();
+                JSONObject lecturesAutres = null;
                 try {
                     LienPc.Recu r = LienPc.telechargerCanal(canal);
-                    autres = DemandesPc.autres(LienPc.dechiffrer(r.paquet, cle), demandes.appareil(), reponses);
+                    byte[] clair = LienPc.dechiffrer(r.paquet, cle);
+                    autres = DemandesPc.autres(clair, demandes.appareil(), reponses);
+                    lecturesAutres = DemandesPc.lecturesDuPaquet(clair);
                 } catch (LienPc.RienPourCeCode e) {
                     // rien encore sur le site
                 } catch (Exception e) {
@@ -165,10 +173,13 @@ final class PartageVue {
                 }
                 java.util.Set<String> ids = new java.util.HashSet<>();
                 for (JSONObject d : demandes.enAttente()) ids.add(d.optString("id"));
-                LienPc.deposer(canal, LienPc.jetonRetour(code), LienPc.chiffrer(demandes.contenu(autres), cle));
+                String versionLue = demandes.versionLue();
+                LienPc.deposer(canal, LienPc.jetonRetour(code), LienPc.chiffrer(demandes.contenu(autres, lecturesAutres), cle));
                 demandes.envoyees(ids);
+                demandes.accuseEnvoye(versionLue);
             } catch (Exception e) {
-                demandes.erreurEnvoi(e.getMessage() != null ? e.getMessage() : e.toString());
+                // L'accusé de lecture seul : rien à signaler (il repartira à la prochaine lecture).
+                if (avecDemandes) demandes.erreurEnvoi(e.getMessage() != null ? e.getMessage() : e.toString());
             }
             principal.post(this::construire);
         });
@@ -292,6 +303,7 @@ final class PartageVue {
                     byte[] cle = cleDe(code);
                     LienPc.Recu r = LienPc.telecharger(code);
                     lu = FichierPartage.lire(new java.io.ByteArrayInputStream(LienPc.dechiffrer(r.paquet, cle)));
+                    demandes.lu(r.version, r.genere);
                     try (java.io.FileOutputStream sortie = new java.io.FileOutputStream(cache)) {
                         sortie.write(r.paquet);
                     }
@@ -346,7 +358,7 @@ final class PartageVue {
                 if (resultat != null) {
                     // Les réponses du PC : les demandes reprises sortent de la file ; les autres repartent si besoin.
                     if (demandes.reponses(resultat.reponsesPc) > 0) construire();
-                    if (demandes.aEnvoyer() || demandes.erreur() != null) envoyerAuPc();
+                    if (demandes.aEnvoyer() || demandes.erreur() != null || demandes.accuseAEnvoyer()) envoyerAuPc();
                     activite.partageCharge();
                 }
             });
@@ -374,8 +386,13 @@ final class PartageVue {
 
     // ---- écran ----
 
+    void reconstruire() {
+        construire();
+    }
+
     private void construire() {
         racine.removeAllViews();
+        avisDuPc();
         switch (ecran) {
             case CONTROLE:
                 ecranControle();
@@ -391,6 +408,9 @@ final class PartageVue {
                 break;
             case PLANS:
                 ecranPlans();
+                break;
+            case STOCK:
+                ecranStock();
                 break;
             default:
                 ecranSemaine();
@@ -495,7 +515,7 @@ final class PartageVue {
     }
 
     /** Les chiffres clés dans une seule carte : { valeur, légende, "souci" ou null } par colonne. */
-    private View bandeChiffres(String[]... chiffres) {
+    View bandeChiffres(String[]... chiffres) {
         MaterialCardView carte = ui.carte();
         LinearLayout r = ui.rangee();
         r.setPadding(ui.dp(4), ui.dp(10), ui.dp(4), ui.dp(10));
@@ -535,6 +555,7 @@ final class PartageVue {
         }
         FichierPartage.Semaine s = semaine();
         entete(semaineEnCours(s) ? "Semaine en cours" : "Semaine", titreSemaine(s), CompteRendu.datesSemaine(s.annee, s.semaine));
+        ligneDonneesDuPc();
         racine.addView(choixSemaines(s), ui.marges(2, 4));
         int controles = 0;
         int nbProblemes = 0;
@@ -657,7 +678,7 @@ final class PartageVue {
         if (sansEtiquette != null) racine.addView(carteResultatsSansEtiquette());
     }
 
-    private EditText champ(String indice, int type, String valeur) {
+    EditText champ(String indice, int type, String valeur) {
         EditText e = new EditText(activite);
         e.setHint(indice);
         e.setSingleLine(true);
@@ -676,11 +697,11 @@ final class PartageVue {
     static final int CLAVIER_CHIFFRES = InputType.TYPE_CLASS_NUMBER;
     static final int CLAVIER_LETTRES = InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS;
 
-    private interface ChoixClavier {
+    interface ChoixClavier {
         void garder(boolean lettres);
     }
 
-    private MaterialButton boutonClavier(EditText champ, boolean lettres, ChoixClavier choix) {
+    MaterialButton boutonClavier(EditText champ, boolean lettres, ChoixClavier choix) {
         final boolean[] etat = {lettres};
         MaterialButton b = ui.boutonTexte(lettres ? "123" : "ABC");
         b.setContentDescription(lettres ? "Clavier chiffres" : "Clavier lettres");
@@ -1000,6 +1021,43 @@ final class PartageVue {
     }
 
     // ---- Plans de coupe (V6.3) : comme l'onglet du PC ; un plan modifié ici part au PC ----
+
+    // ---- Stock des panneaux (V6.5.1) : comme la page du PC, lu dans le fichier partagé ----
+
+    private void ecranStock() {
+        entete("Outils", "Stock des panneaux", "Le stock woodStore chargé sur le PC : panneaux entiers, chutes disponibles, chutes réservées, cases.");
+        stockEcran.construire(racine, donnees);
+    }
+
+    /**
+     * V6.5.1 : le PC a changé de code de liaison (ou arrêté l'envoi) : ce téléphone ne reçoit plus rien. Avant, il gardait
+     * l'ancienne version sans rien dire. Bandeau rouge sur tous les écrans, avec le bouton pour rescanner le QR code.
+     */
+    private void avisDuPc() {
+        if (donnees == null || codeLien() == null || donnees.lien == null || donnees.lien.isEmpty()) return;
+        MaterialCardView carte = ui.carte();
+        carte.setStrokeColor(ui.couleur(R.color.alerte_texte));
+        LinearLayout corps = corpsDe(carte);
+        boolean remplace = "remplace".equals(donnees.lien);
+        corps.addView(ui.titreCarte(remplace ? "Le PC a changé de code" : "Le PC a arrêté l'envoi"));
+        corps.addView(ui.texte(remplace
+                ? "Ce téléphone ne reçoit plus les nouveautés du PC (données du " + dateLisible(donnees.genere) + "). Sur le PC : Bibliothèque des semaines → Téléphone, puis scannez le nouveau QR code."
+                : "Le PC n'envoie plus rien à ce téléphone : ces données (du " + dateLisible(donnees.genere) + ") ne sont plus mises à jour.", 14, false, ui.couleur(R.color.alerte_texte)), ui.marges(2, 6));
+        if (remplace) {
+            MaterialButton scanner = ui.bouton("Scanner le nouveau QR code du PC");
+            scanner.setOnClickListener(v -> activite.scannerQrDuPc());
+            corps.addView(scanner, ui.pleineLargeur());
+        }
+        racine.addView(carte);
+    }
+
+    /** V6.5.1 : de quand datent les données du PC (on voit tout de suite si le téléphone n'a pas les nouveautés). */
+    private void ligneDonneesDuPc() {
+        if (donnees == null || codeLien() == null) return;
+        String quand = dateLisible(donnees.genere);
+        TextView t = ui.texte("Données du PC du " + (quand.isEmpty() ? "?" : quand) + (avertissement != null ? " · pas de connexion au site" : ""), 12, false, ui.couleur(R.color.gris_texte));
+        racine.addView(t, ui.marges(0, 4));
+    }
 
     private void ecranPlans() {
         entete("Outils", "Plans de coupe", "Les plans de l'optimisation Cut Rite, lus par le PC dans la sauvegarde .bkp, avec les mêmes numéros « Pdc ». Un plan modifié ici part au PC.");

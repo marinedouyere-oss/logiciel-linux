@@ -140,10 +140,36 @@ async function chargerFichierStock(fichier) {
     } catch (_e) {
       // sans place : gardé le temps de la page
     }
+    // V6.5.1 : le téléphone relié reçoit le nouveau stock quelques secondes après.
+    if (typeof planifierEnvoiTelephone === "function") planifierEnvoiTelephone();
   } catch (e) {
     stock.erreur = e && e.message ? e.message : String(e);
   }
   afficherStock();
+}
+
+// V6.5.1 : le stock part aussi au téléphone, dans le fichier partagé, déjà lu (le téléphone n'a qu'à l'afficher).
+// Une ligne par format : [code, qté, matériau, L, l, ép., limite, désignation, fil, réservée, famille, cases, origine, depuis].
+function stockPourPartage() {
+  lireStockMemoire();
+  const d = stock.donnees;
+  if (!d) return null;
+  return {
+    nom: d.nom || "",
+    modifie: d.modifie || 0,
+    charge: d.charge || 0,
+    jusquau: d.donneesJusquau || 0,
+    formats: d.formats.map((f) => [
+      f.code, f.qte, f.mat, f.L, f.W, f.ep, f.limite, f.desc, f.fil ? 1 : 0, f.reservee ? 1 : 0, f.famille,
+      f.emplacements.map(([c, q]) => `${c}(${q})`).join(" "), f.origine ? f.origine.texte : "", f.origine ? f.origine.quand || 0 : 0,
+    ]),
+  };
+}
+
+// Change quand un autre fichier de stock est chargé (déclenche l'envoi au téléphone).
+function signatureStock() {
+  lireStockMemoire();
+  return stock.donnees ? String(stock.donnees.charge || 0) : "";
 }
 
 // Le stock d'un matériau (pour la simulation d'un lancement, plus tard).

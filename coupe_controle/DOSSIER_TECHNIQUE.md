@@ -27,7 +27,7 @@ Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
 (`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
 (imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
 
-Version courante : **6.5.0** (le PC et l'APK partagent le même numéro ; l'agent suit).
+Version courante : **6.5.1** (le PC et l'APK partagent le même numéro ; l'agent suit).
 
 ### Glossaire métier
 
@@ -184,7 +184,12 @@ Activité par poste et bouton « Réinitialiser » : `htmlBandeauValidations()` 
 - **Page Stock** (menu) : charger le fichier (gardé en mémoire du navigateur, `sentinelle-stock`),
   rechercher un matériau, détail (entiers, chutes disponibles, chutes réservées, cases, Limite),
   « chutes qui dorment » (> 120 jours), tri par clic sur les en-têtes de colonnes. Avertit si les
-  données ont plus de 7 jours. PC seulement (pas dans l'APK).
+  données ont plus de 7 jours.
+- **Téléphone** (6.5.1) : le stock part dans le fichier partagé, **déjà lu** (`stockPourPartage()`, une
+  ligne par format : code, qté, matériau, L, l, ép., limite, désignation, fil, réservée, famille, cases,
+  origine, depuis). Charger un nouveau fichier déclenche l'envoi (`signatureStock()` dans la signature
+  d'envoi). Écran `EcranStock.java` (icône « panneaux empilés » de la barre du haut : le menu du bas est
+  plein, 5 onglets au plus) : même contenu que le PC, tri par les en-têtes.
 - **Rapport du lancement** : page « Chutes de stratifié réservées » (`partieChutesStratReservees`).
   Les chutes viennent des plans du `.bkp` du lancement (plans « chute du stock »), **stratifié
   seulement** (matériau `STRAT…` ou épaisseur ≤ 1,2 mm ; ni agglo ni compact). La **case** est lue
@@ -193,6 +198,21 @@ Activité par poste et bouton « Réinitialiser » : `htmlBandeauValidations()` 
   Seules des **chutes** y figurent : les feuilles entières (dont RCB / RCB-CRED14) n'y sont pas, les
   chutes de RCB restent.
 - **À venir** : simuler un lancement complet sur le stock.
+
+### Lien PC → téléphone : savoir si le téléphone suit (V6.5.1)
+
+Cas réel du 11/11 : le PC envoyait sur un **nouveau code**, le téléphone lisait toujours l'**ancien**
+(dernière version : mardi) et ne disait rien. Trois parades :
+- **Accusé de lecture** : après chaque nouvelle version lue, le téléphone dépose dans le canal retour
+  `lectures: { appareil: { version, genere, quand } }` (`DemandesPc.lu / accuseAEnvoyer`, fusion avec un
+  autre téléphone). Le PC le note par code (`noterLecturesTelephone`, `sentinelle-lectures-telephone`) et
+  la carte Téléphone dit : « a bien reçu le dernier envoi », « n'a pas encore ouvert le dernier envoi »,
+  ou « Aucun téléphone n'a encore lu ce code » (→ rescanner le QR code). Le PC garde la `version` publiée.
+- **Code remplacé / envoi arrêté** : « Nouveau code » et « Arrêter » font un dernier envoi sur l'ANCIEN
+  code avec `lien: "remplace"` / `"arrete"` (`prevenirAncienCode`). Le téléphone affiche un bandeau rouge
+  sur tous les écrans, avec « Scanner le nouveau QR code du PC ».
+- **Date des données** : l'écran Semaine du téléphone affiche « Données du PC du … ».
+Le téléphone suit **un seul PC** : celui dont il a scanné le QR code.
 
 ### Clavier de l'APK (V6.5)
 

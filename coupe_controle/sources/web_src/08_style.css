@@ -132,6 +132,7 @@
   .note { color: var(--gris-texte); font-size: 0.85rem; margin-top: 4px; }
   .compte-rendu { margin-top: 8px; font-size: 0.86rem; color: var(--noir); line-height: 1.5; }
   .compte-rendu.erreur { color: var(--alerte-texte); }
+  .compte-rendu.attention { color: var(--attention-texte); }
   /* Tableaux : en-tête bordeaux en capitales espacées, lignes alternées gris clair, pas de filets verticaux, total en aplat bordeaux. */
   table.recap { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
   table.recap th {

@@ -132,6 +132,37 @@ final class DemandesPc {
         prefs.edit().putString("dernierEnvoi", maintenant()).remove("erreurEnvoi").apply();
     }
 
+    // ---- V6.5.1 : le téléphone dit au PC quelle version il a lue (le PC voit si le téléphone est à jour) ----
+
+    /** Une version du fichier partagé vient d'être lue. */
+    synchronized void lu(String version, String genere) {
+        if (version == null || version.isEmpty()) return;
+        prefs.edit().putString("luVersion", version).putString("luGenere", genere == null ? "" : genere).putString("luQuand", maintenant()).apply();
+    }
+
+    /** La dernière version lue n'a pas encore été dite au PC. */
+    synchronized boolean accuseAEnvoyer() {
+        String v = prefs.getString("luVersion", "");
+        return !v.isEmpty() && !v.equals(prefs.getString("accuseVersion", ""));
+    }
+
+    synchronized String versionLue() {
+        return prefs.getString("luVersion", "");
+    }
+
+    synchronized void accuseEnvoye(String version) {
+        if (version != null && !version.isEmpty()) prefs.edit().putString("accuseVersion", version).apply();
+    }
+
+    /** Ce que ce téléphone a lu : { version, genere, quand }. */
+    synchronized JSONObject lecture() throws JSONException {
+        JSONObject l = new JSONObject();
+        l.put("version", prefs.getString("luVersion", ""));
+        l.put("genere", prefs.getString("luGenere", ""));
+        l.put("quand", prefs.getString("luQuand", ""));
+        return l;
+    }
+
     synchronized void erreurEnvoi(String texte) {
         prefs.edit().putString("erreurEnvoi", texte).apply();
     }
@@ -199,11 +230,24 @@ final class DemandesPc {
      * que le PC n'a pas encore reprises (on ne les efface pas).
      */
     synchronized byte[] contenu(JSONArray autres) throws IOException {
+        return contenu(autres, null);
+    }
+
+    /** Idem, avec ce que chaque téléphone a lu (le nôtre, et ceux d'un autre téléphone déjà sur le site). */
+    synchronized byte[] contenu(JSONArray autres, JSONObject lecturesAutres) throws IOException {
         try {
             JSONObject o = new JSONObject();
             o.put("format", FORMAT);
             o.put("appareil", appareil());
             o.put("envoye", maintenant());
+            JSONObject lectures = new JSONObject();
+            if (lecturesAutres != null)
+                for (java.util.Iterator<String> it = lecturesAutres.keys(); it.hasNext(); ) {
+                    String a = it.next();
+                    if (!a.equals(appareil()) && lecturesAutres.optJSONObject(a) != null) lectures.put(a, lecturesAutres.optJSONObject(a));
+                }
+            if (!prefs.getString("luVersion", "").isEmpty()) lectures.put(appareil(), lecture());
+            o.put("lectures", lectures);
             JSONArray liste = new JSONArray();
             for (JSONObject d : enAttente()) {
                 JSONObject c = new JSONObject(d.toString());
@@ -219,6 +263,25 @@ final class DemandesPc {
             return b.toByteArray();
         } catch (JSONException e) {
             throw new IOException(e);
+        }
+    }
+
+    /** Ce que les téléphones ont lu, d'après le paquet déjà déposé (déchiffré) ; vide si illisible. */
+    static JSONObject lecturesDuPaquet(byte[] clair) {
+        try {
+            byte[] json = clair;
+            if (clair.length > 2 && (clair[0] & 0xff) == 0x1f && (clair[1] & 0xff) == 0x8b) {
+                java.util.zip.GZIPInputStream z = new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(clair));
+                ByteArrayOutputStream b = new ByteArrayOutputStream();
+                byte[] t = new byte[8192];
+                for (int n; (n = z.read(t)) > 0; ) b.write(t, 0, n);
+                json = b.toByteArray();
+            }
+            JSONObject o = new JSONObject(new String(json, StandardCharsets.UTF_8));
+            JSONObject l = FORMAT.equals(o.optString("format")) ? o.optJSONObject("lectures") : null;
+            return l != null ? l : new JSONObject();
+        } catch (IOException | JSONException e) {
+            return new JSONObject();
         }
     }
 

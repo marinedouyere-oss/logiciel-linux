@@ -135,6 +135,7 @@ async function envoyerPaquetLien(secrets, paquet, genere) {
       30000
     )
   );
+  return version;
 }
 
 // Après un envoi raté : le site répond-il au moins en lecture ? (dit si c'est l'envoi qui est bloqué par le réseau).
@@ -158,7 +159,9 @@ function envoyerAuTelephone(forcer = false) {
     return lienTelephone.envoi;
   }
   // Rien n'a changé depuis le dernier envoi réussi : rien à faire (et surtout rien qui reste « en cours »).
-  const signature = signaturePartage([...bibliotheque.semaines.values()], typeof suiviPourPartage === "function" ? suiviPourPartage() : null, typeof retourPourPartage === "function" ? retourPourPartage() : null);
+  const signature =
+    signaturePartage([...bibliotheque.semaines.values()], typeof suiviPourPartage === "function" ? suiviPourPartage() : null, typeof retourPourPartage === "function" ? retourPourPartage() : null) +
+    `|stock:${typeof signatureStock === "function" ? signatureStock() : ""}`;
   if (!forcer && etat.signature === signature && !etat.erreur) return Promise.resolve({ ok: true, inchange: true });
   clearTimeout(lienTelephone.relance);
   const envoi = (async () => {
@@ -171,9 +174,9 @@ function envoyerAuTelephone(forcer = false) {
       secrets = await secretsLien(etat.code);
       const contenu = contenuFichierPartage();
       const paquet = await paquetChiffre(secrets.cle, await compresserJson(contenu));
-      await envoyerPaquetLien(secrets, paquet, contenu.genere);
+      const version = await envoyerPaquetLien(secrets, paquet, contenu.genere);
       const nbSemaines = [...bibliotheque.semaines.values()].filter((s) => s.lancements.length).length;
-      ecrireLienTelephone({ ...etatLienTelephone(), signature, dernierEnvoi: new Date().toISOString(), nbSemaines, erreur: null });
+      ecrireLienTelephone({ ...etatLienTelephone(), signature, dernierEnvoi: new Date().toISOString(), version, nbSemaines, erreur: null });
       lienTelephone.essais = 0;
       return { ok: true };
     } catch (erreur) {
@@ -218,15 +221,52 @@ async function activerLienTelephone() {
   await envoyerAuTelephone(true);
 }
 
+// V6.5.1 : un dernier envoi sur l'ANCIEN code, marqué « code remplacé » ou « envoi arrêté » : le téléphone resté sur
+// cet ancien code le dit en rouge (avant, il gardait l'ancienne version sans rien dire et ne recevait plus rien).
+async function prevenirAncienCode(etat, avis) {
+  if (!etat || !etat.code) return;
+  try {
+    const secrets = await secretsLien(etat.code);
+    const contenu = { ...contenuFichierPartage(), lien: avis };
+    await envoyerPaquetLien(secrets, await paquetChiffre(secrets.cle, await compresserJson(contenu)), contenu.genere);
+  } catch (_e) {
+    // pas de réseau : tant pis (le PC dit quand même qu'il faut rescanner le QR code)
+  }
+}
+
 async function nouveauCodeLienTelephone() {
-  if (!(await demanderConfirmation("Nouveau code pour le téléphone ?", "L'ancien code ne marchera plus : il faudra taper le nouveau dans l'appli.", "Nouveau code"))) return;
+  if (!(await demanderConfirmation("Nouveau code pour le téléphone ?", "L'ancien code ne marchera plus : il faudra rescanner le QR code avec l'appli.", "Nouveau code"))) return;
+  const ancien = etatLienTelephone();
   await activerLienTelephone();
+  prevenirAncienCode(ancien, "remplace");
 }
 
 async function arreterLienTelephone() {
   if (!(await demanderConfirmation("Arrêter l'envoi au téléphone ?", "Le téléphone ne recevra plus les nouvelles semaines (il garde la dernière version reçue).", "Arrêter"))) return;
+  const ancien = etatLienTelephone();
   ecrireLienTelephone(null);
   rafraichirBibliotheque();
+  prevenirAncienCode(ancien, "arrete");
+}
+
+// V6.5.1 : le téléphone a-t-il bien reçu le dernier envoi ? (il le dit au PC quand il a lu une nouvelle version)
+function htmlLectureTelephone(etat) {
+  const date = (iso) => (iso ? new Date(iso).toLocaleString("fr-FR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "?");
+  const lectures = typeof lecturesTelephone === "function" ? lecturesTelephone(etat.code) : [];
+  if (!lectures.length) {
+    if (!etat.dernierEnvoi) return "";
+    return `<div class="compte-rendu erreur" id="lectureTelephone">⚠ Aucun téléphone n'a encore lu ce code. Si le téléphone n'a pas les nouveautés : dans l'appli, icône du livre en haut → « Délier », puis « Scanner le QR code du PC » et visez ce QR code. (Il faut l'appli 6.5.1 ou plus pour voir ici ce que le téléphone a reçu.)</div>`;
+  }
+  return lectures
+    .slice(0, 3)
+    .map((l) => {
+      const aJour = !etat.version || l.version === etat.version;
+      const qui = lectures.length > 1 ? `Téléphone ${l.appareil.slice(0, 4)}` : "Le téléphone";
+      return aJour
+        ? `<div class="compte-rendu" id="lectureTelephone">📱 ${qui} a bien reçu le dernier envoi (ouvert ${echapper(date(l.quand))}).</div>`
+        : `<div class="compte-rendu attention" id="lectureTelephone">📱 ${qui} n'a pas encore ouvert le dernier envoi (dernière ouverture ${echapper(date(l.quand))}). Il le recevra en ouvrant l'appli.</div>`;
+    })
+    .join("");
 }
 
 // Carte de la page Bibliothèque.
@@ -255,12 +295,13 @@ function htmlLienTelephone() {
     html += `<div class="lien-qr">
         ${qr ? `<div class="qr-cadre" id="qrLien" title="QR code du lien avec le téléphone">${qr}</div>` : ""}
         <div class="lien-qr-texte">
-          <div class="note">Dans l'appli du téléphone : l'icône du livre (en haut) → <strong>« Scanner le QR code du PC »</strong>, et visez ce QR code (une seule fois).</div>
+          <div class="note">Dans l'appli du téléphone : l'icône du livre (en haut) → <strong>« Scanner le QR code du PC »</strong>, et visez ce QR code (une seule fois). Le téléphone suit le code de <strong>ce</strong> PC : un nouveau code, ou un autre PC, demande de rescanner.</div>
           <div class="note">Ou tapez le code :</div>
           <div class="code-lien" id="codeLien">${echapper(etat.code)}</div>
         </div>
       </div>
       <div class="compte-rendu ${etat.erreur && !lienTelephone.envoi ? "erreur" : ""}" id="etatLien">${echapper(statut)}</div>
+      ${htmlLectureTelephone(etat)}
       ${typeof htmlRetourTelephone === "function" ? htmlRetourTelephone() : ""}
       <div class="boutons-carte">
         <button type="button" id="btnEnvoyerLien" ${lienTelephone.envoi ? "disabled" : ""}>Envoyer maintenant</button>

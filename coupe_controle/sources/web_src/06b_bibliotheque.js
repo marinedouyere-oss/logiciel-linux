@@ -473,6 +473,8 @@ function contenuFichierPartage() {
     retourTelephone: typeof retourPourPartage === "function" ? retourPourPartage() : null,
     // V6.4 : les étiquettes validées déjà prises en compte (les PC de validation arrêtent de les renvoyer).
     retourValidations: typeof accusesValidations === "function" ? { traitees: accusesValidations() } : null,
+    // V6.5.1 : le stock des panneaux (fichier woodStore chargé sur la page Stock).
+    stock: typeof stockPourPartage === "function" ? stockPourPartage() : null,
   };
 }
 

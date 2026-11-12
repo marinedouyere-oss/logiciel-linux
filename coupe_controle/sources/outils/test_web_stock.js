@@ -91,7 +91,50 @@ const FICHIER = [
   const memo = await page.evaluate(() => Boolean(JSON.parse(localStorage.getItem("sentinelle-stock") || "null")));
   verifier(memo, `dernier fichier gardé en mémoire`);
 
-  // 3. Page du rapport (vraie sauvegarde, optionnelle) : chutes de stratifié, toutes avec leur case, triées par case.
+  // 3. V6.5.1 : le stock part au téléphone (fichier partagé), le PC voit si le téléphone a lu le dernier envoi,
+  // et un nouveau code prévient le téléphone resté sur l'ancien.
+  const lien = await page.evaluate(async () => {
+    const contenu = contenuFichierPartage();
+    const s = contenu.stock;
+    const f9001 = s && s.formats.find((x) => x[0] === "9001_4100_1300");
+    const reservee = s && s.formats.find((x) => x[0] === "XLAN264601STRAT_9001/0002");
+    const etat = { code: "AAAA-BBBB-CCCC-DDDD", version: "v2", dernierEnvoi: "2026-11-11T20:01:53Z" };
+    const sans = htmlLectureTelephone(etat);
+    noterLecturesTelephone(etat.code, { tel1: { version: "v1", quand: "2026-11-11T06:00:00Z" } });
+    const ancienne = htmlLectureTelephone(etat);
+    noterLecturesTelephone(etat.code, { tel1: { version: "v2", quand: "2026-11-12T06:05:00Z" } });
+    const aJour = htmlLectureTelephone(etat);
+    const autreCode = htmlLectureTelephone({ ...etat, code: "ZZZZ-ZZZZ-ZZZZ-ZZZZ" });
+    // Nouveau code : un dernier envoi marqué « remplace » sur l'ANCIEN canal (envoi simulé).
+    const envois = [];
+    const vrai = envoyerPaquetLien;
+    envoyerPaquetLien = async (secrets, paquet) => {
+      const clair = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: paquet.slice(4, 16) }, secrets.cle, paquet.slice(16)));
+      envois.push({ canal: secrets.canal, contenu: await lireJsonCompresse(new Blob([clair])) });
+      return "v-essai";
+    };
+    await prevenirAncienCode({ code: "AAAA-BBBB-CCCC-DDDD" }, "remplace");
+    envoyerPaquetLien = vrai;
+    const canalAncien = (await secretsLien("AAAA-BBBB-CCCC-DDDD")).canal;
+    return {
+      stock: Boolean(s && s.formats.length === 8),
+      f9001: f9001 && f9001[1] === 21 && f9001[6] === 9 && f9001[11] === "1041(9) 1042(12)",
+      reservee: reservee && reservee[9] === 1,
+      signature: signatureStock() !== "",
+      sans: /Aucun téléphone/.test(sans),
+      ancienne: /pas encore ouvert/.test(ancienne),
+      aJour: /a bien reçu le dernier envoi/.test(aJour),
+      autreCode: /Aucun téléphone/.test(autreCode),
+      avis: envois.length === 1 && envois[0].canal === canalAncien && envois[0].contenu.lien === "remplace" && Array.isArray(envois[0].contenu.semaines),
+    };
+  });
+  console.log(JSON.stringify(lien));
+  verifier(lien.stock && lien.f9001 && lien.reservee, `fichier partagé : le stock part au téléphone (formats, Limite, cases, réservées)`);
+  verifier(lien.signature, `un nouveau fichier de stock déclenche l'envoi au téléphone`);
+  verifier(lien.sans && lien.ancienne && lien.aJour && lien.autreCode, `PC : dit si le téléphone a lu le dernier envoi (jamais / pas encore / à jour, par code)`);
+  verifier(lien.avis, `nouveau code : l'ancien code reçoit « code remplacé » (le téléphone resté dessus le dit en rouge)`);
+
+  // 4. Page du rapport (vraie sauvegarde, optionnelle) : chutes de stratifié, toutes avec leur case, triées par case.
   if (bkp && fs.existsSync(bkp)) {
     const r = await page.evaluate(
       async ([b64, nom]) => {

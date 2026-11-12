@@ -163,6 +163,45 @@ final class FichierPartage {
 
     String genere;
     String par;
+    /** V6.5.1 : « remplace » (le PC a pris un nouveau code de liaison) ou « arrete » (envoi arrêté) ; vide sinon. */
+    String lien = "";
+    /** V6.5.1 : le stock des panneaux (fichier woodStore chargé sur le PC) ; null : pas de fichier de stock. */
+    Stock stock;
+
+    /** Un format du stock : panneau entier ou chute (code « X… »). */
+    static final class FormatStock {
+        String code = "";
+        int qte;
+        String mat = "";
+        double L;
+        double W;
+        double ep;
+        /** Code woodStore : 0 = limité au stock, 9 = dépassement autorisé. */
+        int limite;
+        String desc = "";
+        boolean fil;
+        /** Chute réservée pour un lancement à débiter (statut 2) : pas disponible. */
+        boolean reservee;
+        String famille = "";
+        /** Cases : « 1041(15) 7131(65) ». */
+        String cases = "";
+        String origine = "";
+        /** Depuis quand la chute est là (ms ; 0 : inconnu). */
+        long depuis;
+
+        boolean chute() {
+            return code.startsWith("X");
+        }
+    }
+
+    static final class Stock {
+        String nom = "";
+        long modifie;
+        long charge;
+        /** Chute machine la plus récente du fichier (ms ; 0 : inconnu) : à peu près la date des données. */
+        long jusquau;
+        final List<FormatStock> formats = new ArrayList<>();
+    }
     /** null : aucune extraction Diakonos lue sur le PC. */
     Suivi suivi;
     /** V6.3 : les réponses du PC aux demandes du téléphone : identifiant → { ok ("true"/"false"), texte, quand }. */
@@ -217,6 +256,8 @@ final class FichierPartage {
         FichierPartage f = new FichierPartage();
         f.genere = texte(racine, "genere");
         f.par = texte(racine, "par");
+        f.lien = texte(racine, "lien");
+        f.stock = stock(racine.optJSONObject("stock"));
         JSONArray colonnes = racine.optJSONArray("colonnesPieces");
         if (colonnes != null) for (int i = 0; i < colonnes.length(); i++) f.colonnes.add(colonnes.optString(i));
         JSONObject explications = racine.optJSONObject("explications");
@@ -266,6 +307,39 @@ final class FichierPartage {
         String[] t = new String[a.length()];
         for (int i = 0; i < a.length(); i++) t[i] = a.isNull(i) ? "" : a.optString(i, "");
         return t;
+    }
+
+    static Stock stock(JSONObject js) {
+        if (js == null) return null;
+        JSONArray l = js.optJSONArray("formats");
+        if (l == null) return null;
+        Stock s = new Stock();
+        s.nom = texte(js, "nom");
+        s.modifie = js.optLong("modifie", 0);
+        s.charge = js.optLong("charge", 0);
+        s.jusquau = js.optLong("jusquau", 0);
+        for (int i = 0; i < l.length(); i++) {
+            JSONArray a = l.optJSONArray(i);
+            if (a == null || a.length() < 12) continue;
+            FormatStock x = new FormatStock();
+            x.code = a.optString(0, "");
+            x.qte = a.optInt(1, 0);
+            x.mat = a.optString(2, "");
+            x.L = a.optDouble(3, 0);
+            x.W = a.optDouble(4, 0);
+            x.ep = a.optDouble(5, 0);
+            x.limite = a.optInt(6, 0);
+            x.desc = a.isNull(7) ? "" : a.optString(7, "");
+            x.fil = a.optInt(8, 0) == 1;
+            x.reservee = a.optInt(9, 0) == 1;
+            x.famille = a.optString(10, "");
+            x.cases = a.isNull(11) ? "" : a.optString(11, "");
+            x.origine = a.length() > 12 && !a.isNull(12) ? a.optString(12, "") : "";
+            x.depuis = a.length() > 13 ? a.optLong(13, 0) : 0;
+            if (x.code.isEmpty() || x.mat.isEmpty()) continue;
+            s.formats.add(x);
+        }
+        return s;
     }
 
     static Suivi suivi(JSONObject js) {

@@ -839,4 +839,95 @@ public class PartageTest {
         assertFalse(a.partage().demandes().aEnvoyer());
         System.out.println("DEMANDE DEPOSEE SUR LE SITE : " + a.partage().demandes().enAttente().get(0).optString("id"));
     }
+
+    /** V6.5.1 : le stock des panneaux envoyé par le PC (fichier partagé) s'affiche sur le téléphone : réservées à part, Limite, tri. */
+    @Test
+    public void stockDesPanneaux() throws Exception {
+        String json = EXEMPLE.substring(0, EXEMPLE.length() - 1)
+                + ",\"stock\":{\"nom\":\"brdlib.bdx\",\"modifie\":1789000000000,\"charge\":1789100000000,\"jusquau\":1789000000000,\"formats\":["
+                + "[\"9001_4100_1300\",21,\"9001\",4100,1300,0.8,9,\"STRAT ESSAI CHENE\",1,0,\"strat\",\"1041(9) 1042(12)\",\"\",0],"
+                + "[\"XLAN260101STRAT_9001/0001\",1,\"9001\",2500,600,0.8,0,\"STRAT ESSAI CHENE\",1,0,\"strat\",\"5985(1)\",\"LAN260101STRAT (semaine 1)\",1767000000000],"
+                + "[\"XLAN264601STRAT_9001/0002\",1,\"9001\",2000,620,0.8,0,\"STRAT ESSAI CHENE\",1,1,\"strat\",\"5986(1)\",\"LAN264601STRAT (semaine 46)\",0],"
+                + "[\"XLAN260202_9001/0003\",0,\"9001\",1800,600,0.8,0,\"\",1,1,\"strat\",\"\",\"\",0],"
+                + "[\"SAGTEST_4150_2070\",34,\"SAGTEST\",4150,2070,38,0,\"AGGLO ESSAI 38MM\",0,0,\"agglo\",\"1205(10) 1206(24)\",\"\",0]]}}";
+        FichierPartage f = FichierPartage.lire(new ByteArrayInputStream(gzip(json)));
+        assertNotNull(f.stock);
+        assertEquals(5, f.stock.formats.size());
+        List<EcranStock.Materiau> ms = EcranStock.materiaux(f.stock);
+        EcranStock.Materiau m = null;
+        for (EcranStock.Materiau x : ms) if ("9001".equals(x.mat)) m = x;
+        assertNotNull(m);
+        assertEquals(21, m.entiers);
+        assertEquals("chute disponible (stock réel = stock − réservé)", 1, m.chutes);
+        assertEquals("chute réservée à part", 1, m.reservees);
+        assertEquals("chute sortie (quantité 0) écartée", 2, m.lesChutes.size());
+
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
+        ShadowLooper.idleMainLooper();
+        a.partage().afficherDonnees(f, "essai");
+        a.allerA(MainActivity.ONGLET_STOCK);
+        ShadowLooper.idleMainLooper();
+        String texte = ecran(a);
+        assertTrue(texte, texte.contains("Stock des panneaux"));
+        assertTrue(texte, texte.contains("Chutes réservées"));
+        assertTrue(texte, texte.contains("Stock réel = stock − réservé"));
+        assertTrue("matériau sans stock caché", !texte.contains("SAGTEST") || texte.contains("34"));
+        // Ouvrir 9001 : Limite 9, cases, chute réservée.
+        View ligne = vueAvecTexte(a.getWindow().getDecorView(), "9001");
+        while (ligne != null && !ligne.isClickable()) ligne = (View) ligne.getParent();
+        assertNotNull(ligne);
+        ligne.performClick();
+        ShadowLooper.idleMainLooper();
+        texte = ecran(a);
+        assertTrue(texte, texte.contains("Limite 9 : dépassement autorisé"));
+        assertTrue(texte, texte.contains("1041 · 9, 1042 · 12"));
+        assertTrue(texte, texte.contains("réservée"));
+        capturerSiDemande(a, "appli_stock.png");
+        // Tri par l'en-tête « Matériau » : A → Z.
+        View entete = vueAvecTexte(a.getWindow().getDecorView(), "Matériau");
+        assertNotNull(entete);
+        entete.performClick();
+        ShadowLooper.idleMainLooper();
+        assertTrue(ecran(a), ecran(a).contains("Matériau ▲"));
+        // Sans fichier de stock : le dire.
+        a.partage().afficherDonnees(FichierPartage.lire(new ByteArrayInputStream(gzip(EXEMPLE))), "essai");
+        ShadowLooper.idleMainLooper();
+        assertTrue(ecran(a), ecran(a).contains("Pas encore de stock"));
+    }
+
+    /** V6.5.1 : le PC a changé de code : le téléphone resté sur l'ancien le dit en rouge (avant : rien, plus de nouveautés). */
+    @Test
+    public void codeRemplaceParLePc() throws Exception {
+        String json = EXEMPLE.substring(0, EXEMPLE.length() - 1) + ",\"lien\":\"remplace\"}";
+        FichierPartage f = FichierPartage.lire(new ByteArrayInputStream(gzip(json)));
+        assertEquals("remplace", f.lien);
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
+        ShadowLooper.idleMainLooper();
+        a.getSharedPreferences("sentinelle_partage", android.content.Context.MODE_PRIVATE).edit().putString("code_lien", "TEST-TEST-TEST-TEST").commit();
+        a.partage().afficherDonnees(f, "essai");
+        ShadowLooper.idleMainLooper();
+        String texte = ecran(a);
+        assertTrue(texte, texte.contains("Le PC a changé de code"));
+        assertNotNull(bouton(a.getWindow().getDecorView(), "Scanner le nouveau QR code du PC"));
+        assertTrue("date des données du PC visible", texte.contains("Données du PC du"));
+        capturerSiDemande(a, "appli_code_remplace.png");
+    }
+
+    /** V6.5.1 : le téléphone dit au PC quelle version il a lue (le PC voit s'il est à jour), sans effacer celles d'un autre. */
+    @Test
+    public void accuseDeLectureAuPc() throws Exception {
+        MainActivity a = Robolectric.buildActivity(MainActivity.class).setup().visible().get();
+        ShadowLooper.idleMainLooper();
+        DemandesPc d = a.partage().demandes();
+        assertFalse(d.accuseAEnvoyer());
+        d.lu("mwchjn8ta28b75fc", "2026-11-11T20:01:49.000Z");
+        assertTrue(d.accuseAEnvoyer());
+        org.json.JSONObject autre = new org.json.JSONObject().put("autre12345678", new org.json.JSONObject().put("version", "vieux").put("quand", "2026-11-10T08:00:00Z"));
+        byte[] paquet = d.contenu(new org.json.JSONArray(), autre);
+        org.json.JSONObject lectures = DemandesPc.lecturesDuPaquet(paquet);
+        assertEquals("mwchjn8ta28b75fc", lectures.optJSONObject(d.appareil()).optString("version"));
+        assertEquals("vieux", lectures.optJSONObject("autre12345678").optString("version"));
+        d.accuseEnvoye("mwchjn8ta28b75fc");
+        assertFalse(d.accuseAEnvoyer());
+    }
 }
