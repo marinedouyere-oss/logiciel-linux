@@ -99,6 +99,9 @@ final class FichierPartage {
         String jour; // « 2026-11-10 »
         int semaine;
         int annee;
+        /** V6.5.6 : la semaine de LIVRAISON en fabrication (semaine du calendrier + 1) ; 0 : PC d'avant. */
+        int semaineFab;
+        int anneeFab;
         String precedente; // jour de l'extraction d'avant (vide sinon)
         int nbExtractions;
         /** La semaine la plus loin dans l'extraction (0 : inconnue) ; au-delà : « pas dans cette extraction ». */
@@ -351,6 +354,9 @@ final class FichierPartage {
         s.jour = texte(js, "jour");
         s.semaine = js.optInt("semaine");
         s.annee = js.optInt("annee");
+        JSONObject fab = js.optJSONObject("fabrication");
+        s.semaineFab = fab == null ? 0 : fab.optInt("semaine");
+        s.anneeFab = fab == null ? 0 : fab.optInt("annee");
         s.precedente = texte(js, "precedente");
         s.nbExtractions = js.optInt("nbExtractions");
         s.semaineMax = js.optInt("semaineMax", 0);

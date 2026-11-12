@@ -102,6 +102,15 @@ const verifier = (ok, t) => {
     const exC = extraction([rangee(46, "CVC33333333", "1", 1, 1), rangee(46, "CVC33333333", "2", 1, 1)]);
     out.casse_a_refaire = calcul(avecCasse(), exC, []).L;
     out.casse_recoupee = calcul(avecCasse(), exC, [etiq("CVC33333333", "1", 1)]).L;
+    // V6.5.6 : semaines de LIVRAISON. Extraction en semaine 46 du calendrier : on fabrique la livraison 47.
+    // La livraison 46 pas finie est en retard ; la 47 est « en fabrication » (en cours).
+    {
+      calcul([base(), s47], ex, [etiq("CVC22222222", "1", 1)]);
+      const r = SUIVI.calculer();
+      const etat = (n) => (r.semaines.find((x) => x.semaine === n) || {}).e;
+      const jmc = (r.vues.semaine.find((g) => g[0] === "Semaine 46") || [])[4] || [];
+      out.fab = { fab: r.fabrication, e46: etat(46), e47: etat(47), retard46: jmc.some((x) => x[3] === "retard") };
+    }
     // Le bandeau compte les étiquettes (pièces), pas les lignes.
     validations.faites = Object.fromEntries([etiq("CVC11111111", "1", 1, 2, 3), etiq("CVC11111111", "2", 1)]);
     out.bandeau = nbEtiquettesRecues();
@@ -120,6 +129,9 @@ const verifier = (ok, t) => {
   verifier(eq(res.casse_a_refaire.LAN2646CASSE, [0, 1]), `casse encore « en cours » dans l'extraction → à faire (${res.casse_a_refaire.LAN2646CASSE})`);
   verifier(eq(res.casse_recoupee.LAN2646CASSE, [1, 0]), `casse recoupée, étiquette après l'extraction → faite (${res.casse_recoupee.LAN2646CASSE})`);
   verifier(res.bandeau === 4, `bandeau : 4 étiquettes reçues = 4 pièces (${res.bandeau})`);
+  verifier(res.fab.fab && res.fab.fab.semaine === 47, `extraction en semaine 46 : la livraison en fabrication est la 47 (${JSON.stringify(res.fab.fab)})`);
+  verifier(res.fab.e46 === "retard" && res.fab.e47 === "en_cours", `livraison 46 pas finie : en retard ; livraison 47 : en cours (${res.fab.e46} / ${res.fab.e47})`);
+  verifier(res.fab.retard46, `vue par semaine : la 46 marquée en retard`);
 
   // Réception (mini-site simulé) : 3 étiquettes de la même ligne → 3 étiquettes rangées sur la pièce, poste à 3 ;
   // le même lot renvoyé par l'agent (avant l'accusé) n'est pas recompté.

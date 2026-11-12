@@ -27,7 +27,7 @@ Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
 (`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
 (imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
 
-Version courante : **6.5.5** (le PC et l'APK partagent le même numéro ; l'agent suit).
+Version courante : **6.5.6** (le PC et l'APK partagent le même numéro ; l'agent suit).
 
 ### Glossaire métier
 
@@ -229,6 +229,12 @@ toutes les 2 minutes, le PC relit le site (`reprendreDuSite`, `synchroniserAvecL
 (`SUIVI.recevoir`) et son stock s'il est plus récent (`recevoirStockDistant`). Le prochain envoi contient les
 lancements des deux PC. Le fichier partagé porte le nom du PC (`poste`, donné par `Sentinelle.exe` :
 route `/sentinelle/poste`) ; l'appli affiche « Données du PC « X » du … ».
+
+**Suivi : semaines de LIVRAISON (6.5.6)** — en semaine 46 du calendrier, on fabrique la livraison 47 : c'est la
+semaine « en fabrication » (`resume.fabrication`, calendrier + 1) ; une livraison d'avant pas finie est en retard
+(`ordreFab`). Les vues par semaine / transporteur / coloris / client rangent chaque pièce dans sa semaine de livraison
+Diakonos (`livraisonCle`, colonne Semaine de la dernière extraction qui l'a), comme Diakonos ; une pièce sortie de
+toutes les extractions garde la semaine de son lancement. Cas réel : JMC semaine 46 absente côté téléphone.
 
 **Tout lancement des cases entre dans la bibliothèque (6.5.5)** — cause réelle du lancement du 10/11 absent du
 téléphone : il était dans sa case sur le PC, mais un lancement n'entrait dans la bibliothèque (donc dans le fichier

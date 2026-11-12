@@ -1262,8 +1262,9 @@ final class PartageVue {
     private View carteSemaineSuivi(FichierPartage.SemaineSuivi sem, FichierPartage.Suivi s) {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
-        boolean courante = sem.annee == s.annee && sem.semaine == s.semaine;
-        corps.addView(ui.titreCarte("Semaine " + sem.semaine + (courante ? " · en cours" : "")));
+        // V6.5.6 : semaines de livraison ; celle en fabrication = semaine du calendrier + 1.
+        boolean courante = s.semaineFab > 0 ? sem.annee == s.anneeFab && sem.semaine == s.semaineFab : sem.annee == s.annee && sem.semaine == s.semaine;
+        corps.addView(ui.titreCarte("Semaine " + sem.semaine + (courante ? (s.semaineFab > 0 ? " · en fabrication" : " · en cours") : "")));
         corps.addView(ui.texte(CompteRendu.datesSemaine(sem.annee, sem.semaine), 13, false, ui.couleur(R.color.gris_texte)));
         LinearLayout tete = ui.rangee();
         tete.addView(barreSuivi(sem.f, sem.r, sem.e), new LinearLayout.LayoutParams(0, ui.dp(10), 1));

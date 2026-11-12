@@ -421,6 +421,14 @@ const SUIVI = (() => {
     if (!ex.length) return null;
     const der = ex[ex.length - 1];
     const prec = ex.length > 1 ? ex[ex.length - 2] : null;
+    // V6.5.6 : les semaines sont des semaines de LIVRAISON. En semaine 46 du calendrier, on fabrique la livraison 47 :
+    // c'est elle la semaine « en fabrication » ; une semaine de livraison d'avant (46, 45…) pas finie est en retard.
+    const fab = (() => {
+      const d = lundiIso(der.courante.annee, der.courante.semaine);
+      d.setUTCDate(d.getUTCDate() + 7 + 3);
+      return semaineIso(new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    })();
+    const ordreFab = ordreSemaine(fab.annee, fab.semaine);
     // Suivi en direct : seules comptent les étiquettes imprimées APRÈS la dernière extraction. Celles d'avant y sont
     // déjà : l'extraction fait foi (une dévalidation, une ré-impression, une relance en casse s'y voient).
     const heureExtraction = der.modifie || Date.parse(`${der.jour}T00:00:00`) || 0;
@@ -630,9 +638,9 @@ const SUIVI = (() => {
       }
       const couverte = s.lancements.some((L) => L.couvert);
       semaines.push({
-        id: s.id, annee: s.annee, semaine: s.semaine, f, r, h, e: etatLancement(f, r, s.ordre, der.ordre, couverte, s.lancements.every((L) => L.casse)),
+        id: s.id, annee: s.annee, semaine: s.semaine, f, r, h, e: etatLancement(f, r, s.ordre, ordreFab, couverte, s.lancements.every((L) => L.casse)),
         lancements: s.lancements.map((L) => ({
-          cle: L.cle, nom: L.nom, poste: L.poste, f: L.f, r: L.r, h: L.h, x: L.x, xd: L.xd, e: etatLancement(L.f, L.r, L.ordre, der.ordre, L.couvert, L.casse),
+          cle: L.cle, nom: L.nom, poste: L.poste, f: L.f, r: L.r, h: L.h, x: L.x, xd: L.xd, e: etatLancement(L.f, L.r, L.ordre, ordreFab, L.couvert, L.casse),
           d: L.fPrec === null ? null : L.f - L.fPrec, p: L.histo.slice(-10), c: commandes(L),
         })),
       });
@@ -645,7 +653,7 @@ const SUIVI = (() => {
     const colonnes = new Map();
     for (const r of der.lignes) {
       if (!comptee(r)) continue;
-      const { cle: cs, libelle } = libelleCle(r[0], r[1], der.courante);
+      const { cle: cs, libelle } = libelleCle(r[0], r[1], fab);
       colonnes.set(cs, libelle);
       if (!dansLancement.has(cleLigne(r[2], r[3]))) {
         const x = hors.get(cs) || { libelle, pieces: 0, lignes: 0, commandes: new Set() };
@@ -685,8 +693,13 @@ const SUIVI = (() => {
     // connaît. « LOG4 T3 » et « LOG 4 T3 » : le même transporteur (écrit comme le plus souvent).
     const transpCle = new Map();
     const transpCommande = new Map();
+    // V6.5.6 : la semaine de LIVRAISON de chaque pièce (colonne Semaine de Diakonos, la dernière extraction qui l'a) :
+    // les vues la rangent là, comme Diakonos (une pièce de livraison 46 dans un lancement casse ou d'une autre semaine
+    // reste en semaine 46). Une pièce sortie de toutes les extractions garde la semaine de son lancement.
+    const livraisonCle = new Map();
     for (const e of ex)
       for (const r of e.lignes) {
+        if (r[0] && r[1]) livraisonCle.set(cleLigne(r[2], r[3]), { annee: Number(r[1]), semaine: Number(r[0]) });
         if (!r[7] || r[7] === "(sans transporteur)") continue;
         transpCle.set(cleLigne(r[2], r[3]), r[7]);
         transpCommande.set(r[2], r[7]);
@@ -731,16 +744,19 @@ const SUIVI = (() => {
     };
     for (const L of lancements) {
       if (!affiches.has(L.id) || !L.detail) continue;
-      const nomSem = `Semaine ${L.semaine}`;
       for (const [k, [fk, rk]] of L.detail) {
         const [commande, coloris, trLan, client] = L.infos.get(k) || ["", "", "", ""];
         const tr = transporteurDe(k, commande, trLan);
         const co = coloris || "Sans coloris";
-        const enRetard = rk > 0 && L.ordre < der.ordre;
-        ajouter("semaine", L.id, nomSem, L.ordre, tr, tr, 0, fk, rk, enRetard);
-        ajouter("transporteur", tr, tr, 0, L.id, nomSem, L.ordre, fk, rk, enRetard);
-        ajouter("coloris", co, co, 0, L.id, nomSem, L.ordre, fk, rk, enRetard);
-        ajouter("client", client || "Sans client", client || "Sans client", 0, L.id, nomSem, L.ordre, fk, rk, enRetard);
+        const liv = livraisonCle.get(k) || { annee: L.annee, semaine: L.semaine };
+        const sId = idSemaine(liv.annee, liv.semaine);
+        const sOrdre = ordreSemaine(liv.annee, liv.semaine);
+        const nomSem = `Semaine ${liv.semaine}`;
+        const enRetard = rk > 0 && sOrdre < ordreFab;
+        ajouter("semaine", sId, nomSem, sOrdre, tr, tr, 0, fk, rk, enRetard);
+        ajouter("transporteur", tr, tr, 0, sId, nomSem, sOrdre, fk, rk, enRetard);
+        ajouter("coloris", co, co, 0, sId, nomSem, sOrdre, fk, rk, enRetard);
+        ajouter("client", client || "Sans client", client || "Sans client", 0, sId, nomSem, sOrdre, fk, rk, enRetard);
       }
     }
     const etatGroupe = (g) => (g.f + g.r === 0 ? "absent" : g.r === 0 ? "termine" : g.retard ? "retard" : "en_cours");
@@ -748,11 +764,17 @@ const SUIVI = (() => {
     const trier = (a, b) => (a.ordre || b.ordre ? a.ordre - b.ordre : (a.nom === TRANSPORTEUR_INCONNU) - (b.nom === TRANSPORTEUR_INCONNU) || b.r - a.r || b.f - a.f || a.nom.localeCompare(b.nom));
     const ligneGroupe = (g) => [g.nom, g.f, g.r, etatGroupe(g), [...g.sous.values()].sort(trier).map((x) => [x.nom, x.f, x.r, etatGroupe(x)])];
     const vues = {
-      // Chaque semaine affichée, même sans pièce suivie (ex. « pas dans cette extraction »).
-      semaine: semaines.map((s) => {
-        const g = groupes.semaine.get(s.id);
-        return [`Semaine ${s.semaine}`, s.f, s.r, s.e, g ? [...g.sous.values()].sort(trier).map((x) => [x.nom, x.f, x.r, etatGroupe(x)]) : []];
-      }),
+      // Par semaine de livraison des pièces ; chaque semaine de la bibliothèque affichée, même sans pièce suivie
+      // (ex. « pas dans cette extraction »).
+      semaine: [...new Set([...semaines.map((s) => s.id), ...groupes.semaine.keys()])]
+        .map((id) => {
+          const g = groupes.semaine.get(id);
+          const s = semaines.find((x) => x.id === id);
+          const ordre = g ? g.ordre : ordreSemaine(s.annee, s.semaine);
+          return [ordre, g ? [g.nom, g.f, g.r, etatGroupe(g), [...g.sous.values()].sort(trier).map((x) => [x.nom, x.f, x.r, etatGroupe(x)])] : [`Semaine ${s.semaine}`, s.f, s.r, s.e, []]];
+        })
+        .sort((a, b) => a[0] - b[0])
+        .map((x) => x[1]),
       transporteur: [...groupes.transporteur.values()].sort(trier).map(ligneGroupe),
       coloris: [...groupes.coloris.values()].sort(trier).map(ligneGroupe),
       client: [...groupes.client.values()].sort(trier).map(ligneGroupe),
@@ -764,6 +786,8 @@ const SUIVI = (() => {
       jour: der.jour,
       semaine: der.courante.semaine,
       annee: der.courante.annee,
+      // V6.5.6 : la semaine de livraison en fabrication (semaine du calendrier + 1).
+      fabrication: { semaine: fab.semaine, annee: fab.annee },
       fichiers: der.fichiers.map((f) => f.nom),
       // La semaine la plus loin dans l'extraction (au-delà : « pas dans cette extraction »).
       semaineMax: der.ordreMax ? der.ordreMax % 100 : null,
@@ -1030,9 +1054,10 @@ const SUIVI = (() => {
 
   function htmlSemaine(s, resume) {
     const p = pct(s.f, s.r);
-    const courante = s.annee === resume.annee && s.semaine === resume.semaine;
+    const enFab = resume.fabrication || { semaine: resume.semaine, annee: resume.annee };
+    const courante = s.annee === enFab.annee && s.semaine === enFab.semaine;
     return `<div class="sv-semaine">
-      <div class="sv-sem-tete"><div><span class="sv-sem-nom">Semaine ${s.semaine}</span>${courante ? ' <span class="sv-badge">en cours</span>' : ""}<span class="sv-sem-dates">${echapper(datesDeLaSemaine(s.annee, s.semaine))}</span></div>
+      <div class="sv-sem-tete"><div><span class="sv-sem-nom">Semaine ${s.semaine}</span>${courante ? ' <span class="sv-badge">en fabrication</span>' : ""}<span class="sv-sem-dates">${echapper(datesDeLaSemaine(s.annee, s.semaine))}</span></div>
         <div class="sv-sem-barre">${barre(s.f, s.r, s.e)}<span class="sv-pct sv-t-${s.e}">${p === null ? echapper(LIBELLES_ETAT[s.e]) : `${p} %`}</span></div></div>
       ${s.lancements.map((L) => htmlLancement(L, resume)).join("")}</div>`;
   }
