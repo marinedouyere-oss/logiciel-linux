@@ -480,10 +480,8 @@
   .pl-grand-tete h3 { flex: 1; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
   .pl-dessin { margin: 10px 0; border: 1px solid var(--gris-filet); border-radius: 8px; padding: 6px; background: #fff; }
   .pl-boutons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: flex-end; margin: 8px 0 12px; }
-  .badge-nouveau { display: inline-block; background: #fff; color: var(--bordeaux); border-radius: 4px; font-size: 10px; font-weight: 700; padding: 1px 5px; margin-left: 4px; vertical-align: 1px; letter-spacing: .04em; }
   @media (max-width: 900px) { .fp-ou-va { grid-template-columns: 1fr; } }
   @media (max-width: 560px) { .pl-grille { grid-template-columns: 1fr; } .fiche-piece .fp-nom { font-size: 1.25rem; } }
-  .onglet-btn.actif .badge-nouveau { background: var(--bordeaux); color: #fff; }
   .pl-choix { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
   .pl-choix select { flex: 1; min-width: 220px; padding: 8px 10px; border: 1px solid #d9d4cf; border-radius: 8px; font: inherit; background: #fff; }
   .pl-resume { margin: 10px 0 4px; font-weight: 700; }
