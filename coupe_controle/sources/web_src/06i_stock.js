@@ -154,7 +154,9 @@ function stockDuMateriau(mat) {
 
 // ---------- Rapport du lancement : les chutes de STRATIFIÉ réservées, à sortir des cases avant la coupe ----------
 // Les chutes que Cut Rite utilise dans les plans du lancement (son .bkp) sont celles que woodStore a réservées pour
-// lui (statut 2). Le fichier de stock donne leur case. Stratifié seulement (pas d'agglo, pas de compact).
+// lui (statut 2). Leur case est relevée par woodStore dans le .bkp (BRD3) ; à défaut, celle du fichier de stock.
+// Stratifié seulement (pas d'agglo, pas de compact). Seules des CHUTES sont listées : les feuilles entières (dont
+// celles de RCB / RCB-CRED14, toujours prises au même endroit) n'y figurent pas ; les chutes de RCB, elles, restent.
 
 async function chutesStratReserveesLancement(fichierBkp) {
   const donnees = await lirePlansBkp(fichierBkp);

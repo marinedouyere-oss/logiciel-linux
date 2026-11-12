@@ -27,7 +27,7 @@ Depuis la **V6.4**, un quatrième morceau : l'**agent de validation**
 (`coupe_controle/windows/outils/agent_validation/`), installé sur les PC de validation
 (imprimante Zebra), pour le **suivi en direct** (étiquette imprimée = pièce faite).
 
-Version courante : **6.4.4** (le PC et l'APK partagent le même numéro ; l'agent suit).
+Version courante : **6.5.0** (le PC et l'APK partagent le même numéro ; l'agent suit).
 
 ### Glossaire métier
 
@@ -57,6 +57,7 @@ coupe_controle/
 │   │   ├── 06d_telephone.js      # LIEN chiffré : code → canal/jeton/clé, envoi au mini-site
 │   │   ├── 06g_retour_telephone.js # retour téléphone → PC (canal « retour »)
 │   │   ├── 06h_validations.js    # V6.4 : réception des étiquettes validées (canaux « validations »)
+│   │   ├── 06i_stock.js          # V6.5 : stock woodStore (brdlib.bdx) + chutes de strat réservées du rapport
 │   │   ├── 07_ui.js              # interface (menu, pages), échappement HTML (echapper)
 │   │   ├── 07i_suivi_production.js # SUIVI de production (calcul + écran) — gros module (IIFE SUIVI)
 │   │   ├── 07j_etiquette_cvc.js  # V6.4 : décode l'étiquette Zebra (ZPL ^GFA) et LIT le CVC
@@ -170,6 +171,36 @@ pas de texte, pas de code-barre exploitable. La chaîne :
 Activité par poste et bouton « Réinitialiser » : `htmlBandeauValidations()` (06h) + `brancher()`
 (07i). Chaque poste a un **nom** (ex. « Crédences ») envoyé dans son lot.
 
+### Le stock des panneaux (V6.5, `06i_stock.js`)
+
+- **Source** : `brdlib.bdx`, la bibliothèque de panneaux de woodStore, **extraite à la main** par
+  l'atelier (lecture seule, aucun accès SQL). CSV en windows-1252, 20 colonnes. Utiles :
+  0 code (commence par `X` = chute), 1 quantité, 2 matériau, 3-5 longueur/largeur/épaisseur,
+  **7 Limite** (code woodStore : **0** = limité au stock, **9** = dépassement autorisé),
+  9 désignation, 10 fil, **14 statut** (0 panneau entier, 1 chute disponible, **2 chute réservée**
+  pour un lancement à débiter), 15 emplacements `case(qté) case(qté)` (liste parfois coupée par
+  woodStore : la dernière parenthèse peut manquer), 17 famille.
+- **Règle** : stock réel = stock − réservé. Les chutes réservées sont comptées et listées à part.
+- **Page Stock** (menu) : charger le fichier (gardé en mémoire du navigateur, `sentinelle-stock`),
+  rechercher un matériau, détail (entiers, chutes disponibles, chutes réservées, cases, Limite),
+  « chutes qui dorment » (> 120 jours), tri par clic sur les en-têtes de colonnes. Avertit si les
+  données ont plus de 7 jours. PC seulement (pas dans l'APK).
+- **Rapport du lancement** : page « Chutes de stratifié réservées » (`partieChutesStratReservees`).
+  Les chutes viennent des plans du `.bkp` du lancement (plans « chute du stock »), **stratifié
+  seulement** (matériau `STRAT…` ou épaisseur ≤ 1,2 mm ; ni agglo ni compact). La **case** est lue
+  dans le `.bkp` (lignes BRD3, relevées par woodStore à l'optimisation), à défaut dans le fichier de
+  stock. Colonnes : case, couleur, désignation, longueur, largeur, quantité ; triées par case.
+  Seules des **chutes** y figurent : les feuilles entières (dont RCB / RCB-CRED14) n'y sont pas, les
+  chutes de RCB restent.
+- **À venir** : simuler un lancement complet sur le stock.
+
+### Clavier de l'APK (V6.5)
+
+Les champs « Pièce ou commande », couleur (pièce sans étiquette) et coloris s'ouvrent sur le
+**clavier numérique** ; un bouton « ABC » / « 123 » change de clavier (`PartageVue.boutonClavier`).
+La clé de pièce d'un plan modifié se tape en chiffres : le préfixe `CVC` est ajouté tout seul
+(`EcranPlans`, variable `clePiece`).
+
 ---
 
 ## 4. Fabrication (build)
@@ -219,6 +250,8 @@ node outils/test_web.js ../web/index.html <…dossiers semaine…>
 node outils/test_web_suivi.js ../web/index.html <Semaine 47> <LAN…48.xlsx> <extraction.xlsx> <ref.json> <python> <fabriquer_extraction.py> <sortie> [capture] [Semaine 46]
 # Comptage du suivi en direct (autonome, données fabriquées) :
 node outils/test_web_comptage.js ../web/index.html
+# Stock (autonome, fichier fabriqué) + page du rapport (optionnel : une vraie sauvegarde .bkp) :
+node outils/test_web_stock.js ../web/index.html <sortie> [LAN…backup.bkp]
 # Suivi en direct (autonome, données anonymes générées) :
 node outils/test_web_etiquette.js ../web/index.html <python> outils/fabriquer_etiquette_test.py <sortie> [etiquette_reelle.spl]
 # Agent (chiffrement/canal, se teste sur ce poste, sans Windows) :
