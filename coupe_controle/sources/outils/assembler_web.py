@@ -21,8 +21,8 @@ fin_dernier = s.rindex("</script>")
 assert "<script>" not in js and "</script>" not in js
 
 import re
-tete = re.sub(r"<title>Sentinelle V[\d.]+ — Contrôle de coupe</title>", "<title>Sentinelle V6.9.4 — Contrôle de coupe</title>", s[:debut_style])
-assert "Sentinelle V6.9.4" in tete
+tete = re.sub(r"<title>Sentinelle V[\d.]+ — Contrôle de coupe</title>", "<title>Sentinelle V6.9.5 — Contrôle de coupe</title>", s[:debut_style])
+assert "Sentinelle V6.9.5" in tete
 # Charte Laisné Industrie : barre du navigateur bordeaux.
 tete = re.sub(r'<meta name="theme-color" content="#[0-9a-fA-F]{6}">', '<meta name="theme-color" content="#78140c">', tete)
 # Icône de l'onglet intégrée : la page seule (sans le dossier icons) montre le logo Laisné.

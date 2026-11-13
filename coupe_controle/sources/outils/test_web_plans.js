@@ -191,6 +191,28 @@ const verifier = (ok, message) => {
   await page.click("#modalePlan .pl-boutons [data-fermer]");
   verifier((await ligne.locator(".pl-carte.modifie").count()) === 0, "tout remis comme à l'origine");
 
+  // V6.9.5 : « 5<6,7> » (5, puis 6, puis 7 à la même place, plan fait 3 fois) est un seul morceau ; un plan dont
+  // aucune lecture ne tient (stratifié de 4110 sur un panneau de 4100) garde la lecture qui dépasse le moins.
+  const r9 = await page.evaluate(() => {
+    const morceau = (n, nom, L, W, cle) => {
+      const c = new Array(33).fill("");
+      Object.assign(c, { 0: "0", 1: nom, 2: String(n), 4: String(L), 5: String(L), 6: String(W), 7: String(W), 12: "1", 17: cle });
+      return c.join(",");
+    };
+    const pct = [morceau(5, "LT18/1", 3600, 670, ""), morceau(6, "LT19/1", 3600, 670, ""), morceau(7, "LT20/1", 3160, 670, ""), morceau(1, "L0138", 4110, 660, "CVC1")].join("\n");
+    const a = lirePlansMatiere(pct, "PRM1,4.4,0,0,0,0,0\nMAT1,x,1002,0.6\nPTN1,1,x,3,0,0,0,0,0,0\nPTN3,5<6,7>/", "BRD1,X3988/0003,x,3650,850");
+    const b = lirePlansMatiere(pct, "PRM1,4.4,0,0,0,0,0\nMAT1,x,1124,0.6\nPTN1,1,x,1,0,0,0,0,0,0\nPTN3,X1/1/", "BRD1,1124_4100_1310,x,4100,1310");
+    const pb = b.plans[0].rects.find((r) => r.seq);
+    return {
+      a: a.plans[0].ok + " " + a.plans[0].rects.filter((r) => r.seq).map((r) => r.seq.join(">")).join(" "),
+      b: `${pb.L}×${pb.W}`,
+      bande: [extraireNumeroBandeRecherche("LT23/1"), extraireNumeroBandeRecherche("LAN264702START LT23/1"), lancementDeLaBandeRecherche("lan264702start lt23/1"), extraireNumeroBandeRecherche("26110117001")].join(" "),
+    };
+  });
+  verifier(r9.a === "true 5>6>7", `plan « 5<6,7>/ » : un seul morceau, passages 5 puis 6 puis 7 (${r9.a})`);
+  verifier(r9.b === "4110×660", `plan qui dépasse de 10 mm : lu à plat, pas tourné (${r9.b})`);
+  verifier(r9.bande === "23 23 LAN264702START ", `recherche par bande : « LT23/1 », avec le lancement de l'étiquette (${r9.bande})`);
+
   await nav.close();
   console.log(echecs ? `${echecs} ÉCHEC(S)` : "TOUT EST OK");
   process.exitCode = echecs ? 1 : 0;

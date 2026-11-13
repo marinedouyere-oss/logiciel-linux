@@ -1930,7 +1930,7 @@ final class PartageVue {
         LinearLayout corps = corpsDe(carte);
         corps.addView(ui.titreCarte("Recherche"));
         LinearLayout ligne = ui.rangee();
-        EditText champ = champ("Pièce ou commande", lettresRecherche ? CLAVIER_LETTRES : CLAVIER_CHIFFRES, requete);
+        EditText champ = champ("Pièce, commande ou bande", lettresRecherche ? CLAVIER_LETTRES : CLAVIER_CHIFFRES, requete);
         champ.setImeOptions(EditorInfo.IME_ACTION_SEARCH);
         Runnable chercher = () -> {
             requete = champ.getText().toString().trim();
@@ -1960,7 +1960,7 @@ final class PartageVue {
             ligne.addView(effacer);
         }
         corps.addView(ligne);
-        corps.addView(ui.note("26090331003 ou 26090331 (CVC facultatif), dans toutes les semaines du fichier partagé."), ui.marges(6, 0));
+        corps.addView(ui.note("26090331003 ou 26090331 (CVC facultatif), ou une bande (T23, LT23/1), dans toutes les semaines du fichier partagé."), ui.marges(6, 0));
         return carte;
     }
 
@@ -1984,6 +1984,11 @@ final class PartageVue {
                 // fiche impossible : la liste simple ci-dessous
             }
         }
+        String bande = FichierPartage.bandeDe(requete);
+        if (bande != null) {
+            ajouterBande(corps, bande, res);
+            return carte;
+        }
         corps.addView(ui.titreCarte(res.isEmpty() ? "« " + requete + " » introuvable" : res.size() + " résultat(s) pour « " + requete + " »"));
         int n = 0;
         for (FichierPartage.Trouvaille t : res) {
@@ -1994,6 +1999,38 @@ final class PartageVue {
             ajouterPiece(corps, t);
         }
         return carte;
+    }
+
+    /**
+     * Les pièces d'une bande, lancement par lancement (la même « T23 » existe dans chaque lancement), la semaine la plus
+     * récente d'abord : le bon lancement est celui écrit sur l'étiquette de la bande.
+     */
+    private void ajouterBande(LinearLayout corps, String bande, List<FichierPartage.Trouvaille> res) {
+        if (res.isEmpty()) {
+            corps.addView(ui.titreCarte("Bande " + bande + " introuvable"));
+            corps.addView(ui.note("Aucun plan de coupe envoyé par le PC ne contient cette bande. Les plans arrivent quand la semaine est ouverte dans Contrôler la coupe sur le PC."), ui.marges(4, 0));
+            return;
+        }
+        List<FichierPartage.Lancement> lancements = new ArrayList<>();
+        for (FichierPartage.Trouvaille t : res) if (!lancements.contains(t.lancement)) lancements.add(t.lancement);
+        corps.addView(ui.titreCarte("Bande " + bande + " : " + res.size() + " pièce(s) dans " + lancements.size() + " lancement(s)"));
+        if (lancements.size() > 1)
+            corps.addView(ui.note("Chaque lancement a sa bande " + bande + " : prenez celui écrit sur l'étiquette de la bande."), ui.marges(2, 0));
+        int n = 0;
+        FichierPartage.Lancement courant = null;
+        for (FichierPartage.Trouvaille t : res) {
+            if (n++ >= MAX_RESULTATS) {
+                corps.addView(ui.texte("… et " + (res.size() - MAX_RESULTATS) + " autre(s) : tapez le lancement devant la bande (LAN… T23).", 13, false, ui.couleur(R.color.gris_texte)));
+                break;
+            }
+            if (t.lancement != courant) {
+                courant = t.lancement;
+                String nom = courant.fichier.isEmpty() ? courant.nom : courant.fichier.replaceFirst("\\.[^.]*$", "");
+                corps.addView(ui.texte("Bande " + bande + " · " + nom, 15, true, Ui.NOIR), ui.marges(12, 0));
+                corps.addView(ui.texte(joindre(" · ", courant.poste, t.semaine.libelle() + " · " + t.semaine.annee).replaceFirst("^ · ", ""), 13, false, ui.couleur(R.color.gris_texte)));
+            }
+            ajouterPiece(corps, t);
+        }
     }
 
     // ---- semaine ----

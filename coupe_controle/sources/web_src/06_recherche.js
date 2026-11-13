@@ -7,11 +7,18 @@
 //   matching (ex. une valeur "T9:1:1" signale que la pièce fait partie de
 //   la bande T9), le même mécanisme qui relie déjà bandes/modulos et
 //   pièces dans le fichier .bkp (voir lireQuantitesCtt).
-const MOTIF_RECHERCHE_BANDE = /^L?T\s*(\d+)(?:\/\d+)?$/i;
+// Cut Rite numérote les bandes de chaque optimisation à partir de T1 : la même « T23 » existe dans chaque lancement.
+// Le lancement de l'étiquette peut être tapé avec (« LAN264702START LT23/1 ») pour ne garder que lui.
+const MOTIF_RECHERCHE_BANDE = /^(?:(LAN[^\s]+)\s+)?L?T\s*(\d+)(?:\/\d+)?$/i;
 
 function extraireNumeroBandeRecherche(requete) {
   const m = MOTIF_RECHERCHE_BANDE.exec(requete.trim());
-  return m ? m[1] : null;
+  return m ? m[2] : null;
+}
+
+function lancementDeLaBandeRecherche(requete) {
+  const m = MOTIF_RECHERCHE_BANDE.exec(requete.trim());
+  return m && m[1] ? m[1].toUpperCase() : null;
 }
 
 function clesDeLaBande(grainParCle, numeroBande) {
@@ -117,12 +124,17 @@ const aUneBase = (s, bases) =>
 async function rechercherDansSources(requeteBrute, toutes, bases = new Set(BASES_RECHERCHE)) {
   const requete = requeteBrute.trim().toUpperCase();
   if (!requete) return null;
-  const res = { requete, numeroBande: null, nbSources: 0, trouvailles: [], erreurs: [], commandeUnique: null };
-  const sources = toutes.filter((s) => aUneBase(s, bases));
+  const res = { requete, numeroBande: null, lancementBande: null, nbSources: 0, trouvailles: [], erreurs: [], commandeUnique: null };
+  let sources = toutes.filter((s) => aUneBase(s, bases));
   res.nbSources = sources.length;
   if (sources.length === 0) return res;
   const numeroBande = extraireNumeroBandeRecherche(requete);
   res.numeroBande = numeroBande;
+  res.lancementBande = numeroBande ? lancementDeLaBandeRecherche(requete) : null;
+  if (res.lancementBande) {
+    const nomLancement = (s) => (s.strat ? s.strat.name.replace(/\.[^.]*$/, "").toUpperCase() : "");
+    sources = sources.filter((s) => nomLancement(s) === res.lancementBande || nomLancement(s).startsWith(res.lancementBande));
+  }
   const lignesStratDe = async (s) => (s.strat ? lignesStratEnCache(s.strat) : []);
   const ligneDeCle = async (s, cle) => {
     try {

@@ -2784,6 +2784,34 @@ async function preparerRecherche(requete, sources, bases) {
   const pieces = regrouperTrouvailles(r.trouvailles);
   for (const p of pieces) if (correspondRecherche(p.cle, a.r.requete, true)) a.cleCherchee = p.cle;
 
+  // Une bande : une fiche par lancement (la même « T23 » existe dans chaque lancement), la semaine la plus récente
+  // d'abord ; le lancement est celui écrit sur l'étiquette de la bande.
+  if (a.r.numeroBande) {
+    const parSource = new Map();
+    for (const p of pieces) {
+      for (const t of p.sources) {
+        if (!parSource.has(t.source)) parSource.set(t.source, []);
+        if (!parSource.get(t.source).includes(p)) parSource.get(t.source).push(p);
+      }
+    }
+    const semaine = (s) => (s.paire ? parseInt(semaineDeLaCase(s.paire), 10) || 0 : 0);
+    const groupes = [...parSource].sort((x, y) => semaine(y[0]) - semaine(x[0]));
+    for (const [s, ps] of groupes) {
+      const lancement = s.strat ? s.strat.name.replace(/\.[^.]*$/, "") : s.nom;
+      const ou = s.paire ? (caseAjoutee(s.paire) ? libelleCase(s.paire) : s.paire.poste) : "";
+      a.fiches.push({
+        commande: "",
+        titre: `Bande T${a.r.numeroBande} · ${lancement}`,
+        sousTitre: [ou, semaine(s) ? `semaine ${semaine(s)}` : ""].filter(Boolean).join(" · "),
+        schema: null,
+        blocs: null,
+        lignes: ps.map((p) => ({ cle: p.cle, piece: null, trouvee: p, infos: [] })),
+      });
+    }
+    a.nbPieces = pieces.length;
+    return a;
+  }
+
   if (commande) {
     const f = { commande, schema: null, blocs: null, lignes: [] };
     try {
@@ -2867,9 +2895,16 @@ function afficherRecherche(a) {
   if (a.fiches.length === 0) {
     zone.innerHTML = `<div class="message-alerte">« ${echapper(r.requete)} » introuvable.</div>`;
   } else {
-    if (a.fiches.length > 1 || r.numeroBande) {
-      const quoi = r.numeroBande ? `Bande T${r.numeroBande} : ` : "";
-      zone.insertAdjacentHTML("beforeend", `<div class="bilan-recherche">${quoi}${a.nbPieces} pièce(s) dans ${a.fiches.length} commande(s)</div>`);
+    if (r.numeroBande) {
+      const n = a.fiches.length;
+      zone.insertAdjacentHTML(
+        "beforeend",
+        `<div class="bilan-recherche">Bande T${r.numeroBande} : ${a.nbPieces} pièce(s) dans ${n} lancement(s)${
+          n > 1 ? " — chaque lancement a sa bande T" + r.numeroBande + " : prenez celui écrit sur l'étiquette" : ""
+        }</div>`
+      );
+    } else if (a.fiches.length > 1) {
+      zone.insertAdjacentHTML("beforeend", `<div class="bilan-recherche">${a.nbPieces} pièce(s) dans ${a.fiches.length} commande(s)</div>`);
     }
     const liste = document.createElement("div");
     zone.appendChild(liste);
@@ -2923,10 +2958,12 @@ function nomSourceRecherche(t) {
 function fiche(f, cleCherchee) {
   const carte = document.createElement("div");
   carte.className = "carte fiche";
-  let html = `<div class="entete-carte"><span class="titre-fiche">Commande ${echapper(f.commande)}</span>`;
-  html += f.schema
-    ? `<span class="note">${f.lignes.length} pièce(s)</span>`
-    : '<button type="button" class="texte" data-action="voir">Voir la commande</button>';
+  let html = `<div class="entete-carte"><span class="titre-fiche">${f.titre ? echapper(f.titre) : `Commande ${echapper(f.commande)}`}</span>`;
+  if (f.titre) html += `<span class="note">${f.sousTitre ? `${echapper(f.sousTitre)} · ` : ""}${f.lignes.length} pièce(s)</span>`;
+  else
+    html += f.schema
+      ? `<span class="note">${f.lignes.length} pièce(s)</span>`
+      : '<button type="button" class="texte" data-action="voir">Voir la commande</button>';
   html += "</div>";
   if (f.schema) {
     for (const b of f.blocs) {

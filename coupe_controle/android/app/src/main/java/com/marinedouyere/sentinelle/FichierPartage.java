@@ -661,14 +661,76 @@ final class FichierPartage {
         Semaine semaine;
         Lancement lancement;
         String[] piece;
+        /** Recherche par bande : « T23 » (vide sinon). */
+        String bande = "";
         final List<Probleme> problemes = new ArrayList<>();
     }
 
-    /** « CVC26100982004 », « 26100982004 » ou une commande seule (« 26100982 ») : toutes les semaines, la plus récente d'abord. */
+    /**
+     * Une bande ou un modulo : « T23 », « LT23/1 » (étiquette de la bande), avec ou sans le lancement devant
+     * (« LAN264702START LT23/1 »). Cut Rite numérote les bandes de chaque optimisation à partir de T1 : la même « T23 »
+     * existe dans chaque lancement.
+     */
+    static final java.util.regex.Pattern MOTIF_BANDE = java.util.regex.Pattern.compile("^(?:(LAN\\S+)\\s+)?L?T\\s*(\\d+)(?:/\\d+)?$", java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /** « T23 » pour « LT23/1 » ; null si la recherche n'est pas une bande. */
+    static String bandeDe(String requete) {
+        java.util.regex.Matcher m = MOTIF_BANDE.matcher(requete == null ? "" : requete.trim());
+        return m.matches() ? "T" + Integer.parseInt(m.group(2)) : null;
+    }
+
+    /** Le lancement tapé devant la bande (« LAN264702START »), en majuscules ; null sinon. */
+    static String lancementDeLaBande(String requete) {
+        java.util.regex.Matcher m = MOTIF_BANDE.matcher(requete == null ? "" : requete.trim());
+        return m.matches() && m.group(1) != null ? m.group(1).toUpperCase(Locale.ROOT) : null;
+    }
+
+    /** Les pièces d'une bande, d'après les plans de coupe envoyés par le PC : lancement par lancement, la semaine la plus récente d'abord. */
+    private List<Trouvaille> chercherBande(String bande, String lancementVoulu) {
+        List<Trouvaille> res = new ArrayList<>();
+        int iCle = Math.max(0, colonne("cle"));
+        for (Semaine s : semaines)
+            for (Lancement l : s.lancements) {
+                if (l.plans == null) continue;
+                if (lancementVoulu != null) {
+                    String nom = (l.fichier.isEmpty() ? l.nom : l.fichier).replaceFirst("\\.[^.]*$", "").toUpperCase(Locale.ROOT);
+                    if (!nom.startsWith(lancementVoulu) && !l.nom.toUpperCase(Locale.ROOT).startsWith(lancementVoulu)) continue;
+                }
+                JSONObject pieces = l.plans.optJSONObject("pieces");
+                if (pieces == null) continue;
+                java.util.Set<String> cles = new java.util.HashSet<>();
+                for (java.util.Iterator<String> it = pieces.keys(); it.hasNext(); ) {
+                    String cle = it.next();
+                    JSONObject jp = pieces.optJSONObject(cle);
+                    if (jp != null && bande.equalsIgnoreCase(jp.optString("g", ""))) cles.add(cle);
+                }
+                if (cles.isEmpty()) continue;
+                java.util.Set<String> vues = new java.util.HashSet<>();
+                for (String[] piece : l.pieces) {
+                    String cle = iCle < piece.length ? piece[iCle] : "";
+                    if (!cles.contains(cle) || !vues.add(cle)) continue;
+                    Trouvaille t = new Trouvaille();
+                    t.semaine = s;
+                    t.lancement = l;
+                    t.piece = piece;
+                    t.bande = bande;
+                    for (Probleme p : l.problemes) if (cle.equals(p.cle)) t.problemes.add(p);
+                    res.add(t);
+                }
+            }
+        return res;
+    }
+
+    /**
+     * « CVC26100982004 », « 26100982004 », une commande seule (« 26100982 ») ou une bande (« T23 », « LT23/1 ») :
+     * toutes les semaines, la plus récente d'abord.
+     */
     List<Trouvaille> chercher(String requeteBrute) {
         List<Trouvaille> res = new ArrayList<>();
         String requete = requeteBrute == null ? "" : requeteBrute.trim().toUpperCase(Locale.ROOT);
         if (requete.isEmpty()) return res;
+        String bande = bandeDe(requete);
+        if (bande != null) return chercherBande(bande, lancementDeLaBande(requete));
         int iCle = Math.max(0, colonne("cle"));
         for (Semaine s : semaines)
             for (Lancement l : s.lancements)

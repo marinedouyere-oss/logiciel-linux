@@ -349,6 +349,23 @@ des semaines du suivi est mal organisée ») :
   vues (`totalSemaine` = faites + à faire + pas suivies ; vues : faites + à faire) ; téléphone : pastilles sur deux
   lignes « S47 · 68 % / 933 pièces », en-tête de la semaine, `chiffresGroupe` (« 21 pièces · 18 faites · 3 à faire »).
 
+### Recherche par bande et plans « a<b,c> » (V6.9.5)
+
+- Plans Cut Rite : « 5<6,7>/ » (plan fait 3 fois : morceau 5, puis 6, puis 7 à la même place) était coupé en deux
+  morceaux « 5<6 » et « 7> » : plan mal lu, la bande LT20/1 de LAN264702START (Pdc 5 du 1002) n'y était pas.
+  `decouperPlan` et `bandesDuPlan` ne coupent plus entre « < » et « > » (comme entre parenthèses).
+- Un plan dont aucune lecture ne tient (stratifié de 4110 sur un panneau de 4100) gardait la lecture « tournée »,
+  fausse ; on garde maintenant celle qui dépasse le moins (`ecartPlan`).
+- Vérifié sur tous les .bkp des semaines 46 à 48 : toutes les bandes attendues (PNL1 « T.. / LT.. ») sont posées.
+- Cut Rite numérote les bandes de chaque optimisation à partir de T1 : la même « T23 » existe dans chaque lancement.
+  PC : la recherche « LT23/1 » donne une fiche par lancement (semaine la plus récente d'abord) ; « LAN264702START
+  LT23/1 » (comme sur l'étiquette) ne garde que ce lancement (`lancementDeLaBandeRecherche`).
+- Téléphone : la recherche par bande n'existait pas. `FichierPartage.chercher` reconnaît « T23 », « LT23/1 » (avec
+  ou sans le lancement devant) et prend les pièces de la bande dans les plans envoyés par le PC (`plans.pieces[cle].g`) ;
+  `PartageVue.ajouterBande` les montre lancement par lancement.
+- Test : Chromium de l'environnement de test plante quand une page relit une poignée OPFS gardée dans IndexedDB ;
+  pour tester la réouverture, utiliser de faux dossiers en mémoire (fichiers = octets), pas l'OPFS.
+
 ### Semaine retirée puis rescannée (V6.7.4, `lancementsActifs` dans `06b_bibliotheque.js`)
 
 « Retirer la semaine » vide ses lancements et pose `supprimeeLe` (date du retrait), gardée pour la fusion entre PC :

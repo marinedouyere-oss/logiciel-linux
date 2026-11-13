@@ -9,7 +9,8 @@
 //   <lancement>_<matière>.brd : les panneaux (entiers, ou chutes du stock « X… »).
 // Écriture d'un plan (PTN3) : sections « + » (coupes en travers d'abord), bandes « / » (coupes en long), morceaux
 // d'une bande « , » ; « (a/b) » morceaux empilés ; « n*k » morceau répété ; « /*k » bande répétée ; « a<b> » morceau a
-// (b au passage suivant) ; « ! » morceau tourné ; « Xn » chute gardée (le reste de la bande, jusqu'au bord du panneau).
+// (b au passage suivant ; « 5<6,7> » : 5, puis 6, puis 7, à la même place) ; « ! » morceau tourné ;
+// « Xn » chute gardée (le reste de la bande, jusqu'au bord du panneau).
 // Un plan dont le panneau est un module (PTN1 champ 9 = 3) découpe ce module en pièces (trait 5 mm, sans rive).
 // Chaque plan lu est vérifié : tous les morceaux dans le panneau, aucun ne se chevauche (sinon ok = false).
 // Lecture vérifiée sur la 48 01 : 455 pièces sur 460 retrouvées dans leurs plans, les 5 autres (1047 grand format)
@@ -19,13 +20,14 @@ const MOTIF_NOYAU_PLAN = /^T\d+\/\d+$/;
 const MOTIF_STRATIFIE_PLAN = /^(LT\d+\/\d+|L\d+)$/;
 const TRAIT_MODULE = 5;
 
+// « ( ) » (morceaux empilés) et « < > » (morceaux des passages suivants : « 5<6,7> ») ne se coupent jamais.
 function decouperPlan(s, sep) {
   const out = [];
   let prof = 0;
   let cur = "";
   for (const ch of s) {
-    if (ch === "(") prof++;
-    else if (ch === ")") prof--;
+    if (ch === "(" || ch === "<") prof++;
+    else if (ch === ")" || ch === ">") prof--;
     if (ch === sep && prof === 0) {
       out.push(cur);
       cur = "";
@@ -43,8 +45,8 @@ function bandesDuPlan(section) {
   let cur = "";
   while (i < section.length) {
     const ch = section[i];
-    if (ch === "(") prof++;
-    else if (ch === ")") prof--;
+    if (ch === "(" || ch === "<") prof++;
+    else if (ch === ")" || ch === ">") prof--;
     if (ch === "/" && prof === 0) {
       i++;
       let rep = 1;
@@ -187,6 +189,22 @@ function planVerifie(rects, L, W) {
   return true;
 }
 
+// Ce qui ne tient pas dans un plan (mm de dépassement + chevauchements) : 0 quand le plan est juste.
+function ecartPlan(rects, L, W) {
+  let e = 0;
+  for (const r of rects) e += Math.max(0, -r.x) + Math.max(0, -r.y) + Math.max(0, r.x + r.L - L) + Math.max(0, r.y + r.W - W);
+  for (let i = 0; i < rects.length; i++) {
+    for (let j = i + 1; j < rects.length; j++) {
+      const a = rects[i];
+      const b = rects[j];
+      const dx = Math.min(a.x + a.L, b.x + b.L) - Math.max(a.x, b.x);
+      const dy = Math.min(a.y + a.W, b.y + b.W) - Math.max(a.y, b.y);
+      if (dx > 0.5 && dy > 0.5) e += Math.min(dx, dy);
+    }
+  }
+  return e;
+}
+
 // Plans d'une matière (textes .pct, .ptn, .brd) → [{ pdc, module, nom, sorte, L, W, fois, plan, rects, ok }]
 function lirePlansMatiere(texPct, texPtn, texBrd) {
   const P = new Map();
@@ -242,8 +260,15 @@ function lirePlansMatiere(texPct, texPtn, texBrd) {
         const lecteur = new LecteurPlan(P, K);
         rects = lecteur.lire(pat, rives.x0, rives.y0, W, rives.yfin, L);
         if (!planVerifie(rects, L, W)) {
-          // coupé d'abord en travers : on lit le plan sur le panneau tourné
-          rects = lecteur.lire(pat, rives.y0, rives.x0, L, rives.xfin, W).map((r) => ({ ...r, x: r.y, y: r.x, L: r.W, W: r.L }));
+          // coupé d'abord en travers : on lit le plan sur le panneau tourné ; si aucune des deux lectures ne tient
+          // (un morceau plus long que le panneau de quelques mm), on garde celle qui dépasse le moins.
+          let tourne = null;
+          try {
+            tourne = lecteur.lire(pat, rives.y0, rives.x0, L, rives.xfin, W).map((r) => ({ ...r, x: r.y, y: r.x, L: r.W, W: r.L }));
+          } catch (_e) {
+            tourne = null;
+          }
+          if (tourne && (planVerifie(tourne, L, W) || ecartPlan(tourne, L, W) < ecartPlan(rects, L, W))) rects = tourne;
         }
       }
     } catch (_e) {
@@ -261,6 +286,11 @@ function lirePlansMatiere(texPct, texPtn, texBrd) {
       r.dessus = q[30] || "";
       r.dessous = q[31] || "";
       r.support = q[21] || "";
+      // « 5<6,7> » : un autre morceau à la même place à chaque passage (le plan est fait plusieurs fois).
+      if (r.seq.length > 1) {
+        r.passages = r.seq.map((k) => (P.get(k) || [])[1] || "");
+        r.clesPassages = r.seq.map((k) => (P.get(k) || [])[17] || "");
+      }
     }
     plans.push({ pdc, module, nom, sorte, L, W, fois, cases, plan: pat, rects, ok: rects.length > 0 && planVerifie(rects, L, W) });
   }
@@ -400,7 +430,9 @@ function plansDeLaPiece(donnees, cle) {
   const groupe = piece ? piece.groupe : null; // « T73 » : module ou bande de la pièce
   const noms = new Set(groupe ? [`${groupe}/1`, `L${groupe}/1`] : []);
   // la pièce, son module (noyau et stratifiés), ou ses propres stratifiés (« L0328 ») si elle est seule
-  const visee = (r) => Boolean(r.seq) && (noms.has(r.nom) || (r.cle === cle && !MOTIF_NOYAU_PLAN.test(r.nom) && !/^LT/.test(r.nom)));
+  // (un morceau refait à chaque passage, « 5<6,7> », est visé si l'un de ses passages l'est)
+  const vise1 = (nomM, cleM) => noms.has(nomM) || (cleM === cle && !MOTIF_NOYAU_PLAN.test(nomM) && !/^LT/.test(nomM));
+  const visee = (r) => Boolean(r.seq) && (vise1(r.nom, r.cle) || (r.passages || []).some((n, i) => vise1(n, r.clesPassages[i])));
   const resultat = [];
   for (const m of donnees.matieres.values()) {
     for (const plan of m.plans) {
@@ -584,7 +616,9 @@ function svgPlan(plan, options = {}) {
     } else if (r.L > L * 0.14 && r.W > W * 0.08) {
       const fs = Math.min(r.W * 0.32, e / 34);
       const cote = options.cote === "debit" ? `${r.L.toFixed(0)} × ${r.W.toFixed(0)}` : `${r.fini[0].toFixed(0)} × ${r.fini[1].toFixed(0)}`;
-      const titre = r.cle && !MOTIF_NOYAU_PLAN.test(r.nom) && !MOTIF_STRATIFIE_PLAN.test(r.nom) ? r.cle.replace(/^[A-Z]+/, "") : MOTIF_STRATIFIE_PLAN.test(r.nom) && r.nom.startsWith("LT") ? `stratifié ${r.nom.slice(1).split("/")[0]}` : MOTIF_NOYAU_PLAN.test(r.nom) ? `module ${nom}` : r.nom;
+      const titre1 = (nomM, cleM) => cleM && !MOTIF_NOYAU_PLAN.test(nomM) && !MOTIF_STRATIFIE_PLAN.test(nomM) ? cleM.replace(/^[A-Z]+/, "") : MOTIF_STRATIFIE_PLAN.test(nomM) && nomM.startsWith("LT") ? `stratifié ${nomM.slice(1).split("/")[0]}` : MOTIF_NOYAU_PLAN.test(nomM) ? `module ${nomM.split("/")[0]}` : nomM;
+      // « 5<6,7> » : « stratifié T22 puis T20 puis T21 » (un passage après l'autre, à la même place)
+      const titre = r.passages ? r.passages.map((n, i) => titre1(n, r.clesPassages[i]).replace(i ? /^(stratifié|module) / : /^$/, "")).join(" puis ") : titre1(r.nom, r.cle);
       const deux = r.W >= fs * 2.6;
       s.push(`<text x="${(r.x + r.L / 2).toFixed(0)}" y="${(r.y + r.W / 2 + (deux ? -fs * 0.15 : fs * 0.35)).toFixed(0)}" font-size="${fs.toFixed(0)}" text-anchor="middle" font-weight="700" fill="#22231d" font-family="Lato,Arial">${echapperSvg(titre)}</text>`);
       if (deux) s.push(`<text x="${(r.x + r.L / 2).toFixed(0)}" y="${(r.y + r.W / 2 + fs * 0.95).toFixed(0)}" font-size="${(fs * 0.78).toFixed(0)}" text-anchor="middle" fill="#22231d" font-family="Lato,Arial">${cote}</text>`);
@@ -615,6 +649,8 @@ function echapperSvg(t) {
 
 // Nom d'un morceau pour un tableau (pièce, module, stratifié).
 function nomMorceauPlan(r) {
+  // « 5<6,7> » : « stratifié du module T22 puis T20 puis T21 »
+  if (r.passages) return r.passages.map((nomP, i) => nomMorceauPlan({ nom: nomP, cle: r.clesPassages[i] }).replace(i ? /^(stratifié du module|module|stratifié de) / : /^$/, "")).join(" puis ");
   const n = (r.nom || "").split("/")[0];
   if (/^LT\d+$/.test(n)) return `stratifié du module ${n.slice(1)}`;
   if (/^T\d+$/.test(n)) return `module ${n}`;

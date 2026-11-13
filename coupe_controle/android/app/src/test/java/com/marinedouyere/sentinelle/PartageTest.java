@@ -345,6 +345,54 @@ public class PartageTest {
         capturerSiDemande(a, "appli_recherche_plans.png");
     }
 
+    /** V6.9.5 : recherche par bande (« T23 », « LT23/1 » de l'étiquette) : une liste par lancement, la semaine la plus récente d'abord. */
+    @Test
+    public void rechercheParBande() throws Exception {
+        String piece = "\"pieces\":[[\"CVC1\",\"C1\",\"1\",\"A\",1,1760,650,39,\"1002\",\"\",\"SAG38\",\"2026-47\"],[\"CVC2\",\"C2\",\"2\",\"A\",1,900,120,22,\"1002\",\"\",\"SAG38\",\"2026-47\"]]";
+        String json = "{\"format\":\"sentinelle-partage-1\",\"genere\":\"2026-11-13T08:00:00.000Z\",\"par\":\"Sentinelle\","
+                + "\"colonnesPieces\":[\"cle\",\"commande\",\"ligne\",\"article\",\"pieces\",\"longueur\",\"largeur\",\"epaisseur\",\"coloris\",\"coloris_inf\",\"matiere\",\"livraison\"],"
+                + "\"semaines\":["
+                + "{\"id\":\"2026-46\",\"annee\":2026,\"semaine\":46,\"maj\":\"x\",\"lancements\":[{\"nom\":\"LAN264601START\",\"fichier\":\"LAN264601START.xlsx\",\"poste\":\"Agglo 1er tour\","
+                + piece.replace("CVC1", "CVC9").replace("CVC2", "CVC8") + ",\"plans\":{\"lancement\":\"LAN264601START\",\"noms\":[],\"plans\":[],\"pieces\":{\"CVC9\":{\"g\":\"T23\",\"t\":\"m\",\"p\":[]}}}}]},"
+                + "{\"id\":\"2026-47\",\"annee\":2026,\"semaine\":47,\"maj\":\"x\",\"lancements\":["
+                + "{\"nom\":\"LAN264701START\",\"fichier\":\"LAN264701START.xlsx\",\"poste\":\"Agglo 1er tour\"," + piece
+                + ",\"plans\":{\"lancement\":\"LAN264701START\",\"noms\":[],\"plans\":[],\"pieces\":{\"CVC2\":{\"g\":\"T23\",\"t\":\"m\",\"p\":[]},\"CVC1\":{\"g\":\"T3\",\"t\":\"m\",\"p\":[]}}}},"
+                + "{\"nom\":\"LAN264702START\",\"fichier\":\"LAN264702START.xlsx\",\"poste\":\"Agglo 2ème tour\"," + piece
+                + ",\"plans\":{\"lancement\":\"LAN264702START\",\"noms\":[],\"plans\":[],\"pieces\":{\"CVC1\":{\"g\":\"T23\",\"t\":\"b\",\"p\":[]},\"CVC2\":{\"g\":\"T20\",\"t\":\"b\",\"p\":[]}}}}]}]}";
+        FichierPartage f = FichierPartage.lire(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)));
+        assertEquals("T23", FichierPartage.bandeDe("LT23/1"));
+        assertEquals("T23", FichierPartage.bandeDe("t 23"));
+        assertEquals("T23", FichierPartage.bandeDe("LAN264702START LT23/1"));
+        assertEquals("LAN264702START", FichierPartage.lancementDeLaBande("lan264702start LT23/1"));
+        assertEquals(null, FichierPartage.bandeDe("26110117001"));
+        List<FichierPartage.Trouvaille> t = f.chercher("LT23/1");
+        assertEquals(3, t.size());
+        assertEquals("CVC2", t.get(0).piece[0]);
+        assertEquals("LAN264701START", t.get(0).lancement.nom);
+        assertEquals("CVC1", t.get(1).piece[0]);
+        assertEquals("LAN264702START", t.get(1).lancement.nom);
+        assertEquals("semaine la plus récente d'abord", 46, t.get(2).semaine.semaine);
+        assertEquals("T23", t.get(0).bande);
+        List<FichierPartage.Trouvaille> seul = f.chercher("LAN264702START LT23/1");
+        assertEquals(1, seul.size());
+        assertEquals("CVC1", seul.get(0).piece[0]);
+        assertEquals(1, f.chercher("T20").size());
+        assertTrue(f.chercher("T99").isEmpty());
+
+        MainActivity a = avecFichier(json.getBytes(StandardCharsets.UTF_8));
+        onglet(a, MainActivity.ONGLET_RECHERCHE);
+        android.widget.EditText champ = chercherVue(a.getWindow().getDecorView(), android.widget.EditText.class);
+        champ.setText("LT23/1");
+        bouton(a.getWindow().getDecorView(), "Chercher").performClick();
+        ShadowLooper.idleMainLooper();
+        String ecran = ecran(a);
+        assertTrue(ecran, ecran.contains("Bande T23 : 3 pièce(s) dans 3 lancement(s)"));
+        assertTrue(ecran, ecran.contains("prenez celui écrit sur l'étiquette"));
+        assertTrue(ecran, ecran.contains("Bande T23 · LAN264702START"));
+        assertTrue(ecran, ecran.indexOf("Bande T23 · LAN264701START") < ecran.indexOf("Bande T23 · LAN264601START"));
+        capturerSiDemande(a, "appli_recherche_bande.png");
+    }
+
     /** Un plan modifié dans Sentinelle sur le PC : l'appli le lit et le dessine modifié (elle ne modifie rien). */
     @Test
     public void planModifieSurLePc() throws Exception {
@@ -1048,5 +1096,18 @@ public class PartageTest {
         lan.performClick();
         ShadowLooper.idleMainLooper();
         capturerSiDemande(a, "reel_controle_lancement.png");
+        // V6.9.5 : la bande T23 de l'étiquette LAN264702START, depuis les plans envoyés par le PC.
+        List<FichierPartage.Trouvaille> bande = f.chercher("LAN264702START LT23/1");
+        System.out.println("BANDE T23 de LAN264702START : " + bande.size() + " pièce(s), tous lancements : " + f.chercher("LT23/1").size());
+        if (!f.chercher("T23").isEmpty()) {
+            a.allerA(MainActivity.ONGLET_RECHERCHE);
+            ShadowLooper.idleMainLooper();
+            android.widget.EditText champ = chercherVue(a.getWindow().getDecorView(), android.widget.EditText.class);
+            champ.setText("LT23/1");
+            bouton(a.getWindow().getDecorView(), "Chercher").performClick();
+            ShadowLooper.idleMainLooper();
+            assertTrue(ecran(a), ecran(a).contains("Bande T23 : "));
+            capturerSiDemande(a, "reel_recherche_bande.png");
+        }
     }
 }
