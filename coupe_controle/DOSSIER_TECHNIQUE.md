@@ -615,3 +615,22 @@ rendu de l'écran Suivi **lien branché** (régression de la page blanche).
 - Donner accès au développeur : *Settings → Collaborators* du dépôt (ou l'équipe), en lecture
   ou écriture selon le besoin. Un développeur clone le dépôt et travaille sur la branche (ou en
   ouvre une nouvelle à partir d'elle).
+- **Attention** : la branche par défaut du dépôt est une autre branche (`claude/intelligent-cori-gjjbuf`).
+  Une nouvelle session doit choisir `claude/happy-ride-7x1yby` (ou changer la branche par défaut :
+  *Settings → General → Default branch*).
+- `CLAUDE.md` (racine du dépôt) : les consignes que Claude lit tout seul en arrivant (règles de l'utilisatrice,
+  fabrication, tests).
+
+### Changer de compte Claude (V6.9.6)
+
+Une conversation ne se déplace pas d'un compte Claude à un autre. Ce qui permet de reprendre ailleurs :
+- le **code et ce dossier** : sur GitHub (il suffit de brancher GitHub dans l'autre compte, ou de donner
+  accès au dépôt à l'autre compte GitHub) ;
+- **`CLAUDE.md`** : les consignes, lues automatiquement ;
+- le paquet **« Sentinelle_reprise »** remis à l'utilisatrice : toute la conversation (`conversation_sentinelle.md`,
+  codes de liaison masqués) ;
+- le paquet **« Sentinelle_donnees »** remis à l'utilisatrice (jamais dans Git) : les fichiers qu'elle a envoyés
+  (`envois_originaux/`) et les données de test (`donnees_de_test/`, avec `lancer_tests.sh` et `tests_apres.sh`
+  qui marchent depuis n'importe quel dossier : `SP` = ce dossier, `DEPOT` = `coupe_controle` ; créer d'abord
+  `"$SP/venv"` avec openpyxl, reportlab et pillow).
+Sentinelle elle-même (exe, APK, lien téléphone sur Netlify, bibliothèque du PC) ne dépend pas du compte Claude.
