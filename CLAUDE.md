@@ -25,7 +25,9 @@ dans **`coupe_controle/DOSSIER_TECHNIQUE.md`** : le lire avant toute modificatio
 - Les semaines sont **toujours des semaines de livraison**. Suivi de production : la semaine la plus récente d'abord.
 - Quand l'utilisatrice dit que quelque chose ne marche pas : la croire et chercher jusqu'à trouver.
 - **Livraison** : le `.exe` (zippé) et l'APK dans `livraison/` (liens « raw » GitHub de la branche) **et**
-  envoyer les fichiers directement dans la conversation.
+  envoyer les fichiers directement dans la conversation. Garder aussi dans `livraison/` le zip de l'Agent de
+  validation (`Agent_validation_Sentinelle_<version>.zip`, version à part : `versionAgent` dans
+  `windows/outils/agent_validation/main.go`), à refaire seulement quand son code change.
 
 ## Fabriquer et tester (détails : dossier technique, parties 4 et 5)
 
