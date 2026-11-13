@@ -524,7 +524,7 @@ final class EcranPlans {
 
         // Boutons.
         boolean peutModifier = hote.relie() && !p.empreinte.isEmpty();
-        if (!hote.relie()) c.addView(ui.note("Pour modifier un plan depuis le téléphone, reliez l'appli au PC (icône du livre en haut → Scanner le QR code du PC)."), ui.marges(6, 0));
+        if (!hote.relie()) c.addView(ui.note("Pour modifier un plan depuis le téléphone, reliez l'appli au PC (« Relier au PC » en haut → Scanner le QR code du PC)."), ui.marges(6, 0));
         else if (p.empreinte.isEmpty()) c.addView(ui.note("Pour modifier ce plan depuis le téléphone, mettez Sentinelle à jour sur le PC (V6.3), puis renvoyez au téléphone."), ui.marges(6, 0));
         if (o.edition) {
             MaterialButton envoyer = ui.bouton("Envoyer au PC");

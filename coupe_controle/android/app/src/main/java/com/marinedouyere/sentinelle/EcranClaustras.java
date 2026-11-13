@@ -51,7 +51,7 @@ final class EcranClaustras {
         FichierPartage d = hote.donnees();
         DemandesPc demandes = hote.demandes();
         if (!hote.relie())
-            racine.addView(ui.bandeau("Reliez d'abord le téléphone au PC (icône du livre en haut → lien avec le PC) : la photo part au PC par ce lien.",
+            racine.addView(ui.bandeau("Reliez d'abord le téléphone au PC (« Relier au PC » en haut, ou Plus → Lien avec le PC) : la photo part au PC par ce lien.",
                     ui.couleur(R.color.alerte_fond), ui.couleur(R.color.alerte_texte)), ui.marges(4, 8));
 
         // Les photos en route, et les dernières reprises par le PC.

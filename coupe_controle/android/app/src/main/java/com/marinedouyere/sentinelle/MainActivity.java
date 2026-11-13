@@ -43,15 +43,22 @@ public class MainActivity extends AppCompatActivity {
     static final String ONGLET_CLAUSTRAS = "claustras";
     private static final String PREFS_PHOTO = "sentinelle_photo";
 
-    /** Le menu du bas : { onglet, libellé court, icône } dans l'ordre du menu du PC. */
+    /** V6.9.1 : « Plus » regroupe les outils (plans, stock, claustras, lien avec le PC), comme le groupe Outils du PC. */
+    static final String ONGLET_PLUS = "plus";
+
+    /** Le menu du bas : { onglet, libellé court, icône }. */
     static final Object[][] MENU = {
             {ONGLET_SEMAINE, "Semaine", R.drawable.ic_nav_semaine},
             {ONGLET_CONTROLE, "Contrôle", R.drawable.ic_nav_controle},
-            {ONGLET_PLANS, "Plans", R.drawable.ic_nav_plans},
             {ONGLET_RECHERCHE, "Recherche", R.drawable.ic_nav_recherche},
             {ONGLET_SUIVI, "Suivi", R.drawable.ic_nav_suivi},
+            {ONGLET_PLUS, "Plus", R.drawable.ic_nav_plus},
     };
-    // La Bibliothèque des semaines (et le lien avec le PC) : l'icône du livre, en haut à droite.
+
+    /** Les écrans ouverts depuis « Plus » : « Plus » reste en avant dans le menu du bas. */
+    static boolean dansPlus(String tag) {
+        return ONGLET_PLANS.equals(tag) || ONGLET_STOCK.equals(tag) || ONGLET_CLAUSTRAS.equals(tag) || ONGLET_BIBLIOTHEQUE.equals(tag);
+    }
 
     private SentinelleApp app;
     private Ui ui;
@@ -60,6 +67,7 @@ public class MainActivity extends AppCompatActivity {
     private ScrollView defilement;
     private BottomNavigationView menu;
     private PartageVue partage;
+    private android.widget.TextView etatLien;
     private ActivityResultLauncher<String[]> choixPartage;
     private ActivityResultLauncher<String> creationPdf;
     private ActivityResultLauncher<ScanOptions> lecteurQr;
@@ -117,6 +125,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(racine);
 
         if (idDe(onglet) > 0) menu.setSelectedItemId(idDe(onglet));
+        else if (dansPlus(onglet)) menu.setSelectedItemId(idDe(ONGLET_PLUS));
         else decocherMenu();
         menu.setOnItemSelectedListener(item -> {
             menu.getMenu().setGroupCheckable(0, true, true);
@@ -131,7 +140,7 @@ public class MainActivity extends AppCompatActivity {
                 defilement.smoothScrollTo(0, 0);
                 return;
             }
-            // Retour depuis la Bibliothèque sur l'onglet qui était choisi.
+            // Retour sur l'onglet (ex. de Plans à Plus).
             menu.getMenu().setGroupCheckable(0, true, true);
             item.setChecked(true);
             onglet = tag;
@@ -174,35 +183,14 @@ public class MainActivity extends AppCompatActivity {
         titres.addView(ui.titre("Sentinelle", 17, 0xFFFFFFFF));
         titres.addView(ui.texte("Contrôle de coupe · " + version(), 11, false, 0xDDFFFFFF));
         barre.addView(titres, ui.poids(1));
-        // V6.8 : Claustras — prendre le plan en photo pour le PC.
-        android.widget.ImageButton claustras = new android.widget.ImageButton(this);
-        claustras.setImageResource(R.drawable.ic_claustra);
-        claustras.setColorFilter(0xFFFFFFFF);
-        claustras.setContentDescription("Claustras : photo du plan");
-        android.util.TypedValue fondC = new android.util.TypedValue();
-        getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, fondC, true);
-        claustras.setBackgroundResource(fondC.resourceId);
-        claustras.setOnClickListener(v -> allerA(ONGLET_CLAUSTRAS));
-        barre.addView(claustras, new LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)));
-        // V6.5.1 : le stock des panneaux (le menu du bas est plein : 5 onglets au plus).
-        android.widget.ImageButton stock = new android.widget.ImageButton(this);
-        stock.setImageResource(R.drawable.ic_stock);
-        stock.setColorFilter(0xFFFFFFFF);
-        stock.setContentDescription("Stock des panneaux");
-        android.util.TypedValue fondS = new android.util.TypedValue();
-        getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, fondS, true);
-        stock.setBackgroundResource(fondS.resourceId);
-        stock.setOnClickListener(v -> allerA(ONGLET_STOCK));
-        barre.addView(stock, new LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)));
-        android.widget.ImageButton biblio = new android.widget.ImageButton(this);
-        biblio.setImageResource(R.drawable.ic_nav_bibliotheque);
-        biblio.setColorFilter(0xFFFFFFFF);
-        biblio.setContentDescription("Bibliothèque des semaines et lien avec le PC");
-        android.util.TypedValue fondB = new android.util.TypedValue();
-        getTheme().resolveAttribute(android.R.attr.selectableItemBackgroundBorderless, fondB, true);
-        biblio.setBackgroundResource(fondB.resourceId);
-        biblio.setOnClickListener(v -> allerA(ONGLET_BIBLIOTHEQUE));
-        barre.addView(biblio, new LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)));
+        // V6.9.1 : plus de petites icônes (claustras, stock, livre) : elles sont dans « Plus ». À droite, l'état du lien.
+        etatLien = ui.texte("", 12, true, 0xFFFFFFFF);
+        etatLien.setPadding(ui.dp(10), ui.dp(4), ui.dp(10), ui.dp(5));
+        etatLien.setOnClickListener(v -> allerA(ONGLET_BIBLIOTHEQUE));
+        LinearLayout.LayoutParams lpEtat = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lpEtat.gravity = android.view.Gravity.CENTER_VERTICAL;
+        lpEtat.rightMargin = ui.dp(2);
+        barre.addView(etatLien, lpEtat);
         android.widget.ImageButton actualiser = new android.widget.ImageButton(this);
         actualiser.setImageResource(R.drawable.ic_actualiser);
         actualiser.setColorFilter(0xFFFFFFFF);
@@ -280,6 +268,8 @@ public class MainActivity extends AppCompatActivity {
                 return PartageVue.Ecran.STOCK;
             case ONGLET_CLAUSTRAS:
                 return PartageVue.Ecran.CLAUSTRAS;
+            case ONGLET_PLUS:
+                return PartageVue.Ecran.PLUS;
             default:
                 return PartageVue.Ecran.SEMAINE;
         }
@@ -288,12 +278,28 @@ public class MainActivity extends AppCompatActivity {
     void afficher() {
         contenu.removeAllViews();
         contenu.addView(partage().vue(ecran()));
+        majEtatLien();
+    }
+
+    /** « ● Relié » (vert) ou « Relier au PC » dans la barre du haut ; un toucher ouvre le lien avec le PC. */
+    void majEtatLien() {
+        if (etatLien == null) return;
+        boolean relie = partage().codeLien() != null || partage().uri() != null;
+        etatLien.setText(relie ? "● Relié" : "Relier au PC");
+        etatLien.setContentDescription(relie ? "Relié au PC : voir le lien" : "Relier au PC");
+        etatLien.setBackground(ui.fondRond(relie ? 0x33FFFFFF : 0xFFFFFFFF, 12));
+        etatLien.setTextColor(relie ? 0xFFFFFFFF : Ui.BORDEAUX);
     }
 
     /** Va à un écran (comme un appui dans le menu du bas). */
     void allerA(String tag) {
         if (tag.equals(onglet) || idDe(tag) < 0) {
-            if (idDe(tag) < 0) decocherMenu();
+            if (idDe(tag) < 0) {
+                if (dansPlus(tag)) {
+                    menu.getMenu().setGroupCheckable(0, true, true);
+                    menu.getMenu().findItem(idDe(ONGLET_PLUS)).setChecked(true);
+                } else decocherMenu();
+            }
             onglet = tag;
             afficher();
             defilement.scrollTo(0, 0);
@@ -301,6 +307,11 @@ public class MainActivity extends AppCompatActivity {
             menu.getMenu().setGroupCheckable(0, true, true);
             menu.setSelectedItemId(idDe(tag));
         }
+    }
+
+    /** Remonte en haut de l'écran (un autre lancement choisi). */
+    void hautDePage() {
+        defilement.post(() -> defilement.scrollTo(0, 0));
     }
 
     /** Fait défiler l'écran jusqu'à une vue (une fois l'écran dessiné). */

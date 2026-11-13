@@ -113,7 +113,7 @@ async function reprendreCodeLienTelephone() {
   const champ = document.getElementById("champCodeLien");
   const n = normaliserCodeLien(champ ? champ.value : "");
   if (n.length !== 16 || [...n].some((c) => !ALPHABET_CODE_LIEN.includes(c))) {
-    lienTelephone.erreurCode = "Le code a 16 lettres et chiffres (ABCD-EFGH-JKLM-NPQR) : recopiez celui de l'appli (icône du livre → Lien avec le PC).";
+    lienTelephone.erreurCode = "Le code a 16 lettres et chiffres (ABCD-EFGH-JKLM-NPQR) : recopiez celui de l'appli (Plus → Lien avec le PC).";
     rafraichirBibliotheque();
     return;
   }
@@ -132,7 +132,7 @@ async function reprendreCodeLienTelephone() {
 function htmlReprendreCode(ouvert) {
   return `<details class="reprendre-code"${ouvert ? " open" : ""}>
       <summary>${ouvert ? "Un téléphone est déjà relié ? Reprenez son code" : "Le téléphone a un autre code ? Reprenez-le ici"}</summary>
-      <div class="note">Dans l'appli : icône du livre en haut → carte « Lien avec le PC » → « Code ABCD-… ». Tapez ce code ici : le téléphone et les PC de validation n'ont <strong>rien à refaire</strong>.</div>
+      <div class="note">Dans l'appli : Plus → Lien avec le PC → « Code ABCD-… ». Tapez ce code ici : le téléphone et les PC de validation n'ont <strong>rien à refaire</strong>.</div>
       <div class="ligne-code-lien">
         <input type="text" id="champCodeLien" placeholder="ABCD-EFGH-JKLM-NPQR" maxlength="24" autocomplete="off" spellcheck="false">
         <button type="button" id="btnReprendreLien">Reprendre ce code</button>
@@ -423,7 +423,7 @@ function htmlLectureTelephone(etat) {
   const lectures = typeof lecturesTelephone === "function" ? lecturesTelephone(etat.code) : [];
   if (!lectures.length) {
     if (!etat.dernierEnvoi) return "";
-    return `<div class="compte-rendu erreur" id="lectureTelephone">⚠ Aucun téléphone n'a encore lu ce code. Si le téléphone n'a pas les nouveautés : dans l'appli, icône du livre en haut → « Délier », puis « Scanner le QR code du PC » et visez ce QR code. (Il faut l'appli 6.5.1 ou plus pour voir ici ce que le téléphone a reçu.)</div>`;
+    return `<div class="compte-rendu erreur" id="lectureTelephone">⚠ Aucun téléphone n'a encore lu ce code. Si le téléphone n'a pas les nouveautés : dans l'appli, Plus → Lien avec le PC → « Délier », puis « Scanner le QR code du PC » et visez ce QR code. (Il faut l'appli 6.5.1 ou plus pour voir ici ce que le téléphone a reçu.)</div>`;
   }
   return lectures
     .slice(0, 3)
@@ -466,7 +466,7 @@ function htmlLienTelephone() {
     html += `<div class="lien-qr">
         ${qr ? `<div class="qr-cadre" id="qrLien" title="QR code du lien avec le téléphone">${qr}</div>` : ""}
         <div class="lien-qr-texte">
-          <div class="note">Dans l'appli du téléphone : l'icône du livre (en haut) → <strong>« Scanner le QR code du PC »</strong>, et visez ce QR code (une seule fois). Le téléphone suit le code de <strong>ce</strong> PC : un nouveau code, ou un autre PC, demande de rescanner.</div>
+          <div class="note">Dans l'appli du téléphone : « Relier au PC » en haut (ou Plus → Lien avec le PC) → <strong>« Scanner le QR code du PC »</strong>, et visez ce QR code (une seule fois). Le téléphone suit le code de <strong>ce</strong> PC : un nouveau code, ou un autre PC, demande de rescanner.</div>
           <div class="note">Ou tapez le code :</div>
           <div class="code-lien" id="codeLien">${echapper(etat.code)}</div>
         </div>

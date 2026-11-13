@@ -317,6 +317,17 @@ Demande : « pas ergonomique, trop chargé, on se perd, actions mal placées ».
 Test : `test_web_interface.js` (menu, un lancement à la fois, « Tous », compte rendu du scan, onglets, « ? », en-tête
 collé, stock à droite, bibliothèque, recherche, pas de défilement de côté à 1000 px).
 
+**Téléphone, V6.9.1** (la 6.9.0 changeait trop peu l'appli) :
+- Menu du bas : Semaine, Contrôle, Recherche, Suivi, **Plus** (`ONGLET_PLUS`, `Ecran.PLUS`, `ecranPlus`) : grandes
+  tuiles Plans de coupe, Stock des panneaux, Claustras, Lien avec le PC (`dansPlus` garde « Plus » en avant). Barre du
+  haut : plus de petites icônes ; « Relier au PC » / « ● Relié » (`majEtatLien`) et Actualiser.
+- Semaines en pastilles S45 S46 S47 S48 (`pastillesSemaines`, la plus ancienne à gauche, « Toutes ▾ » au-delà de 4).
+- Contrôle : une rangée « Tous » + un bouton par lancement (état en couleur, `pastillesLancements`) ; un lancement
+  affiché seul et ouvert (`lancementChoisi`, `carteLancement(l, n, true)`), précédent / suivant en bas ; « Tous » :
+  le tableau de la semaine et le compte rendu (.pdf). Bilan : les contrôles bons sur une ligne « ✔ OK : … », ceux pas
+  faits sur une ligne « Pas vérifié : … », seuls les problèmes en entier.
+- La semaine : chiffres en grandes tuiles (2 par ligne). « Bibliothèque des semaines » s'appelle « Lien avec le PC ».
+
 ### Semaine retirée puis rescannée (V6.7.4, `lancementsActifs` dans `06b_bibliotheque.js`)
 
 « Retirer la semaine » vide ses lancements et pose `supprimeeLe` (date du retrait), gardée pour la fusion entre PC :

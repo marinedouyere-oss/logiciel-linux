@@ -47,7 +47,7 @@ import java.util.TimeZone;
  */
 final class PartageVue {
 
-    enum Ecran { SEMAINE, CONTROLE, RECHERCHE, BIBLIOTHEQUE, SUIVI, PLANS, STOCK, CLAUSTRAS }
+    enum Ecran { SEMAINE, CONTROLE, RECHERCHE, BIBLIOTHEQUE, SUIVI, PLANS, STOCK, CLAUSTRAS, PLUS }
 
     private static final String PREFERENCES = "sentinelle_partage";
     private static final String CLE_URI = "uri";
@@ -79,7 +79,8 @@ final class PartageVue {
     /** Pièce sans étiquette : longueur (sens du fil), largeur, couleur, semaine ; null : pas encore cherché. */
     private String[] sansEtiquette;
     /** Lancement à montrer dans Contrôler la coupe (bouton « Voir le contrôle »). */
-    private String lancementAMontrer;
+    /** V6.9.1 : le lancement affiché dans Contrôler la coupe (null : tous, le tableau de la semaine). */
+    private String lancementChoisi;
     private boolean pdfEnCours;
     /** Message sans gravité (pas de réseau : dernière version reçue). */
     private String avertissement;
@@ -443,6 +444,9 @@ final class PartageVue {
             case CLAUSTRAS:
                 ecranClaustras();
                 break;
+            case PLUS:
+                ecranPlus();
+                break;
             default:
                 ecranSemaine();
         }
@@ -599,8 +603,8 @@ final class PartageVue {
         }
         FichierPartage.Semaine s = semaine();
         entete(semaineEnCours(s) ? "Semaine en cours" : "Semaine", titreSemaine(s), CompteRendu.datesSemaine(s.annee, s.semaine));
+        racine.addView(pastillesSemaines(s), ui.marges(0, 6));
         ligneDonneesDuPc();
-        racine.addView(choixSemaines(s), ui.marges(2, 4));
         int controles = 0;
         int nbProblemes = 0;
         double pieces = 0;
@@ -610,9 +614,9 @@ final class PartageVue {
             pieces += piecesDe(l);
         }
         // Comme sur le PC : lancements, pièces, contrôles faits, à regarder.
-        racine.addView(bandeChiffres(new String[] {String.valueOf(s.lancements.size()), "Lancements"}, new String[] {nombre(pieces), "Pièces"},
-                new String[] {controles + " sur " + s.lancements.size(), "Contrôles faits"},
-                new String[] {String.valueOf(nbProblemes), "À regarder", nbProblemes > 0 ? "souci" : null}));
+        racine.addView(grilleTuiles(new String[] {"Lancements", String.valueOf(s.lancements.size()), null}, new String[] {"Pièces", nombre(pieces), null},
+                new String[] {"Contrôles faits", controles + " sur " + s.lancements.size(), null},
+                new String[] {"À regarder", String.valueOf(nbProblemes), nbProblemes > 0 ? "souci" : "bon"}), ui.marges(2, 6));
 
         // Ce qu'il faut regarder d'abord.
         if (nbProblemes > 0) {
@@ -648,7 +652,7 @@ final class PartageVue {
     }
 
     private void voirControle(FichierPartage.Lancement l) {
-        lancementAMontrer = l.nom;
+        lancementChoisi = l.nom;
         activite.allerA(MainActivity.ONGLET_CONTROLE);
     }
 
@@ -662,24 +666,188 @@ final class PartageVue {
         }
         FichierPartage.Semaine s = semaine();
         String quand = dateLisible(s.maj);
-        entete("Contrôler la coupe", titreSemaine(s), quand.isEmpty() ? null : "Mis à jour le " + quand + ".", "Les contrôles faits par Sentinelle sur le PC. Touchez un lancement pour ouvrir son bilan et ses pièces.");
-        racine.addView(choixSemaines(s), ui.marges(2, 4));
-        MaterialButton compteRendu = ui.boutonContour(pdfEnCours ? "Compte rendu en cours…" : "Compte rendu de la semaine (.pdf)");
-        compteRendu.setEnabled(!pdfEnCours);
-        compteRendu.setOnClickListener(v -> compteRendu(s));
-        racine.addView(compteRendu, ui.marges(0, 2));
-        if (lancementAMontrer != null) controlesOuverts.add(lancementAMontrer);
-        racine.addView(carteTableau(s));
-        racine.addView(ui.texte("Détail par lancement", 15, true, Ui.NOIR), ui.marges(8, 0));
-        int numero = 1;
+        entete("Contrôler la coupe", titreSemaine(s), quand.isEmpty() ? null : "Mis à jour le " + quand + ".", "Les contrôles faits par Sentinelle sur le PC. Choisissez un lancement dans la rangée, ou « Tous » pour le tableau de la semaine.");
+        racine.addView(pastillesSemaines(s), ui.marges(0, 6));
+        FichierPartage.Lancement choisi = null;
+        for (FichierPartage.Lancement l : s.lancements) if (l.nom.equals(lancementChoisi)) choisi = l;
+        if (choisi == null) lancementChoisi = null;
+        // V6.9.1 : comme sur le PC, un lancement à la fois ; « Tous » : le tableau de la semaine et le compte rendu.
+        racine.addView(pastillesLancements(s, choisi), ui.marges(0, 8));
+        if (choisi == null) {
+            racine.addView(carteTableau(s));
+            MaterialButton compteRendu = ui.boutonContour(pdfEnCours ? "Compte rendu en cours…" : "Compte rendu de la semaine (.pdf)");
+            compteRendu.setEnabled(!pdfEnCours);
+            compteRendu.setOnClickListener(v -> compteRendu(s));
+            racine.addView(compteRendu, ui.marges(2, 2));
+            return;
+        }
+        int i = s.lancements.indexOf(choisi);
+        racine.addView(carteLancement(choisi, i + 1, true));
+        // Précédent / suivant, sans remonter chercher la rangée.
+        LinearLayout nav = ui.rangee();
+        FichierPartage.Lancement avant = i > 0 ? s.lancements.get(i - 1) : null;
+        FichierPartage.Lancement apres = i < s.lancements.size() - 1 ? s.lancements.get(i + 1) : null;
+        MaterialButton bAvant = ui.boutonContour(avant == null ? "‹" : "‹ " + titrePoste(avant));
+        bAvant.setEnabled(avant != null);
+        bAvant.setMaxLines(1);
+        bAvant.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        bAvant.setOnClickListener(v -> choisirLancement(avant));
+        MaterialButton bApres = ui.boutonContour(apres == null ? "›" : titrePoste(apres) + " ›");
+        bApres.setEnabled(apres != null);
+        bApres.setMaxLines(1);
+        bApres.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        bApres.setOnClickListener(v -> choisirLancement(apres));
+        nav.addView(bAvant, ui.poids(1));
+        nav.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(8), 1));
+        nav.addView(bApres, ui.poids(1));
+        racine.addView(nav, ui.marges(4, 4));
+    }
+
+    private void choisirLancement(FichierPartage.Lancement l) {
+        lancementChoisi = l == null ? null : l.nom;
+        construire();
+        activite.hautDePage();
+    }
+
+    /** « Tous » puis un bouton par lancement (numéro, poste, état en couleur) ; celui affiché en bordeaux. */
+    private View pastillesLancements(FichierPartage.Semaine s, FichierPartage.Lancement choisi) {
+        android.widget.HorizontalScrollView defile = new android.widget.HorizontalScrollView(activite);
+        defile.setHorizontalScrollBarEnabled(false);
+        LinearLayout r = ui.rangee();
+        r.addView(pastille("Tous", null, choisi == null, "ok", v -> choisirLancement(null)), margeDroite());
+        int n = 1;
         View aMontrer = null;
         for (FichierPartage.Lancement l : s.lancements) {
-            View carte = carteLancement(l, numero++);
-            if (l.nom.equals(lancementAMontrer)) aMontrer = carte;
-            racine.addView(carte);
+            String niveau = !l.controleFait ? "info" : l.nbCorriger > 0 ? "alerte" : l.nbVerifier > 0 ? "attention" : "ok";
+            String marque = !l.controleFait ? "" : l.nbCorriger + l.nbVerifier > 0 ? "  ⚠ " + (l.nbCorriger + l.nbVerifier) : "  ✔";
+            boolean actif = l == choisi;
+            View p = pastille(String.format(Locale.ROOT, "%02d", n++) + "  " + titrePoste(l) + marque, "Lancement " + l.nom, actif, niveau, v -> choisirLancement(l));
+            if (actif) aMontrer = p;
+            r.addView(p, margeDroite());
         }
-        lancementAMontrer = null;
-        if (aMontrer != null) activite.montrer(aMontrer);
+        defile.addView(r);
+        final View cible = aMontrer;
+        if (cible != null) defile.post(() -> defile.smoothScrollTo(Math.max(0, cible.getLeft() - ui.dp(40)), 0));
+        return defile;
+    }
+
+    private LinearLayout.LayoutParams margeDroite() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.rightMargin = ui.dp(6);
+        return lp;
+    }
+
+    /** Une pastille arrondie : bordeaux si choisie ; sinon blanche, bord de la couleur de l'état (ok, attention, alerte). */
+    private TextView pastille(String texte, String description, boolean actif, String niveau, View.OnClickListener action) {
+        TextView b = ui.texte(texte, 13.5f, true, actif ? 0xFFFFFFFF : Ui.NOIR);
+        b.setGravity(Gravity.CENTER);
+        b.setMinHeight(ui.dp(40));
+        b.setPadding(ui.dp(14), 0, ui.dp(14), 0);
+        b.setMaxLines(1);
+        android.graphics.drawable.GradientDrawable fond = ui.fondRond(actif ? Ui.BORDEAUX : 0xFFFFFFFF, 20);
+        if (!actif) {
+            int bord = "alerte".equals(niveau) ? ui.couleur(R.color.alerte_texte) : "attention".equals(niveau) ? 0xFFC98A00 : "ok".equals(niveau) ? 0xFFD9D4CF : 0xFFE0DCD7;
+            fond.setStroke(Math.max(1, ui.dp("alerte".equals(niveau) || "attention".equals(niveau) ? 2 : 1)), bord);
+        }
+        b.setBackground(fond);
+        b.setContentDescription((description != null ? description : texte) + (actif ? " (choisi)" : ""));
+        b.setSelected(actif);
+        b.setOnClickListener(action);
+        return b;
+    }
+
+    /** V6.9.1 : les semaines en pastilles (la plus ancienne à gauche), celle choisie en bordeaux, comme sur le PC. */
+    private View pastillesSemaines(FichierPartage.Semaine choisie) {
+        android.widget.HorizontalScrollView defile = new android.widget.HorizontalScrollView(activite);
+        defile.setHorizontalScrollBarEnabled(false);
+        LinearLayout r = ui.rangee();
+        List<FichierPartage.Semaine> liste = new ArrayList<>(donnees.semaines);
+        java.util.Collections.reverse(liste); // la plus ancienne d'abord
+        View aMontrer = null;
+        for (FichierPartage.Semaine s : liste) {
+            boolean actif = s == choisie;
+            View p = pastille("S" + s.semaine, "Semaine " + s.semaine + " " + s.annee, actif, "ok", v -> choisirSemaine(s));
+            if (actif) aMontrer = p;
+            r.addView(p, margeDroite());
+        }
+        if (liste.size() > 4) r.addView(pastille("Toutes ▾", "Choisir la semaine", false, "ok", v -> listeDesSemaines()), margeDroite());
+        defile.addView(r);
+        final View cible = aMontrer;
+        if (cible != null) defile.post(() -> defile.scrollTo(Math.max(0, cible.getRight() - defile.getWidth() + ui.dp(60)), 0));
+        return defile;
+    }
+
+    /** Les chiffres de la semaine en grandes tuiles, deux par ligne (légende puis valeur, comme sur le PC). */
+    private View grilleTuiles(String[]... tuiles) {
+        LinearLayout g = ui.colonne();
+        for (int i = 0; i < tuiles.length; i += 2) {
+            LinearLayout ligne = ui.rangee();
+            for (int k = i; k < i + 2; k++) {
+                if (k >= tuiles.length) {
+                    ligne.addView(ui.espace(1), ui.poids(1));
+                    continue;
+                }
+                String[] t = tuiles[k];
+                LinearLayout c = ui.colonne();
+                c.setPadding(ui.dp(14), ui.dp(10), ui.dp(14), ui.dp(12));
+                boolean souci = "souci".equals(t[2]);
+                android.graphics.drawable.GradientDrawable fond = ui.fondRond(souci ? 0xFFFFF6EC : 0xFFFFFFFF, 14);
+                fond.setStroke(Math.max(1, ui.dp(1)), souci ? 0xFFF6D7B5 : 0xFFE9E7E3);
+                c.setBackground(fond);
+                c.addView(ui.texte(t[0], 12.5f, false, ui.couleur(R.color.gris_texte)));
+                c.addView(ui.titre(t[1], 26, souci ? 0xFF8A4300 : Ui.NOIR));
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+                if (k == i) lp.rightMargin = ui.dp(8);
+                ligne.addView(c, lp);
+            }
+            g.addView(ligne, ui.marges(i == 0 ? 0 : 8, 0));
+        }
+        return g;
+    }
+
+    // ---- V6.9.1 : « Plus » : les outils (comme le groupe Outils du menu du PC) ----
+
+    private void ecranPlus() {
+        entete("Sentinelle", "Outils", null);
+        boolean relie = codeLien() != null || uri() != null;
+        int claustras = donnees == null ? 0 : donnees.claustras.size();
+        String stockSous = donnees == null || donnees.stock == null ? "Pas de stock reçu du PC" : "Panneaux entiers, chutes, cases";
+        Object[][] outils = {
+                {MainActivity.ONGLET_PLANS, R.drawable.ic_nav_plans, "Plans de coupe", "Les plans de Cut Rite, par matière"},
+                {MainActivity.ONGLET_STOCK, R.drawable.ic_stock, "Stock des panneaux", stockSous},
+                {MainActivity.ONGLET_CLAUSTRAS, R.drawable.ic_claustra, "Claustras", claustras > 0 ? "Photo du plan · " + claustras + " commande" + (claustras > 1 ? "s" : "") : "Photo du plan pour le PC"},
+                {MainActivity.ONGLET_BIBLIOTHEQUE, R.drawable.ic_nav_bibliotheque, "Lien avec le PC", relie ? "✔ Relié · semaines gardées" : "Pas encore relié"},
+        };
+        LinearLayout g = ui.colonne();
+        for (int i = 0; i < outils.length; i += 2) {
+            LinearLayout ligne = ui.rangee();
+            for (int k = i; k < i + 2 && k < outils.length; k++) {
+                Object[] o = outils[k];
+                LinearLayout c = ui.colonne();
+                c.setPadding(ui.dp(14), ui.dp(14), ui.dp(14), ui.dp(14));
+                android.graphics.drawable.GradientDrawable fond = ui.fondRond(0xFFFFFFFF, 16);
+                fond.setStroke(Math.max(1, ui.dp(1)), 0xFFE9E7E3);
+                c.setBackground(fond);
+                android.widget.ImageView ic = new android.widget.ImageView(activite);
+                ic.setImageResource((Integer) o[1]);
+                ic.setColorFilter(Ui.BORDEAUX);
+                ic.setBackground(ui.fondRond(Ui.SAUMON_PALE, 12));
+                ic.setPadding(ui.dp(9), ui.dp(9), ui.dp(9), ui.dp(9));
+                c.addView(ic, new LinearLayout.LayoutParams(ui.dp(44), ui.dp(44)));
+                c.addView(ui.titre((String) o[2], 16, Ui.BORDEAUX), ui.marges(10, 2));
+                c.addView(ui.texte((String) o[3], 12.5f, false, ui.couleur(R.color.gris_texte)));
+                c.setContentDescription((String) o[2]);
+                final String tag = (String) o[0];
+                c.setClickable(true);
+                c.setOnClickListener(v -> activite.allerA(tag));
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f);
+                if (k == i) lp.rightMargin = ui.dp(10);
+                ligne.addView(c, lp);
+            }
+            g.addView(ligne, ui.marges(i == 0 ? 2 : 10, 0));
+        }
+        racine.addView(g);
+        ligneDonneesDuPc();
     }
 
     /** Compte rendu de la semaine (.pdf), fait en arrière-plan, puis enregistré où l'on veut. */
@@ -892,7 +1060,7 @@ final class PartageVue {
     // ---- Bibliothèque des semaines ----
 
     private void ecranBibliotheque() {
-        entete("Outils", "Bibliothèque des semaines", null, "Les semaines gardées par Sentinelle sur le PC, dans le fichier partagé.");
+        entete("Outils", "Lien avec le PC", null, "Le lien avec Sentinelle sur le PC (code ou QR code), ce qui part au PC, et les semaines gardées par le PC dans le fichier partagé.");
         racine.addView(carteFichier());
         View envois = carteEnvoisPc();
         if (envois != null) racine.addView(envois);
@@ -1746,42 +1914,8 @@ final class PartageVue {
         return s;
     }
 
-    /** Choix de la semaine : « ‹ S45 » semaine d'avant, « Choisir la semaine ▾ » (toutes les semaines), « S47 › » semaine d'après. */
-    private View choixSemaines(FichierPartage.Semaine choisie) {
-        List<FichierPartage.Semaine> liste = donnees.semaines; // la plus récente d'abord
-        int i = liste.indexOf(choisie);
-        FichierPartage.Semaine precedente = i >= 0 && i < liste.size() - 1 ? liste.get(i + 1) : null;
-        FichierPartage.Semaine suivante = i > 0 ? liste.get(i - 1) : null;
-        LinearLayout rangee = ui.rangee();
-        android.graphics.drawable.GradientDrawable fond = ui.fondRond(0xFFFFFFFF, 14);
-        fond.setStroke(Math.max(1, ui.dp(1)), ui.couleur(R.color.bordure));
-        rangee.setBackground(fond);
-        rangee.setPadding(ui.dp(2), 0, ui.dp(2), 0);
-        android.content.res.ColorStateList couleurs = new android.content.res.ColorStateList(new int[][] {{-android.R.attr.state_enabled}, {}}, new int[] {Ui.GRIS_FILET, Ui.BORDEAUX});
-        MaterialButton avant = ui.boutonTexte(precedente == null ? "‹" : "‹ S" + precedente.semaine);
-        avant.setTextColor(couleurs);
-        avant.setContentDescription("Semaine d'avant");
-        avant.setEnabled(precedente != null);
-        avant.setOnClickListener(v -> choisirSemaine(precedente));
-        MaterialButton choix = ui.boutonTexte("Choisir la semaine  ▾");
-        choix.setTextColor(Ui.NOIR);
-        choix.setContentDescription("Choisir la semaine (" + choisie.libelle() + " " + choisie.annee + ")");
-        choix.setOnClickListener(v -> listeDesSemaines());
-        MaterialButton apres = ui.boutonTexte(suivante == null ? "›" : "S" + suivante.semaine + " ›");
-        apres.setTextColor(couleurs);
-        apres.setContentDescription("Semaine d'après");
-        apres.setEnabled(suivante != null);
-        apres.setOnClickListener(v -> choisirSemaine(suivante));
-        LinearLayout.LayoutParams bord = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        avant.setMinWidth(ui.dp(64));
-        apres.setMinWidth(ui.dp(64));
-        rangee.addView(avant, bord);
-        rangee.addView(choix, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        rangee.addView(apres, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-        return rangee;
-    }
-
     private void choisirSemaine(FichierPartage.Semaine s) {
+        if (!s.id.equals(semaineChoisie)) lancementChoisi = null;
         semaineChoisie = s.id;
         construire();
     }
@@ -1917,11 +2051,7 @@ final class PartageVue {
             pastilles.addView(ui.espace(1), new LinearLayout.LayoutParams(ui.dp(6), 1));
             pastilles.addView(pastilleControle("Couleurs", celluleCouleurs(l)));
             bloc.addView(pastilles, ui.marges(6, 0));
-            ui.cliquable(bloc, v -> {
-                controlesOuverts.add(l.nom);
-                lancementAMontrer = l.nom;
-                construire();
-            });
+            ui.cliquable(bloc, v -> choisirLancement(l));
             corps.addView(bloc);
         }
         // Total de la semaine.
@@ -1963,7 +2093,7 @@ final class PartageVue {
     private void validerOk(FichierPartage.Lancement l, FichierPartage.Probleme p) {
         if (codeLien() == null) {
             new MaterialAlertDialogBuilder(activite).setTitle("Valider OK")
-                    .setMessage("Pour envoyer une validation au PC, reliez l'appli au PC : icône du livre en haut → « Scanner le QR code du PC ».")
+                    .setMessage("Pour envoyer une validation au PC, reliez l'appli au PC : « Relier au PC » en haut → « Scanner le QR code du PC ».")
                     .setPositiveButton("OK", null).show();
             return;
         }
@@ -1999,10 +2129,10 @@ final class PartageVue {
                 ui.couleur(R.color.attention_fond), ui.couleur(R.color.attention_texte));
     }
 
-    private MaterialCardView carteLancement(FichierPartage.Lancement l, int numero) {
+    private MaterialCardView carteLancement(FichierPartage.Lancement l, int numero, boolean seul) {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
-        boolean ouvert = controlesOuverts.contains(l.nom);
+        boolean ouvert = seul || controlesOuverts.contains(l.nom);
         // Titre : numéro, poste, fichier ; à droite l'état du contrôle ; un toucher ouvre ou ferme le détail.
         String[] etat;
         if (!l.controleFait) etat = new String[] {"Pas de bilan", "info"};
@@ -2010,7 +2140,7 @@ final class PartageVue {
         else if (l.nbVerifier > 0) etat = new String[] {l.nbVerifier + " à vérifier", "attention"};
         else etat = new String[] {"✔ OK", "ok"};
         int[] ce = couleursStatut(etat[1]);
-        LinearLayout tete = ui.ligne(ui.pastille(numero), titrePoste(l), l.fichier.isEmpty() ? l.nom : l.fichier, ui.pilule(etat[0], ce[0], ce[1]), ouvert ? "˄" : "˅", v -> {
+        LinearLayout tete = ui.ligne(ui.pastille(numero), titrePoste(l), l.fichier.isEmpty() ? l.nom : l.fichier, ui.pilule(etat[0], ce[0], ce[1]), seul ? null : ouvert ? "˄" : "˅", seul ? null : v -> {
             if (!controlesOuverts.remove(l.nom)) controlesOuverts.add(l.nom);
             construire();
         });
@@ -2029,7 +2159,18 @@ final class PartageVue {
             corps.addView(ui.bandeau(resume, c[0], c[1]), ui.marges(0, 8));
             View casse = bandeauCasse(l, false);
             if (casse != null) corps.addView(casse, ui.marges(0, 8));
+            // V6.9.1 : les contrôles à regarder en entier ; ceux qui sont bons sur une ligne, ceux pas faits sur une autre.
+            List<String> bons = new ArrayList<>();
+            List<String> pasFaits = new ArrayList<>();
             for (FichierPartage.Bilan b : l.bilan) {
+                if ("ok".equals(b.statut)) {
+                    bons.add(b.controle);
+                    continue;
+                }
+                if (!"alerte".equals(b.statut) && !"attention".equals(b.statut)) {
+                    pasFaits.add(b.controle);
+                    continue;
+                }
                 SpannableStringBuilder sb = new SpannableStringBuilder();
                 int debut = sb.length();
                 sb.append(symboleStatut(b.statut)).append("  ");
@@ -2038,6 +2179,17 @@ final class PartageVue {
                 sb.append(" : ").append(b.texte);
                 corps.addView(ui.texte(sb, 13, false, Ui.NOIR), ui.marges(2, 2));
             }
+            if (!bons.isEmpty()) {
+                SpannableStringBuilder sb = new SpannableStringBuilder();
+                int debut = sb.length();
+                sb.append("✔  ");
+                gras(sb, "OK");
+                sb.setSpan(new ForegroundColorSpan(ui.couleur(R.color.ok_texte)), debut, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                sb.append(" : ").append(android.text.TextUtils.join(", ", bons));
+                corps.addView(ui.texte(sb, 13, false, Ui.NOIR), ui.marges(4, 2));
+            }
+            if (!pasFaits.isEmpty())
+                corps.addView(ui.texte("—  Pas vérifié : " + android.text.TextUtils.join(", ", pasFaits), 12.5f, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 2));
         }
 
         // Problèmes, regroupés par type (dans l'ordre du rapport : les plus graves d'abord).

@@ -190,7 +190,7 @@ public class PartageTest {
                 menu.setSelectedItemId(menu.getMenu().getItem(i).getItemId());
                 dansLeMenu = true;
             }
-        // La Bibliothèque : l'icône du livre, en haut.
+        // Plans, Stock, Claustras, Lien avec le PC : ouverts depuis « Plus ».
         if (!dansLeMenu) a.allerA(tag);
         ShadowLooper.idleMainLooper();
     }
@@ -216,7 +216,8 @@ public class PartageTest {
         BottomNavigationView menu = chercherVue(a.getWindow().getDecorView(), BottomNavigationView.class);
         assertNotNull(menu);
         assertEquals(5, menu.getMenu().size());
-        String[] attendus = {"Semaine", "Contrôle", "Plans", "Recherche", "Suivi"};
+        // V6.9.1 : « Plus » regroupe les outils (plans, stock, claustras, lien avec le PC).
+        String[] attendus = {"Semaine", "Contrôle", "Recherche", "Suivi", "Plus"};
         for (int i = 0; i < attendus.length; i++) {
             assertEquals(attendus[i], String.valueOf(menu.getMenu().getItem(i).getTitle()));
             assertNotNull(menu.getMenu().getItem(i).getIcon());
@@ -230,24 +231,47 @@ public class PartageTest {
             assertFalse(t, t.contains(".xlsx)"));
             assertFalse(t, t.replace("Scanner le QR code du PC", "").contains("Scanner")); // lecteur seulement : pas de scan de dossier
         }
+        onglet(a, MainActivity.ONGLET_PLUS);
+        String plus = ecran(a);
+        for (String outil : new String[] {"Plans de coupe", "Stock des panneaux", "Claustras", "Lien avec le PC"}) assertTrue(plus, plus.contains(outil));
+        assertTrue("barre du haut : relier au PC", plus.contains("Relier au PC"));
+        // Un outil ouvert depuis « Plus » : « Plus » reste choisi en bas.
+        View stock = vueAvecDescription(a.getWindow().getDecorView(), "Stock des panneaux");
+        assertNotNull(stock);
+        stock.performClick();
+        ShadowLooper.idleMainLooper();
+        assertTrue(ecran(a).contains("Stock des panneaux"));
+        assertEquals(5, menu.getSelectedItemId());
     }
 
-    /** Choix de la semaine : « Semaine 46 · 2026 ▾ » au milieu, ‹ semaine d'avant, › semaine d'après. */
+    /** V6.9.1 : les semaines en pastilles (S45 S46), celle choisie en bordeaux ; Contrôle : un lancement à la fois. */
     @Test
     public void choixDeLaSemaine() throws Exception {
         MainActivity a = avecFichier(gzip(EXEMPLE));
         onglet(a, MainActivity.ONGLET_CONTROLE);
         View racine = a.getWindow().getDecorView();
         attendre(() -> ecran(a).contains("Semaine 46 · 2026"));
-        assertTrue("‹ S45 actif sur la semaine la plus récente", bouton(racine, "‹ S45").isEnabled());
-        assertFalse("› inactif sur la semaine la plus récente", bouton(racine, "›").isEnabled());
-        assertNotNull("liste de toutes les semaines", bouton(racine, "Choisir la semaine"));
-        bouton(racine, "‹ S45").performClick();
+        View s46 = vueAvecDescription(racine, "Semaine 46 2026");
+        assertNotNull(s46);
+        assertTrue("S46 choisie", s46.isSelected());
+        // « Tous » au départ : le tableau de la semaine.
+        assertTrue(ecran(a).contains("Semaine 46 — lancements"));
+        vueAvecDescription(racine, "Semaine 45 2026").performClick();
         ShadowLooper.idleMainLooper();
         assertTrue("semaine 45 choisie", ecran(a).contains("Semaine 45 · 2026"));
         assertTrue(ecran(a).contains("Semaine 45 — lancements"));
-        assertTrue("S46 › actif sur la semaine 45", bouton(racine, "S46 ›").isEnabled());
-        assertFalse("‹ inactif sur la plus ancienne", bouton(racine, "‹").isEnabled());
+        assertTrue(vueAvecDescription(a.getWindow().getDecorView(), "Semaine 45 2026").isSelected());
+        // Un lancement choisi dans la rangée : lui seul, ouvert ; « Tous » revient au tableau.
+        View lan = vueAvecDescription(a.getWindow().getDecorView(), "Lancement ");
+        assertNotNull(lan);
+        lan.performClick();
+        ShadowLooper.idleMainLooper();
+        String seul = ecran(a);
+        assertFalse(seul, seul.contains("Semaine 45 — lancements"));
+        assertTrue(vueAvecDescription(a.getWindow().getDecorView(), "Lancement ").isSelected());
+        vueAvecDescription(a.getWindow().getDecorView(), "Tous").performClick();
+        ShadowLooper.idleMainLooper();
+        assertTrue(ecran(a).contains("Semaine 45 — lancements"));
         // La semaine choisie est la même dans La semaine.
         onglet(a, MainActivity.ONGLET_SEMAINE);
         assertTrue(ecran(a).contains("Semaine 45 · 2026"));
@@ -377,13 +401,17 @@ public class PartageTest {
         ligneLancement.performClick();
         ShadowLooper.idleMainLooper();
         String controle = ecran(a);
+        // V6.9.1 : le lancement touché est affiché seul, ouvert (son bilan) ; « Tous » : le tableau de la semaine.
+        assertTrue("le lancement touché est ouvert (son bilan)", controle.contains("Scies (.bkp)"));
+        assertTrue(controle.contains("à corriger"));
+        assertFalse(controle.contains("illisible"));
+        capturerSiDemande(a, "appli_controle.png");
+        vueAvecDescription(a.getWindow().getDecorView(), "Tous").performClick();
+        ShadowLooper.idleMainLooper();
+        controle = ecran(a);
         assertTrue(controle, controle.contains("Semaine 46 — lancements"));
         assertTrue(controle.contains("Compte rendu de la semaine (.pdf)"));
         assertTrue(controle.contains("Pièces : 951 prévues dans 6 lancement(s), 952 dans les .bkp."));
-        assertTrue(controle.contains("à corriger"));
-        assertTrue("le lancement touché est ouvert (son bilan)", controle.contains("Scies (.bkp)"));
-        assertFalse(controle.contains("illisible"));
-        capturerSiDemande(a, "appli_controle.png");
 
         // Compte rendu : mêmes chiffres que le PC (hors casse 876, casse 75 de la semaine 45).
         CompteRendu c = CompteRendu.de(f, f.semaines.get(0));
@@ -822,8 +850,7 @@ public class PartageTest {
 
         // Valider OK un problème (Contrôler la coupe, lancement LAN264801START).
         onglet(a, MainActivity.ONGLET_CONTROLE);
-        View tete = vueAvecTexte(a.getWindow().getDecorView(), "LAN264801START.xlsx");
-        while (tete != null && !tete.isClickable()) tete = (View) tete.getParent();
+        View tete = vueAvecDescription(a.getWindow().getDecorView(), "Lancement LAN264801START");
         assertNotNull(tete);
         tete.performClick();
         ShadowLooper.idleMainLooper();
@@ -1004,5 +1031,16 @@ public class PartageTest {
             capturerSiDemande(a, "reel_" + o + ".png");
         }
         assertTrue(ecran(a), ecran(a).contains("tous affichés"));
+        // V6.9.1 : « Plus » et un lancement seul dans Contrôle.
+        a.allerA(MainActivity.ONGLET_PLUS);
+        ShadowLooper.idleMainLooper();
+        capturerSiDemande(a, "reel_plus.png");
+        a.allerA(MainActivity.ONGLET_CONTROLE);
+        ShadowLooper.idleMainLooper();
+        View lan = vueAvecDescription(a.getWindow().getDecorView(), "Lancement ");
+        assertNotNull(lan);
+        lan.performClick();
+        ShadowLooper.idleMainLooper();
+        capturerSiDemande(a, "reel_controle_lancement.png");
     }
 }
