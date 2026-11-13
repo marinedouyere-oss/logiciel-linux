@@ -1,0 +1,3 @@
+# État local de Netlify (lien du dossier au site)
+.netlify/
+node_modules/

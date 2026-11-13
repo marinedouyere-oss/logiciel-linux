@@ -1,0 +1,6 @@
+Lecture des confirmations de commande dont le texte est une image (« Microsoft Print to PDF ») : reconnaissance
+de caractères Tesseract, dans le navigateur, sans Internet.
+- tesseract.min.js, worker.min.js : tesseract.js 7.0.0 (licence Apache 2.0, LICENSE-tesseract.js.txt)
+- tesseract-core-simd-lstm.wasm.js : tesseract.js-core 6.1.2 (licence Apache 2.0, LICENSE-tesseract-core.txt)
+- fra.traineddata : modèle français de Tesseract (tessdata, licence Apache 2.0)
+Chargés seulement par la page « Claustras » quand un PDF n'a pas de texte.

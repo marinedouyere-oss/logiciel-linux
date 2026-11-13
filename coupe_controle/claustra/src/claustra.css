@@ -1,0 +1,47 @@
+:root {
+  --bordeaux: #78140c; --saumon: #eac2b7; --saumon-pale: #faf0ec; --gris: #797978; --gris-clair: #f4f3f1; --gris-filet: #e9e7e3; --noir: #22231d;
+  --titres: "Raleway", "Calibri Light", "Segoe UI", Arial, sans-serif;
+  --texte: "Lato", Calibri, "Segoe UI", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--gris-clair); color: var(--noir); font-family: var(--texte); font-size: 15px; }
+.bandeau { display: flex; align-items: center; gap: 16px; background: var(--bordeaux); color: #fff; padding: 14px 24px; }
+.bandeau .logo { height: 44px; }
+.bandeau .filet { width: 1px; height: 40px; background: rgba(255, 255, 255, 0.35); }
+.bandeau .nom { font-family: var(--titres); font-weight: 700; font-size: 1.5rem; }
+.bandeau .sous-titre { font-size: 0.9rem; opacity: 0.85; }
+.badge-version { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: #fff; color: var(--bordeaux); font-family: var(--texte); font-size: 0.8rem; font-weight: 700; vertical-align: middle; }
+main { max-width: 1100px; margin: 0 auto; padding: 22px 16px 40px; }
+.entete-page .surtitre { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--gris); }
+.entete-page h1 { margin: 2px 0 4px; font-family: var(--titres); font-size: 2rem; color: var(--bordeaux); }
+.entete-page .chapeau { color: #6b605d; margin-bottom: 14px; }
+.carte { background: #fff; border: 1px solid var(--gris-filet); border-radius: 12px; padding: 16px 20px; margin-bottom: 14px; }
+.carte-titre { font-family: var(--titres); font-weight: 700; font-size: 1.08rem; color: var(--bordeaux); margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--saumon); }
+.ligne-titre { display: flex; justify-content: space-between; align-items: center; }
+.note { color: #6b605d; font-size: 0.88rem; margin-bottom: 8px; }
+.grille { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 14px; }
+.champ { display: flex; flex-direction: column; gap: 4px; font-size: 0.82rem; font-weight: 700; color: #4a403d; min-width: 0; }
+.champ input { padding: 8px 10px; font-family: var(--texte); font-size: 1rem; border: 1px solid #cfccc6; border-radius: 4px; min-width: 0; }
+.champ input:focus { outline: none; border-color: var(--bordeaux); box-shadow: 0 0 0 2px var(--saumon-pale); }
+.options { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 12px; font-size: 0.92rem; }
+.options input { accent-color: var(--bordeaux); }
+.libelle-options { font-weight: 700; color: #4a403d; }
+.options .separe { margin-left: 12px; }
+.manque { margin-top: 10px; padding: 8px 12px; border-radius: 8px; background: #fff6ec; color: #6e3600; font-size: 0.88rem; }
+button { min-height: 40px; padding: 0 16px; font-family: var(--texte); font-size: 0.95rem; font-weight: 700; background: var(--bordeaux); color: #fff; border: 1px solid var(--bordeaux); border-radius: 8px; cursor: pointer; }
+button:disabled { background: var(--gris-filet); border-color: var(--gris-filet); color: var(--gris); cursor: default; }
+button.contour { background: #fff; color: var(--bordeaux); }
+button.texte { background: none; border: none; color: var(--bordeaux); padding: 0 6px; min-height: 30px; }
+.boutons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 0 0 14px; }
+.defile { overflow-x: auto; }
+table.apercu { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+table.apercu th { background: var(--bordeaux); color: #fff; text-align: left; padding: 7px 8px; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; }
+table.apercu td { padding: 7px 8px; border-bottom: 1px solid var(--gris-filet); }
+table.apercu tr.impaire td { background: var(--gris-clair); }
+.droite { text-align: right; }
+.ligne-fichier { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 10px; margin-top: 14px; }
+.ligne-fichier .champ { flex: 1 1 240px; }
+.extension { padding-bottom: 10px; color: var(--gris); }
+.compte-rendu { margin-top: 10px; font-weight: 700; color: #2e7d32; }
+.pied { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px; max-width: 1100px; margin: 0 auto; padding: 14px 16px 24px; color: #6b605d; font-size: 0.75rem; border-top: 1px solid var(--gris-filet); }
+@media (max-width: 600px) { .bandeau { padding: 12px 16px; } .entete-page h1 { font-size: 1.6rem; } }

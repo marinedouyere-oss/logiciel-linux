@@ -1,0 +1,372 @@
+// ---- V6.0 : accueil de la semaine, liste des postes du contrôle, menu ----
+
+// Haut de page commun : surtitre, titre, phrase d'explication, boutons à droite.
+function entetePage(surtitre, titre, chapeau, actions = "") {
+  return `<header class="entete-page">
+    <div class="entete-textes">
+      <div class="surtitre">${echapper(surtitre)}</div>
+      <h1>${echapper(titre)}</h1>
+      ${chapeau ? `<div class="chapeau">${echapper(chapeau)}</div>` : ""}
+    </div>
+    ${actions ? `<div class="entete-actions">${actions}</div>` : ""}
+  </header>`;
+}
+
+// V6.9 : les explications sont cachées derrière un bouton « ? » (à côté du titre) ; ouvertes, elles le restent
+// d'un affichage à l'autre tant que la page n'est pas rechargée.
+const aidesOuvertes = new Set();
+const aideOuverte = (cle) => aidesOuvertes.has(cle);
+function boutonAide(cle) {
+  const o = aidesOuvertes.has(cle);
+  return `<button type="button" class="aide-btn" data-aide="${echapper(cle)}" aria-expanded="${o}" title="${o ? "Cacher l'explication" : "Explication"}" aria-label="Explication">?</button>`;
+}
+function texteAide(cle, html, classe = "note") {
+  return `<div class="${classe} aide-texte" data-aide-texte="${echapper(cle)}"${aidesOuvertes.has(cle) ? "" : " hidden"}>${html}</div>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target && e.target.closest ? e.target.closest(".aide-btn") : null;
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const cle = b.dataset.aide;
+  const o = !aidesOuvertes.has(cle);
+  if (o) aidesOuvertes.add(cle);
+  else aidesOuvertes.delete(cle);
+  document.querySelectorAll(".aide-btn").forEach((x) => {
+    if (x.dataset.aide !== cle) return;
+    x.setAttribute("aria-expanded", String(o));
+    x.title = o ? "Cacher l'explication" : "Explication";
+  });
+  document.querySelectorAll(".aide-texte").forEach((t) => {
+    if (t.dataset.aideTexte === cle) t.hidden = !o;
+  });
+});
+
+// Lundi de la semaine ISO « semaine » de l'année « annee ».
+function lundiSemaineIso(annee, semaine) {
+  const jan4 = new Date(annee, 0, 4);
+  const lundi = new Date(annee, 0, 4 - ((jan4.getDay() + 6) % 7));
+  lundi.setDate(lundi.getDate() + (semaine - 1) * 7);
+  return lundi;
+}
+
+// Année d'un numéro de semaine : celle où cette semaine tombe le plus près d'aujourd'hui.
+function anneeDeSemaine(semaine, aujourdHui = new Date()) {
+  const a = aujourdHui.getFullYear();
+  return [a - 1, a, a + 1].reduce((m, c) => (Math.abs(lundiSemaineIso(c, semaine) - aujourdHui) < Math.abs(lundiSemaineIso(m, semaine) - aujourdHui) ? c : m), a);
+}
+
+// Pour ranger les semaines dans l'ordre du calendrier (la semaine 1 vient après la 52).
+const ordreCalendrier = (n) => anneeDeSemaine(Number(n)) * 100 + Number(n);
+
+function datesSemaine(semaine) {
+  const lundi = lundiSemaineIso(anneeDeSemaine(semaine), semaine);
+  const vendredi = new Date(lundi);
+  vendredi.setDate(lundi.getDate() + 4);
+  const jour = (d) => d.toLocaleDateString("fr-FR", { day: "numeric", month: "long" });
+  const debut = lundi.getMonth() === vendredi.getMonth() ? String(lundi.getDate()) : jour(lundi);
+  return `Du lundi ${debut} au vendredi ${jour(vendredi)}`;
+}
+
+// ---- État d'une case : ce qui est à regarder ----
+
+function problemesDeLaCase(p) {
+  const l = [];
+  // Après le contrôle : les problèmes du rapport qui ne sont pas validés « c'est voulu », par problème.
+  const a = analyseDeLaCase(p);
+  if (a) {
+    const parType = new Map();
+    for (const e of a.aTraiter) parType.set(e.type, (parType.get(e.type) || 0) + 1);
+    for (const [type, n] of parType) l.push(`${type} : ${n} pièce(s)`);
+    if (p.erreurScies) l.push("Scies : contrôle impossible");
+    if (p.etatErreur && p.etat) l.push(p.etat.replace(/^❌\s*/, ""));
+    return l;
+  }
+  if (p.rapport && p.rapport.nbAnomalies) l.push(`${p.rapport.nbAnomalies} pièce(s) à vérifier dans ${sourceControle(p)}`);
+  if (p.doublons.length) l.push(`${p.doublons.length} doublon(s) dans le lancement`);
+  if (p.erreurScies) l.push("Scies : contrôle impossible");
+  else if (p.ecartsScies && p.ecartsScies.length) l.push(`Scies : ${p.ecartsScies.length} pièce(s) différente(s)`);
+  if (p.couleurs && p.couleurs.absentes.length) l.push(`Couleurs : ${p.couleurs.absentes.length} couleur(s) absente(s) du .bkp`);
+  if (p.etatErreur && p.etat) l.push(p.etat.replace(/^❌\s*/, ""));
+  return l;
+}
+
+function etatCase(p) {
+  if (p.enCours) return { texte: "En cours…", genre: "encours" };
+  if (!p.strat) return { texte: "Pas de lancement", genre: "vide" };
+  const n = problemesDeLaCase(p).length;
+  if (n) return { texte: `${n} à regarder`, genre: "souci" };
+  if (!p.rapport) return { texte: "Pas contrôlé", genre: "vide" };
+  return { texte: "OK", genre: "bon" };
+}
+
+function etatCoupe(p) {
+  if (p.coupe && p.bkp) return { texte: "Liste + .bkp", genre: "bon" };
+  if (p.bkp) return { texte: ".bkp seul", genre: "bon" };
+  if (p.coupe) return { texte: "Liste seule", genre: "bon" };
+  return { texte: "—", genre: "vide" };
+}
+
+const etiquette = (e) => `<span class="etiquette ${e.genre}">${echapper(e.texte)}</span>`;
+
+// ---- Contrôle : la liste des postes à gauche, un clic amène à la case ----
+
+// V6.8.2 : les lancements de la bibliothèque d'une semaine qui ne sont dans aucune case de l'onglet : créés dans
+// Sentinelle (Suivi de production → « Nouveau lancement »), ou ajoutés à la bibliothèque depuis un autre dossier (ex.
+// Trigano, pas lancé par le chemin standard). Ce sont des lancements de la semaine comme les autres.
+function lancementsHorsCasesDeLaSemaine(numero, cases) {
+  if (typeof bibliotheque === "undefined" || !numero) return [];
+  const w = bibliotheque.semaines.get(idSemaine(anneeDeSemaine(numero), numero));
+  if (!w) return [];
+  const dansLesCases = new Set((cases || []).filter((p) => p.strat).map((p) => cleNomLancement(p.strat.name)));
+  const cols = w.colonnesPieces || COLONNES_PIECES_BIBLIOTHEQUE;
+  const iQ = cols.indexOf("pieces") >= 0 ? cols.indexOf("pieces") : 4;
+  const iCle = Math.max(0, cols.indexOf("cle"));
+  return lancementsActifs(w)
+    .filter((l) => !dansLesCases.has(cleNomLancement(l.nom)))
+    .map((l) => ({ nom: l.nom, poste: l.poste || "Chantiers", manuel: Boolean(l.manuel), casse: Boolean(l.casse) || /CASSE/i.test(l.nom), fichier: l.fichier || "",
+      lignes: (l.pieces || []).length, pieces: (l.pieces || []).reduce((t, x) => t + (Number(x[iQ]) || 0), 0), cles: new Set((l.pieces || []).map((x) => String(x[iCle] || "")).filter(Boolean)) }));
+}
+const ouvrirSuivi = () => {
+  const b = document.querySelector('[data-onglet="suivi"]');
+  if (b) b.click();
+};
+
+function majListePostes() {
+  const zone = $("listePostes");
+  if (!zone || !estOngletSemaine()) return;
+  zone.innerHTML =
+    pairesDeLaSemaine(onglet)
+      .map(
+        (p, i) => `<button type="button" class="poste-item ${p.strat ? "" : "sans-lancement"}" data-case="${p.id}" title="${echapper(titreCase(p))}${p.strat ? ` — ${echapper(p.strat.name)}` : ""}">
+        <span class="pastille">${String(i + 1).padStart(2, "0")}</span>
+        <span class="poste-textes"><span class="poste-ligne"><span class="poste-nom">${echapper(titreCase(p))}</span>${p.strat ? etiquette(etatCase(p)) : ""}</span><span class="poste-fichier">${p.strat ? echapper(p.strat.name) : "Aucun lancement"}</span></span>
+      </button>`
+      )
+      .join("") +
+    lancementsHorsCasesDeLaSemaine(numeroSemaine(onglet), pairesDeLaSemaine(onglet))
+      .map(
+        (l) => `<button type="button" class="poste-item poste-cree" data-cree="1" title="${l.manuel ? "Lancement créé dans Sentinelle" : "Lancement ajouté à la bibliothèque (pas dans les dossiers de la semaine)"} : son avancement est dans le Suivi de production">
+        <span class="pastille cree">+</span>
+        <span class="poste-textes"><span class="poste-ligne"><span class="poste-nom">${echapper(l.poste)} · ${l.manuel ? "créé dans Sentinelle" : "bibliothèque"}</span></span><span class="poste-fichier">${echapper(l.nom)} · ${l.pieces} pièce${l.pieces > 1 ? "s" : ""}</span></span>
+      </button>`
+      )
+      .join("");
+  zone.querySelectorAll("[data-cree]").forEach((b) => b.addEventListener("click", ouvrirSuivi));
+  zone.querySelectorAll(".poste-item[data-case]").forEach((b) => b.addEventListener("click", () => montrerCase(Number(b.dataset.case))));
+  appliquerVueControle(onglet);
+}
+// V6.9 : « Un lancement » : la case choisie remplace celle affichée ; « Tous » : on descend jusqu'à elle.
+function montrerCase(id) {
+  const p = paires.find((x) => x.id === id);
+  if (p && estOngletSemaine(p.parite)) caseChoisie[p.parite] = id;
+  if (estOngletSemaine()) appliquerVueControle(onglet);
+  const carte = document.querySelector(`.carte-paire[data-id="${id}"]`);
+  if (!carte) return;
+  if (vueControle() === "une") {
+    const haut = carte.getBoundingClientRect().top;
+    if (haut < 0 || haut > window.innerHeight * 0.6) carte.scrollIntoView({ block: "start" });
+    return;
+  }
+  document.querySelectorAll(".carte-paire.choisie").forEach((c) => c.classList.remove("choisie"));
+  carte.classList.add("choisie");
+  carte.scrollIntoView({ behavior: "smooth", block: "start" });
+  setTimeout(() => carte.classList.remove("choisie"), 2500);
+}
+
+// ---- Journal des fichiers créés par « Préparer un lancement » (gardé dans ce navigateur) ----
+
+const CLE_JOURNAL = "sentinelle-fichiers-crees";
+
+function lireJournal() {
+  try {
+    const j = JSON.parse(localStorage.getItem(CLE_JOURNAL) || "[]");
+    return Array.isArray(j) ? j : [];
+  } catch (_e) {
+    return [];
+  }
+}
+
+function ajouterAuJournal(nom, chemin) {
+  try {
+    const j = [{ quand: new Date().toISOString(), nom, chemin }, ...lireJournal()].slice(0, 20);
+    localStorage.setItem(CLE_JOURNAL, JSON.stringify(j));
+  } catch (_e) {
+    // Sans stockage (navigation privée…), pas de journal : rien de grave.
+  }
+}
+
+// ---- Menu : le dossier où les lancements préparés sont rangés ----
+
+function majMenuDossier() {
+  const zone = $("menuDossier");
+  if (!zone) return;
+  const r = typeof reecriture !== "undefined" ? reecriture.racine : null;
+  const pc = typeof window.showDirectoryPicker === "function";
+  zone.innerHTML = `<span class="petit">Dossier des semaines</span>
+    <span class="nom">${r ? echapper(r.name) : "Aucun dossier choisi"}</span>
+    <span class="etat-dossier">${r ? "Les lancements préparés y sont rangés tout seuls." : "C'est là que les lancements préparés seront rangés."}</span>
+    ${pc ? `<button type="button" class="bouton-menu" id="btnMenuDossier">${r ? "Changer de dossier" : "Choisir le dossier"}</button>` : ""}`;
+  const bouton = $("btnMenuDossier");
+  if (bouton) bouton.addEventListener("click", choisirRacineReecriture);
+}
+
+// ---- Accueil : la semaine d'un coup d'œil ----
+
+let pariteAccueil = null;
+
+const TYPE_DU_POSTE = { "Agglo 1er tour": "agglo1", "Agglo 2ème tour": "agglo2", Recyclage: "recyclage", Feno: "feno", Casse: "casse" };
+
+function preparerLancementPour(p) {
+  if (typeof reecriture !== "undefined") {
+    const semaine = numeroSemaine(p.parite);
+    reecriture.reglage.type = estChantier(p) ? "chantier" : TYPE_DU_POSTE[p.poste] || "";
+    reecriture.reglage.semaine = String(semaine).padStart(2, "0");
+    if (!reecriture.reglage.annee) reecriture.reglage.annee = String(anneeDeSemaine(semaine) % 100).padStart(2, "0");
+    reecriture.etat = null;
+  }
+  onglet = "reecriture";
+  afficher();
+}
+
+// Nombre de pièces de chaque lancement et de la semaine (lu dans les fichiers de lancement, sans bloquer l'écran).
+async function remplirPiecesAccueil(page, cases) {
+  let total = 0;
+  for (const p of cases) {
+    if (!p.strat) continue;
+    const r = await resume(p.strat, p.bkp);
+    const zone = page.querySelector(`[data-pieces="${p.id}"]`);
+    if (!zone || !zone.isConnected) return; // l'écran a changé entre-temps
+    zone.textContent = Number.isNaN(r.prevues) ? "?" : fmtNombre(r.prevues);
+    if (!Number.isNaN(r.prevues)) total += r.prevues;
+  }
+  const tuile = page.querySelector("#tuilePiecesAccueil");
+  if (tuile && tuile.isConnected) tuile.textContent = fmtNombre(total);
+}
+
+function afficherAccueil() {
+  const page = $("pageAccueil");
+  if (!page) return;
+  if (!pariteAccueil) pariteAccueil = pariteDuNumero(semaineIso(new Date())) || "paire";
+  const parite = pariteAccueil;
+  const numero = numeroSemaine(parite);
+  const enCours = numero === semaineIso(new Date());
+  const cases = pairesDeLaSemaine(parite);
+  const avecLancement = cases.filter((p) => p.strat);
+  const controlees = avecLancement.filter((p) => p.rapport);
+  const crees = lancementsHorsCasesDeLaSemaine(numero, cases);
+  const aRegarder = [];
+  for (const p of cases) for (const t of problemesDeLaCase(p)) aRegarder.push({ p, nom: titreCase(p), texte: t, titre: `${titreCase(p)} — ${t}`, genre: "souci" });
+  for (const p of cases) if (!p.strat && !caseAjoutee(p)) aRegarder.push({ p, nom: titreCase(p), texte: "pas encore de lancement", titre: `${titreCase(p)} — pas encore de lancement`, genre: "vide" });
+  const nbProblemes = aRegarder.filter((a) => a.genre === "souci").length;
+
+  const actions = `<button type="button" id="btnAccueilPreparer">+ Préparer un lancement</button>`;
+
+  const tuile = (valeur, legende, genre = "") => `<div class="tuile ${genre}"><span class="tuile-legende">${legende}</span><span class="tuile-valeur">${valeur}</span></div>`;
+  let html = entetePage(enCours ? "Semaine en cours" : "Semaine", `Semaine ${numero} · ${anneeDeSemaine(numero)}`, datesSemaine(numero), actions);
+  html += htmlBandeauSemaines(parite, false);
+  html += `<section class="tuiles" aria-label="Avancement de la semaine">
+    ${tuile(`${avecLancement.length} sur ${cases.length}${crees.length ? ` <span class="tuile-plus">+ ${crees.length} hors dossiers (bibliothèque)</span>` : ""}`, "Lancements chargés")}
+    ${tuile('<span id="tuilePiecesAccueil">…</span>', "Pièces")}
+    ${tuile(`${controlees.length} sur ${avecLancement.length}`, "Contrôles faits")}
+    ${tuile(String(nbProblemes), "À regarder", nbProblemes ? "souci" : "")}
+  </section>`;
+
+  html += `<h2 class="titre-section">Les lancements de la semaine</h2><div class="grille-lancements">`;
+  cases.forEach((p, i) => {
+    // V6.9 : sans lancement, une carte courte (le nom et « Préparer »), sans les lignes vides.
+    if (!p.strat) {
+      html += `<article class="carte-lancement sans-lancement">
+      <div class="carte-lancement-tete"><span class="pastille">${String(i + 1).padStart(2, "0")}</span><h3>${echapper(titreCase(p))}</h3></div>
+      <div class="carte-lancement-fichier"><span class="vide">Pas encore de lancement</span></div>
+      <button type="button" class="contour" data-preparer="${p.id}">Préparer</button>
+    </article>`;
+      return;
+    }
+    html += `<article class="carte-lancement">
+      <div class="carte-lancement-tete"><span class="pastille">${String(i + 1).padStart(2, "0")}</span><h3>${echapper(titreCase(p))}</h3></div>
+      <div class="carte-lancement-fichier">${p.strat ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>${echapper(p.strat.name)}</span>` : '<span class="vide">Pas encore de lancement</span>'}</div>
+      <dl class="carte-lancement-etats">
+        <div><dt>Lancement</dt><dd>${etiquette(p.strat ? { texte: "Chargé", genre: "bon" } : { texte: "À préparer", genre: "vide" })}</dd></div>
+        <div><dt>Pièces</dt><dd class="pieces-lancement" data-pieces="${p.id}">${p.strat ? "…" : "—"}</dd></div>
+        <div><dt>Coupe</dt><dd>${etiquette(etatCoupe(p))}</dd></div>
+        <div><dt>Contrôle</dt><dd>${etiquette(etatCase(p))}</dd></div>
+      </dl>
+      ${p.strat ? `<button type="button" class="contour" data-voir="${p.id}">Voir le contrôle</button>` : `<button type="button" class="contour" data-preparer="${p.id}">Préparer</button>`}
+    </article>`;
+  });
+  crees.forEach((l, i) => {
+    html += `<article class="carte-lancement carte-cree">
+      <div class="carte-lancement-tete"><span class="pastille">${String(cases.length + i + 1).padStart(2, "0")}</span><h3>${echapper(l.poste)} · ${l.manuel ? "créé dans Sentinelle" : "bibliothèque"}</h3></div>
+      <div class="carte-lancement-fichier"><span>${echapper(l.nom)}</span></div>
+      <dl class="carte-lancement-etats">
+        <div><dt>Lancement</dt><dd>${etiquette(l.manuel ? { texte: "Créé dans Sentinelle", genre: "bon" } : { texte: "Dans la bibliothèque", genre: "bon" })}</dd></div>
+        <div><dt>Pièces</dt><dd>${l.pieces}</dd></div>
+        <div><dt>Coupe</dt><dd>${etiquette({ texte: l.manuel ? "Sans fichier" : "Hors dossiers", genre: "vide" })}</dd></div>
+        <div><dt>Contrôle</dt><dd>${etiquette({ texte: l.manuel ? "Rien à contrôler" : "Pas dans les cases", genre: "vide" })}</dd></div>
+      </dl>
+      <button type="button" class="contour" data-suivi-cree="1">Voir dans le suivi</button>
+    </article>`;
+  });
+  html += "</div>";
+
+  const journal = lireJournal().slice(0, 6);
+  const quand = (iso) => {
+    const d = new Date(iso);
+    const memeJour = d.toDateString() === new Date().toDateString();
+    return memeJour ? d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+  };
+  html += `<div class="deux-colonnes">
+    <section class="carte">
+      <div class="carte-titre">À regarder</div>
+      ${
+        aRegarder.length
+          ? aRegarder.map((a) => `<button type="button" class="ligne-regarder ${a.genre}" data-voir="${a.p.id}"><span class="point"></span><span><strong>${echapper(a.nom)}</strong> — ${echapper(a.texte)}</span></button>`).join("")
+          : '<div class="note">Rien à signaler pour l\'instant.</div>'
+      }
+    </section>
+    <section class="carte">
+      <div class="carte-titre">Derniers fichiers créés</div>
+      ${
+        journal.length
+          ? journal.map((j) => `<div class="ligne-journal"><span class="heure">${echapper(quand(j.quand))}</span><span class="journal-textes"><strong>${echapper(j.nom)}</strong><span class="note">${echapper(j.chemin)}</span></span></div>`).join("")
+          : '<div class="note">Aucun fichier créé depuis ce PC pour l\'instant.</div>'
+      }
+      <div class="ligne-telephone">
+        <span class="note">${(etatLienTelephone() || {}).code ? "Téléphone : envoi automatique activé (chiffré), réglé dans la Bibliothèque." : "Téléphone : le fichier partagé se fait dans la Bibliothèque, ou activez l'envoi automatique au téléphone."}</span>
+        <button type="button" class="contour" id="btnAccueilTelephone">Fichier du téléphone</button>
+      </div>
+    </section>
+  </div>`;
+  page.innerHTML = html;
+  remplirPiecesAccueil(page, cases);
+
+  page.querySelectorAll("[data-suivi-cree]").forEach((b) => b.addEventListener("click", ouvrirSuivi));
+  brancherBandeauSemaines(page, (p) => {
+    pariteAccueil = p;
+    afficherAccueil();
+  });
+  $("btnAccueilPreparer").addEventListener("click", () => {
+    onglet = "reecriture";
+    afficher();
+  });
+  $("btnAccueilTelephone").addEventListener("click", () => {
+    onglet = "bibliotheque";
+    afficher();
+  });
+  page.querySelectorAll("[data-voir]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const p = paires.find((x) => x.id === Number(b.dataset.voir));
+      if (!p) return;
+      onglet = p.parite;
+      afficher();
+      requestAnimationFrame(() => montrerCase(p.id));
+    })
+  );
+  page.querySelectorAll("[data-preparer]").forEach((b) =>
+    b.addEventListener("click", () => {
+      const p = paires.find((x) => x.id === Number(b.dataset.preparer));
+      if (p) preparerLancementPour(p);
+    })
+  );
+}
