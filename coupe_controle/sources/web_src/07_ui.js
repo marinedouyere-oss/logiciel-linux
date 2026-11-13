@@ -684,9 +684,17 @@ async function calculerResume(strat, bkp) {
 
 const zonesRecap = { generation: 0 };
 
+// V6.9.2 : « Contrôler la coupe » (une seule entrée du menu) ouvre la dernière semaine contrôlée, sinon celle du calendrier.
+let derniereSemaineControle = null;
+function ongletControleParDefaut() {
+  if (derniereSemaineControle && estOngletSemaine(derniereSemaineControle)) return derniereSemaineControle;
+  return pariteDuNumero(semaineIso(new Date())) || "paire";
+}
+
 function afficher() {
+  if (estOngletSemaine()) derniereSemaineControle = onglet;
   majOnglets();
-  document.querySelectorAll(".onglet-btn").forEach((b) => b.classList.toggle("actif", b.dataset.onglet === onglet));
+  document.querySelectorAll(".onglet-btn").forEach((b) => b.classList.toggle("actif", b.dataset.onglet === onglet || (b.dataset.onglet === "controle" && estOngletSemaine())));
   $("pageAccueil").classList.toggle("inactif", onglet !== "accueil");
   $("pageSemaine").classList.toggle("inactif", !estOngletSemaine());
   $("pageRecherche").classList.toggle("inactif", onglet !== "recherche");
@@ -724,13 +732,39 @@ function majOnglets() {
       if (b.dataset.onglet === onglet) change = true;
     }
   });
-  // Les quatre semaines dans l'ordre du calendrier.
-  const tries = [...boutons].sort((a, b) => ordreCalendrier(numeroSemaine(a.dataset.onglet)) - ordreCalendrier(numeroSemaine(b.dataset.onglet)));
-  if (tries.some((b, i) => b !== boutons[i])) {
-    const apres = boutons[0].previousElementSibling;
-    tries.reverse().forEach((b) => apres.after(b));
-  }
   return change;
+}
+
+// V6.9.2 : le bandeau des semaines (comme sur le téléphone) : les quatre semaines dans l'ordre du calendrier, leurs
+// dates, et ce qu'il reste à regarder. Contrôler la coupe : un clic change de semaine ; La semaine : idem pour l'accueil.
+function semainesDuBandeau() {
+  return ONGLETS_SEMAINE.map((parite) => ({ parite, numero: numeroSemaine(parite) })).sort((a, b) => ordreCalendrier(a.numero) - ordreCalendrier(b.numero));
+}
+function datesCourtes(numero) {
+  const lundi = lundiSemaineIso(anneeDeSemaine(numero), numero);
+  const vendredi = new Date(lundi);
+  vendredi.setDate(lundi.getDate() + 4);
+  const mois = (d) => d.toLocaleDateString("fr-FR", { month: "short" }).replace(".", "");
+  return lundi.getMonth() === vendredi.getMonth() ? `${lundi.getDate()} – ${vendredi.getDate()} ${mois(vendredi)}` : `${lundi.getDate()} ${mois(lundi)} – ${vendredi.getDate()} ${mois(vendredi)}`;
+}
+function htmlBandeauSemaines(choisie, pourControle) {
+  const enCours = semaineIso(new Date());
+  return `<nav class="bandeau-semaines" aria-label="Choisir la semaine">${semainesDuBandeau()
+    .map(({ parite, numero }) => {
+      const cases = pairesDeLaSemaine(parite);
+      const aRegarder = cases.reduce((t, p) => t + problemesDeLaCase(p).length, 0);
+      const charges = cases.filter((p) => p.strat).length;
+      const etat = !charges ? '<span class="bandeau-etat vide">vide</span>' : aRegarder ? `<span class="bandeau-etat souci">⚠ ${aRegarder}</span>` : '<span class="bandeau-etat bon">✔</span>';
+      const actif = parite === choisie;
+      return `<button type="button" class="${pourControle ? "onglet-btn " : ""}bandeau-btn${actif ? " actif" : ""}" ${pourControle ? `data-onglet="${parite}"` : `data-parite="${parite}"`} aria-pressed="${actif}">
+        <span class="bandeau-haut"><span class="libelle-onglet">Semaine ${numero}</span>${etat}</span>
+        <span class="bandeau-dates">${echapper(datesCourtes(numero))}${numero === enCours ? " · en cours" : ""}</span>
+      </button>`;
+    })
+    .join("")}</nav>`;
+}
+function brancherBandeauSemaines(page, quand) {
+  page.querySelectorAll(".bandeau-semaines .bandeau-btn").forEach((b) => b.addEventListener("click", () => quand(b.dataset.onglet || b.dataset.parite)));
 }
 
 function construireSemaine(parite) {
@@ -745,6 +779,7 @@ function construireSemaine(parite) {
        <button type="button" class="contour export-semaine" id="btnExporterSemaine" title="Exporter le rapport de la semaine (.xlsx) : un onglet par lancement">Rapport de la semaine (.xlsx)</button>
        <button type="button" id="btnLancerTout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>Lancer tous les contrôles</button>`
     )}
+    ${htmlBandeauSemaines(parite, true)}
     <div class="carte carte-dossier" id="carteDossier"></div>
     <div class="colonnes-controle vue-${vueControle()}" id="colonnesControle">
       <div class="colonne-postes">
@@ -768,6 +803,10 @@ function construireSemaine(parite) {
     </div>
     <div class="carte"><div class="carte-titre">Récapitulatif des lancements</div><div id="zoneRecap"></div></div>
   `;
+  brancherBandeauSemaines(page, (p) => {
+    onglet = p;
+    afficher();
+  });
   majCompteur();
   majRecap();
   remplirCarteDossier(parite);
@@ -3077,9 +3116,9 @@ async function chercherParCotes() {
 
 // ---- Démarrage ----
 
-document.querySelectorAll(".onglet-btn").forEach((b) =>
+document.querySelectorAll(".menu .onglet-btn").forEach((b) =>
   b.addEventListener("click", () => {
-    onglet = b.dataset.onglet;
+    onglet = b.dataset.onglet === "controle" ? ongletControleParDefaut() : b.dataset.onglet;
     afficher();
   })
 );

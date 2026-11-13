@@ -63,7 +63,7 @@ const lister = (dossier, chemin = []) =>
   await page.evaluate(() => (window.showDirectoryPicker = async () => window.racine));
   await page.click("#btnMenuDossier");
   await page.waitForFunction(() => /Lancement/.test(document.querySelector("#menuDossier").innerText));
-  await page.click('.onglet-btn[data-onglet="impaire"]');
+  await page.click('.menu [data-onglet="controle"]').then(() => page.click('.onglet-btn[data-onglet="impaire"]'));
   await page.waitForSelector("#champSemaineControle");
   verifier((await page.innerText("#carteDossier")).includes("Cherchée dans « Lancement »"), "le contrôle dit où il cherche la semaine");
   // Semaine absente : message clair.

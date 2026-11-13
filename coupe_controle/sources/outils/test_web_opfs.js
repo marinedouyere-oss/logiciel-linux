@@ -25,7 +25,7 @@ function lister(dossier, chemin = []) {
     return route.fulfill({ status: 200, body: fs.readFileSync(f), headers: { "content-type": f.endsWith(".html") ? "text/html; charset=utf-8" : "application/octet-stream" } });
   });
   await page.goto(base + "/index.html");
-  await page.click('.onglet-btn[data-onglet="paire"]');
+  await page.click('.menu [data-onglet="controle"]').then(() => page.click('.onglet-btn[data-onglet="paire"]'));
   await page.waitForSelector("#btnChoisirDossier");
   // Copie de l'arborescence dans l'OPFS, puis le sélecteur de dossier renvoie ce vrai dossier.
   await page.evaluate(async () => {

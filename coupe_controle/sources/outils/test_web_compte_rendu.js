@@ -48,7 +48,7 @@ const lister = (d, c = []) =>
   await page.click("#btnMenuDossier");
   await page.waitForFunction(() => /Lancement/.test(document.querySelector("#menuDossier").innerText));
   const parite = Number(semaine) % 2 === 0 ? "paire" : "impaire";
-  await page.click(`.onglet-btn[data-onglet="${parite}"]`);
+  await page.click('.menu [data-onglet="controle"]').then(() => page.click(`.onglet-btn[data-onglet="${parite}"]`));
   await page.waitForSelector("#champSemaineControle");
   await page.fill("#champSemaineControle", String(semaine));
   await page.click("#btnOuvrirSemaine");

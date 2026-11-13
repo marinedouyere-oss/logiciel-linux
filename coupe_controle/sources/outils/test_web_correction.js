@@ -93,7 +93,7 @@ async function scanner(page) {
     return route.fulfill({ status: 200, body: fs.readFileSync(fichier), headers: { "content-type": type } });
   });
   await page.goto(base + "/index.html");
-  await page.click('.onglet-btn[data-onglet="paire"]');
+  await page.click('.menu [data-onglet="controle"]').then(() => page.click('.onglet-btn[data-onglet="paire"]'));
   await page.waitForSelector("#btnChoisirDossier");
 
   let texte = await scanner(page);

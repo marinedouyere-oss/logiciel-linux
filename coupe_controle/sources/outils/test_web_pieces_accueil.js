@@ -14,11 +14,11 @@ let echecs = 0; const verifier = (ok, t) => { console.log(`${ok ? "OK  " : "ÉCH
   for (const f of lister(semaine46)) await page.evaluate(async ({ chemin, nom, b64 }) => { let d = window.racine; for (const c of chemin) d = await d.getDirectoryHandle(c, { create: true }); const w = await (await d.getFileHandle(nom, { create: true })).createWritable(); await w.write(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))); await w.close(); }, { chemin: ["2026", "Semaine 46", ...f.chemin], nom: f.nom, b64: fs.readFileSync(f.source).toString("base64") });
   await page.evaluate(() => (window.showDirectoryPicker = async () => window.racine));
   await page.click("#btnMenuDossier");
-  await page.click('.onglet-btn[data-onglet="paire"]');
+  await page.click('.menu [data-onglet="controle"]').then(() => page.click('.onglet-btn[data-onglet="paire"]'));
   await page.fill("#champSemaineControle", "46"); await page.click("#btnOuvrirSemaine");
   await page.waitForFunction(() => /gardé\(s\) dans la bibliothèque|Aucun lancement|impossible/.test((document.querySelector("#carteDossier") || {}).innerText || ""), null, { timeout: 300000 });
   await page.click('.onglet-btn[data-onglet="accueil"]');
-  await page.evaluate(() => { const b = [...document.querySelectorAll(".choix-semaine button")].find((x) => x.textContent === "S46"); if (b) b.click(); });
+  await page.evaluate(() => { const b = [...document.querySelectorAll(".bandeau-semaines .bandeau-btn")].find((x) => x.querySelector(".libelle-onglet").textContent === "Semaine 46"); if (b) b.click(); }); // V6.9.2 : bandeau des semaines
   await page.waitForFunction(() => { const t = document.querySelector("#tuilePiecesAccueil"); return t && t.textContent !== "…"; }, null, { timeout: 120000 });
   const total = await page.textContent("#tuilePiecesAccueil");
   const parCase = await page.$$eval("[data-pieces]", (l) => l.map((x) => x.textContent));

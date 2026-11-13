@@ -214,13 +214,16 @@ const LANS_S47 = [
     afficher();
   });
   const texte = await page.locator("#pageSuivi").innerText();
-  verifier(/Suivi de production/.test(texte) && /Semaine 47/.test(texte) && /Semaine 48/.test(texte), "écran : semaines 47 et 48");
+  verifier(/Suivi de production/.test(texte) && /Semaine 47/.test(texte) && /S48/.test(texte), "écran : semaine 47 affichée, 48 dans le bandeau");
   verifier(texte.includes(`${Math.round((100 * piecesRetirees) / 165)} %`) && /Pas dans cette extraction/i.test(texte), "écran : pourcentage de LAN264702START, « Pas dans cette extraction » pour la 48");
   // V6.9 : l'explication est derrière le bouton « ? » (cachée, mais dans la page) ; le bouton l'ouvre.
   verifier(/un CVC qui n'y est plus = pièce faite/.test(await page.locator("#pageSuivi").textContent()), "écran : la règle de l'atelier est écrite (derrière « ? »)");
   await page.click('#pageSuivi [data-aide="sv-avancement"]');
   verifier(/un CVC qui n'y est plus = pièce faite/.test(await page.locator("#pageSuivi").innerText()), "« ? » : la règle de l'atelier s'affiche");
   verifier(/depuis le 07\/11/.test(texte), "écran : « +N pièces depuis le 07/11 »");
+  // V6.9.2 : une semaine à la fois (celle en fabrication au départ) ; « Toutes » pour compter toutes les barres.
+  verifier((await page.locator("#pageSuivi [data-sv-sem]").count()) >= 3 && /S47/.test(await page.locator("#pageSuivi .sv-bandeau .bandeau-btn.actif").innerText()), "bandeau des semaines : la semaine en fabrication (S47) choisie au départ");
+  await page.click('#pageSuivi [data-sv-sem="tout"]');
   const barres = await page.locator("#pageSuivi [data-sv-lan] .sv-barre").count();
   const lignesHors = await page.evaluate(() => SUIVI.calculer().semaines.flatMap((x) => x.lancements).filter((l) => l.nom === "Pas dans un lancement").length);
   verifier(barres === lancements.length + lignesHors, `une barre par lancement (${barres}, dont ${lignesHors} « Pas dans un lancement »)`);

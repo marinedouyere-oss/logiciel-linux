@@ -80,7 +80,7 @@ async function attendreFin(page, maxMs = 600000) {
     return route.fulfill({ status: 200, body: fs.readFileSync(fichier), headers: { "content-type": type } });
   });
   await page.goto(base + "/index.html");
-  await page.click('.onglet-btn[data-onglet="paire"]');
+  await page.click('.menu [data-onglet="controle"]').then(() => page.click('.onglet-btn[data-onglet="paire"]'));
   await page.waitForSelector("#btnChoisirDossier");
   await page.click("#btnChoisirDossier");
   await page.waitForSelector("#btnScanner:not([disabled])");
@@ -154,11 +154,12 @@ async function attendreFin(page, maxMs = 600000) {
   verifier(r.includes("Cochez au moins une base"), "recherche : aucune base cochée");
   await page.evaluate(() => document.querySelectorAll("#basesRecherche input").forEach((c) => (c.checked = true)));
   await page.screenshot({ path: `${captures}/web_recherche_bases.png`, fullPage: true });
-  await page.click('.onglet-btn[data-onglet="paire"]');
+  await page.click('.menu [data-onglet="controle"]').then(() => page.click('.onglet-btn[data-onglet="paire"]'));
 
   // Rechargement : le fichier Diakonos est retrouvé (V6.1 : dans l'onglet de la semaine 46, quatre semaines).
   await page.reload();
-  await page.click('.onglet-btn:has-text("Semaine 46")');
+  await page.click('.menu [data-onglet="controle"]'); // V6.9.2 : les semaines dans le bandeau
+  await page.click('.bandeau-semaines .onglet-btn:has-text("Semaine 46")');
   await page.waitForSelector("#btnChoisirDossier");
   await page.waitForFunction(() => (document.querySelector(".zone-diakonos") || { innerText: "" }).innerText.includes("Comparé à"), null, { timeout: 60000 });
   verifier((await page.innerText(".zone-diakonos")).includes("3 pièce(s) Diakonos dans aucun lancement"), "retrouvé après rechargement");

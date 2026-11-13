@@ -328,6 +328,20 @@ collé, stock à droite, bibliothèque, recherche, pas de défilement de côté 
   faits sur une ligne « Pas vérifié : … », seuls les problèmes en entier.
 - La semaine : chiffres en grandes tuiles (2 par ligne). « Bibliothèque des semaines » s'appelle « Lien avec le PC ».
 
+**V6.9.2 : bandeau des semaines partout** (retour : « le bandeau semaine par semaine, c'est pas mal » ; « la liste
+des semaines du suivi est mal organisée ») :
+- PC : le menu n'a plus les quatre entrées « Semaine NN » ; une seule entrée « Contrôler la coupe »
+  (`data-onglet="controle"`, `ongletControleParDefaut` : la dernière semaine contrôlée, sinon celle du calendrier).
+  Les quatre semaines sont dans un bandeau (`htmlBandeauSemaines`, `brancherBandeauSemaines` dans `07_ui.js`) en haut
+  de La semaine et de Contrôler la coupe : semaine, dates, « ⚠ n » à regarder ou « ✔ », « vide ». Dans Contrôler la
+  coupe, les boutons du bandeau gardent `.onglet-btn[data-onglet=paire…]` (les tests cliquent d'abord
+  `.menu [data-onglet="controle"]`).
+- Suivi (PC et téléphone) : l'avancement par lancement a son bandeau des semaines (S40… S48, % et état de chacune,
+  `htmlBandeauSuivi`, `etat.semaineSuivi` ; téléphone `bandeauSuivi`, `semaineSuivi`) ; une seule semaine affichée,
+  au départ celle en fabrication ; « Toutes » les remet les unes sous les autres.
+- Téléphone : les bandeaux de semaines (Semaine, Contrôle, Suivi) vont de la plus récente à la plus ancienne
+  (demande : « logique de semaines décroissantes ») ; le bandeau ne défile que si la semaine choisie dépasse à droite.
+
 ### Semaine retirée puis rescannée (V6.7.4, `lancementsActifs` dans `06b_bibliotheque.js`)
 
 « Retirer la semaine » vide ses lancements et pose `supprimeeLe` (date du retrait), gardée pour la fusion entre PC :

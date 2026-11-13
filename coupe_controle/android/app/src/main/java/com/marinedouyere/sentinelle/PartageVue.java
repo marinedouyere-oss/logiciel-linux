@@ -756,13 +756,12 @@ final class PartageVue {
         return b;
     }
 
-    /** V6.9.1 : les semaines en pastilles (la plus ancienne à gauche), celle choisie en bordeaux, comme sur le PC. */
+    /** V6.9.2 : les semaines en pastilles, la plus récente à gauche (ordre décroissant), celle choisie en bordeaux. */
     private View pastillesSemaines(FichierPartage.Semaine choisie) {
         android.widget.HorizontalScrollView defile = new android.widget.HorizontalScrollView(activite);
         defile.setHorizontalScrollBarEnabled(false);
         LinearLayout r = ui.rangee();
-        List<FichierPartage.Semaine> liste = new ArrayList<>(donnees.semaines);
-        java.util.Collections.reverse(liste); // la plus ancienne d'abord
+        List<FichierPartage.Semaine> liste = donnees.semaines; // la plus récente d'abord
         View aMontrer = null;
         for (FichierPartage.Semaine s : liste) {
             boolean actif = s == choisie;
@@ -773,7 +772,10 @@ final class PartageVue {
         if (liste.size() > 4) r.addView(pastille("Toutes ▾", "Choisir la semaine", false, "ok", v -> listeDesSemaines()), margeDroite());
         defile.addView(r);
         final View cible = aMontrer;
-        if (cible != null) defile.post(() -> defile.scrollTo(Math.max(0, cible.getRight() - defile.getWidth() + ui.dp(60)), 0));
+        // Défile seulement si la semaine choisie dépasse à droite (la plus récente est à gauche).
+        if (cible != null) defile.post(() -> {
+            if (cible.getRight() > defile.getWidth()) defile.scrollTo(cible.getRight() - defile.getWidth() + ui.dp(40), 0);
+        });
         return defile;
     }
 
@@ -1378,6 +1380,55 @@ final class PartageVue {
         return defile;
     }
 
+    /** V6.9.2 : la semaine affichée dans l'avancement (« tout » : toutes). */
+    private String semaineSuivi;
+
+    private static String cleSuivi(FichierPartage.SemaineSuivi sem) {
+        return sem.annee + "-" + sem.semaine;
+    }
+
+    private String semaineSuiviChoisie(FichierPartage.Suivi s) {
+        if ("tout".equals(semaineSuivi)) return "tout";
+        for (FichierPartage.SemaineSuivi sem : s.semaines) if (cleSuivi(sem).equals(semaineSuivi)) return semaineSuivi;
+        int semFab = s.semaineFab > 0 ? s.semaineFab : s.semaine;
+        int anFab = s.semaineFab > 0 ? s.anneeFab : s.annee;
+        for (FichierPartage.SemaineSuivi sem : s.semaines) if (sem.semaine == semFab && sem.annee == anFab) return cleSuivi(sem);
+        return s.semaines.isEmpty() ? "tout" : cleSuivi(s.semaines.get(s.semaines.size() - 1));
+    }
+
+    /** « S46 · 58 % » pour chaque semaine (bord de la couleur de l'état), puis « Toutes ». */
+    private View bandeauSuivi(FichierPartage.Suivi s, String choix) {
+        android.widget.HorizontalScrollView defile = new android.widget.HorizontalScrollView(activite);
+        defile.setHorizontalScrollBarEnabled(false);
+        LinearLayout r = ui.rangee();
+        View aMontrer = null;
+        // V6.9.2 : la plus récente à gauche (ordre décroissant), comme les autres bandeaux du téléphone.
+        List<FichierPartage.SemaineSuivi> decroissantes = new ArrayList<>(s.semaines);
+        java.util.Collections.reverse(decroissantes);
+        for (FichierPartage.SemaineSuivi sem : decroissantes) {
+            Integer p = pctSuivi(sem.f, sem.r);
+            String niveau = "retard".equals(sem.e) ? "alerte" : "en_cours".equals(sem.e) ? "attention" : "termine".equals(sem.e) ? "ok" : "info";
+            boolean actif = cleSuivi(sem).equals(choix);
+            View b = pastille("S" + sem.semaine + (p == null ? "" : " · " + p + " %"), "Semaine " + sem.semaine + " du suivi", actif, niveau, v -> {
+                semaineSuivi = cleSuivi(sem);
+                construire();
+            });
+            if (actif) aMontrer = b;
+            r.addView(b, margeDroite());
+        }
+        r.addView(pastille("Toutes", "Toutes les semaines du suivi", "tout".equals(choix), "ok", v -> {
+            semaineSuivi = "tout";
+            construire();
+        }), margeDroite());
+        defile.addView(r);
+        final View cible = aMontrer;
+        // Défile seulement si la semaine choisie dépasse à droite (la plus récente est à gauche).
+        if (cible != null) defile.post(() -> {
+            if (cible.getRight() > defile.getWidth()) defile.scrollTo(cible.getRight() - defile.getWidth() + ui.dp(40), 0);
+        });
+        return defile;
+    }
+
     private static double nombreSuivi(String t) {
         try {
             return Double.parseDouble(t);
@@ -1569,8 +1620,14 @@ final class PartageVue {
             racine.addView(aideAvancement, ui.marges(4, 4));
             if (s.semaines.isEmpty())
                 racine.addView(ui.texte("Aucun lancement dans la bibliothèque des semaines autour de cette extraction.", 14, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 4));
-            for (FichierPartage.SemaineSuivi sem : s.semaines) racine.addView(carteSemaineSuivi(sem, s));
-            if (s.anciennes > 0)
+            // V6.9.2 : les semaines en bandeau (une seule affichée, au départ celle en fabrication) ; « Toutes » les remet.
+            String choix = semaineSuiviChoisie(s);
+            if (!s.semaines.isEmpty()) racine.addView(bandeauSuivi(s, choix), ui.marges(0, 6));
+            for (int k = s.semaines.size() - 1; k >= 0; k--) {
+                FichierPartage.SemaineSuivi sem = s.semaines.get(k);
+                if ("tout".equals(choix) || cleSuivi(sem).equals(choix)) racine.addView(carteSemaineSuivi(sem, s));
+            }
+            if (s.anciennes > 0 && "tout".equals(choix))
                 racine.addView(ui.texte(s.anciennes + (s.anciennes > 1 ? " semaines plus anciennes : finies." : " semaine plus ancienne : finie."), 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 6));
         }
     }

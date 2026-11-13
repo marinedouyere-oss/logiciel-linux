@@ -260,14 +260,11 @@ function afficherAccueil() {
   for (const p of cases) if (!p.strat && !caseAjoutee(p)) aRegarder.push({ p, nom: titreCase(p), texte: "pas encore de lancement", titre: `${titreCase(p)} — pas encore de lancement`, genre: "vide" });
   const nbProblemes = aRegarder.filter((a) => a.genre === "souci").length;
 
-  const semaines = ONGLETS_SEMAINE.map((x) => ({ parite: x, numero: numeroSemaine(x) })).sort((a, b) => ordreCalendrier(a.numero) - ordreCalendrier(b.numero));
-  const actions = `<div class="choix-semaine" role="group" aria-label="Choisir la semaine">${semaines
-    .map((s) => `<button type="button" data-parite="${s.parite}" aria-pressed="${s.parite === parite}" class="${s.parite === parite ? "actif" : ""}">S${s.numero}</button>`)
-    .join("")}</div>
-    <button type="button" id="btnAccueilPreparer">+ Préparer un lancement</button>`;
+  const actions = `<button type="button" id="btnAccueilPreparer">+ Préparer un lancement</button>`;
 
   const tuile = (valeur, legende, genre = "") => `<div class="tuile ${genre}"><span class="tuile-legende">${legende}</span><span class="tuile-valeur">${valeur}</span></div>`;
   let html = entetePage(enCours ? "Semaine en cours" : "Semaine", `Semaine ${numero} · ${anneeDeSemaine(numero)}`, datesSemaine(numero), actions);
+  html += htmlBandeauSemaines(parite, false);
   html += `<section class="tuiles" aria-label="Avancement de la semaine">
     ${tuile(`${avecLancement.length} sur ${cases.length}${crees.length ? ` <span class="tuile-plus">+ ${crees.length} hors dossiers (bibliothèque)</span>` : ""}`, "Lancements chargés")}
     ${tuile('<span id="tuilePiecesAccueil">…</span>', "Pièces")}
@@ -345,12 +342,10 @@ function afficherAccueil() {
   remplirPiecesAccueil(page, cases);
 
   page.querySelectorAll("[data-suivi-cree]").forEach((b) => b.addEventListener("click", ouvrirSuivi));
-  page.querySelectorAll(".choix-semaine button").forEach((b) =>
-    b.addEventListener("click", () => {
-      pariteAccueil = b.dataset.parite;
-      afficherAccueil();
-    })
-  );
+  brancherBandeauSemaines(page, (p) => {
+    pariteAccueil = p;
+    afficherAccueil();
+  });
   $("btnAccueilPreparer").addEventListener("click", () => {
     onglet = "reecriture";
     afficher();

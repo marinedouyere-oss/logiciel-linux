@@ -93,7 +93,7 @@ async function attendreFin(page, maxMs = 600000) {
   const telecharges = [];
   page.on("download", (d) => telecharges.push(d.suggestedFilename()));
   await page.goto(base + "/index.html");
-  await page.click('.onglet-btn[data-onglet="paire"]');
+  await page.click('.menu [data-onglet="controle"]').then(() => page.click('.onglet-btn[data-onglet="paire"]'));
   await page.waitForSelector("#btnChoisirDossier");
 
   // ---- Semaine 44 (onglet pair) ----
@@ -105,7 +105,7 @@ async function attendreFin(page, maxMs = 600000) {
   await page.waitForTimeout(500);
   let texte = await attendreFin(page);
   console.log(`S44 scannée et contrôlée en ${((Date.now() - t0) / 1000).toFixed(1)} s`);
-  const onglets = await page.$$eval('.onglet-btn[data-onglet="paire"], .onglet-btn[data-onglet="impaire"]', (bs) => bs.map((b) => b.textContent.trim()));
+  const onglets = await page.$$eval('.onglet-btn[data-onglet="paire"], .onglet-btn[data-onglet="impaire"]', (bs) => bs.map((b) => (b.querySelector(".libelle-onglet") || b).textContent.trim()));
   verifier(onglets[0] === "Semaine 44", `onglet pair = « ${onglets[0]} »`);
   verifier(texte.includes("✔ Casse : LAN264301CASSE.xlsx + .bkp"), "casse 43 rangée en semaine 44");
   verifier(texte.includes("✔ Agglo 1er tour : LAN264401STRAT.xlsx + coupe + .bkp"), "agglo 1er tour avec coupe et .bkp");
@@ -173,14 +173,14 @@ for r in wb["Rapport"].iter_rows(values_only=True):
   await page.screenshot({ path: `${captures}/web_s44.png`, fullPage: true });
 
   // ---- Semaine 45 (onglet impair) ----
-  await page.click('.onglet-btn[data-onglet="impaire"]');
+  await page.click('.menu [data-onglet="controle"]').then(() => page.click('.onglet-btn[data-onglet="impaire"]'));
   await page.evaluate(() => (window.__dossierSuivant = "s45"));
   await page.click("#btnChoisirDossier");
   await page.waitForSelector("#btnScanner:not([disabled])");
   await page.click("#btnScanner");
   await page.waitForTimeout(500);
   texte = await attendreFin(page);
-  const onglets2 = await page.$$eval('.onglet-btn[data-onglet="paire"], .onglet-btn[data-onglet="impaire"]', (bs) => bs.map((b) => b.textContent.trim()));
+  const onglets2 = await page.$$eval('.onglet-btn[data-onglet="paire"], .onglet-btn[data-onglet="impaire"]', (bs) => bs.map((b) => (b.querySelector(".libelle-onglet") || b).textContent.trim()));
   verifier(onglets2[1] === "Semaine 45", `onglet impair = « ${onglets2[1]} »`);
   verifier(texte.includes("✔ Casse : LAN2644CASSE.xlsx + .bkp"), "casse 44 rangée en semaine 45");
   verifier(texte.includes("LAN264502STRA backup.bkp"), "bkp au nom approché rattaché");
@@ -268,7 +268,7 @@ for r in wb.worksheets[0].iter_rows(values_only=True):
 
   // ---- Rechargement : tout est retrouvé ----
   await page.reload();
-  await page.click('.onglet-btn[data-onglet="paire"]');
+  await page.click('.menu [data-onglet="controle"]').then(() => page.click('.onglet-btn[data-onglet="paire"]'));
   await page.waitForSelector("#btnChoisirDossier");
   await page.waitForTimeout(3000);
   texte = await page.innerText("main");

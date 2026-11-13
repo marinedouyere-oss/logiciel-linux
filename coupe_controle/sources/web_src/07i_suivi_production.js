@@ -1851,12 +1851,38 @@ const SUIVI = (() => {
     ecrireLocal(CLE_PANNEAU, k);
     afficher();
   }
+  // V6.9.2 : les semaines en bandeau (comme le téléphone) : une seule affichée (au départ celle en fabrication),
+  // chacune avec son pourcentage et son état ; « Toutes » les remet les unes sous les autres.
+  const cleSemaineSuivi = (s) => `${s.annee}-${s.semaine}`;
+  function semaineSuiviChoisie(resume) {
+    const ss = resume.semaines;
+    if (etat.semaineSuivi === "tout" || ss.some((s) => cleSemaineSuivi(s) === etat.semaineSuivi)) return etat.semaineSuivi;
+    const fab = resume.fabrication || { semaine: resume.semaine, annee: resume.annee };
+    const enFab = ss.find((s) => s.annee === fab.annee && s.semaine === fab.semaine);
+    return enFab ? cleSemaineSuivi(enFab) : ss.length ? cleSemaineSuivi(ss[ss.length - 1]) : "tout";
+  }
+  function htmlBandeauSuivi(resume, choix) {
+    const fab = resume.fabrication || { semaine: resume.semaine, annee: resume.annee };
+    const puce = (s) => {
+      const p = pct(s.f, s.r);
+      const courante = s.annee === fab.annee && s.semaine === fab.semaine;
+      const etatTxt = p === null ? LIBELLES_ETAT[s.e] : `${p} %`;
+      return `<button type="button" class="bandeau-btn${choix === cleSemaineSuivi(s) ? " actif" : ""}" data-sv-sem="${cleSemaineSuivi(s)}" aria-pressed="${choix === cleSemaineSuivi(s)}">
+        <span class="bandeau-haut"><span class="libelle-onglet" title="Semaine ${s.semaine}">S${s.semaine}</span><span class="bandeau-etat sv-e-${s.e}">${echapper(etatTxt)}</span></span>
+        <span class="bandeau-dates">${courante ? "en fabrication" : echapper(LIBELLES_ETAT[s.e] || "")} · ${fmt(s.r)} à faire</span>
+      </button>`;
+    };
+    return `<nav class="bandeau-semaines sv-bandeau" aria-label="Semaines du suivi">${resume.semaines.map(puce).join("")}
+      <button type="button" class="bandeau-btn bandeau-tout${choix === "tout" ? " actif" : ""}" data-sv-sem="tout" aria-pressed="${choix === "tout"}"><span class="bandeau-haut"><span class="libelle-onglet">Toutes</span></span><span class="bandeau-dates">les unes sous les autres</span></button></nav>`;
+  }
   function htmlAvancement(resume) {
-    return `<div class="carte" id="svAvancement"><div class="carte-titre">Avancement par lancement${boutonAide("sv-avancement")}</div>
+    const choix = semaineSuiviChoisie(resume);
+    const montrees = choix === "tout" ? resume.semaines : resume.semaines.filter((s) => cleSemaineSuivi(s) === choix);
+    return `${resume.semaines.length ? htmlBandeauSuivi(resume, choix) : ""}<div class="carte" id="svAvancement"><div class="carte-titre">Avancement par lancement${boutonAide("sv-avancement")}</div>
         ${texteAide("sv-avancement", "L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Une pièce relancée (casse, retard) compte dans le lancement le plus récent, et elle est déduite du lancement d'origine. Un clic sur un lancement : les commandes encore à faire.")}
         <div class="sv-legende"><span><i class="sv-l-en_cours"></i>En cours</span><span><i class="sv-l-termine"></i>Terminé</span><span><i class="sv-l-retard"></i>En retard (semaine passée)</span><span><i class="sv-l-attente"></i>Pas dans cette extraction</span></div>
-        ${resume.semaines.length ? resume.semaines.map((s) => htmlSemaine(s, resume)).join("") : '<div class="note">Aucun lancement dans la bibliothèque des semaines autour de cette extraction : scannez les semaines dans « Contrôler la coupe ».</div>'}
-        ${resume.anciennes ? `<div class="note">${pluriel(resume.anciennes, "semaine plus ancienne : finie", "semaines plus anciennes : finies")}.</div>` : ""}</div>`;
+        ${resume.semaines.length ? montrees.map((s) => htmlSemaine(s, resume)).join("") : '<div class="note">Aucun lancement dans la bibliothèque des semaines autour de cette extraction : scannez les semaines dans « Contrôler la coupe ».</div>'}
+        ${resume.anciennes && choix === "tout" ? `<div class="note">${pluriel(resume.anciennes, "semaine plus ancienne : finie", "semaines plus anciennes : finies")}.</div>` : ""}</div>`;
   }
   function htmlOngletsSuivi(resume, local) {
     const nbHors = local && etat.horsDetail ? etat.horsDetail.reduce((t, x) => t + x.n, 0) : (resume.hors || []).reduce((t, h) => t + (Number(h[1]) || 0), 0);
@@ -1895,6 +1921,12 @@ const SUIVI = (() => {
   function brancher(page) {
     const q = (id) => page.querySelector(`#${id}`);
     page.querySelectorAll("[data-sv-panneau]").forEach((b) => b.addEventListener("click", () => choisirPanneau(b.dataset.svPanneau)));
+    page.querySelectorAll("[data-sv-sem]").forEach((b) =>
+      b.addEventListener("click", () => {
+        etat.semaineSuivi = b.dataset.svSem;
+        afficher();
+      })
+    );
     if (q("svReinitValidations"))
       q("svReinitValidations").addEventListener("click", () => {
         if (window.confirm("Remettre à zéro le suivi en direct ? Les pièces reviendront à l'état de la dernière extraction (les nouvelles validations seront de nouveau comptées).") && typeof reinitialiserValidations === "function") reinitialiserValidations();

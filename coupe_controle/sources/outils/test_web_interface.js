@@ -61,11 +61,13 @@ const lister = (dossier, chemin = []) =>
   await page.evaluate(() => (window.showDirectoryPicker = async () => window.racine));
   await page.click("#btnMenuDossier");
   await page.waitForFunction(() => /Lancement/.test(document.querySelector("#menuDossier").innerText));
+  // V6.9.2 : une seule entrée « Contrôler la coupe » ; les semaines dans le bandeau en haut de la page.
+  await page.click('.menu [data-onglet="controle"]');
   const onglet47 = await page.evaluate(() => {
-    const b = [...document.querySelectorAll(".onglet-btn")].find((x) => /Semaine (46|47|48)/.test(x.textContent));
+    const b = [...document.querySelectorAll(".bandeau-semaines .onglet-btn")].find((x) => /Semaine (46|47|48)/.test(x.textContent));
     return b ? b.dataset.onglet : "paire";
   });
-  await page.click(`.onglet-btn[data-onglet="${onglet47}"]`);
+  await page.click(`.bandeau-semaines .onglet-btn[data-onglet="${onglet47}"]`);
   await page.fill("#champSemaineControle", "47");
   await page.click("#btnOuvrirSemaine");
   await page.waitForFunction(() => /Dossier ouvert : Semaine 47/.test(document.querySelector("#carteDossier").innerText) && /gardé\(s\) dans la bibliothèque|Aucun lancement/.test(document.querySelector("#carteDossier").innerText), null, { timeout: 600000 });
@@ -191,8 +193,8 @@ const lister = (dossier, chemin = []) =>
 
   // 8. Écran étroit (1000 px) : rien ne dépasse sur le côté.
   await page.setViewportSize({ width: 1000, height: 800 });
-  for (const o of ["accueil", onglet47, "suivi", "stock", "bibliotheque", "recherche"]) {
-    await page.click(`.onglet-btn[data-onglet="${o}"]`);
+  for (const o of ["accueil", "controle", "suivi", "stock", "bibliotheque", "recherche"]) {
+    await page.click(`.menu .onglet-btn[data-onglet="${o}"]`);
     await page.waitForTimeout(300);
     const deborde = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     verifier(deborde <= 1, `1000 px de large, « ${o} » : pas de défilement de côté (${deborde})`);

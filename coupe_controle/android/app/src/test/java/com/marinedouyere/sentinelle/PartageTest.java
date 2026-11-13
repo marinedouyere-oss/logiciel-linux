@@ -601,6 +601,12 @@ public class PartageTest {
 
         MainActivity a = avecFichier(gzip(SUIVI));
         onglet(a, MainActivity.ONGLET_SUIVI);
+        // V6.9.2 : bandeau des semaines (une seule affichée au départ) ; « Toutes » pour tout voir.
+        View toutes = vueAvecDescription(a.getWindow().getDecorView(), "Toutes les semaines du suivi");
+        assertNotNull(toutes);
+        assertNotNull(vueAvecDescription(a.getWindow().getDecorView(), "Semaine 47 du suivi"));
+        toutes.performClick();
+        ShadowLooper.idleMainLooper();
         String texte = ecran(a);
         assertTrue(texte, texte.contains("Dernière extraction : 10/11/2026 (semaine 46)"));
         assertTrue(texte, texte.contains("Semaine 47"));

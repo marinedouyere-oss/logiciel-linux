@@ -160,6 +160,7 @@ const LIGNES = [
   verifier(/ajoutées à la main dans un lancement existant · 5/.test(rajouts) && /CVCTEST003/.test(rajouts), "liste des pièces ajoutées à la main affichée");
   if (sortie) await page.locator("#svHors").screenshot({ path: path.join(sortie, "hors_lancement_ajout.png") });
   await page.click('[data-sv-panneau="lancements"]');
+  await page.click('[data-sv-sem="tout"]'); // V6.9.2 : toutes les semaines du suivi
   const ligneLan = await page.locator('[data-sv-lan] .sv-ligne', { hasText: "LAN264801START" }).first().innerText();
   verifier(/dont 5 pièces ajoutées à la main/.test(ligneLan), "barre du lancement : « dont 5 pièces ajoutées à la main »");
   await page.click('[data-sv-panneau="hors"]');
@@ -312,15 +313,17 @@ const LIGNES = [
   // V6.8.2 : le lancement créé se voit dans « La semaine » (S48) et dans « Contrôler la coupe → Semaine 48 ».
   await page.click('[data-onglet="accueil"]');
   await page.waitForTimeout(200);
-  const b48 = await page.$$eval(".choix-semaine button", (bs) => bs.map((b) => b.textContent.trim()));
-  if (b48.includes("S48")) {
-    await page.click('.choix-semaine button:text-is("S48")');
+  // V6.9.2 : le bandeau des semaines en haut de « La semaine ».
+  const b48 = await page.$$eval(".bandeau-semaines .bandeau-btn .libelle-onglet", (bs) => bs.map((b) => b.textContent.trim()));
+  if (b48.includes("Semaine 48")) {
+    await page.click('.bandeau-semaines .bandeau-btn:has(.libelle-onglet:text-is("Semaine 48"))');
     await page.waitForTimeout(200);
     const acc = await page.locator("#pageAccueil").innerText();
     verifier(/LAN2648TRIGANO/.test(acc) && /créé dans Sentinelle/i.test(acc) && /\+ 2 hors dossiers/.test(acc), "« La semaine » S48 : LAN2648TRIGANO affiché (créé dans Sentinelle), + 2 hors dossiers (avec LAN264801START d'essai)");
-    const onglet48 = await page.evaluate(() => [...document.querySelectorAll(".onglet-btn")].find((b) => /Semaine 48/.test(b.textContent))?.dataset.onglet);
+    await page.click('.menu [data-onglet="controle"]');
+    const onglet48 = await page.evaluate(() => [...document.querySelectorAll(".bandeau-semaines .onglet-btn")].find((b) => /Semaine 48/.test(b.textContent))?.dataset.onglet);
     if (onglet48) {
-      await page.click(`[data-onglet="${onglet48}"]`);
+      await page.click(`.bandeau-semaines [data-onglet="${onglet48}"]`);
       await page.waitForTimeout(300);
       const postes = await page.locator("#listePostes").innerText();
       verifier(/LAN2648TRIGANO · 15 pièces/.test(postes) && /créé dans Sentinelle/.test(postes), "« Semaine 48 » : LAN2648TRIGANO dans la liste des postes");
@@ -331,7 +334,7 @@ const LIGNES = [
     } else verifier(false, "onglet Semaine 48 introuvable");
     await page.click('[data-onglet="suivi"]');
     await page.waitForSelector("#svHors");
-  } else console.log(`(semaine 48 pas dans les onglets de ce jour : ${b48.join(" ")})`);
+  } else console.log(`(semaine 48 pas dans le bandeau de ce jour : ${b48.join(" ")})`);
   // Retirer : elle revient dans les lignes collées.
   await page.click(`[data-sv-manuel-retirer="2026-48|LAN2648TRIGANO"][data-k="${cle10}"]`);
   await page.waitForFunction(() => !(bibliotheque.semaines.get("2026-48").lancements || []).some((l) => l.nom === "LAN2648TRIGANO"), null, { timeout: 10000 });

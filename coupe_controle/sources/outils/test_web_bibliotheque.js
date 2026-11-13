@@ -115,7 +115,7 @@ let horloge = 1793000000000;
       return route.fulfill({ status: 200, body: fs.readFileSync(fichier), headers: { "content-type": type } });
     });
     await page.goto(base + "/index.html");
-    await page.click('.onglet-btn[data-onglet="paire"]');
+    await page.click('.menu [data-onglet="controle"]').then(() => page.click('.onglet-btn[data-onglet="paire"]'));
     await page.waitForSelector("#btnChoisirDossier");
     return { contexte, page };
   }
@@ -158,7 +158,7 @@ let horloge = 1793000000000;
   await A.page.screenshot({ path: `${captures}/web_bibliotheque_A.png`, fullPage: true });
 
   // ---- Poste A : scan de la semaine 46, la casse est comparée à la bibliothèque ----
-  await A.page.click('.onglet-btn[data-onglet="paire"]');
+  await A.page.click('.menu [data-onglet="controle"]').then(() => A.page.click('.onglet-btn[data-onglet="paire"]'));
   await choisir(A.page, "s46");
   await A.page.click("#btnChoisirDossier");
   await A.page.waitForSelector("#btnScanner:not([disabled])");
@@ -214,7 +214,7 @@ let horloge = 1793000000000;
 
   // A, rechargé : la bibliothèque est gardée dans le navigateur.
   await A.page.reload();
-  await A.page.click('.onglet-btn[data-onglet="paire"]');
+  await A.page.click('.menu [data-onglet="controle"]').then(() => A.page.click('.onglet-btn[data-onglet="paire"]'));
   await A.page.waitForSelector("#btnChoisirDossier");
   await ongletBibliotheque(A.page);
   const apres = await semainesAffichees(A.page);

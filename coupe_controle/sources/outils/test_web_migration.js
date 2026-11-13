@@ -77,6 +77,7 @@ function lister(dossier, chemin = []) {
     return route.fulfill({ status: 200, body: fs.readFileSync(fichier), headers: { "content-type": type } });
   });
   const scanner = async () => {
+    if (await page.$('.menu [data-onglet="controle"]')) await page.click('.menu [data-onglet="controle"]'); // V6.9.2 : une seule entrée, les semaines dans le bandeau (pas dans l'ancienne version)
     const ongletPair = await page.$('.onglet-btn[data-onglet="paire"]');
     if (ongletPair) await ongletPair.click();
     await page.waitForSelector("#btnChoisirDossier");

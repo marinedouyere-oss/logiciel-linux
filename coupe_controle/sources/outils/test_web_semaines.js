@@ -64,7 +64,7 @@ function lister(dossier, chemin = []) {
     return route.fulfill({ status: 200, body: fs.readFileSync(fichier), headers: { "content-type": type } });
   });
   await page.goto(base + "/index.html");
-  await page.click('.onglet-btn[data-onglet="paire"]');
+  await page.click('.menu [data-onglet="controle"]').then(() => page.click('.onglet-btn[data-onglet="paire"]'));
   await page.waitForSelector("#btnChoisirDossier");
   const scanner = async (cle) => {
     await page.evaluate((c) => (window.__dossierSuivant = c), cle);

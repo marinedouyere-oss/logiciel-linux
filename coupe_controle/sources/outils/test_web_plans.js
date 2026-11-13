@@ -99,7 +99,7 @@ const verifier = (ok, message) => {
   }
 
   // 4. Expérimental : liste de coupe générée (mêmes pièces, moins de pertes).
-  await page.click('.onglet-btn[data-onglet="liste-opt"]');
+  await page.click('.menu [data-onglet="controle"]').then(() => page.click('.onglet-btn[data-onglet="liste-opt"]'));
   await page.waitForFunction(() => document.querySelector("#champNomListe") && document.querySelector("#champNomListe").value === "LAN264801START_OPT", null, { timeout: 30000 });
   await page.click("#btnGenererListe");
   await page.waitForSelector("#btnEnregistrerListe", { timeout: 120000 });

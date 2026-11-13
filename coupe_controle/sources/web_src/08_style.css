@@ -866,3 +866,27 @@
   .stk-cote .fp-table th, .stk-cote .fp-table td { padding: 5px 6px; }
   .stk-cote .stk-dort { white-space: normal; }
   .stk-cote .defilement { overflow-x: visible; }
+  /* V6.9.2 : bandeau des semaines (comme sur le téléphone), en haut de La semaine, Contrôler la coupe et Suivi. */
+  .bandeau-semaines { display: flex; gap: 8px; margin: 0 0 16px; overflow-x: auto; padding: 2px 2px 4px; scrollbar-width: thin; }
+  .bandeau-btn {
+    flex: 1 1 0; min-width: 150px; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 9px 14px;
+    background: #fff; color: var(--noir); border: 2px solid var(--gris-filet); border-radius: 14px; text-align: left; font-weight: 400;
+  }
+  .bandeau-btn:hover:not(:disabled) { background: #fff; border-color: var(--saumon); }
+  .bandeau-btn.actif, .bandeau-btn.actif:hover:not(:disabled) { background: var(--bordeaux); border-color: var(--bordeaux); color: #fff; }
+  .bandeau-haut { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; }
+  .bandeau-btn .libelle-onglet { font-family: var(--titres); font-weight: 700; font-size: 1.02rem; }
+  .bandeau-dates { font-size: 0.8rem; color: #6b605d; }
+  .bandeau-btn.actif .bandeau-dates { color: var(--saumon); }
+  .bandeau-etat { font-size: 0.75rem; font-weight: 700; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+  .bandeau-etat.bon { background: var(--ok-fond); color: var(--ok-texte); }
+  .bandeau-etat.souci { background: #fde6cf; color: #8a4300; }
+  .bandeau-etat.vide { background: var(--gris-clair); color: #6b605d; font-weight: 400; }
+  .bandeau-btn.actif .bandeau-etat { background: rgba(255, 255, 255, 0.18); color: #fff; }
+  /* Suivi : le bandeau des semaines avec l'état de chacune. */
+  .sv-bandeau .bandeau-btn { min-width: 140px; }
+  .sv-bandeau .bandeau-tout { flex: 0 0 auto; min-width: 120px; }
+  .bandeau-etat.sv-e-retard { background: var(--saumon-pale); color: var(--bordeaux); }
+  .bandeau-etat.sv-e-en_cours { background: #e3ecf7; color: #1d4f91; }
+  .bandeau-etat.sv-e-termine { background: var(--ok-fond); color: var(--ok-texte); }
+  .bandeau-etat.sv-e-hors_extraction, .bandeau-etat.sv-e-attente, .bandeau-etat.sv-e-absent, .bandeau-etat.sv-e-casse { background: var(--gris-clair); color: #6b605d; }
