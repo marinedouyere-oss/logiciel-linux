@@ -4,6 +4,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -140,6 +141,78 @@ final class PlansLancement {
                 p.morceaux.add(m);
             }
         return p;
+    }
+
+    /** V6.9.5 : un module ou une bande du lancement (T1, T2…). */
+    static final class Groupe {
+        String nom = "";
+        /** « m » module, « b » bande. */
+        String type = "";
+        int pieces;
+        /** Module : son plan ; bande : le plan d'agglo où elle est coupée. Rang dans le fichier, -1 si aucun. */
+        int plan = -1;
+        /** Les morceaux à mettre en jaune dans ce plan (la bande). */
+        final Set<Integer> visees = new HashSet<>();
+        /** Les autres plans de la bande (stratifiés) : « Pdc 7 · 1002 ». */
+        final List<String> autres = new ArrayList<>();
+    }
+
+    /**
+     * Les modules et les bandes du lancement, dans l'ordre des numéros (T1, T2…), d'après les pièces des plans envoyés
+     * par le PC. Une bande n'a pas de plan à elle : on donne le panneau d'agglo où elle est coupée.
+     */
+    static List<Groupe> groupes(JSONObject plans) {
+        List<Groupe> res = new ArrayList<>();
+        if (plans == null) return res;
+        JSONObject pieces = plans.optJSONObject("pieces");
+        JSONArray liste = plans.optJSONArray("plans");
+        if (pieces == null) return res;
+        java.util.Map<String, Groupe> parNom = new java.util.HashMap<>();
+        for (java.util.Iterator<String> it = pieces.keys(); it.hasNext(); ) {
+            JSONObject jp = pieces.optJSONObject(it.next());
+            if (jp == null) continue;
+            String g = jp.optString("g", "");
+            String t = jp.optString("t", "");
+            if (g.isEmpty() || !("m".equals(t) || "b".equals(t))) continue;
+            Groupe gr = parNom.get(g);
+            if (gr == null) {
+                gr = new Groupe();
+                gr.nom = g;
+                gr.type = t;
+                parNom.put(g, gr);
+                res.add(gr);
+            }
+            gr.pieces++;
+            if (gr.plan >= 0) continue;
+            JSONArray pp = jp.optJSONArray("p");
+            if (pp == null) continue;
+            int voulu = "m".equals(t) ? 0 : 1;
+            for (int i = 0; i < pp.length(); i++) {
+                JSONArray x = pp.optJSONArray(i);
+                if (x == null || x.optInt(1, 3) != voulu) continue;
+                gr.plan = x.optInt(0, -1);
+                JSONArray v = x.optJSONArray(2);
+                if (v != null) for (int k = 0; k < v.length(); k++) gr.visees.add(v.optInt(k));
+                break;
+            }
+            if ("b".equals(t) && liste != null)
+                for (int i = 0; i < pp.length(); i++) {
+                    JSONArray x = pp.optJSONArray(i);
+                    if (x == null || x.optInt(1, 3) < 2) continue;
+                    JSONArray jplan = liste.optJSONArray(x.optInt(0, -1));
+                    if (jplan != null) gr.autres.add("Pdc " + jplan.optInt(1) + " · " + jplan.optString(0, ""));
+                }
+        }
+        Collections.sort(res, (a, b) -> Integer.compare(numero(a.nom), numero(b.nom)));
+        return res;
+    }
+
+    private static int numero(String g) {
+        try {
+            return Integer.parseInt(g.replaceAll("\\D", ""));
+        } catch (NumberFormatException e) {
+            return Integer.MAX_VALUE;
+        }
     }
 
     /** Tous les plans d'un lancement, dans l'ordre du fichier. */

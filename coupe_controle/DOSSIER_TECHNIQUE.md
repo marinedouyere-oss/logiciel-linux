@@ -349,7 +349,7 @@ des semaines du suivi est mal organisée ») :
   vues (`totalSemaine` = faites + à faire + pas suivies ; vues : faites + à faire) ; téléphone : pastilles sur deux
   lignes « S47 · 68 % / 933 pièces », en-tête de la semaine, `chiffresGroupe` (« 21 pièces · 18 faites · 3 à faire »).
 
-### Recherche par bande et plans « a<b,c> » (V6.9.5)
+### Recherche par bande, plans « a<b,c> », modules et bandes (V6.9.5 – V6.9.6)
 
 - Plans Cut Rite : « 5<6,7>/ » (plan fait 3 fois : morceau 5, puis 6, puis 7 à la même place) était coupé en deux
   morceaux « 5<6 » et « 7> » : plan mal lu, la bande LT20/1 de LAN264702START (Pdc 5 du 1002) n'y était pas.
@@ -363,6 +363,11 @@ des semaines du suivi est mal organisée ») :
 - Téléphone : la recherche par bande n'existait pas. `FichierPartage.chercher` reconnaît « T23 », « LT23/1 » (avec
   ou sans le lancement devant) et prend les pièces de la bande dans les plans envoyés par le PC (`plans.pieces[cle].g`) ;
   `PartageVue.ajouterBande` les montre lancement par lancement.
+- V6.9.6 : Plans de coupe (PC et téléphone) : « Modules » ne montrait que les modules (15 dans LAN264702START), pas
+  les bandes (14). Le groupe devient « Modules et bandes » : tous les T du lancement dans l'ordre (`modulesEtBandes` sur
+  le PC, `PlansLancement.groupes` sur le téléphone) ; une bande n'a pas de plan à elle : on montre le panneau d'agglo
+  où elle est coupée, la bande en jaune, et ses plans de stratifié. Sur les plans, un noyau qui n'est pas un module
+  s'écrit « bande T23 » (et « stratifié de la bande T23 ») au lieu de « module T23 » (`r.bandesLancement`).
 - Test : Chromium de l'environnement de test plante quand une page relit une poignée OPFS gardée dans IndexedDB ;
   pour tester la réouverture, utiliser de faux dossiers en mémoire (fichiers = octets), pas l'OPFS.
 

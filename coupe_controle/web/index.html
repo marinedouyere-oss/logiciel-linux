@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.9.5 — Contrôle de coupe</title>
+<title>Sentinelle V6.9.6 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -920,7 +920,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.9.5</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.9.6</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -1031,7 +1031,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.9.5 · Contrôle de coupe</span>
+    <span>Sentinelle V6.9.6 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -3824,6 +3824,21 @@ function indexerPlans(lancement, matieres, seulesStratifie = new Map()) {
       }
     }
   }
+  // V6.9.5 : un noyau « T23/1 » qui n'est pas un module est une bande : écrit « bande T23 » sur les plans (pas « module »).
+  const bandesNoyaux = new Set();
+  for (const m of matieres.values()) {
+    for (const plan of m.plans) {
+      for (const r of plan.rects) {
+        if (!r.seq) continue;
+        r.bandesLancement = bandesNoyaux;
+        if (plan.module) continue;
+        for (const n of [r.nom, ...(r.passages || [])]) {
+          const g = groupeDuMorceau(n);
+          if (g && !modules.has(g)) bandesNoyaux.add(g);
+        }
+      }
+    }
+  }
   // Les bandes n'ont pas de plan à elles : leurs pièces sont coupées avec la bande (noyau « T18/1 » posé sur un panneau).
   // Chaque fois que le noyau est posé, ses pièces le sont aussi.
   const bandes = new Map(); // « T18 » → { mat, membres: [{ cle, qte, q }] }
@@ -3840,6 +3855,46 @@ function indexerPlans(lancement, matieres, seulesStratifie = new Map()) {
     for (const x of b.membres) if (x.cle && n) placees.set(x.cle, (placees.get(x.cle) || 0) + x.qte * n);
   }
   return { lancement, matieres, modules, bandes, parCle, placees, nbPlans, nbModules };
+}
+
+// V6.9.5 : les modules et les bandes du lancement (T1, T2…), dans l'ordre des numéros. Un module a son plan à lui
+// (découpé en pièces) ; une bande n'en a pas : son noyau « T23/1 » est coupé tel quel dans un panneau d'agglo et son
+// stratifié « LT23/1 » dans un panneau de stratifié. → [{ g, module (plan ou null), plans: [{ plan, rang, visee }], pieces }]
+const groupeDuMorceau = (nom) => {
+  const x = /^L?(T\d+)\/\d+$/.exec(nom || "");
+  return x ? x[1] : null;
+};
+function modulesEtBandes(donnees) {
+  const groupes = new Map();
+  const ajouter = (g) => {
+    if (!groupes.has(g)) {
+      const visee = (r) => Boolean(r.seq) && [r.nom, ...(r.passages || [])].some((n) => groupeDuMorceau(n) === g);
+      groupes.set(g, { g, module: donnees.modules.get(g) || null, plans: [], pieces: 0, visee });
+    }
+    return groupes.get(g);
+  };
+  for (const g of donnees.modules.keys()) ajouter(g);
+  for (const m of donnees.matieres.values()) {
+    for (const plan of m.plans) {
+      if (plan.module) continue;
+      for (const r of plan.rects) {
+        if (!r.seq) continue;
+        for (const n of [r.nom, ...(r.passages || [])]) {
+          const g = groupeDuMorceau(n);
+          if (!g) continue;
+          const gr = ajouter(g);
+          if (!gr.plans.some((y) => y.plan === plan)) gr.plans.push({ plan, rang: n.startsWith("L") ? 2 : 1, visee: gr.visee });
+        }
+      }
+    }
+  }
+  for (const gr of groupes.values()) {
+    gr.plans.sort((a, b) => a.rang - b.rang || a.plan.matiere.localeCompare(b.plan.matiere) || a.plan.pdc - b.plan.pdc);
+    gr.pieces = gr.module
+      ? gr.module.rects.filter((r) => r.seq).length
+      : ((donnees.bandes && donnees.bandes.get(gr.g)) || { membres: [] }).membres.reduce((t, x) => t + (x.qte || 1), 0);
+  }
+  return [...groupes.values()].sort((a, b) => parseInt(a.g.slice(1), 10) - parseInt(b.g.slice(1), 10));
 }
 
 // Le morceau « pièce » d'une clé dans les fichiers de l'optimisation (même s'il n'a pas de plan à lui : pièce de bande).
@@ -4048,9 +4103,10 @@ function svgPlan(plan, options = {}) {
     } else if (r.L > L * 0.14 && r.W > W * 0.08) {
       const fs = Math.min(r.W * 0.32, e / 34);
       const cote = options.cote === "debit" ? `${r.L.toFixed(0)} × ${r.W.toFixed(0)}` : `${r.fini[0].toFixed(0)} × ${r.fini[1].toFixed(0)}`;
-      const titre1 = (nomM, cleM) => cleM && !MOTIF_NOYAU_PLAN.test(nomM) && !MOTIF_STRATIFIE_PLAN.test(nomM) ? cleM.replace(/^[A-Z]+/, "") : MOTIF_STRATIFIE_PLAN.test(nomM) && nomM.startsWith("LT") ? `stratifié ${nomM.slice(1).split("/")[0]}` : MOTIF_NOYAU_PLAN.test(nomM) ? `module ${nomM.split("/")[0]}` : nomM;
+      const sorteNoyau = (nomM) => (r.bandesLancement && r.bandesLancement.has(groupeDuMorceau(nomM)) ? "bande" : "module");
+      const titre1 = (nomM, cleM) => cleM && !MOTIF_NOYAU_PLAN.test(nomM) && !MOTIF_STRATIFIE_PLAN.test(nomM) ? cleM.replace(/^[A-Z]+/, "") : MOTIF_STRATIFIE_PLAN.test(nomM) && nomM.startsWith("LT") ? `stratifié ${nomM.slice(1).split("/")[0]}` : MOTIF_NOYAU_PLAN.test(nomM) ? `${sorteNoyau(nomM)} ${nomM.split("/")[0]}` : nomM;
       // « 5<6,7> » : « stratifié T22 puis T20 puis T21 » (un passage après l'autre, à la même place)
-      const titre = r.passages ? r.passages.map((n, i) => titre1(n, r.clesPassages[i]).replace(i ? /^(stratifié|module) / : /^$/, "")).join(" puis ") : titre1(r.nom, r.cle);
+      const titre = r.passages ? r.passages.map((n, i) => titre1(n, r.clesPassages[i]).replace(i ? /^(stratifié|module|bande) / : /^$/, "")).join(" puis ") : titre1(r.nom, r.cle);
       const deux = r.W >= fs * 2.6;
       s.push(`<text x="${(r.x + r.L / 2).toFixed(0)}" y="${(r.y + r.W / 2 + (deux ? -fs * 0.15 : fs * 0.35)).toFixed(0)}" font-size="${fs.toFixed(0)}" text-anchor="middle" font-weight="700" fill="#22231d" font-family="Lato,Arial">${echapperSvg(titre)}</text>`);
       if (deux) s.push(`<text x="${(r.x + r.L / 2).toFixed(0)}" y="${(r.y + r.W / 2 + fs * 0.95).toFixed(0)}" font-size="${(fs * 0.78).toFixed(0)}" text-anchor="middle" fill="#22231d" font-family="Lato,Arial">${cote}</text>`);
@@ -4081,11 +4137,15 @@ function echapperSvg(t) {
 
 // Nom d'un morceau pour un tableau (pièce, module, stratifié).
 function nomMorceauPlan(r) {
-  // « 5<6,7> » : « stratifié du module T22 puis T20 puis T21 »
-  if (r.passages) return r.passages.map((nomP, i) => nomMorceauPlan({ nom: nomP, cle: r.clesPassages[i] }).replace(i ? /^(stratifié du module|module|stratifié de) / : /^$/, "")).join(" puis ");
+  // « 5<6,7> » : « stratifié de la bande T22 puis T20 puis T21 »
+  if (r.passages)
+    return r.passages
+      .map((nomP, i) => nomMorceauPlan({ nom: nomP, cle: r.clesPassages[i], bandesLancement: r.bandesLancement }).replace(i ? /^(stratifié du module|stratifié de la bande|module|bande|stratifié de) / : /^$/, ""))
+      .join(" puis ");
   const n = (r.nom || "").split("/")[0];
-  if (/^LT\d+$/.test(n)) return `stratifié du module ${n.slice(1)}`;
-  if (/^T\d+$/.test(n)) return `module ${n}`;
+  const bande = Boolean(r.bandesLancement && r.bandesLancement.has(n.replace(/^L/, "")));
+  if (/^LT\d+$/.test(n)) return `stratifié ${bande ? "de la bande" : "du module"} ${n.slice(1)}`;
+  if (/^T\d+$/.test(n)) return `${bande ? "bande" : "module"} ${n}`;
   if (/^L\d+$/.test(n)) return `stratifié de ${r.cle}`;
   return r.cle || n;
 }
@@ -17411,44 +17471,79 @@ async function afficherOutilPlans() {
 function afficherPlansLancement(zone) {
   const d = etatPlans.donnees;
   const mats = [...d.matieres.values()].filter((m) => m.plans.some((p) => !p.module)).sort((a, b) => a.mat.localeCompare(b.mat));
+  // V6.9.5 : modules ET bandes (les bandes n'ont pas de plan à elles : on montre le panneau où elles sont coupées).
+  const groupes = modulesEtBandes(d);
+  const nbBandes = groupes.filter((g) => !g.module).length;
   if (!etatPlans.matiere) etatPlans.matiere = mats.length ? mats[0].mat : "*modules";
   const pasOk = [...d.matieres.values()].flatMap((m) => m.plans).filter((p) => !p.ok).length;
   const options = [
     ...mats.map((m) => `<option value="${echapper(m.mat)}" ${etatPlans.matiere === m.mat ? "selected" : ""}>${echapper(m.mat)}${m.desc ? ` — ${echapper(m.desc)}` : ""} (${m.plans.filter((p) => !p.module).length} plans)</option>`),
-    d.nbModules ? `<option value="*modules" ${etatPlans.matiere === "*modules" ? "selected" : ""}>Modules (${d.nbModules})</option>` : "",
+    groupes.length
+      ? `<option value="*modules" ${etatPlans.matiere === "*modules" ? "selected" : ""}>Modules et bandes (${groupes.length} : ${d.nbModules} module(s), ${nbBandes} bande(s))</option>`
+      : "",
   ];
-  const plans = etatPlans.matiere === "*modules" ? [...d.modules.values()] : (d.matieres.get(etatPlans.matiere) || { plans: [] }).plans.filter((p) => !p.module);
-  zone.innerHTML = `<div class="pl-resume">${echapper(d.lancement)} · ${d.matieres.size} matières · ${fmtNombre(d.nbPlans)} plans de panneaux · ${fmtNombre(d.nbModules)} modules</div>
+  const fois = (p) => (p.fois > 1 ? ` · coupé ${p.fois} fois` : "");
+  const cartePlan = (p) => ({
+    plan: p,
+    titre: p.module ? `Module ${p.nom}` : `Pdc ${p.pdc}`,
+    badge: p.module ? `Pdc ${p.pdc} · ${p.matiere}` : p.sorte,
+    sous: `${p.module ? "module" : p.nom} · ${dimsPlan(p.L, p.W)}${fois(p)}`,
+    visee: null,
+  });
+  const carteBande = (gr) => {
+    const y = gr.plans.find((z) => z.rang === 1) || gr.plans[0];
+    if (!y) return null;
+    const r = y.plan.rects.find(y.visee);
+    const strat = gr.plans.filter((z) => z !== y).map((z) => `Pdc ${z.plan.pdc} · ${z.plan.matiere}`);
+    return {
+      plan: y.plan,
+      titre: `Bande ${gr.g}`,
+      badge: `Pdc ${y.plan.pdc} · ${y.plan.matiere}`,
+      sous: `bande${r ? ` ${dimsPlan(r.L, r.W)}` : ""} · ${gr.pieces} pièce(s) · coupée dans ${y.plan.sorte} ${y.plan.nom}${fois(y.plan)}${strat.length ? ` · stratifié : ${strat.join(", ")}` : ""}`,
+      visee: y.visee,
+    };
+  };
+  const cartes =
+    etatPlans.matiere === "*modules"
+      ? groupes.map((gr) => (gr.module ? cartePlan(gr.module) : carteBande(gr))).filter(Boolean)
+      : (d.matieres.get(etatPlans.matiere) || { plans: [] }).plans.filter((p) => !p.module).map(cartePlan);
+  zone.innerHTML = `<div class="pl-resume">${echapper(d.lancement)} · ${d.matieres.size} matières · ${fmtNombre(d.nbPlans)} plans de panneaux · ${fmtNombre(d.nbModules)} modules · ${fmtNombre(nbBandes)} bandes</div>
     ${pasOk ? `<div class="message-alerte">${pasOk} plan(s) mal lu(s) : à vérifier dans Cut Rite.</div>` : ""}
     <div class="pl-choix"><select id="choixPlansMatiere" aria-label="Matière">${options.join("")}</select>
       <button type="button" class="contour" id="btnImprimerMatiere">Imprimer les plans de la matière (PDF)</button></div>
-    <div class="pl-grille">${plans
-      .map((p, i) => {
+    <div class="pl-grille">${cartes
+      .map((c, i) => {
+        const p = c.plan;
         const n = p.rects.filter((r) => !r.chute).length;
         const v = versionDuPlan(d.lancement, p);
         return `<div class="pl-carte${v.rt ? " modifie" : ""}" role="button" tabindex="0" data-i="${i}" title="Ouvrir le plan en grand (et le modifier)">
-          <div class="pl-titre"><span>${p.module ? `Module ${echapper(p.nom)}` : `Pdc ${p.pdc}`}</span><span class="pl-pdc">${p.module ? `Pdc ${p.pdc} · ${echapper(p.matiere)}` : echapper(p.sorte)}</span></div>
-          <div class="pl-sous">${p.module ? "module" : echapper(p.nom)} · ${dimsPlan(p.L, p.W)}${p.fois > 1 ? ` · coupé ${p.fois} fois` : ""} · ${n} morceau(x)${p.ok ? "" : " · ⚠ mal lu"}${v.rt ? ' · <span class="pl-modifie">✎ modifié dans Sentinelle</span>' : ""}</div>
-          ${svgPlan(v.plan, { etats: v.etats, textes: v.textes })}</div>`;
+          <div class="pl-titre"><span>${echapper(c.titre)}</span><span class="pl-pdc">${echapper(c.badge)}</span></div>
+          <div class="pl-sous">${echapper(c.sous)}${c.visee ? "" : ` · ${n} morceau(x)`}${p.ok ? "" : " · ⚠ mal lu"}${v.rt ? ' · <span class="pl-modifie">✎ modifié dans Sentinelle</span>' : ""}</div>
+          ${svgPlan(v.plan, { etats: v.etats, textes: v.textes, visee: c.visee || undefined })}</div>`;
       })
       .join("")}</div>`;
-  const texteDe = (p) => ({
-    plan: p,
-    donnees: d,
-    titre: p.module ? `Module ${p.nom}` : `${p.matiere} — Pdc ${p.pdc}`,
-    badge: `Pdc ${p.pdc} · ${p.matiere}`,
-    sous: `${p.module ? "module" : `${p.sorte} ${p.nom}`} · ${dimsPlan(p.L, p.W)}${p.fois > 1 ? ` · coupé ${p.fois} fois` : ""}`,
-    apresModification: () => afficherPlansLancement(zone),
-  });
-  zone.querySelectorAll(".pl-carte").forEach((b) => activerCartePlan(b, () => ouvrirPlanEnGrand(texteDe(plans[Number(b.dataset.i)]))));
+  const texteDe = (c) => {
+    const p = c.plan;
+    return {
+      plan: p,
+      donnees: d,
+      visee: c.visee || undefined,
+      titre: c.visee ? `${c.titre} — ${p.matiere} Pdc ${p.pdc}` : p.module ? `Module ${p.nom}` : `${p.matiere} — Pdc ${p.pdc}`,
+      badge: `Pdc ${p.pdc} · ${p.matiere}`,
+      sous: c.visee ? c.sous : `${p.module ? "module" : `${p.sorte} ${p.nom}`} · ${dimsPlan(p.L, p.W)}${fois(p)}`,
+      apresModification: () => afficherPlansLancement(zone),
+    };
+  };
+  const plans = cartes.map((c) => c.plan);
+  zone.querySelectorAll(".pl-carte").forEach((b) => activerCartePlan(b, () => ouvrirPlanEnGrand(texteDe(cartes[Number(b.dataset.i)]))));
   $("choixPlansMatiere").addEventListener("change", (e) => {
     etatPlans.matiere = e.target.value;
     afficherPlansLancement(zone);
   });
   $("btnImprimerMatiere").addEventListener("click", () => {
     const m = d.matieres.get(etatPlans.matiere);
-    const titre = etatPlans.matiere === "*modules" ? "Modules" : `${etatPlans.matiere}${m && m.desc ? ` — ${m.desc}` : ""}`;
-    const aImprimer = plans.map((p) => planPourPdf(texteDe(p)));
+    const titre = etatPlans.matiere === "*modules" ? "Modules et bandes" : `${etatPlans.matiere}${m && m.desc ? ` — ${m.desc}` : ""}`;
+    const aImprimer = cartes.map((c) => planPourPdf(texteDe(c)));
     const nbModifies = aImprimer.filter((y) => y.marques).length;
     const octets = pdfPlansDeCoupe({
       surtitre: `Plans de coupe · lancement ${d.lancement}`,

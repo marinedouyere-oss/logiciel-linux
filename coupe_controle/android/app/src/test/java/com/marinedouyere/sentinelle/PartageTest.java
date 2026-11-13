@@ -378,6 +378,12 @@ public class PartageTest {
         assertEquals("CVC1", seul.get(0).piece[0]);
         assertEquals(1, f.chercher("T20").size());
         assertTrue(f.chercher("T99").isEmpty());
+        // Modules et bandes du lancement (Plans de coupe), dans l'ordre des numéros.
+        List<PlansLancement.Groupe> gr = PlansLancement.groupes(t.get(0).lancement.plans);
+        assertEquals(2, gr.size());
+        assertEquals("T3", gr.get(0).nom);
+        assertEquals("m", gr.get(0).type);
+        assertEquals("T23", gr.get(1).nom);
 
         MainActivity a = avecFichier(json.getBytes(StandardCharsets.UTF_8));
         onglet(a, MainActivity.ONGLET_RECHERCHE);
@@ -1109,5 +1115,32 @@ public class PartageTest {
             assertTrue(ecran(a), ecran(a).contains("Bande T23 : "));
             capturerSiDemande(a, "reel_recherche_bande.png");
         }
+        // V6.9.5 : Plans de coupe : « Modules et bandes » de LAN264702START (T1 à T29 : 15 modules et 14 bandes).
+        for (FichierPartage.Semaine sm : f.semaines)
+            for (FichierPartage.Lancement l : sm.lancements) {
+                if (!"LAN264702START".equals(l.nom) || l.plans == null) continue;
+                List<PlansLancement.Groupe> gr = PlansLancement.groupes(l.plans);
+                int bandes = 0;
+                for (PlansLancement.Groupe g : gr) if ("b".equals(g.type)) bandes++;
+                System.out.println("GROUPES LAN264702START : " + gr.size() + " dont " + bandes + " bandes");
+                assertEquals(29, gr.size());
+                assertEquals(14, bandes);
+                assertEquals("T1", gr.get(0).nom);
+                assertEquals("T29", gr.get(28).nom);
+                a.partage().plans().choisir("LAN264702START");
+                a.allerA(MainActivity.ONGLET_PLANS);
+                ShadowLooper.idleMainLooper();
+                View tete = vueAvecTexte(a.getWindow().getDecorView(), "Modules et bandes");
+                assertNotNull(ecran(a), tete);
+                while (tete != null && !tete.isClickable()) tete = (View) tete.getParent();
+                tete.performClick();
+                ShadowLooper.idleMainLooper();
+                String e = ecran(a);
+                assertTrue(e, e.contains("15 module(s) · 14 bande(s)"));
+                assertTrue(e, e.contains("Bande T23"));
+                assertTrue(e, e.indexOf("Module T15") < e.indexOf("Bande T16"));
+                capturerSiDemande(a, "reel_plans_modules_bandes.png");
+            }
     }
+
 }

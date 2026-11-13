@@ -392,6 +392,21 @@ function indexerPlans(lancement, matieres, seulesStratifie = new Map()) {
       }
     }
   }
+  // V6.9.5 : un noyau « T23/1 » qui n'est pas un module est une bande : écrit « bande T23 » sur les plans (pas « module »).
+  const bandesNoyaux = new Set();
+  for (const m of matieres.values()) {
+    for (const plan of m.plans) {
+      for (const r of plan.rects) {
+        if (!r.seq) continue;
+        r.bandesLancement = bandesNoyaux;
+        if (plan.module) continue;
+        for (const n of [r.nom, ...(r.passages || [])]) {
+          const g = groupeDuMorceau(n);
+          if (g && !modules.has(g)) bandesNoyaux.add(g);
+        }
+      }
+    }
+  }
   // Les bandes n'ont pas de plan à elles : leurs pièces sont coupées avec la bande (noyau « T18/1 » posé sur un panneau).
   // Chaque fois que le noyau est posé, ses pièces le sont aussi.
   const bandes = new Map(); // « T18 » → { mat, membres: [{ cle, qte, q }] }
@@ -408,6 +423,46 @@ function indexerPlans(lancement, matieres, seulesStratifie = new Map()) {
     for (const x of b.membres) if (x.cle && n) placees.set(x.cle, (placees.get(x.cle) || 0) + x.qte * n);
   }
   return { lancement, matieres, modules, bandes, parCle, placees, nbPlans, nbModules };
+}
+
+// V6.9.5 : les modules et les bandes du lancement (T1, T2…), dans l'ordre des numéros. Un module a son plan à lui
+// (découpé en pièces) ; une bande n'en a pas : son noyau « T23/1 » est coupé tel quel dans un panneau d'agglo et son
+// stratifié « LT23/1 » dans un panneau de stratifié. → [{ g, module (plan ou null), plans: [{ plan, rang, visee }], pieces }]
+const groupeDuMorceau = (nom) => {
+  const x = /^L?(T\d+)\/\d+$/.exec(nom || "");
+  return x ? x[1] : null;
+};
+function modulesEtBandes(donnees) {
+  const groupes = new Map();
+  const ajouter = (g) => {
+    if (!groupes.has(g)) {
+      const visee = (r) => Boolean(r.seq) && [r.nom, ...(r.passages || [])].some((n) => groupeDuMorceau(n) === g);
+      groupes.set(g, { g, module: donnees.modules.get(g) || null, plans: [], pieces: 0, visee });
+    }
+    return groupes.get(g);
+  };
+  for (const g of donnees.modules.keys()) ajouter(g);
+  for (const m of donnees.matieres.values()) {
+    for (const plan of m.plans) {
+      if (plan.module) continue;
+      for (const r of plan.rects) {
+        if (!r.seq) continue;
+        for (const n of [r.nom, ...(r.passages || [])]) {
+          const g = groupeDuMorceau(n);
+          if (!g) continue;
+          const gr = ajouter(g);
+          if (!gr.plans.some((y) => y.plan === plan)) gr.plans.push({ plan, rang: n.startsWith("L") ? 2 : 1, visee: gr.visee });
+        }
+      }
+    }
+  }
+  for (const gr of groupes.values()) {
+    gr.plans.sort((a, b) => a.rang - b.rang || a.plan.matiere.localeCompare(b.plan.matiere) || a.plan.pdc - b.plan.pdc);
+    gr.pieces = gr.module
+      ? gr.module.rects.filter((r) => r.seq).length
+      : ((donnees.bandes && donnees.bandes.get(gr.g)) || { membres: [] }).membres.reduce((t, x) => t + (x.qte || 1), 0);
+  }
+  return [...groupes.values()].sort((a, b) => parseInt(a.g.slice(1), 10) - parseInt(b.g.slice(1), 10));
 }
 
 // Le morceau « pièce » d'une clé dans les fichiers de l'optimisation (même s'il n'a pas de plan à lui : pièce de bande).
@@ -616,9 +671,10 @@ function svgPlan(plan, options = {}) {
     } else if (r.L > L * 0.14 && r.W > W * 0.08) {
       const fs = Math.min(r.W * 0.32, e / 34);
       const cote = options.cote === "debit" ? `${r.L.toFixed(0)} × ${r.W.toFixed(0)}` : `${r.fini[0].toFixed(0)} × ${r.fini[1].toFixed(0)}`;
-      const titre1 = (nomM, cleM) => cleM && !MOTIF_NOYAU_PLAN.test(nomM) && !MOTIF_STRATIFIE_PLAN.test(nomM) ? cleM.replace(/^[A-Z]+/, "") : MOTIF_STRATIFIE_PLAN.test(nomM) && nomM.startsWith("LT") ? `stratifié ${nomM.slice(1).split("/")[0]}` : MOTIF_NOYAU_PLAN.test(nomM) ? `module ${nomM.split("/")[0]}` : nomM;
+      const sorteNoyau = (nomM) => (r.bandesLancement && r.bandesLancement.has(groupeDuMorceau(nomM)) ? "bande" : "module");
+      const titre1 = (nomM, cleM) => cleM && !MOTIF_NOYAU_PLAN.test(nomM) && !MOTIF_STRATIFIE_PLAN.test(nomM) ? cleM.replace(/^[A-Z]+/, "") : MOTIF_STRATIFIE_PLAN.test(nomM) && nomM.startsWith("LT") ? `stratifié ${nomM.slice(1).split("/")[0]}` : MOTIF_NOYAU_PLAN.test(nomM) ? `${sorteNoyau(nomM)} ${nomM.split("/")[0]}` : nomM;
       // « 5<6,7> » : « stratifié T22 puis T20 puis T21 » (un passage après l'autre, à la même place)
-      const titre = r.passages ? r.passages.map((n, i) => titre1(n, r.clesPassages[i]).replace(i ? /^(stratifié|module) / : /^$/, "")).join(" puis ") : titre1(r.nom, r.cle);
+      const titre = r.passages ? r.passages.map((n, i) => titre1(n, r.clesPassages[i]).replace(i ? /^(stratifié|module|bande) / : /^$/, "")).join(" puis ") : titre1(r.nom, r.cle);
       const deux = r.W >= fs * 2.6;
       s.push(`<text x="${(r.x + r.L / 2).toFixed(0)}" y="${(r.y + r.W / 2 + (deux ? -fs * 0.15 : fs * 0.35)).toFixed(0)}" font-size="${fs.toFixed(0)}" text-anchor="middle" font-weight="700" fill="#22231d" font-family="Lato,Arial">${echapperSvg(titre)}</text>`);
       if (deux) s.push(`<text x="${(r.x + r.L / 2).toFixed(0)}" y="${(r.y + r.W / 2 + fs * 0.95).toFixed(0)}" font-size="${(fs * 0.78).toFixed(0)}" text-anchor="middle" fill="#22231d" font-family="Lato,Arial">${cote}</text>`);
@@ -649,11 +705,15 @@ function echapperSvg(t) {
 
 // Nom d'un morceau pour un tableau (pièce, module, stratifié).
 function nomMorceauPlan(r) {
-  // « 5<6,7> » : « stratifié du module T22 puis T20 puis T21 »
-  if (r.passages) return r.passages.map((nomP, i) => nomMorceauPlan({ nom: nomP, cle: r.clesPassages[i] }).replace(i ? /^(stratifié du module|module|stratifié de) / : /^$/, "")).join(" puis ");
+  // « 5<6,7> » : « stratifié de la bande T22 puis T20 puis T21 »
+  if (r.passages)
+    return r.passages
+      .map((nomP, i) => nomMorceauPlan({ nom: nomP, cle: r.clesPassages[i], bandesLancement: r.bandesLancement }).replace(i ? /^(stratifié du module|stratifié de la bande|module|bande|stratifié de) / : /^$/, ""))
+      .join(" puis ");
   const n = (r.nom || "").split("/")[0];
-  if (/^LT\d+$/.test(n)) return `stratifié du module ${n.slice(1)}`;
-  if (/^T\d+$/.test(n)) return `module ${n}`;
+  const bande = Boolean(r.bandesLancement && r.bandesLancement.has(n.replace(/^L/, "")));
+  if (/^LT\d+$/.test(n)) return `stratifié ${bande ? "de la bande" : "du module"} ${n.slice(1)}`;
+  if (/^T\d+$/.test(n)) return `${bande ? "bande" : "module"} ${n}`;
   if (/^L\d+$/.test(n)) return `stratifié de ${r.cle}`;
   return r.cle || n;
 }

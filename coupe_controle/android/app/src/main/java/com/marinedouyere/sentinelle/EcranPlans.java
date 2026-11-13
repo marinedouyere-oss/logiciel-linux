@@ -138,21 +138,29 @@ final class EcranPlans {
                     ok ? ui.couleur(R.color.ok_texte) : ui.couleur(R.color.attention_texte)), ui.marges(2, 2));
         }
 
-        // Par matière (les modules à part), dans l'ordre du fichier.
+        // V6.9.5 : « Modules et bandes » d'abord (T1, T2… : une bande n'a pas de plan à elle, on montre le panneau où elle
+        // est coupée), puis par matière, dans l'ordre du fichier.
+        List<PlansLancement.Groupe> groupes = PlansLancement.groupes(s.lancement.plans);
+        Map<Integer, PlansLancement.Plan> parRang = new java.util.HashMap<>();
+        for (PlansLancement.Plan p : plans) parRang.put(p.rang, p);
+        int nbBandes = 0;
+        for (PlansLancement.Groupe g : groupes) if ("b".equals(g.type)) nbBandes++;
         Map<String, List<PlansLancement.Plan>> parMatiere = new LinkedHashMap<>();
         Map<String, String> descriptions = new LinkedHashMap<>();
+        String cleModules = groupes.isEmpty() ? "Modules" : MODULES_ET_BANDES;
         int modules = 0;
         int modifies = 0;
+        for (PlansLancement.Plan p : plans) if (p.module) modules++;
+        if (modules > 0 || nbBandes > 0) parMatiere.put(cleModules, new ArrayList<>());
         for (PlansLancement.Plan p : plans) {
-            String cle = p.module ? "Modules" : p.matiere;
+            String cle = p.module ? cleModules : p.matiere;
             if (!parMatiere.containsKey(cle)) parMatiere.put(cle, new ArrayList<>());
             parMatiere.get(cle).add(p);
             if (!p.module && !p.desc.isEmpty()) descriptions.put(cle, p.desc);
-            if (p.module) modules++;
             if (p.modifie) modifies++;
         }
-        racine.addView(ui.note((plans.size() - modules) + " plan(s) et " + modules + " module(s) · " + parMatiere.size() + " groupe(s)"
-                + (modifies > 0 ? " · " + modifies + " modifié(s) dans Sentinelle" : "") + ". Touchez une matière pour voir ses plans, puis un plan pour l'ouvrir en grand."), ui.marges(4, 4));
+        racine.addView(ui.note((plans.size() - modules) + " plan(s), " + modules + " module(s) et " + nbBandes + " bande(s) · " + parMatiere.size() + " groupe(s)"
+                + (modifies > 0 ? " · " + modifies + " modifié(s) dans Sentinelle" : "") + ". Touchez un groupe pour voir ses plans, puis un plan pour l'ouvrir en grand."), ui.marges(4, 4));
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corps(carte);
         boolean premiere = true;
@@ -163,7 +171,9 @@ final class EcranPlans {
             int nbModif = 0;
             for (PlansLancement.Plan p : e.getValue()) if (p.modifie || hote.demandes().enAttentePourPlan(s.nomPlans, p) != null) nbModif++;
             String desc = descriptions.containsKey(e.getKey()) ? descriptions.get(e.getKey()) : "";
-            String sous = e.getValue().size() + (e.getKey().equals("Modules") ? " module(s)" : " plan(s)") + (desc.isEmpty() ? "" : " · " + desc) + (nbModif > 0 ? " · " + nbModif + " modifié(s)" : "");
+            String sous = e.getKey().equals(MODULES_ET_BANDES) ? (groupes.size() - nbBandes) + " module(s) · " + nbBandes + " bande(s)"
+                    : e.getValue().size() + (e.getKey().equals("Modules") ? " module(s)" : " plan(s)") + (desc.isEmpty() ? "" : " · " + desc);
+            sous += nbModif > 0 ? " · " + nbModif + " modifié(s)" : "";
             LinearLayout tete = ui.ligne(null, e.getKey(), sous, null, ouvert ? "˄" : "˅", v -> {
                 if (!ouvertes.remove(e.getKey())) ouvertes.add(e.getKey());
                 hote.reconstruire();
@@ -174,10 +184,25 @@ final class EcranPlans {
                 LinearLayout dedans = ui.colonne();
                 dedans.setPadding(ui.dp(8), 0, 0, ui.dp(6));
                 dedans.setBackground(ui.fondABarre(0xFFFFFFFF, Ui.SAUMON, 3));
-                for (PlansLancement.Plan p : e.getValue()) {
-                    dedans.addView(ui.filet(4, 0));
-                    dedans.addView(blocPlan(src, p));
-                }
+                if (e.getKey().equals(MODULES_ET_BANDES)) {
+                    java.util.Set<String> vus = new java.util.HashSet<>();
+                    for (PlansLancement.Groupe g : groupes) {
+                        PlansLancement.Plan p = parRang.get(g.plan);
+                        dedans.addView(ui.filet(4, 0));
+                        dedans.addView("m".equals(g.type) && p != null ? blocPlan(src, p) : blocBande(src, g, p));
+                        if (p != null && p.module) vus.add(p.nom);
+                    }
+                    // un module sans pièce du lancement (rare) : à la fin
+                    for (PlansLancement.Plan p : e.getValue())
+                        if (!vus.contains(p.nom)) {
+                            dedans.addView(ui.filet(4, 0));
+                            dedans.addView(blocPlan(src, p));
+                        }
+                } else
+                    for (PlansLancement.Plan p : e.getValue()) {
+                        dedans.addView(ui.filet(4, 0));
+                        dedans.addView(blocPlan(src, p));
+                    }
                 corps.addView(dedans, ui.pleineLargeur());
             }
         }
@@ -222,6 +247,30 @@ final class EcranPlans {
     private static String sousTitre(PlansLancement.Plan p) {
         return (p.module ? "module" : p.sorte + " " + p.nom) + " · " + PlansLancement.dims(p.L, p.W) + (p.desc.isEmpty() ? "" : " · " + p.desc)
                 + (p.fois > 1 ? " · coupé " + p.fois + " fois" : "");
+    }
+
+    static final String MODULES_ET_BANDES = "Modules et bandes";
+
+    /** Une bande : le panneau d'agglo où elle est coupée, la bande en jaune (une bande n'a pas de plan à elle). */
+    private View blocBande(Source s, PlansLancement.Groupe g, PlansLancement.Plan p) {
+        LinearLayout bloc = ui.colonne();
+        bloc.setPadding(ui.dp(2), ui.dp(8), ui.dp(2), ui.dp(8));
+        bloc.addView(ui.titre("Bande " + g.nom, 14, Ui.BORDEAUX));
+        if (p == null) {
+            bloc.addView(ui.note("bande · " + g.pieces + " pièce(s) · pas de plan d'agglo trouvé"), ui.marges(1, 4));
+            return bloc;
+        }
+        String dims = "";
+        for (int i : g.visees)
+            if (i >= 0 && i < p.morceaux.size()) {
+                dims = " " + PlansLancement.dims(p.morceaux.get(i).L, p.morceaux.get(i).W);
+                break;
+            }
+        bloc.addView(ui.note("bande" + dims + " · " + g.pieces + " pièce(s) · coupée dans le Pdc " + p.pdc + " · " + p.matiere + " (" + p.sorte + " " + p.nom + ")"
+                + (p.fois > 1 ? " · coupé " + p.fois + " fois" : "") + (g.autres.isEmpty() ? "" : " · stratifié : " + android.text.TextUtils.join(", ", g.autres))), ui.marges(1, 4));
+        bloc.addView(new PlanVue(activite, p, g.visees, false), ui.pleineLargeur());
+        ui.cliquable(bloc, v -> ouvrir(s, p));
+        return bloc;
     }
 
     private View blocPlan(Source s, PlansLancement.Plan p) {

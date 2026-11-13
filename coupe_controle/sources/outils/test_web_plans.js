@@ -212,6 +212,22 @@ const verifier = (ok, message) => {
   verifier(r9.a === "true 5>6>7", `plan « 5<6,7>/ » : un seul morceau, passages 5 puis 6 puis 7 (${r9.a})`);
   verifier(r9.b === "4110×660", `plan qui dépasse de 10 mm : lu à plat, pas tourné (${r9.b})`);
   verifier(r9.bande === "23 23 LAN264702START ", `recherche par bande : « LT23/1 », avec le lancement de l'étiquette (${r9.bande})`);
+  // V6.9.5 : Plans de coupe, « Modules et bandes » : tous les T du lancement (les bandes aussi), dans l'ordre.
+  const r10 = await page.evaluate(async () => {
+    const d = await lirePlansBkp(pairesDeLaSemaine(ongletDuNumero(48))[0].bkp);
+    const g = modulesEtBandes(d);
+    const bandes = g.filter((x) => !x.module);
+    const b = bandes[0];
+    const y = b && b.plans.find((z) => z.rang === 1);
+    return {
+      modules: g.filter((x) => x.module).length,
+      bandes: bandes.length,
+      ordre: g.every((x, i) => i === 0 || parseInt(g[i - 1].g.slice(1), 10) < parseInt(x.g.slice(1), 10)),
+      plan: Boolean(y && y.plan.rects.some(y.visee)),
+      nom: y ? nomMorceauPlan(y.plan.rects.find(y.visee)) : "",
+    };
+  });
+  verifier(r10.modules === 74 && r10.bandes > 0 && r10.ordre && r10.plan && /^bande T\d+/.test(r10.nom), `modules et bandes : ${r10.modules} modules, ${r10.bandes} bandes, dans l'ordre, chaque bande sur son panneau (« ${r10.nom} »)`);
 
   await nav.close();
   console.log(echecs ? `${echecs} ÉCHEC(S)` : "TOUT EST OK");

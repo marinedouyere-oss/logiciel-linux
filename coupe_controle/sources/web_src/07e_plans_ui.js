@@ -565,44 +565,79 @@ async function afficherOutilPlans() {
 function afficherPlansLancement(zone) {
   const d = etatPlans.donnees;
   const mats = [...d.matieres.values()].filter((m) => m.plans.some((p) => !p.module)).sort((a, b) => a.mat.localeCompare(b.mat));
+  // V6.9.5 : modules ET bandes (les bandes n'ont pas de plan à elles : on montre le panneau où elles sont coupées).
+  const groupes = modulesEtBandes(d);
+  const nbBandes = groupes.filter((g) => !g.module).length;
   if (!etatPlans.matiere) etatPlans.matiere = mats.length ? mats[0].mat : "*modules";
   const pasOk = [...d.matieres.values()].flatMap((m) => m.plans).filter((p) => !p.ok).length;
   const options = [
     ...mats.map((m) => `<option value="${echapper(m.mat)}" ${etatPlans.matiere === m.mat ? "selected" : ""}>${echapper(m.mat)}${m.desc ? ` — ${echapper(m.desc)}` : ""} (${m.plans.filter((p) => !p.module).length} plans)</option>`),
-    d.nbModules ? `<option value="*modules" ${etatPlans.matiere === "*modules" ? "selected" : ""}>Modules (${d.nbModules})</option>` : "",
+    groupes.length
+      ? `<option value="*modules" ${etatPlans.matiere === "*modules" ? "selected" : ""}>Modules et bandes (${groupes.length} : ${d.nbModules} module(s), ${nbBandes} bande(s))</option>`
+      : "",
   ];
-  const plans = etatPlans.matiere === "*modules" ? [...d.modules.values()] : (d.matieres.get(etatPlans.matiere) || { plans: [] }).plans.filter((p) => !p.module);
-  zone.innerHTML = `<div class="pl-resume">${echapper(d.lancement)} · ${d.matieres.size} matières · ${fmtNombre(d.nbPlans)} plans de panneaux · ${fmtNombre(d.nbModules)} modules</div>
+  const fois = (p) => (p.fois > 1 ? ` · coupé ${p.fois} fois` : "");
+  const cartePlan = (p) => ({
+    plan: p,
+    titre: p.module ? `Module ${p.nom}` : `Pdc ${p.pdc}`,
+    badge: p.module ? `Pdc ${p.pdc} · ${p.matiere}` : p.sorte,
+    sous: `${p.module ? "module" : p.nom} · ${dimsPlan(p.L, p.W)}${fois(p)}`,
+    visee: null,
+  });
+  const carteBande = (gr) => {
+    const y = gr.plans.find((z) => z.rang === 1) || gr.plans[0];
+    if (!y) return null;
+    const r = y.plan.rects.find(y.visee);
+    const strat = gr.plans.filter((z) => z !== y).map((z) => `Pdc ${z.plan.pdc} · ${z.plan.matiere}`);
+    return {
+      plan: y.plan,
+      titre: `Bande ${gr.g}`,
+      badge: `Pdc ${y.plan.pdc} · ${y.plan.matiere}`,
+      sous: `bande${r ? ` ${dimsPlan(r.L, r.W)}` : ""} · ${gr.pieces} pièce(s) · coupée dans ${y.plan.sorte} ${y.plan.nom}${fois(y.plan)}${strat.length ? ` · stratifié : ${strat.join(", ")}` : ""}`,
+      visee: y.visee,
+    };
+  };
+  const cartes =
+    etatPlans.matiere === "*modules"
+      ? groupes.map((gr) => (gr.module ? cartePlan(gr.module) : carteBande(gr))).filter(Boolean)
+      : (d.matieres.get(etatPlans.matiere) || { plans: [] }).plans.filter((p) => !p.module).map(cartePlan);
+  zone.innerHTML = `<div class="pl-resume">${echapper(d.lancement)} · ${d.matieres.size} matières · ${fmtNombre(d.nbPlans)} plans de panneaux · ${fmtNombre(d.nbModules)} modules · ${fmtNombre(nbBandes)} bandes</div>
     ${pasOk ? `<div class="message-alerte">${pasOk} plan(s) mal lu(s) : à vérifier dans Cut Rite.</div>` : ""}
     <div class="pl-choix"><select id="choixPlansMatiere" aria-label="Matière">${options.join("")}</select>
       <button type="button" class="contour" id="btnImprimerMatiere">Imprimer les plans de la matière (PDF)</button></div>
-    <div class="pl-grille">${plans
-      .map((p, i) => {
+    <div class="pl-grille">${cartes
+      .map((c, i) => {
+        const p = c.plan;
         const n = p.rects.filter((r) => !r.chute).length;
         const v = versionDuPlan(d.lancement, p);
         return `<div class="pl-carte${v.rt ? " modifie" : ""}" role="button" tabindex="0" data-i="${i}" title="Ouvrir le plan en grand (et le modifier)">
-          <div class="pl-titre"><span>${p.module ? `Module ${echapper(p.nom)}` : `Pdc ${p.pdc}`}</span><span class="pl-pdc">${p.module ? `Pdc ${p.pdc} · ${echapper(p.matiere)}` : echapper(p.sorte)}</span></div>
-          <div class="pl-sous">${p.module ? "module" : echapper(p.nom)} · ${dimsPlan(p.L, p.W)}${p.fois > 1 ? ` · coupé ${p.fois} fois` : ""} · ${n} morceau(x)${p.ok ? "" : " · ⚠ mal lu"}${v.rt ? ' · <span class="pl-modifie">✎ modifié dans Sentinelle</span>' : ""}</div>
-          ${svgPlan(v.plan, { etats: v.etats, textes: v.textes })}</div>`;
+          <div class="pl-titre"><span>${echapper(c.titre)}</span><span class="pl-pdc">${echapper(c.badge)}</span></div>
+          <div class="pl-sous">${echapper(c.sous)}${c.visee ? "" : ` · ${n} morceau(x)`}${p.ok ? "" : " · ⚠ mal lu"}${v.rt ? ' · <span class="pl-modifie">✎ modifié dans Sentinelle</span>' : ""}</div>
+          ${svgPlan(v.plan, { etats: v.etats, textes: v.textes, visee: c.visee || undefined })}</div>`;
       })
       .join("")}</div>`;
-  const texteDe = (p) => ({
-    plan: p,
-    donnees: d,
-    titre: p.module ? `Module ${p.nom}` : `${p.matiere} — Pdc ${p.pdc}`,
-    badge: `Pdc ${p.pdc} · ${p.matiere}`,
-    sous: `${p.module ? "module" : `${p.sorte} ${p.nom}`} · ${dimsPlan(p.L, p.W)}${p.fois > 1 ? ` · coupé ${p.fois} fois` : ""}`,
-    apresModification: () => afficherPlansLancement(zone),
-  });
-  zone.querySelectorAll(".pl-carte").forEach((b) => activerCartePlan(b, () => ouvrirPlanEnGrand(texteDe(plans[Number(b.dataset.i)]))));
+  const texteDe = (c) => {
+    const p = c.plan;
+    return {
+      plan: p,
+      donnees: d,
+      visee: c.visee || undefined,
+      titre: c.visee ? `${c.titre} — ${p.matiere} Pdc ${p.pdc}` : p.module ? `Module ${p.nom}` : `${p.matiere} — Pdc ${p.pdc}`,
+      badge: `Pdc ${p.pdc} · ${p.matiere}`,
+      sous: c.visee ? c.sous : `${p.module ? "module" : `${p.sorte} ${p.nom}`} · ${dimsPlan(p.L, p.W)}${fois(p)}`,
+      apresModification: () => afficherPlansLancement(zone),
+    };
+  };
+  const plans = cartes.map((c) => c.plan);
+  zone.querySelectorAll(".pl-carte").forEach((b) => activerCartePlan(b, () => ouvrirPlanEnGrand(texteDe(cartes[Number(b.dataset.i)]))));
   $("choixPlansMatiere").addEventListener("change", (e) => {
     etatPlans.matiere = e.target.value;
     afficherPlansLancement(zone);
   });
   $("btnImprimerMatiere").addEventListener("click", () => {
     const m = d.matieres.get(etatPlans.matiere);
-    const titre = etatPlans.matiere === "*modules" ? "Modules" : `${etatPlans.matiere}${m && m.desc ? ` — ${m.desc}` : ""}`;
-    const aImprimer = plans.map((p) => planPourPdf(texteDe(p)));
+    const titre = etatPlans.matiere === "*modules" ? "Modules et bandes" : `${etatPlans.matiere}${m && m.desc ? ` — ${m.desc}` : ""}`;
+    const aImprimer = cartes.map((c) => planPourPdf(texteDe(c)));
     const nbModifies = aImprimer.filter((y) => y.marques).length;
     const octets = pdfPlansDeCoupe({
       surtitre: `Plans de coupe · lancement ${d.lancement}`,
