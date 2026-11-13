@@ -1179,7 +1179,8 @@ const SUIVI = (() => {
     const enFab = resume.fabrication || { semaine: resume.semaine, annee: resume.annee };
     const courante = s.annee === enFab.annee && s.semaine === enFab.semaine;
     return `<div class="sv-semaine">
-      <div class="sv-sem-tete"><div><span class="sv-sem-nom">Semaine ${s.semaine}</span>${courante ? ' <span class="sv-badge">en fabrication</span>' : ""}<span class="sv-sem-dates">${echapper(datesDeLaSemaine(s.annee, s.semaine))}</span></div>
+      <div class="sv-sem-tete"><div><span class="sv-sem-nom">Semaine ${s.semaine}</span>${courante ? ' <span class="sv-badge">en fabrication</span>' : ""}<span class="sv-sem-dates">${echapper(datesDeLaSemaine(s.annee, s.semaine))}</span>
+        <div class="sv-sem-total"><strong>${fmt(totalSemaine(s))}</strong> pièce${totalSemaine(s) > 1 ? "s" : ""} · <strong>${fmt(s.f)}</strong> faite${s.f > 1 ? "s" : ""} · <strong>${fmt(s.r)}</strong> à faire</div></div>
         <div class="sv-sem-barre">${barre(s.f, s.r, s.e)}<span class="sv-pct sv-t-${s.e}">${p === null ? echapper(LIBELLES_ETAT[s.e]) : `${p} %`}</span></div></div>
       ${s.lancements.map((L) => htmlLancement(L, resume)).join("")}</div>`;
   }
@@ -1252,7 +1253,7 @@ const SUIVI = (() => {
   function chiffresGroupe(f, r, e, resume) {
     if (e === "hors_extraction") return `pas dans l'extraction du ${echapper(jourCourt(resume.jour))}`;
     if (f + r === 0) return "rien à suivre";
-    return `<strong>${fmt(f)}</strong> faite${f > 1 ? "s" : ""} · <strong>${fmt(r)}</strong> à faire`;
+    return `<strong>${fmt(f + r)}</strong> pièce${f + r > 1 ? "s" : ""} · <strong>${fmt(f)}</strong> faite${f > 1 ? "s" : ""} · <strong>${fmt(r)}</strong> à faire`;
   }
   function droiteGroupe(f, r, e) {
     const p = pct(f, r);
@@ -1861,6 +1862,8 @@ const SUIVI = (() => {
   // V6.9.2 : les semaines en bandeau (comme le téléphone) : une seule affichée (au départ celle en fabrication),
   // chacune avec son pourcentage et son état ; « Toutes » les remet les unes sous les autres.
   const cleSemaineSuivi = (s) => `${s.annee}-${s.semaine}`;
+  // V6.9.4 : le nombre de pièces de la semaine (faites + à faire + pas suivies dans l'extraction).
+  const totalSemaine = (s) => (s.f || 0) + (s.r || 0) + (s.h || 0);
   function semaineSuiviChoisie(resume) {
     const ss = resume.semaines;
     if (etat.semaineSuivi === "tout" || ss.some((s) => cleSemaineSuivi(s) === etat.semaineSuivi)) return etat.semaineSuivi;
@@ -1876,7 +1879,8 @@ const SUIVI = (() => {
       const etatTxt = p === null ? LIBELLES_ETAT[s.e] : `${p} %`;
       return `<button type="button" class="bandeau-btn${choix === cleSemaineSuivi(s) ? " actif" : ""}" data-sv-sem="${cleSemaineSuivi(s)}" aria-pressed="${choix === cleSemaineSuivi(s)}">
         <span class="bandeau-haut"><span class="libelle-onglet" title="Semaine ${s.semaine}">S${s.semaine}</span><span class="bandeau-etat sv-e-${s.e}">${echapper(etatTxt)}</span></span>
-        <span class="bandeau-dates">${courante ? "en fabrication" : echapper(LIBELLES_ETAT[s.e] || "")} · ${fmt(s.r)} à faire</span>
+        <span class="bandeau-total"><strong>${fmt(totalSemaine(s))}</strong> pièce${totalSemaine(s) > 1 ? "s" : ""}</span>
+        <span class="bandeau-dates">${courante ? "en fabrication · " : ""}${fmt(s.f)} faite${s.f > 1 ? "s" : ""} · ${fmt(s.r)} à faire</span>
       </button>`;
     };
     return `<nav class="bandeau-semaines sv-bandeau" aria-label="Semaines du suivi">${decroissantes(resume.semaines).map(puce).join("")}

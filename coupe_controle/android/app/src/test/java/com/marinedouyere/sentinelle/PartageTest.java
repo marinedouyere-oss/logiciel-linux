@@ -592,7 +592,7 @@ public class PartageTest {
         assertEquals(60, f.suivi.vues.get("transporteur").get(0).r, 0);
         assertEquals("Semaine 47", f.suivi.vues.get("transporteur").get(0).sous.get(0).nom);
         assertEquals("termine", f.suivi.vues.get("client").get(1).e);
-        assertEquals("18 faites · 3 à faire", PartageVue.chiffresGroupe(18, 3, "en_cours", "2026-11-10"));
+        assertEquals("21 pièces · 18 faites · 3 à faire", PartageVue.chiffresGroupe(18, 3, "en_cours", "2026-11-10"));
         assertEquals("pas dans l'extraction du 10/11", PartageVue.chiffresGroupe(0, 0, "hors_extraction", "2026-11-10"));
         assertEquals("log4t3", PartageVue.sansAccents("LOG 4 T3"));
         assertEquals("etiquete", PartageVue.sansAccents("Étiqueté"));

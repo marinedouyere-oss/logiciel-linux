@@ -739,11 +739,18 @@ final class PartageVue {
 
     /** Une pastille arrondie : bordeaux si choisie ; sinon blanche, bord de la couleur de l'état (ok, attention, alerte). */
     private TextView pastille(String texte, String description, boolean actif, String niveau, View.OnClickListener action) {
-        TextView b = ui.texte(texte, 13.5f, true, actif ? 0xFFFFFFFF : Ui.NOIR);
+        int saut = texte.indexOf('\n');
+        CharSequence affiche = texte;
+        if (saut > 0) {
+            SpannableStringBuilder sb = new SpannableStringBuilder(texte);
+            sb.setSpan(new android.text.style.RelativeSizeSpan(0.82f), saut + 1, texte.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            affiche = sb;
+        }
+        TextView b = ui.texte(affiche, 13.5f, true, actif ? 0xFFFFFFFF : Ui.NOIR);
         b.setGravity(Gravity.CENTER);
-        b.setMinHeight(ui.dp(40));
-        b.setPadding(ui.dp(14), 0, ui.dp(14), 0);
-        b.setMaxLines(1);
+        b.setMinHeight(ui.dp(saut > 0 ? 50 : 40));
+        b.setPadding(ui.dp(14), ui.dp(saut > 0 ? 4 : 0), ui.dp(14), ui.dp(saut > 0 ? 4 : 0));
+        b.setMaxLines(saut > 0 ? 2 : 1);
         android.graphics.drawable.GradientDrawable fond = ui.fondRond(actif ? Ui.BORDEAUX : 0xFFFFFFFF, 20);
         if (!actif) {
             int bord = "alerte".equals(niveau) ? ui.couleur(R.color.alerte_texte) : "attention".equals(niveau) ? 0xFFC98A00 : "ok".equals(niveau) ? 0xFFD9D4CF : 0xFFE0DCD7;
@@ -1414,7 +1421,8 @@ final class PartageVue {
             Integer p = pctSuivi(sem.f, sem.r);
             String niveau = "retard".equals(sem.e) ? "alerte" : "en_cours".equals(sem.e) ? "attention" : "termine".equals(sem.e) ? "ok" : "info";
             boolean actif = cleSuivi(sem).equals(choix);
-            View b = pastille("S" + sem.semaine + (p == null ? "" : " · " + p + " %"), "Semaine " + sem.semaine + " du suivi", actif, niveau, v -> {
+            double total = sem.f + sem.r + sem.h;
+            View b = pastille("S" + sem.semaine + (p == null ? "" : " · " + p + " %") + "\n" + fmtSuivi(total) + (total > 1 ? " pièces" : " pièce"), "Semaine " + sem.semaine + " du suivi", actif, niveau, v -> {
                 semaineSuivi = cleSuivi(sem);
                 construire();
             });
@@ -1644,6 +1652,15 @@ final class PartageVue {
         boolean courante = s.semaineFab > 0 ? sem.annee == s.anneeFab && sem.semaine == s.semaineFab : sem.annee == s.annee && sem.semaine == s.semaine;
         corps.addView(ui.titreCarte("Semaine " + sem.semaine + (courante ? (s.semaineFab > 0 ? " · en fabrication" : " · en cours") : "")));
         corps.addView(ui.texte(CompteRendu.datesSemaine(sem.annee, sem.semaine), 13, false, ui.couleur(R.color.gris_texte)));
+        double total = sem.f + sem.r + sem.h;
+        SpannableStringBuilder chiffres = new SpannableStringBuilder();
+        gras(chiffres, fmtSuivi(total));
+        chiffres.append(total > 1 ? " pièces · " : " pièce · ");
+        gras(chiffres, fmtSuivi(sem.f));
+        chiffres.append(sem.f > 1 ? " faites · " : " faite · ");
+        gras(chiffres, fmtSuivi(sem.r));
+        chiffres.append(" à faire");
+        corps.addView(ui.texte(chiffres, 14, false, Ui.NOIR), ui.marges(2, 2));
         LinearLayout tete = ui.rangee();
         tete.addView(barreSuivi(sem.f, sem.r, sem.e), new LinearLayout.LayoutParams(0, ui.dp(10), 1));
         Integer p = pctSuivi(sem.f, sem.r);
@@ -1710,7 +1727,8 @@ final class PartageVue {
     static String chiffresGroupe(double f, double r, String e, String jour) {
         if ("hors_extraction".equals(e)) return "pas dans l'extraction du " + jourCourt(jour);
         if (f + r == 0) return "rien à suivre";
-        return fmtSuivi(f) + (f > 1 ? " faites" : " faite") + " · " + fmtSuivi(r) + " à faire";
+        // V6.9.4 : le nombre de pièces devant (pas seulement le pourcentage).
+        return fmtSuivi(f + r) + (f + r > 1 ? " pièces" : " pièce") + " · " + fmtSuivi(f) + (f > 1 ? " faites" : " faite") + " · " + fmtSuivi(r) + " à faire";
     }
 
     /** Pour chercher : sans accents ni espaces, en minuscules (comme le PC). */

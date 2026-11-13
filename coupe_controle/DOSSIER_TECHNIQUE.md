@@ -345,6 +345,9 @@ des semaines du suivi est mal organisée ») :
   bandeau, « Toutes », vue « Par semaine » (et le détail par semaine des autres vues), colonnes du tableau Excel (le
   total reste à la fin), « Pas dans les lancements » (pastilles et lignes). Seul l'affichage change (`decroissantes`) :
   le résumé et le fichier partagé gardent leur ordre.
+- V6.9.4 : le nombre de pièces de chaque semaine est affiché (pas seulement le %) : bandeau, en-tête de la semaine,
+  vues (`totalSemaine` = faites + à faire + pas suivies ; vues : faites + à faire) ; téléphone : pastilles sur deux
+  lignes « S47 · 68 % / 933 pièces », en-tête de la semaine, `chiffresGroupe` (« 21 pièces · 18 faites · 3 à faire »).
 
 ### Semaine retirée puis rescannée (V6.7.4, `lancementsActifs` dans `06b_bibliotheque.js`)
 

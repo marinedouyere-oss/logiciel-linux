@@ -890,3 +890,8 @@
   .bandeau-etat.sv-e-en_cours { background: #e3ecf7; color: #1d4f91; }
   .bandeau-etat.sv-e-termine { background: var(--ok-fond); color: var(--ok-texte); }
   .bandeau-etat.sv-e-hors_extraction, .bandeau-etat.sv-e-attente, .bandeau-etat.sv-e-absent, .bandeau-etat.sv-e-casse { background: var(--gris-clair); color: #6b605d; }
+  /* V6.9.4 : le nombre de pièces de chaque semaine (bandeau et en-tête). */
+  .bandeau-total { font-size: 0.9rem; }
+  .bandeau-total strong { font-family: var(--titres); font-size: 1.05rem; }
+  .bandeau-btn.actif .bandeau-total { color: #fff; }
+  .sv-sem-total { font-size: 0.88rem; color: var(--noir); margin-top: 2px; }
