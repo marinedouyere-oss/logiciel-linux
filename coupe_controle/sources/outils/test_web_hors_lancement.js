@@ -94,7 +94,7 @@ const LIGNES = [
   await page.waitForSelector("#svHors", { timeout: 30000 });
   const puces = await page.$$eval("[data-sv-hors-sem]", (b) => b.map((x) => x.textContent.replace(/\s+/g, " ").trim()));
   console.log(puces.join(" | "));
-  verifier(puces.length === 3 && /Toutes · 6/.test(puces[0]) && /S47 · 1/.test(puces[1]) && /S48 · 5/.test(puces[2]), "puces : Toutes · 6, S47 · 1, S48 · 5");
+  verifier(puces.length === 3 && /Toutes · 6/.test(puces[0]) && /S48 · 5/.test(puces[1]) && /S47 · 1/.test(puces[2]), "puces : Toutes · 6, S48 · 5, S47 · 1 (la plus récente d'abord)");
   const nbLignes = () => page.$$eval("#svHors tr.sv-hors-ligne", (t) => t.length);
   verifier((await nbLignes()) === 3, "3 lignes affichées");
   const fond = await page.$eval("#svHors tr.sv-hors-ligne td", (td) => getComputedStyle(td).backgroundColor);

@@ -1380,6 +1380,13 @@ final class PartageVue {
         return defile;
     }
 
+    /** V6.9.3 : les semaines du suivi, la plus récente d'abord (dans tout le suivi). */
+    private static List<FichierPartage.SemaineSuivi> decroissantes(List<FichierPartage.SemaineSuivi> ss) {
+        List<FichierPartage.SemaineSuivi> l = new ArrayList<>(ss);
+        java.util.Collections.sort(l, (a, b) -> Integer.compare(b.annee * 100 + b.semaine, a.annee * 100 + a.semaine));
+        return l;
+    }
+
     /** V6.9.2 : la semaine affichée dans l'avancement (« tout » : toutes). */
     private String semaineSuivi;
 
@@ -1403,9 +1410,7 @@ final class PartageVue {
         LinearLayout r = ui.rangee();
         View aMontrer = null;
         // V6.9.2 : la plus récente à gauche (ordre décroissant), comme les autres bandeaux du téléphone.
-        List<FichierPartage.SemaineSuivi> decroissantes = new ArrayList<>(s.semaines);
-        java.util.Collections.reverse(decroissantes);
-        for (FichierPartage.SemaineSuivi sem : decroissantes) {
+        for (FichierPartage.SemaineSuivi sem : decroissantes(s.semaines)) {
             Integer p = pctSuivi(sem.f, sem.r);
             String niveau = "retard".equals(sem.e) ? "alerte" : "en_cours".equals(sem.e) ? "attention" : "termine".equals(sem.e) ? "ok" : "info";
             boolean actif = cleSuivi(sem).equals(choix);
@@ -1602,7 +1607,9 @@ final class PartageVue {
                 TextView aideHors = ui.texteAide("Pièces de l'extraction qui ne sont dans aucun lancement de la bibliothèque (pas encore lancées, ou lancement pas scanné).");
                 c.addView(ui.titreEtAide(ui.titreCarte("Dans Diakonos, dans aucun lancement"), aideHors));
                 c.addView(aideHors, ui.marges(4, 4));
-                for (String[] h : s.hors) {
+                List<String[]> horsDecroissant = new ArrayList<>(s.hors);
+                java.util.Collections.reverse(horsDecroissant);
+                for (String[] h : horsDecroissant) {
                     if (h.length < 4) continue;
                     LinearLayout r = ui.rangee();
                     r.addView(ui.texte(h[0], 14, true, Ui.NOIR), ui.poids(1));
@@ -1623,10 +1630,8 @@ final class PartageVue {
             // V6.9.2 : les semaines en bandeau (une seule affichée, au départ celle en fabrication) ; « Toutes » les remet.
             String choix = semaineSuiviChoisie(s);
             if (!s.semaines.isEmpty()) racine.addView(bandeauSuivi(s, choix), ui.marges(0, 6));
-            for (int k = s.semaines.size() - 1; k >= 0; k--) {
-                FichierPartage.SemaineSuivi sem = s.semaines.get(k);
+            for (FichierPartage.SemaineSuivi sem : decroissantes(s.semaines))
                 if ("tout".equals(choix) || cleSuivi(sem).equals(choix)) racine.addView(carteSemaineSuivi(sem, s));
-            }
             if (s.anciennes > 0 && "tout".equals(choix))
                 racine.addView(ui.texte(s.anciennes + (s.anciennes > 1 ? " semaines plus anciennes : finies." : " semaine plus ancienne : finie."), 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 6));
         }
@@ -1720,6 +1725,10 @@ final class PartageVue {
         final String vue = v[0];
         List<FichierPartage.GroupeSuivi> lignes = s.vues.get(vue);
         if (lignes == null) lignes = new ArrayList<>();
+        if ("semaine".equals(vue)) {
+            lignes = new ArrayList<>(lignes);
+            java.util.Collections.reverse(lignes);
+        }
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
         corps.addView(ui.titreCarte("Suivi par " + v[1].toLowerCase(Locale.FRANCE)));
@@ -1819,7 +1828,9 @@ final class PartageVue {
         bloc.addView(ui.texte(chiffresGroupe(g.f, g.r, g.e, s.jour), 13, false, Ui.NOIR));
         if (groupesOuverts.contains(cle)) {
             if (g.sous.isEmpty()) bloc.addView(ui.texte("Aucune pièce suivie.", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(6, 0));
-            for (FichierPartage.GroupeSuivi x : g.sous) {
+            List<FichierPartage.GroupeSuivi> sousListe = new ArrayList<>(g.sous);
+            if (!"semaine".equals(vue)) java.util.Collections.reverse(sousListe); // détail par semaine : la plus récente d'abord
+            for (FichierPartage.GroupeSuivi x : sousListe) {
                 LinearLayout r = ui.colonne();
                 r.setPadding(ui.dp(14), ui.dp(6), 0, ui.dp(4));
                 LinearLayout t = ui.rangee();
@@ -1854,27 +1865,32 @@ final class PartageVue {
         android.widget.TableLayout t = new android.widget.TableLayout(activite);
         android.widget.TableRow tete = new android.widget.TableRow(activite);
         tete.addView(celluleSuivi("Transporteur", true, false));
-        for (String c : s.colonnes) tete.addView(celluleSuivi(c, true, true));
+        int nc = s.colonnes.size();
+        // V6.9.3 : les semaines de la plus récente à la plus ancienne, le total à la fin.
+        int[] ordre = new int[nc];
+        for (int k = 0; k < nc - 1; k++) ordre[k] = nc - 2 - k;
+        if (nc > 0) ordre[nc - 1] = nc - 1;
+        for (int i : ordre) tete.addView(celluleSuivi(s.colonnes.get(i), true, true));
         t.addView(tete);
-        double[] totaux = new double[s.colonnes.size()];
+        double[] totaux = new double[nc];
         for (String[] l : s.tableau) {
             android.widget.TableRow r = new android.widget.TableRow(activite);
             r.addView(celluleSuivi(l.length > 0 ? l[0] : "", false, false));
-            for (int i = 1; i < l.length && i - 1 < totaux.length; i++) {
-                double v;
+            double[] valeurs = new double[nc];
+            for (int i = 1; i < l.length && i - 1 < nc; i++) {
                 try {
-                    v = Double.parseDouble(l[i]);
+                    valeurs[i - 1] = Double.parseDouble(l[i]);
                 } catch (NumberFormatException e) {
-                    v = 0;
+                    valeurs[i - 1] = 0;
                 }
-                totaux[i - 1] += v;
-                r.addView(celluleSuivi(v == 0 ? "" : fmtSuivi(v), i == l.length - 1, true));
+                totaux[i - 1] += valeurs[i - 1];
             }
+            for (int i : ordre) r.addView(celluleSuivi(valeurs[i] == 0 ? "" : fmtSuivi(valeurs[i]), i == nc - 1, true));
             t.addView(r);
         }
         android.widget.TableRow total = new android.widget.TableRow(activite);
         total.addView(celluleSuivi("Total", true, false));
-        for (double v : totaux) total.addView(celluleSuivi(fmtSuivi(v), true, true));
+        for (int i : ordre) total.addView(celluleSuivi(fmtSuivi(totaux[i]), true, true));
         t.addView(total);
         defile.addView(t);
         corps.addView(defile);

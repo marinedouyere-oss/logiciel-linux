@@ -237,7 +237,8 @@ const LANS_S47 = [
   for (const vue of ["transporteur", "coloris", "client", "semaine"]) {
     await page.locator(`#svVues [data-sv-vue="${vue}"]`).click();
     const lignes = await page.locator("#svVues [data-sv-groupe]").count();
-    await page.locator("#svVues [data-sv-groupe] > .sv-ligne").first().click();
+    // V6.9.3 : la semaine la plus récente d'abord ; on ouvre la première ligne qui a des pièces suivies.
+    await page.locator("#svVues [data-sv-groupe] > .sv-ligne", { hasText: "à faire" }).first().click();
     const sous = await page.locator("#svVues .sv-sous").count();
     vuesEcran[vue] = [lignes, sous, await page.locator("#svVues .carte-titre").innerText(), await page.locator("#svVues .sv-sous").first().innerText().catch(() => "")];
     if (capture && vue !== "semaine") await page.locator("#svVues").screenshot({ path: capture.replace(/\.png$/, `_${vue}.png`) });

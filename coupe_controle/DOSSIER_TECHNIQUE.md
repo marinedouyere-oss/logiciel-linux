@@ -341,6 +341,10 @@ des semaines du suivi est mal organisée ») :
   au départ celle en fabrication ; « Toutes » les remet les unes sous les autres.
 - Téléphone : les bandeaux de semaines (Semaine, Contrôle, Suivi) vont de la plus récente à la plus ancienne
   (demande : « logique de semaines décroissantes ») ; le bandeau ne défile que si la semaine choisie dépasse à droite.
+- V6.9.3 : le Suivi de production (PC et téléphone) va **toujours** de la semaine la plus récente à la plus ancienne :
+  bandeau, « Toutes », vue « Par semaine » (et le détail par semaine des autres vues), colonnes du tableau Excel (le
+  total reste à la fin), « Pas dans les lancements » (pastilles et lignes). Seul l'affichage change (`decroissantes`) :
+  le résumé et le fichier partagé gardent leur ordre.
 
 ### Semaine retirée puis rescannée (V6.7.4, `lancementsActifs` dans `06b_bibliotheque.js`)
 

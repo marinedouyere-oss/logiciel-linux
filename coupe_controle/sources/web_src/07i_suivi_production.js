@@ -1262,11 +1262,12 @@ const SUIVI = (() => {
     const v = resume.vues;
     if (!v) return "";
     const [vue, nomVue, nomSous] = VUES.find(([k]) => k === etat.vue) || VUES[0];
-    const lignes = v[vue] || [];
+    // Les semaines arrivent de la plus ancienne à la plus récente : on les retourne (la plus récente d'abord).
+    const lignes = vue === "semaine" ? [...(v[vue] || [])].reverse() : v[vue] || [];
     const groupe = (g) => {
       const cle = `${vue}|${g[0]}`;
       const ouvert = etat.groupesOuverts.has(cle);
-      const sous = g[4] || [];
+      const sous = vue === "semaine" ? g[4] || [] : [...(g[4] || [])].reverse();
       const detail = !ouvert
         ? ""
         : `<div class="sv-detail">${
@@ -1294,10 +1295,12 @@ const SUIVI = (() => {
     const t = resume.tableau;
     if (!t || !t.lignes.length) return "";
     const totaux = t.colonnes.map((_, i) => t.lignes.reduce((s, l) => s + (Number(l[i + 1]) || 0), 0));
+    const n = t.colonnes.length;
+    const ordre = [...Array(Math.max(0, n - 1)).keys()].reverse().concat(n - 1); // semaines décroissantes, puis Total
     return `<div class="carte"><div class="carte-titre">Qté en cours par transporteur et par semaine (comme dans Excel)</div>
-      <div class="defile"><table class="sv-table sv-croise"><thead><tr><th>Transporteur</th>${t.colonnes.map((c) => `<th class="nombre">${echapper(c)}</th>`).join("")}</tr></thead>
-      <tbody>${t.lignes.map((l) => `<tr><td>${echapper(l[0])}</td>${l.slice(1).map((v, i) => `<td class="nombre${i === l.length - 2 ? " total" : ""}">${v ? fmt(v) : ""}</td>`).join("")}</tr>`).join("")}</tbody>
-      <tfoot><tr><td>Total</td>${totaux.map((v) => `<td class="nombre total">${fmt(v)}</td>`).join("")}</tr></tfoot></table></div>
+      <div class="defile"><table class="sv-table sv-croise"><thead><tr><th>Transporteur</th>${ordre.map((i) => `<th class="nombre">${echapper(t.colonnes[i])}</th>`).join("")}</tr></thead>
+      <tbody>${t.lignes.map((l) => `<tr><td>${echapper(l[0])}</td>${ordre.map((i) => `<td class="nombre${i === n - 1 ? " total" : ""}">${l[i + 1] ? fmt(l[i + 1]) : ""}</td>`).join("")}</tr>`).join("")}</tbody>
+      <tfoot><tr><td>Total</td>${ordre.map((i) => `<td class="nombre total">${fmt(totaux[i])}</td>`).join("")}</tr></tfoot></table></div>
       <div class="note">Somme de « Qté en cours » de toute l'extraction du ${echapper(jourLong(resume.jour))} (lancements ou pas), comme dans Excel : pour contrôler avec Diakonos.</div></div>`;
   }
 
@@ -1413,7 +1416,7 @@ const SUIVI = (() => {
       return `<div class="carte"><div class="carte-titre">Pas dans les lancements</div>
       <div class="note">Pièces de l'extraction qui ne sont dans aucun lancement de la bibliothèque (pas encore lancées, ou lancement pas scanné). Chargez l'extraction sur ce PC pour en voir la liste.</div>
       <table class="sv-table"><thead><tr><th>Semaine Diakonos</th><th class="nombre">Pièces à faire</th><th class="nombre">Lignes</th><th class="nombre">Commandes</th></tr></thead>
-      <tbody>${resume.hors.map((h) => `<tr><td>${echapper(h[0])}</td><td class="nombre">${fmt(h[1])}</td><td class="nombre">${fmt(h[2])}</td><td class="nombre">${fmt(h[3])}</td></tr>`).join("")}</tbody></table></div>`;
+      <tbody>${[...resume.hors].reverse().map((h) => `<tr><td>${echapper(h[0])}</td><td class="nombre">${fmt(h[1])}</td><td class="nombre">${fmt(h[2])}</td><td class="nombre">${fmt(h[3])}</td></tr>`).join("")}</tbody></table></div>`;
     }
     const tout = etat.horsDetail;
     const parSem = new Map();
@@ -1425,10 +1428,12 @@ const SUIVI = (() => {
       g.lignes++;
       parSem.set(id, g);
     }
-    const semaines = [...parSem.values()].sort((a, b) => (a.annee || 0) * 100 + (a.semaine || 0) - ((b.annee || 0) * 100 + (b.semaine || 0)));
+    const semaines = [...parSem.values()].sort((a, b) => (b.annee || 0) * 100 + (b.semaine || 0) - ((a.annee || 0) * 100 + (a.semaine || 0)));
     const nbCollees = tout.filter((x) => x.collee).reduce((t, x) => t + x.n, 0);
     if (etat.horsSemaine && !parSem.has(etat.horsSemaine) && !(etat.horsSemaine === "collees" && nbCollees)) etat.horsSemaine = "";
-    const liste = horsFiltres();
+    // La semaine la plus récente d'abord (à semaine égale, l'ordre de l'extraction : commande, ligne).
+    const sem = (x) => (x.r[1] || 0) * 100 + (x.r[0] || 0);
+    const liste = horsFiltres().map((x, i) => [x, i]).sort((a, b) => sem(b[0]) - sem(a[0]) || a[1] - b[1]).map((y) => y[0]);
     const total = liste.reduce((t, x) => t + x.n, 0);
     const puces = [`<button type="button" class="sv-puce${etat.horsSemaine ? "" : " actif"}" data-sv-hors-sem="">Toutes · ${fmt(tout.reduce((t, x) => t + x.n, 0))}</button>`]
       .concat(semaines.map((g) => `<button type="button" class="sv-puce${etat.horsSemaine === g.id ? " actif" : ""}" data-sv-hors-sem="${echapper(g.id)}">S${g.semaine || "?"} · ${fmt(g.pieces)}</button>`))
@@ -1851,6 +1856,8 @@ const SUIVI = (() => {
     ecrireLocal(CLE_PANNEAU, k);
     afficher();
   }
+  // V6.9.3 : dans tout le suivi, la semaine la plus récente d'abord (bandeau, « Toutes », vues, tableau, pas lancées).
+  const decroissantes = (ss) => [...ss].sort((a, b) => b.annee * 100 + b.semaine - (a.annee * 100 + a.semaine));
   // V6.9.2 : les semaines en bandeau (comme le téléphone) : une seule affichée (au départ celle en fabrication),
   // chacune avec son pourcentage et son état ; « Toutes » les remet les unes sous les autres.
   const cleSemaineSuivi = (s) => `${s.annee}-${s.semaine}`;
@@ -1872,12 +1879,12 @@ const SUIVI = (() => {
         <span class="bandeau-dates">${courante ? "en fabrication" : echapper(LIBELLES_ETAT[s.e] || "")} · ${fmt(s.r)} à faire</span>
       </button>`;
     };
-    return `<nav class="bandeau-semaines sv-bandeau" aria-label="Semaines du suivi">${resume.semaines.map(puce).join("")}
+    return `<nav class="bandeau-semaines sv-bandeau" aria-label="Semaines du suivi">${decroissantes(resume.semaines).map(puce).join("")}
       <button type="button" class="bandeau-btn bandeau-tout${choix === "tout" ? " actif" : ""}" data-sv-sem="tout" aria-pressed="${choix === "tout"}"><span class="bandeau-haut"><span class="libelle-onglet">Toutes</span></span><span class="bandeau-dates">les unes sous les autres</span></button></nav>`;
   }
   function htmlAvancement(resume) {
     const choix = semaineSuiviChoisie(resume);
-    const montrees = choix === "tout" ? resume.semaines : resume.semaines.filter((s) => cleSemaineSuivi(s) === choix);
+    const montrees = choix === "tout" ? decroissantes(resume.semaines) : resume.semaines.filter((s) => cleSemaineSuivi(s) === choix);
     return `${resume.semaines.length ? htmlBandeauSuivi(resume, choix) : ""}<div class="carte" id="svAvancement"><div class="carte-titre">Avancement par lancement${boutonAide("sv-avancement")}</div>
         ${texteAide("sv-avancement", "L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Une pièce relancée (casse, retard) compte dans le lancement le plus récent, et elle est déduite du lancement d'origine. Un clic sur un lancement : les commandes encore à faire.")}
         <div class="sv-legende"><span><i class="sv-l-en_cours"></i>En cours</span><span><i class="sv-l-termine"></i>Terminé</span><span><i class="sv-l-retard"></i>En retard (semaine passée)</span><span><i class="sv-l-attente"></i>Pas dans cette extraction</span></div>
