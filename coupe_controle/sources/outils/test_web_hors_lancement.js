@@ -89,6 +89,8 @@ const LIGNES = [
 
   // 3. L'écran.
   await page.click('[data-onglet="suivi"]');
+  // V6.9 : le Suivi est en onglets ; « Pas dans les lancements » en est un.
+  await page.click('[data-sv-panneau="hors"]');
   await page.waitForSelector("#svHors", { timeout: 30000 });
   const puces = await page.$$eval("[data-sv-hors-sem]", (b) => b.map((x) => x.textContent.replace(/\s+/g, " ").trim()));
   console.log(puces.join(" | "));
@@ -156,9 +158,11 @@ const LIGNES = [
   verifier(garde.length === 2 && garde.some((a) => a[0] === "CVCTEST003" && a[1] === 4 && !a[2]) && garde.some((a) => a[0] === "CVCTEST002" && a[1] === 1 && a[2]), "ajouts gardés en mémoire");
   const rajouts = await page.locator("#svRajouts").innerText();
   verifier(/ajoutées à la main dans un lancement existant · 5/.test(rajouts) && /CVCTEST003/.test(rajouts), "liste des pièces ajoutées à la main affichée");
+  if (sortie) await page.locator("#svHors").screenshot({ path: path.join(sortie, "hors_lancement_ajout.png") });
+  await page.click('[data-sv-panneau="lancements"]');
   const ligneLan = await page.locator('[data-sv-lan] .sv-ligne', { hasText: "LAN264801START" }).first().innerText();
   verifier(/dont 5 pièces ajoutées à la main/.test(ligneLan), "barre du lancement : « dont 5 pièces ajoutées à la main »");
-  if (sortie) await page.locator("#svHors").screenshot({ path: path.join(sortie, "hors_lancement_ajout.png") });
+  await page.click('[data-sv-panneau="hors"]');
 
   // La pièce arrive ensuite dans un vrai fichier de lancement : l'ajout ne compte plus (pas de double compte).
   const double = await page.evaluate(() => {
@@ -225,8 +229,10 @@ const LIGNES = [
   verifier(e1.hors.join(",") === "CVCTEST003", `liste : CVCTEST004 n'y est plus (${e1.hors.join(",")})`);
   verifier(e1.choix === "2026-47|LAN2647ESSAI", "le lancement créé est choisi dans la liste pour la suite");
   verifier((await page.locator("#svManuels").innerText()).includes("LAN2647ESSAI"), "liste « Lancements créés dans Sentinelle » affichée");
+  await page.click('[data-sv-panneau="lancements"]');
   const barre = await page.locator('[data-sv-lan] .sv-ligne', { hasText: "LAN2647ESSAI" }).first().innerText();
   verifier(/créé dans Sentinelle/.test(barre), "barre du lancement : « lancement créé dans Sentinelle »");
+  await page.click('[data-sv-panneau="hors"]');
   // Le même nom dans une autre semaine : refusé.
   await page.selectOption("#svHorsLancement", "__nouveau__");
   await page.fill("#svHorsNomNouveau", "lan2647essai");

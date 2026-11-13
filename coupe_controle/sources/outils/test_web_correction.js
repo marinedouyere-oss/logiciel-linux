@@ -51,6 +51,7 @@ async function scanner(page) {
 
   const navigateur = await chromium.launch();
   const page = await navigateur.newPage({ viewport: { width: 1100, height: 1000 }, acceptDownloads: true });
+  await page.addInitScript(() => { try { localStorage.setItem("sentinelle-vue-controle", "toutes"); } catch (e) {} }); // V6.9 : toutes les cases affichées (tests du contrôle)
   const alertes = [];
   page.on("dialog", (d) => {
     console.log("ALERTE:", d.message());

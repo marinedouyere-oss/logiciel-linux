@@ -230,7 +230,13 @@ final class EcranStock {
     private MaterialCardView carteFichier(FichierPartage.Stock s) {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corps(carte);
-        corps.addView(ui.titreCarte("Fichier woodStore"));
+        int nbReserves = 0;
+        for (FichierPartage.FormatStock f : s.formats) nbReserves += f.reserve();
+        // V6.9 : l'explication du stock réel est derrière le « ? ».
+        TextView aide = ui.texteAide("Stock réel = stock − réservé : les chutes réservées pour un lancement à débiter et les panneaux entiers de la case 302"
+                + (nbReserves > 0 ? " (" + nbReserves + " aujourd'hui)" : "") + " sont comptés à part.");
+        corps.addView(ui.titreEtAide(ui.titreCarte("Fichier woodStore"), aide));
+        corps.addView(aide, ui.marges(4, 2));
         long donneesDu = s.jusquau > 0 ? s.jusquau : s.modifie;
         corps.addView(ui.texte((s.nom.isEmpty() ? "brdlib.bdx" : s.nom) + " · données du " + jour(donneesDu) + " · chargé sur le PC le " + jour(s.charge), 13, false,
                 ui.couleur(R.color.gris_texte)), ui.marges(2, 2));
@@ -238,10 +244,6 @@ final class EcranStock {
         if (age > STOCK_VIEUX_JOURS)
             corps.addView(ui.bandeau("⚠ Données de " + age + " jours : extrayez un fichier neuf de woodStore et chargez-le sur le PC (page Stock).",
                     ui.couleur(R.color.attention_fond), ui.couleur(R.color.attention_texte)), ui.marges(6, 2));
-        int panneauxReserves = 0;
-        for (FichierPartage.FormatStock f : s.formats) panneauxReserves += f.reserve();
-        corps.addView(ui.note("Stock réel = stock − réservé : les chutes réservées pour un lancement à débiter et les panneaux entiers de la case 302"
-                + (panneauxReserves > 0 ? " (" + panneauxReserves + " aujourd'hui)" : "") + " sont comptés à part."), ui.marges(4, 0));
         return carte;
     }
 

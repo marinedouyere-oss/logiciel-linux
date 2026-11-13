@@ -27,6 +27,7 @@ const DEUX_FOIS = ["CVC26100827002", "CVC26100696004", "CVC26100832005"];
   const nav = await chromium.launch();
   const contexte = await nav.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
   const page = await contexte.newPage();
+  await page.addInitScript(() => { try { localStorage.setItem("sentinelle-vue-controle", "toutes"); } catch (e) {} }); // V6.9 : toutes les cases affichées (tests du contrôle)
   page.on("dialog", (d) => d.accept());
   page.on("pageerror", (e) => {
     console.log("ERREUR JS:", e.message);

@@ -84,7 +84,7 @@ const FICHIER = [
   await page.waitForSelector(".stk-fichier");
   const texte = await page.locator("#pageStock").innerText();
   verifier(/1 chutes? réservées?/.test(texte) && /chutes disponibles/.test(texte), `page : chutes disponibles et réservées à part`);
-  verifier(/3 panneaux réservés/.test(texte) && /case 302/.test(texte), `page : panneaux entiers réservés (case 302) comptés à part`);
+  verifier(/3 panneaux réservés/.test(texte) && /case 302/.test(await page.locator("#pageStock").textContent()), `page : panneaux entiers réservés (case 302) comptés à part`);
   // Coloris à zéro : affiché par défaut ; case « avec du stock seulement » : caché, sauf son code tapé en entier.
   await page.fill("#champStock", "9004");
   const a0 = await page.$$eval("#pageStock tr.stk-ligne", (trs) => trs.map((tr) => tr.dataset.stkMat).join(" "));

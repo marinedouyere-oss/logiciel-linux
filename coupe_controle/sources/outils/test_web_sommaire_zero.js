@@ -8,6 +8,7 @@ const [pageHtml, pdf, pdfS47] = process.argv.slice(2);
 let echecs = 0; const verifier = (ok, t) => { console.log(`${ok ? "OK  " : "ÉCHEC"} ${t}`); if (!ok) echecs++; };
 (async () => {
   const nav = await chromium.launch(); const page = await nav.newPage();
+  await page.addInitScript(() => { try { localStorage.setItem("sentinelle-vue-controle", "toutes"); } catch (e) {} }); // V6.9 : toutes les cases affichées (tests du contrôle)
   page.on("pageerror", (e) => { console.log("ERREUR JS:", e.message); echecs++; });
   await page.route("https://s.test/**", (r) => r.fulfill({ status: 200, body: fs.readFileSync(pageHtml), headers: { "content-type": "text/html; charset=utf-8" } }));
   await page.goto("https://s.test/index.html");

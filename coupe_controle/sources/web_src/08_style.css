@@ -34,44 +34,45 @@
   /* V6.0 : menu bordeaux à gauche, contenu sur fond saumon pâle. */
   .appli { display: flex; min-height: 100vh; }
   .menu {
-    flex: 0 0 256px; width: 256px; background: var(--bordeaux); color: #fff; padding: 24px 14px 18px;
-    display: flex; flex-direction: column; gap: 22px; position: sticky; top: 0; height: 100vh; overflow-y: auto; z-index: 10;
+    flex: 0 0 248px; width: 248px; background: var(--bordeaux); color: #fff; padding: 16px 12px 14px;
+    display: flex; flex-direction: column; gap: 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto; z-index: 10;
+    scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
   }
   .menu-tete { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
-  .menu .logo { width: 150px; height: auto; display: block; margin-bottom: 12px; }
-  .menu-nom { font-family: var(--titres); font-weight: 700; font-size: 1.55rem; letter-spacing: 0.02em; }
+  .menu .logo { width: 118px; height: auto; display: block; margin-bottom: 8px; }
+  .menu-nom { font-family: var(--titres); font-weight: 700; font-size: 1.35rem; letter-spacing: 0.02em; }
   .menu-sous-titre { font-size: 0.85rem; color: var(--saumon); }
   .badge-version { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: #fff; color: var(--bordeaux); font-family: var(--texte); font-size: 0.8rem; font-weight: 700; letter-spacing: 0; vertical-align: middle; }
-  .onglets { display: flex; flex-direction: column; gap: 3px; }
-  .menu-groupe { margin: 12px 12px 4px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--saumon); }
+  .onglets { display: flex; flex-direction: column; gap: 1px; }
+  .menu-groupe { margin: 10px 12px 3px; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--saumon); }
   .onglet-btn {
-    display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 0 12px; border: none; border-radius: 10px;
-    background: none; color: #fff; font-family: var(--texte); font-size: 0.95rem; font-weight: 400; letter-spacing: 0; text-align: left; cursor: pointer;
+    display: flex; align-items: center; gap: 12px; width: 100%; min-height: 36px; padding: 0 12px; border: none; border-radius: 9px;
+    background: none; color: #fff; font-family: var(--texte); font-size: 0.92rem; font-weight: 400; letter-spacing: 0; text-align: left; cursor: pointer;
   }
-  .onglet-btn svg { flex: 0 0 auto; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .onglet-btn svg { flex: 0 0 auto; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .onglet-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); border-color: transparent; }
   .onglet-btn.actif, .onglet-btn.actif:hover:not(:disabled) { background: #fff; color: var(--bordeaux); font-weight: 700; }
-  .menu-dossier { margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.1); }
+  .menu-dossier { margin-top: auto; display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.1); }
   .menu-dossier .petit { font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--saumon); }
   .menu-dossier .nom { font-weight: 700; word-break: break-word; }
   .menu-dossier .etat-dossier { font-size: 0.8rem; color: var(--saumon); }
-  .bouton-menu { margin-top: 4px; min-height: 40px; padding: 0 12px; border-radius: 10px; background: #fff; color: var(--bordeaux); border: 1px solid #fff; font-size: 0.85rem; }
+  .bouton-menu { margin-top: 4px; min-height: 34px; padding: 0 12px; border-radius: 10px; background: #fff; color: var(--bordeaux); border: 1px solid #fff; font-size: 0.85rem; }
   .bouton-menu:hover:not(:disabled) { background: var(--saumon-pale); border-color: var(--saumon-pale); }
   .contenu { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
-  main { width: 100%; max-width: 1180px; margin: 0 auto; padding: 28px 32px 30px; flex: 1 0 auto; }
+  main { width: 100%; max-width: 1280px; margin: 0 auto; padding: 22px 28px 30px; flex: 1 0 auto; }
   .inactif { display: none; }
   .carte {
     background: #fff; border: 1px solid var(--gris-filet); border-radius: 12px;
     padding: 16px 20px; margin-bottom: 16px;
   }
   /* Haut de page : surtitre gris, titre Raleway bordeaux, phrase d'explication ; boutons à droite. */
-  .entete-page { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+  .entete-page { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 16px; margin-bottom: 18px; }
   .entete-textes { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .surtitre { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #6b605d; }
-  .entete-page h1 { margin: 0; font-size: 2.1rem; font-weight: 700; color: var(--bordeaux); line-height: 1.15; }
+  .entete-page h1 { margin: 0; font-size: 1.9rem; font-weight: 700; color: var(--bordeaux); line-height: 1.15; }
   .chapeau { font-size: 0.95rem; color: #6b605d; }
   .entete-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-  .entete-actions button { min-height: 44px; border-radius: 10px; }
+  .entete-actions button { min-height: 42px; border-radius: 10px; }
   /* Pastilles d'état (bleu = bon, orange = à regarder, gris = pas fait). */
   .etiquette { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; white-space: nowrap; }
   .etiquette.bon { background: #e3ecf7; color: #1d4f91; }
@@ -196,7 +197,7 @@
   .badge-probleme.ok { background: var(--ok-fond); color: var(--ok-texte); }
   button.petit { padding: 4px 10px; font-size: 0.82rem; white-space: nowrap; }
   .pied {
-    width: 100%; max-width: 1180px; margin: 0 auto; padding: 14px 32px 26px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px;
+    width: 100%; max-width: 1280px; margin: 0 auto; padding: 14px 28px 26px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px;
     color: #6b605d; font-size: 0.75rem; border-top: 1px solid var(--gris-filet);
   }
   /* Recherche */
@@ -341,17 +342,25 @@
   .colonne-cases { min-width: 0; }
   /* Écran large : la liste des postes reste à gauche, les cases défilent à droite. */
   @media (min-width: 1000px) {
-    .colonnes-controle { display: grid; grid-template-columns: 270px minmax(0, 1fr); align-items: start; }
-    .colonne-postes { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; padding: 2px; }
+    .colonnes-controle { display: grid; grid-template-columns: 284px minmax(0, 1fr); align-items: start; }
+    .colonne-postes { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; padding: 2px; scrollbar-width: thin; }
   }
   .colonne-cases .titre-poste { margin-top: 10px; }
   .liste-postes { display: flex; flex-direction: column; gap: 8px; }
   .poste-item {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 56px; padding: 8px 12px;
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 50px; padding: 6px 10px;
     background: #fff; color: var(--noir); border: 2px solid var(--gris-filet); border-radius: 12px; text-align: left; font-weight: 400;
   }
-  .poste-item:hover:not(:disabled) { background: #fff; border-color: var(--bordeaux); }
-  .poste-textes { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .poste-item:hover:not(:disabled) { background: #fff; border-color: var(--saumon); }
+  .poste-item.actif, .poste-item.actif:hover:not(:disabled) { background: var(--saumon-pale); border-color: var(--bordeaux); box-shadow: inset 4px 0 0 var(--bordeaux); }
+  .poste-item .pastille { width: 24px; height: 24px; font-size: 0.7rem; }
+  .poste-item .pastille.cree { background: var(--gris-filet); color: var(--gris); font-size: 0.9rem; }
+  .poste-item.sans-lancement .poste-nom { color: #6b605d; }
+  .poste-ligne { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .poste-ligne .poste-nom { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .poste-ligne .etiquette { flex: 0 0 auto; padding: 2px 8px; font-size: 0.72rem; }
+  .poste-item .poste-fichier { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; word-break: normal; }
+  .poste-textes { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
   .poste-nom { font-weight: 700; font-size: 0.95rem; }
   .poste-fichier { font-size: 0.75rem; color: #6b605d; word-break: break-all; }
   .colonne-postes > button { min-height: 44px; border-radius: 10px; }
@@ -724,3 +733,136 @@
     #pageStock .fp-table th, #pageStock .fp-table td { padding: 6px 4px; }
   }
 
+
+  /* ---- V6.9 : refonte de l'interface ---- */
+  .cachee-vue { display: none !important; }
+  /* Choix « Un lancement / Tous » au-dessus de la liste. */
+  .choix-vue { display: flex; border: 1px solid #d9d4cf; border-radius: 10px; background: #fff; overflow: hidden; }
+  .choix-vue button { flex: 1; min-height: 36px; padding: 0 8px; border: none; border-radius: 0; background: #fff; color: var(--noir); font-weight: 700; font-size: 0.85rem; }
+  .choix-vue button + button { border-left: 1px solid var(--gris-filet); }
+  .choix-vue button:hover:not(:disabled) { background: var(--saumon-pale); border-color: var(--gris-filet); }
+  .choix-vue button.actif, .choix-vue button.actif:hover:not(:disabled) { background: var(--bordeaux); color: #fff; }
+  .ajouts-postes { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .ajouts-postes > button { min-height: 38px; border-radius: 10px; font-size: 0.85rem; }
+  .ajouts-postes > button.texte { min-height: 32px; }
+  .colonne-postes .carte.compteur { padding: 10px 16px; }
+  .colonne-postes .compteur .valeur { font-size: 1.45rem; }
+  /* Dossier de la semaine : une ligne, puis le compte rendu du scan dans un cadre qui défile. */
+  .carte-dossier { padding: 12px 16px; }
+  .dossier-ligne { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 18px; }
+  .dossier-ligne .ouvrir-semaine { margin: 0; flex-wrap: nowrap; }
+  .dossier-ligne .ouvrir-semaine input { width: 80px; min-height: 40px; }
+  .dossier-ligne .ouvrir-semaine button { min-height: 40px; }
+  .dossier-infos { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-bottom: 2px; }
+  .dossier-nom { font-size: 0.92rem; }
+  .dossier-infos .note { margin: 0; }
+  .dossier-boutons { display: flex; flex-wrap: wrap; gap: 8px; }
+  .dossier-boutons button { min-height: 40px; border-radius: 10px; }
+  .journal-scan { margin-top: 10px; border-top: 1px solid var(--gris-filet); padding-top: 8px; }
+  .journal-scan .compte-rendu { margin: 0; max-height: 7.6em; overflow-y: auto; font-size: 0.82rem; line-height: 1.45; padding-right: 6px; scrollbar-width: thin; }
+  .journal-scan.deplie .compte-rendu { max-height: none; }
+  .journal-scan .compte-rendu.erreur { max-height: none; }
+  .journal-scan > button.texte { margin-top: 4px; padding: 2px 4px; color: var(--bordeaux); font-size: 0.82rem; }
+  /* Case d'un lancement : en-tête avec l'état, fichiers sur deux colonnes, une seule barre d'actions. */
+  .carte-paire { padding: 14px 18px; }
+  .carte-paire .entete-carte { flex-wrap: wrap; row-gap: 4px; }
+  .carte-paire .titre-carte { flex: 0 1 auto; margin-right: 4px; }
+  .entete-carte-outils { margin-left: auto; display: flex; flex-wrap: wrap; gap: 2px; }
+  .fichiers-case { display: grid; grid-template-columns: 1fr; column-gap: 22px; }
+  @media (min-width: 1200px) { .fichiers-case { grid-template-columns: 1fr 1fr; } }
+  .fichiers-case .ligne-fichier { padding: 6px 0; }
+  .fichiers-case .ligne-fichier button { padding: 4px 12px; font-size: 0.82rem; }
+  .barre-actions-case { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 6px; padding: 10px; background: var(--gris-clair); border-radius: 10px; }
+  .barre-actions-case > button { min-height: 38px; padding: 6px 14px; font-size: 0.86rem; }
+  .barre-actions-case > button[data-action="go"] { min-width: 88px; }
+  .barre-actions-case > button.contour { background: #fff; }
+  .barre-actions-case > button.contour:hover:not(:disabled) { background: var(--saumon-pale); }
+  .barre-actions-sep { width: 1px; align-self: stretch; background: #d9d4cf; margin: 2px 4px; }
+  .carte-paire .bandeau { padding: 6px 10px; margin-top: 6px; font-size: 0.88rem; }
+  .carte-paire .note { font-size: 0.82rem; }
+  /* Écran étroit : la liste des lancements passe en haut, en défilement horizontal. */
+  @media (max-width: 999px) {
+    .colonnes-controle.vue-une .liste-postes { flex-direction: row; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+    .colonnes-controle.vue-une .poste-item { flex: 0 0 auto; width: auto; max-width: 260px; }
+    .ajouts-postes { flex-direction: row; flex-wrap: wrap; }
+  }
+  /* Bouton « ? » : l'explication s'ouvre sous le titre. */
+  .carte-titre { display: flex; align-items: center; gap: 8px; }
+  .aide-btn {
+    flex: 0 0 auto; width: 22px; height: 22px; padding: 0; margin-left: 2px; border-radius: 50%; border: 1px solid var(--saumon);
+    background: #fff; color: var(--bordeaux); font-family: var(--texte); font-size: 0.78rem; font-weight: 700; line-height: 20px; text-align: center;
+  }
+  .aide-btn:hover:not(:disabled), .aide-btn[aria-expanded="true"] { background: var(--bordeaux); border-color: var(--bordeaux); color: #fff; }
+  .aide-texte { background: var(--saumon-pale); border-radius: 8px; padding: 8px 12px; margin: 0 0 10px; color: #4a403d; line-height: 1.45; }
+  .aide-texte[hidden] { display: none; }
+  /* Onglets d'une page (Suivi, Bibliothèque…) : un seul contenu à la fois. */
+  .onglets-page { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 14px; border-bottom: 2px solid var(--saumon); }
+  .onglet-page {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 16px; margin-bottom: -2px;
+    background: none; color: #4a403d; border: none; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; font-weight: 700; font-size: 0.92rem;
+  }
+  .onglet-page:hover:not(:disabled) { background: #fff; color: var(--bordeaux); border-color: transparent; border-bottom: 3px solid var(--saumon); }
+  .onglet-page.actif, .onglet-page.actif:hover:not(:disabled) { background: #fff; color: var(--bordeaux); border-bottom: 3px solid var(--bordeaux); }
+  .onglet-nombre { display: inline-block; min-width: 22px; padding: 1px 7px; border-radius: 999px; background: var(--gris-filet); color: #4a403d; font-size: 0.75rem; text-align: center; }
+  .onglet-nombre.attention { background: #fde6cf; color: #8a4300; }
+  .panneau-page > .carte:first-child { margin-top: 0; }
+  .sv-carte-extraction { padding: 12px 18px; }
+  .sv-carte-extraction .sv-inclus { margin-top: 6px; }
+  /* Pas dans les lancements : outils lisibles, en-tête du tableau qui reste visible en descendant. */
+  #svHors .sv-hors-outils input[type="search"], #svHors .sv-hors-outils input[type="text"], #svHors .sv-hors-outils select {
+    min-height: 40px; padding: 0 12px; border: 1px solid #cfccc6; border-radius: 10px; background: #fff; font: inherit; font-size: 0.92rem; color: var(--noir);
+  }
+  #svHors .sv-hors-outils input:focus, #svHors .sv-hors-outils select:focus { outline: none; border-color: var(--bordeaux); box-shadow: 0 0 0 2px var(--saumon-pale); }
+  #svHors .sv-hors-outils button { min-height: 40px; border-radius: 10px; }
+  @media (min-width: 1000px) {
+    #svHors .defile { overflow: visible; }
+    #svHors table.sv-hors thead th { position: sticky; top: 0; z-index: 2; background: #fff; box-shadow: 0 1px 0 var(--gris-filet); }
+  }
+  #svHors table.sv-hors td:nth-child(6) { min-width: 230px; }
+  #svHors table.sv-hors td:nth-child(6) .pale { font-size: 0.8rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  /* Bibliothèque : les semaines à gauche, les réglages (fichier partagé, téléphone) à droite. */
+  .biblio-etat { margin: 0 0 14px; }
+  .biblio-colonnes { display: grid; grid-template-columns: 1fr; gap: 0 18px; align-items: start; }
+  @media (min-width: 1200px) { .biblio-colonnes { grid-template-columns: minmax(0, 1fr) 380px; } }
+  .biblio-lancement { display: inline-block; margin: 0 14px 2px 0; white-space: nowrap; }
+  .biblio-cote .boutons-carte { flex-wrap: wrap; }
+  .biblio-cote .boutons-carte > button { flex: 1 1 140px; }
+  .biblio-cote .lien-qr { flex-direction: column; align-items: flex-start; }
+  .biblio-cote .code-lien { font-size: 1.25rem; }
+  /* Stock : recherche et en-tête du tableau qui restent visibles ; le détail à droite. */
+  .stk-outils { position: sticky; top: 0; z-index: 3; background: #fff; padding: 6px 0 4px; }
+  .stk-colonnes { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 16px; align-items: start; }
+  @media (min-width: 1100px) {
+    .stk-colonnes.avec-detail { grid-template-columns: minmax(0, 1fr) minmax(380px, 46%); }
+    .stk-cote { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-width: thin; }
+    .stk-liste .defilement { overflow: visible; }
+    .stk-liste table.fp-table thead th { position: sticky; top: var(--haut-outils-stock, 0px); z-index: 2; background: #fff; box-shadow: 0 1px 0 var(--gris-filet); }
+    .stk-colonnes.avec-detail .stk-col-desc { display: none; }
+    .stk-colonnes.avec-detail .stk-desc-m { display: block; }
+  }
+  .stk-cote .stk-detail { margin-bottom: 16px; border-color: var(--bordeaux); box-shadow: 0 6px 20px rgba(120, 20, 12, 0.08); }
+  /* Recherche : les deux façons de chercher côte à côte, les résultats dessous. */
+  .recherche-entrees { display: grid; grid-template-columns: 1fr; gap: 0 16px; align-items: stretch; }
+  @media (min-width: 1200px) { .recherche-entrees { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+  .recherche-entrees .ligne-cotes label { flex: 1 1 100px; }
+  .ligne-recherche input, .ligne-cotes input { min-height: 42px; border-radius: 10px; }
+  .ligne-recherche button, .ligne-cotes button { min-height: 42px; border-radius: 10px; }
+  /* Champs et listes : une base commune (les règles d'un écran passent devant). */
+  :where(main) select, :where(main) input[type="text"], :where(main) input[type="search"], :where(main) input[type="number"] {
+    min-height: 38px; padding: 0 10px; border: 1px solid #cfccc6; border-radius: 8px; background: #fff; font: inherit; color: var(--noir);
+  }
+  :where(main) select:focus, :where(main) input[type="text"]:focus, :where(main) input[type="search"]:focus, :where(main) input[type="number"]:focus {
+    outline: none; border-color: var(--bordeaux); box-shadow: 0 0 0 2px var(--saumon-pale);
+  }
+  :where(main) textarea { border: 1px solid #cfccc6; border-radius: 8px; padding: 8px 10px; font: inherit; }
+  /* La semaine : cartes courtes sans lancement, « À regarder » plus serré. */
+  .carte-lancement.sans-lancement { gap: 10px; background: #fcfaf9; border-style: dashed; }
+  .carte-lancement.sans-lancement h3 { color: #6b605d; }
+  .ligne-regarder { margin: 0 0 6px; padding: 8px 12px; font-weight: 400; font-size: 0.88rem; }
+  .ligne-regarder strong { font-weight: 700; }
+  .stk-colonnes.avec-detail .stk-cherche input[type="search"] { flex-basis: 200px; }
+  .stk-case { white-space: nowrap; margin-right: 4px; }
+  .stk-cote .fp-table { font-size: 0.82rem; }
+  .stk-cote .fp-table th, .stk-cote .fp-table td { padding: 5px 6px; }
+  .stk-cote .stk-dort { white-space: normal; }
+  .stk-cote .defilement { overflow-x: visible; }

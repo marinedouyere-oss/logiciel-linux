@@ -26,6 +26,7 @@ const LANS_S47 = [
   const nav = await chromium.launch();
   const contexte = await nav.newContext({ viewport: { width: 1300, height: 1000 } });
   const page = await contexte.newPage();
+  await page.addInitScript(() => { try { localStorage.setItem("sentinelle-vue-controle", "toutes"); } catch (e) {} }); // V6.9 : toutes les cases affichées (tests du contrôle)
   page.on("pageerror", (e) => {
     console.log("ERREUR JS:", e.message);
     echecs++;
@@ -215,7 +216,10 @@ const LANS_S47 = [
   const texte = await page.locator("#pageSuivi").innerText();
   verifier(/Suivi de production/.test(texte) && /Semaine 47/.test(texte) && /Semaine 48/.test(texte), "écran : semaines 47 et 48");
   verifier(texte.includes(`${Math.round((100 * piecesRetirees) / 165)} %`) && /Pas dans cette extraction/i.test(texte), "écran : pourcentage de LAN264702START, « Pas dans cette extraction » pour la 48");
-  verifier(/un CVC qui n'y est plus = pièce faite/.test(texte), "écran : la règle de l'atelier est écrite");
+  // V6.9 : l'explication est derrière le bouton « ? » (cachée, mais dans la page) ; le bouton l'ouvre.
+  verifier(/un CVC qui n'y est plus = pièce faite/.test(await page.locator("#pageSuivi").textContent()), "écran : la règle de l'atelier est écrite (derrière « ? »)");
+  await page.click('#pageSuivi [data-aide="sv-avancement"]');
+  verifier(/un CVC qui n'y est plus = pièce faite/.test(await page.locator("#pageSuivi").innerText()), "« ? » : la règle de l'atelier s'affiche");
   verifier(/depuis le 07\/11/.test(texte), "écran : « +N pièces depuis le 07/11 »");
   const barres = await page.locator("#pageSuivi [data-sv-lan] .sv-barre").count();
   const lignesHors = await page.evaluate(() => SUIVI.calculer().semaines.flatMap((x) => x.lancements).filter((l) => l.nom === "Pas dans un lancement").length);
@@ -226,6 +230,7 @@ const LANS_S47 = [
   if (capture) await page.locator("#pageSuivi").screenshot({ path: capture });
   // Suivi par semaine / transporteur / coloris : une barre par ligne, un clic donne le détail.
   const vuesEcran = {};
+  await page.click('#pageSuivi [data-sv-panneau="vues"]');
   for (const vue of ["transporteur", "coloris", "client", "semaine"]) {
     await page.locator(`#svVues [data-sv-vue="${vue}"]`).click();
     const lignes = await page.locator("#svVues [data-sv-groupe]").count();
@@ -252,6 +257,7 @@ const LANS_S47 = [
     onglet = "suivi";
     afficher();
   });
+  await page.click('#pageSuivi [data-sv-panneau="extractions"]'); // V6.9 : les extractions gardées sont dans leur onglet
   await page.locator('[data-sv-oublier="2026-11-10"]').click();
   await page.locator("#modaleConfirmationOk").click();
   await page.waitForFunction(() => SUIVI.etat.extractions.length === 1, null, { timeout: 10000 }).catch(() => null);

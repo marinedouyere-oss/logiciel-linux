@@ -288,6 +288,35 @@ semaine qui ne sont dans aucune case : créés dans Sentinelle, ou ajoutés à l
 V6.8.3 : ces lancements comptent aussi dans le récapitulatif du bas de la semaine (`avecHorsCases` : prévues, total,
 doublons entre lancements ; pas de .bkp ni de contrôle) et dans le compte rendu de la semaine (`donneesCompteRendu`).
 
+### Refonte de l'interface (V6.9.0)
+
+Demande : « pas ergonomique, trop chargé, on se perd, actions mal placées ». Même logique sur le PC et le téléphone.
+
+- **Menu** (PC) : plus compact, tout tient dans 900 px de haut (« Expérimental » sans défiler).
+- **« ? »** (`boutonAide` / `texteAide` dans `07c_accueil.js`, `Ui.texteAide` / `Ui.titreEtAide` sur Android) : les
+  explications sont cachées derrière un petit « ? » à côté du titre. Le texte reste dans la page (attribut `hidden`).
+- **Contrôler la coupe** : une ligne pour le dossier (semaine, dossier ouvert, boutons) ; le compte rendu du scan dans
+  un cadre de 5 lignes qui défile (« Tout voir » le déplie) ; à gauche la liste des lancements (état en pastille), à
+  droite **un seul lancement** (`vueControle()`, `caseChoisie`, `appliquerVueControle` dans `07_ui.js`). « Tous » remet
+  toutes les cases les unes sous les autres (choix gardé : `localStorage["sentinelle-vue-controle"]`). Dans la case :
+  l'état dans l'en-tête, les fichiers sur deux colonnes, une seule barre d'actions (GO, Vérifier Scies, Rapport,
+  Problèmes, Plans de coupe). Les cases restent toutes dans la page (`.cachee-vue`), les tests du contrôle passent en
+  « Tous » (`addInitScript`).
+- **Suivi de production** : boutons de l'extraction en haut de page, « Compter » visible, puis des **onglets**
+  (`PANNEAUX`, `etat.panneau`, `localStorage["sentinelle-suivi-panneau"]`) : Avancement par lancement, Par semaine /
+  transporteur…, Pas dans les lancements (avec le nombre), Tableau Excel, Extractions. Seul l'onglet choisi est
+  dessiné. Pas dans les lancements : en-tête du tableau qui reste visible en descendant. Téléphone : mêmes onglets
+  (`panneauSuivi`, `ongletsSuivi`).
+- **Stock** : recherche et en-tête du tableau collés en haut en descendant ; le détail du matériau cliqué s'affiche à
+  droite et reste visible (`.stk-colonnes.avec-detail`). La liste reste complète (aucune limite).
+- **Bibliothèque** : semaines gardées à gauche, fichier partagé et téléphone à droite ; « + Ajouter les semaines
+  d'avant » en haut.
+- **Recherche** : « Avec l'étiquette » et « Pièce sans étiquette » côte à côte, résultats dessous.
+- **La semaine** : carte courte pour un lancement pas encore préparé ; « À regarder » plus serré.
+
+Test : `test_web_interface.js` (menu, un lancement à la fois, « Tous », compte rendu du scan, onglets, « ? », en-tête
+collé, stock à droite, bibliothèque, recherche, pas de défilement de côté à 1000 px).
+
 ### Semaine retirée puis rescannée (V6.7.4, `lancementsActifs` dans `06b_bibliotheque.js`)
 
 « Retirer la semaine » vide ses lancements et pose `supprimeeLe` (date du retrait), gardée pour la fusion entre PC :

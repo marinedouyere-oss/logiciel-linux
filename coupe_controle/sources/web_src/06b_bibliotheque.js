@@ -799,35 +799,36 @@ function afficherBibliotheque() {
     const n = l.controle.nbCorriger + l.controle.nbVerifier;
     return n ? ` <span class="alerte-texte">⚠ ${n}</span>` : ' <span class="ok-texte">✔</span>';
   };
-  let html = `${entetePage("Outils", "Bibliothèque des semaines", "Toutes les semaines scannées, et le fichier partagé lu par le téléphone.")}<div class="carte">
-    <div class="carte-titre">Bibliothèque des semaines</div>
-    <div class="note">Chaque semaine scannée est gardée ici (lancements, pièces, bilan des contrôles). La casse s'en sert pour savoir si une pièce était déjà lancée, même plusieurs semaines avant.</div>
-    ${partage
-      ? `<div class="ligne-bibliotheque">Fichier partagé : <strong>${d ? `${echapper(d.name)} / ${NOM_FICHIER_PARTAGE}` : "aucun dossier choisi"}</strong></div>
-    <div class="note">Sentinelle y écrit toutes les semaines (lancements, résultats, problèmes, pièces). L'appli Android se branche sur ce fichier. Mettez-le dans un dossier du Drive.</div>
-    <div class="boutons-carte">
-      <button type="button" class="contour" id="btnDossierBibliotheque">${d ? "Changer de dossier" : "Choisir le dossier du fichier partagé"}</button>
-      <button type="button" id="btnSynchroniser" ${d && !bibliotheque.synchro ? "" : "disabled"}>Synchroniser</button>
-    </div>
-    <button type="button" class="contour pleine" id="btnImporterSemaines" ${bibliotheque.enCours ? "disabled" : ""}>+ Ajouter les semaines d'avant (choisir le dossier des archives)</button>`
-      : '<div class="note">Fichier partagé et ajout des semaines d\'avant : ouvrez la page dans Chrome ou Edge sur PC.</div>'}
-    ${etat ? `<div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes.map(echapper).join("<br>")}</div>` : ""}
-  </div>`;
-  html += htmlLienTelephone();
-  html += `<div class="carte"><div class="carte-titre">Semaines gardées (${semaines.length})</div>`;
+  // V6.9 : les semaines gardées en grand à gauche ; le fichier partagé et le téléphone (réglages) à droite.
+  const actions = partage ? `<button type="button" class="contour" id="btnImporterSemaines" ${bibliotheque.enCours ? "disabled" : ""} title="Choisir le dossier des archives (une année avec ses mois et ses semaines)">+ Ajouter les semaines d'avant</button>` : "";
+  let html = entetePage("Outils", "Bibliothèque des semaines", "Toutes les semaines scannées, et le fichier partagé lu par le téléphone.", actions);
+  if (etat) html += `<div class="compte-rendu ${etat.erreur ? "erreur" : ""} biblio-etat">${etat.lignes.map(echapper).join("<br>")}</div>`;
+  html += `<div class="biblio-colonnes"><div class="biblio-principale"><div class="carte"><div class="carte-titre">Semaines gardées (${semaines.length})${boutonAide("biblio-semaines")}</div>
+    ${texteAide("biblio-semaines", "Chaque semaine scannée est gardée ici (lancements, pièces, bilan des contrôles). La casse s'en sert pour savoir si une pièce était déjà lancée, même plusieurs semaines avant.")}`;
   if (!semaines.length) html += '<div class="note">Aucune semaine pour l\'instant : scannez une semaine, ou ajoutez les semaines d\'avant.</div>';
   else {
     html += `<table class="recap bibliotheque"><thead><tr><th>Semaine</th><th>Lancements</th><th class="droite">Pièces</th><th>Mise à jour</th><th></th></tr></thead><tbody>`;
     semaines.forEach((s, i) => {
       const pieces = s.lancements.reduce((t, l) => t + (l.nbPieces || 0), 0);
-      const lancements = s.lancements.map((l) => `${echapper(l.nom)}${l.casse ? " (casse)" : ""}${resumeControle(l)}`).join("<br>");
+      const lancements = s.lancements.map((l) => `<span class="biblio-lancement">${echapper(l.nom)}${l.casse ? " (casse)" : ""}${resumeControle(l)}</span>`).join("");
       html += `<tr class="${i % 2 ? "impaire" : ""}"><td><strong>Semaine ${String(s.semaine).padStart(2, "0")}</strong><br><span class="lancement">${s.annee}</span></td>
         <td class="lancements-bibliotheque">${lancements}</td><td class="droite">${fmtNombre(Math.trunc(pieces))}</td><td>${date(s.maj)}</td>
         <td class="centre"><button type="button" class="texte alerte" data-retirer="${echapper(s.id)}" title="Retirer cette semaine">✕</button></td></tr>`;
     });
     html += "</tbody></table>";
   }
-  html += "</div>";
+  html += `</div></div><div class="biblio-cote"><div class="carte"><div class="carte-titre">Fichier partagé${boutonAide("biblio-fichier")}</div>
+    ${partage
+      ? `${texteAide("biblio-fichier", "Sentinelle y écrit toutes les semaines (lancements, résultats, problèmes, pièces). L'appli Android se branche sur ce fichier. Mettez-le dans un dossier du Drive.")}
+    <div class="ligne-bibliotheque">Fichier : <strong>${d ? `${echapper(d.name)} / ${NOM_FICHIER_PARTAGE}` : "aucun dossier choisi"}</strong></div>
+    <div class="boutons-carte">
+      <button type="button" class="contour" id="btnDossierBibliotheque">${d ? "Changer de dossier" : "Choisir le dossier du fichier partagé"}</button>
+      <button type="button" id="btnSynchroniser" ${d && !bibliotheque.synchro ? "" : "disabled"}>Synchroniser</button>
+    </div>`
+      : '<div class="note">Fichier partagé et ajout des semaines d\'avant : ouvrez la page dans Chrome ou Edge sur PC.</div>'}
+  </div>`;
+  html += htmlLienTelephone();
+  html += "</div></div>";
   page.innerHTML = html;
   if (partage) {
     $("btnDossierBibliotheque").addEventListener("click", choisirDossierBibliotheque);

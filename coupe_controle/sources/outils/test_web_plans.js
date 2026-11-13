@@ -18,6 +18,7 @@ const verifier = (ok, message) => {
   const nav = await chromium.launch();
   const ctx = await nav.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
   const page = await ctx.newPage();
+  await page.addInitScript(() => { try { localStorage.setItem("sentinelle-vue-controle", "toutes"); } catch (e) {} }); // V6.9 : toutes les cases affichées (tests du contrôle)
   page.on("pageerror", (e) => {
     console.log("ERREUR JS:", e.message);
     echecs++;

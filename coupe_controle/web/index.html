@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sentinelle V6.8.3 — Contrôle de coupe</title>
+<title>Sentinelle V6.9.0 — Contrôle de coupe</title>
 <!-- Installable en PWA uniquement si servi en http(s)/localhost (ex. via
      server/lancer_sentinelle.bat) : ouvert en file:// (double-clic direct),
      ces balises n'ont aucun effet indésirable, l'appli continue de
@@ -52,44 +52,45 @@
   /* V6.0 : menu bordeaux à gauche, contenu sur fond saumon pâle. */
   .appli { display: flex; min-height: 100vh; }
   .menu {
-    flex: 0 0 256px; width: 256px; background: var(--bordeaux); color: #fff; padding: 24px 14px 18px;
-    display: flex; flex-direction: column; gap: 22px; position: sticky; top: 0; height: 100vh; overflow-y: auto; z-index: 10;
+    flex: 0 0 248px; width: 248px; background: var(--bordeaux); color: #fff; padding: 16px 12px 14px;
+    display: flex; flex-direction: column; gap: 12px; position: sticky; top: 0; height: 100vh; overflow-y: auto; z-index: 10;
+    scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, 0.35) transparent;
   }
   .menu-tete { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
-  .menu .logo { width: 150px; height: auto; display: block; margin-bottom: 12px; }
-  .menu-nom { font-family: var(--titres); font-weight: 700; font-size: 1.55rem; letter-spacing: 0.02em; }
+  .menu .logo { width: 118px; height: auto; display: block; margin-bottom: 8px; }
+  .menu-nom { font-family: var(--titres); font-weight: 700; font-size: 1.35rem; letter-spacing: 0.02em; }
   .menu-sous-titre { font-size: 0.85rem; color: var(--saumon); }
   .badge-version { display: inline-block; margin-left: 6px; padding: 2px 8px; border-radius: 999px; background: #fff; color: var(--bordeaux); font-family: var(--texte); font-size: 0.8rem; font-weight: 700; letter-spacing: 0; vertical-align: middle; }
-  .onglets { display: flex; flex-direction: column; gap: 3px; }
-  .menu-groupe { margin: 12px 12px 4px; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--saumon); }
+  .onglets { display: flex; flex-direction: column; gap: 1px; }
+  .menu-groupe { margin: 10px 12px 3px; font-size: 0.68rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--saumon); }
   .onglet-btn {
-    display: flex; align-items: center; gap: 12px; width: 100%; min-height: 44px; padding: 0 12px; border: none; border-radius: 10px;
-    background: none; color: #fff; font-family: var(--texte); font-size: 0.95rem; font-weight: 400; letter-spacing: 0; text-align: left; cursor: pointer;
+    display: flex; align-items: center; gap: 12px; width: 100%; min-height: 36px; padding: 0 12px; border: none; border-radius: 9px;
+    background: none; color: #fff; font-family: var(--texte); font-size: 0.92rem; font-weight: 400; letter-spacing: 0; text-align: left; cursor: pointer;
   }
-  .onglet-btn svg { flex: 0 0 auto; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .onglet-btn svg { flex: 0 0 auto; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
   .onglet-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.12); border-color: transparent; }
   .onglet-btn.actif, .onglet-btn.actif:hover:not(:disabled) { background: #fff; color: var(--bordeaux); font-weight: 700; }
-  .menu-dossier { margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 12px; background: rgba(255, 255, 255, 0.1); }
+  .menu-dossier { margin-top: auto; display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-radius: 12px; background: rgba(255, 255, 255, 0.1); }
   .menu-dossier .petit { font-size: 0.7rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--saumon); }
   .menu-dossier .nom { font-weight: 700; word-break: break-word; }
   .menu-dossier .etat-dossier { font-size: 0.8rem; color: var(--saumon); }
-  .bouton-menu { margin-top: 4px; min-height: 40px; padding: 0 12px; border-radius: 10px; background: #fff; color: var(--bordeaux); border: 1px solid #fff; font-size: 0.85rem; }
+  .bouton-menu { margin-top: 4px; min-height: 34px; padding: 0 12px; border-radius: 10px; background: #fff; color: var(--bordeaux); border: 1px solid #fff; font-size: 0.85rem; }
   .bouton-menu:hover:not(:disabled) { background: var(--saumon-pale); border-color: var(--saumon-pale); }
   .contenu { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
-  main { width: 100%; max-width: 1180px; margin: 0 auto; padding: 28px 32px 30px; flex: 1 0 auto; }
+  main { width: 100%; max-width: 1280px; margin: 0 auto; padding: 22px 28px 30px; flex: 1 0 auto; }
   .inactif { display: none; }
   .carte {
     background: #fff; border: 1px solid var(--gris-filet); border-radius: 12px;
     padding: 16px 20px; margin-bottom: 16px;
   }
   /* Haut de page : surtitre gris, titre Raleway bordeaux, phrase d'explication ; boutons à droite. */
-  .entete-page { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+  .entete-page { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 16px; margin-bottom: 18px; }
   .entete-textes { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .surtitre { font-size: 0.8rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #6b605d; }
-  .entete-page h1 { margin: 0; font-size: 2.1rem; font-weight: 700; color: var(--bordeaux); line-height: 1.15; }
+  .entete-page h1 { margin: 0; font-size: 1.9rem; font-weight: 700; color: var(--bordeaux); line-height: 1.15; }
   .chapeau { font-size: 0.95rem; color: #6b605d; }
   .entete-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-  .entete-actions button { min-height: 44px; border-radius: 10px; }
+  .entete-actions button { min-height: 42px; border-radius: 10px; }
   /* Pastilles d'état (bleu = bon, orange = à regarder, gris = pas fait). */
   .etiquette { display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 999px; font-size: 0.78rem; font-weight: 700; white-space: nowrap; }
   .etiquette.bon { background: #e3ecf7; color: #1d4f91; }
@@ -214,7 +215,7 @@
   .badge-probleme.ok { background: var(--ok-fond); color: var(--ok-texte); }
   button.petit { padding: 4px 10px; font-size: 0.82rem; white-space: nowrap; }
   .pied {
-    width: 100%; max-width: 1180px; margin: 0 auto; padding: 14px 32px 26px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px;
+    width: 100%; max-width: 1280px; margin: 0 auto; padding: 14px 28px 26px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px;
     color: #6b605d; font-size: 0.75rem; border-top: 1px solid var(--gris-filet);
   }
   /* Recherche */
@@ -359,17 +360,25 @@
   .colonne-cases { min-width: 0; }
   /* Écran large : la liste des postes reste à gauche, les cases défilent à droite. */
   @media (min-width: 1000px) {
-    .colonnes-controle { display: grid; grid-template-columns: 270px minmax(0, 1fr); align-items: start; }
-    .colonne-postes { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; padding: 2px; }
+    .colonnes-controle { display: grid; grid-template-columns: 284px minmax(0, 1fr); align-items: start; }
+    .colonne-postes { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; padding: 2px; scrollbar-width: thin; }
   }
   .colonne-cases .titre-poste { margin-top: 10px; }
   .liste-postes { display: flex; flex-direction: column; gap: 8px; }
   .poste-item {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 56px; padding: 8px 12px;
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 50px; padding: 6px 10px;
     background: #fff; color: var(--noir); border: 2px solid var(--gris-filet); border-radius: 12px; text-align: left; font-weight: 400;
   }
-  .poste-item:hover:not(:disabled) { background: #fff; border-color: var(--bordeaux); }
-  .poste-textes { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .poste-item:hover:not(:disabled) { background: #fff; border-color: var(--saumon); }
+  .poste-item.actif, .poste-item.actif:hover:not(:disabled) { background: var(--saumon-pale); border-color: var(--bordeaux); box-shadow: inset 4px 0 0 var(--bordeaux); }
+  .poste-item .pastille { width: 24px; height: 24px; font-size: 0.7rem; }
+  .poste-item .pastille.cree { background: var(--gris-filet); color: var(--gris); font-size: 0.9rem; }
+  .poste-item.sans-lancement .poste-nom { color: #6b605d; }
+  .poste-ligne { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .poste-ligne .poste-nom { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .poste-ligne .etiquette { flex: 0 0 auto; padding: 2px 8px; font-size: 0.72rem; }
+  .poste-item .poste-fichier { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; word-break: normal; }
+  .poste-textes { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
   .poste-nom { font-weight: 700; font-size: 0.95rem; }
   .poste-fichier { font-size: 0.75rem; color: #6b605d; word-break: break-all; }
   .colonne-postes > button { min-height: 44px; border-radius: 10px; }
@@ -742,6 +751,139 @@
     #pageStock .fp-table th, #pageStock .fp-table td { padding: 6px 4px; }
   }
 
+
+  /* ---- V6.9 : refonte de l'interface ---- */
+  .cachee-vue { display: none !important; }
+  /* Choix « Un lancement / Tous » au-dessus de la liste. */
+  .choix-vue { display: flex; border: 1px solid #d9d4cf; border-radius: 10px; background: #fff; overflow: hidden; }
+  .choix-vue button { flex: 1; min-height: 36px; padding: 0 8px; border: none; border-radius: 0; background: #fff; color: var(--noir); font-weight: 700; font-size: 0.85rem; }
+  .choix-vue button + button { border-left: 1px solid var(--gris-filet); }
+  .choix-vue button:hover:not(:disabled) { background: var(--saumon-pale); border-color: var(--gris-filet); }
+  .choix-vue button.actif, .choix-vue button.actif:hover:not(:disabled) { background: var(--bordeaux); color: #fff; }
+  .ajouts-postes { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .ajouts-postes > button { min-height: 38px; border-radius: 10px; font-size: 0.85rem; }
+  .ajouts-postes > button.texte { min-height: 32px; }
+  .colonne-postes .carte.compteur { padding: 10px 16px; }
+  .colonne-postes .compteur .valeur { font-size: 1.45rem; }
+  /* Dossier de la semaine : une ligne, puis le compte rendu du scan dans un cadre qui défile. */
+  .carte-dossier { padding: 12px 16px; }
+  .dossier-ligne { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 18px; }
+  .dossier-ligne .ouvrir-semaine { margin: 0; flex-wrap: nowrap; }
+  .dossier-ligne .ouvrir-semaine input { width: 80px; min-height: 40px; }
+  .dossier-ligne .ouvrir-semaine button { min-height: 40px; }
+  .dossier-infos { flex: 1 1 240px; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding-bottom: 2px; }
+  .dossier-nom { font-size: 0.92rem; }
+  .dossier-infos .note { margin: 0; }
+  .dossier-boutons { display: flex; flex-wrap: wrap; gap: 8px; }
+  .dossier-boutons button { min-height: 40px; border-radius: 10px; }
+  .journal-scan { margin-top: 10px; border-top: 1px solid var(--gris-filet); padding-top: 8px; }
+  .journal-scan .compte-rendu { margin: 0; max-height: 7.6em; overflow-y: auto; font-size: 0.82rem; line-height: 1.45; padding-right: 6px; scrollbar-width: thin; }
+  .journal-scan.deplie .compte-rendu { max-height: none; }
+  .journal-scan .compte-rendu.erreur { max-height: none; }
+  .journal-scan > button.texte { margin-top: 4px; padding: 2px 4px; color: var(--bordeaux); font-size: 0.82rem; }
+  /* Case d'un lancement : en-tête avec l'état, fichiers sur deux colonnes, une seule barre d'actions. */
+  .carte-paire { padding: 14px 18px; }
+  .carte-paire .entete-carte { flex-wrap: wrap; row-gap: 4px; }
+  .carte-paire .titre-carte { flex: 0 1 auto; margin-right: 4px; }
+  .entete-carte-outils { margin-left: auto; display: flex; flex-wrap: wrap; gap: 2px; }
+  .fichiers-case { display: grid; grid-template-columns: 1fr; column-gap: 22px; }
+  @media (min-width: 1200px) { .fichiers-case { grid-template-columns: 1fr 1fr; } }
+  .fichiers-case .ligne-fichier { padding: 6px 0; }
+  .fichiers-case .ligne-fichier button { padding: 4px 12px; font-size: 0.82rem; }
+  .barre-actions-case { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 6px; padding: 10px; background: var(--gris-clair); border-radius: 10px; }
+  .barre-actions-case > button { min-height: 38px; padding: 6px 14px; font-size: 0.86rem; }
+  .barre-actions-case > button[data-action="go"] { min-width: 88px; }
+  .barre-actions-case > button.contour { background: #fff; }
+  .barre-actions-case > button.contour:hover:not(:disabled) { background: var(--saumon-pale); }
+  .barre-actions-sep { width: 1px; align-self: stretch; background: #d9d4cf; margin: 2px 4px; }
+  .carte-paire .bandeau { padding: 6px 10px; margin-top: 6px; font-size: 0.88rem; }
+  .carte-paire .note { font-size: 0.82rem; }
+  /* Écran étroit : la liste des lancements passe en haut, en défilement horizontal. */
+  @media (max-width: 999px) {
+    .colonnes-controle.vue-une .liste-postes { flex-direction: row; overflow-x: auto; padding-bottom: 4px; scrollbar-width: thin; }
+    .colonnes-controle.vue-une .poste-item { flex: 0 0 auto; width: auto; max-width: 260px; }
+    .ajouts-postes { flex-direction: row; flex-wrap: wrap; }
+  }
+  /* Bouton « ? » : l'explication s'ouvre sous le titre. */
+  .carte-titre { display: flex; align-items: center; gap: 8px; }
+  .aide-btn {
+    flex: 0 0 auto; width: 22px; height: 22px; padding: 0; margin-left: 2px; border-radius: 50%; border: 1px solid var(--saumon);
+    background: #fff; color: var(--bordeaux); font-family: var(--texte); font-size: 0.78rem; font-weight: 700; line-height: 20px; text-align: center;
+  }
+  .aide-btn:hover:not(:disabled), .aide-btn[aria-expanded="true"] { background: var(--bordeaux); border-color: var(--bordeaux); color: #fff; }
+  .aide-texte { background: var(--saumon-pale); border-radius: 8px; padding: 8px 12px; margin: 0 0 10px; color: #4a403d; line-height: 1.45; }
+  .aide-texte[hidden] { display: none; }
+  /* Onglets d'une page (Suivi, Bibliothèque…) : un seul contenu à la fois. */
+  .onglets-page { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 0 14px; border-bottom: 2px solid var(--saumon); }
+  .onglet-page {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 0 16px; margin-bottom: -2px;
+    background: none; color: #4a403d; border: none; border-bottom: 3px solid transparent; border-radius: 8px 8px 0 0; font-weight: 700; font-size: 0.92rem;
+  }
+  .onglet-page:hover:not(:disabled) { background: #fff; color: var(--bordeaux); border-color: transparent; border-bottom: 3px solid var(--saumon); }
+  .onglet-page.actif, .onglet-page.actif:hover:not(:disabled) { background: #fff; color: var(--bordeaux); border-bottom: 3px solid var(--bordeaux); }
+  .onglet-nombre { display: inline-block; min-width: 22px; padding: 1px 7px; border-radius: 999px; background: var(--gris-filet); color: #4a403d; font-size: 0.75rem; text-align: center; }
+  .onglet-nombre.attention { background: #fde6cf; color: #8a4300; }
+  .panneau-page > .carte:first-child { margin-top: 0; }
+  .sv-carte-extraction { padding: 12px 18px; }
+  .sv-carte-extraction .sv-inclus { margin-top: 6px; }
+  /* Pas dans les lancements : outils lisibles, en-tête du tableau qui reste visible en descendant. */
+  #svHors .sv-hors-outils input[type="search"], #svHors .sv-hors-outils input[type="text"], #svHors .sv-hors-outils select {
+    min-height: 40px; padding: 0 12px; border: 1px solid #cfccc6; border-radius: 10px; background: #fff; font: inherit; font-size: 0.92rem; color: var(--noir);
+  }
+  #svHors .sv-hors-outils input:focus, #svHors .sv-hors-outils select:focus { outline: none; border-color: var(--bordeaux); box-shadow: 0 0 0 2px var(--saumon-pale); }
+  #svHors .sv-hors-outils button { min-height: 40px; border-radius: 10px; }
+  @media (min-width: 1000px) {
+    #svHors .defile { overflow: visible; }
+    #svHors table.sv-hors thead th { position: sticky; top: 0; z-index: 2; background: #fff; box-shadow: 0 1px 0 var(--gris-filet); }
+  }
+  #svHors table.sv-hors td:nth-child(6) { min-width: 230px; }
+  #svHors table.sv-hors td:nth-child(6) .pale { font-size: 0.8rem; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  /* Bibliothèque : les semaines à gauche, les réglages (fichier partagé, téléphone) à droite. */
+  .biblio-etat { margin: 0 0 14px; }
+  .biblio-colonnes { display: grid; grid-template-columns: 1fr; gap: 0 18px; align-items: start; }
+  @media (min-width: 1200px) { .biblio-colonnes { grid-template-columns: minmax(0, 1fr) 380px; } }
+  .biblio-lancement { display: inline-block; margin: 0 14px 2px 0; white-space: nowrap; }
+  .biblio-cote .boutons-carte { flex-wrap: wrap; }
+  .biblio-cote .boutons-carte > button { flex: 1 1 140px; }
+  .biblio-cote .lien-qr { flex-direction: column; align-items: flex-start; }
+  .biblio-cote .code-lien { font-size: 1.25rem; }
+  /* Stock : recherche et en-tête du tableau qui restent visibles ; le détail à droite. */
+  .stk-outils { position: sticky; top: 0; z-index: 3; background: #fff; padding: 6px 0 4px; }
+  .stk-colonnes { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 16px; align-items: start; }
+  @media (min-width: 1100px) {
+    .stk-colonnes.avec-detail { grid-template-columns: minmax(0, 1fr) minmax(380px, 46%); }
+    .stk-cote { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-width: thin; }
+    .stk-liste .defilement { overflow: visible; }
+    .stk-liste table.fp-table thead th { position: sticky; top: var(--haut-outils-stock, 0px); z-index: 2; background: #fff; box-shadow: 0 1px 0 var(--gris-filet); }
+    .stk-colonnes.avec-detail .stk-col-desc { display: none; }
+    .stk-colonnes.avec-detail .stk-desc-m { display: block; }
+  }
+  .stk-cote .stk-detail { margin-bottom: 16px; border-color: var(--bordeaux); box-shadow: 0 6px 20px rgba(120, 20, 12, 0.08); }
+  /* Recherche : les deux façons de chercher côte à côte, les résultats dessous. */
+  .recherche-entrees { display: grid; grid-template-columns: 1fr; gap: 0 16px; align-items: stretch; }
+  @media (min-width: 1200px) { .recherche-entrees { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
+  .recherche-entrees .ligne-cotes label { flex: 1 1 100px; }
+  .ligne-recherche input, .ligne-cotes input { min-height: 42px; border-radius: 10px; }
+  .ligne-recherche button, .ligne-cotes button { min-height: 42px; border-radius: 10px; }
+  /* Champs et listes : une base commune (les règles d'un écran passent devant). */
+  :where(main) select, :where(main) input[type="text"], :where(main) input[type="search"], :where(main) input[type="number"] {
+    min-height: 38px; padding: 0 10px; border: 1px solid #cfccc6; border-radius: 8px; background: #fff; font: inherit; color: var(--noir);
+  }
+  :where(main) select:focus, :where(main) input[type="text"]:focus, :where(main) input[type="search"]:focus, :where(main) input[type="number"]:focus {
+    outline: none; border-color: var(--bordeaux); box-shadow: 0 0 0 2px var(--saumon-pale);
+  }
+  :where(main) textarea { border: 1px solid #cfccc6; border-radius: 8px; padding: 8px 10px; font: inherit; }
+  /* La semaine : cartes courtes sans lancement, « À regarder » plus serré. */
+  .carte-lancement.sans-lancement { gap: 10px; background: #fcfaf9; border-style: dashed; }
+  .carte-lancement.sans-lancement h3 { color: #6b605d; }
+  .ligne-regarder { margin: 0 0 6px; padding: 8px 12px; font-weight: 400; font-size: 0.88rem; }
+  .ligne-regarder strong { font-weight: 700; }
+  .stk-colonnes.avec-detail .stk-cherche input[type="search"] { flex-basis: 200px; }
+  .stk-case { white-space: nowrap; margin-right: 4px; }
+  .stk-cote .fp-table { font-size: 0.82rem; }
+  .stk-cote .fp-table th, .stk-cote .fp-table td { padding: 5px 6px; }
+  .stk-cote .stk-dort { white-space: normal; }
+  .stk-cote .defilement { overflow-x: visible; }
 </style>
 </head>
 <body>
@@ -749,7 +891,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.8.3</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.9.0</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -831,32 +973,34 @@
           <div class="chapeau">Dans les lancements chargés, les listes de coupe, les .bkp et Diakonos.</div>
         </div>
       </header>
-      <div class="carte">
-        <div class="carte-titre">Recherche</div>
-        <div class="ligne-recherche">
-          <input type="text" id="champRecherche" placeholder="26090331003, 26090331 ou T9 (CVC facultatif)" autocomplete="off">
-          <button type="button" id="btnRechercher">Rechercher</button>
+      <div class="recherche-entrees">
+        <div class="carte">
+          <div class="carte-titre">Avec l'étiquette (n° de pièce)</div>
+          <div class="ligne-recherche">
+            <input type="text" id="champRecherche" placeholder="26090331003, 26090331 ou T9 (CVC facultatif)" autocomplete="off">
+            <button type="button" id="btnRechercher">Rechercher</button>
+          </div>
+          <div class="bases-recherche" id="basesRecherche">
+            <span class="note">Chercher dans :</span>
+            <label><input type="checkbox" value="Diakonos" checked> Diakonos</label>
+            <label><input type="checkbox" value="LAN" checked> LAN</label>
+            <label><input type="checkbox" value="Liste" checked> Liste</label>
+            <label><input type="checkbox" value=".bkp" checked> .bkp</label>
+          </div>
         </div>
-        <div class="bases-recherche" id="basesRecherche">
-          <span class="note">Chercher dans :</span>
-          <label><input type="checkbox" value="Diakonos" checked> Diakonos</label>
-          <label><input type="checkbox" value="LAN" checked> LAN</label>
-          <label><input type="checkbox" value="Liste" checked> Liste</label>
-          <label><input type="checkbox" value=".bkp" checked> .bkp</label>
+        <div class="carte">
+          <div class="carte-titre">Pièce sans étiquette</div>
+          <div class="note">Cote finie mesurée sur la pièce : la première mesure est le sens du fil. À 2 mm près.</div>
+          <div class="ligne-cotes">
+            <label>Longueur (sens du fil)<input type="number" id="champCoteLongueur" min="1" step="1" inputmode="numeric" placeholder="mm"></label>
+            <label>Largeur<input type="number" id="champCoteLargeur" min="1" step="1" inputmode="numeric" placeholder="mm"></label>
+            <label>Couleur<input type="text" id="champCoteCouleur" autocomplete="off" placeholder="facultatif"></label>
+            <label>Semaine<input type="number" id="champCoteSemaine" min="1" max="53" step="1" inputmode="numeric" placeholder="n°"></label>
+            <button type="button" id="btnChercherCotes">Chercher</button>
+          </div>
         </div>
       </div>
       <div id="resultatsRecherche"></div>
-      <div class="carte">
-        <div class="carte-titre">Pièce sans étiquette</div>
-        <div class="note">Cote finie mesurée sur la pièce : la première mesure est le sens du fil. À 2 mm près.</div>
-        <div class="ligne-cotes">
-          <label>Longueur (sens du fil)<input type="number" id="champCoteLongueur" min="1" step="1" inputmode="numeric" placeholder="mm"></label>
-          <label>Largeur<input type="number" id="champCoteLargeur" min="1" step="1" inputmode="numeric" placeholder="mm"></label>
-          <label>Couleur<input type="text" id="champCoteCouleur" autocomplete="off" placeholder="facultatif"></label>
-          <label>Semaine<input type="number" id="champCoteSemaine" min="1" max="53" step="1" inputmode="numeric" placeholder="n°"></label>
-          <button type="button" id="btnChercherCotes">Chercher</button>
-        </div>
-      </div>
       <div id="resultatsCotes"></div>
     </div>
     <div id="pageBibliotheque" class="inactif"></div>
@@ -871,7 +1015,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.8.3 · Contrôle de coupe</span>
+    <span>Sentinelle V6.9.0 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>
@@ -6634,35 +6778,36 @@ function afficherBibliotheque() {
     const n = l.controle.nbCorriger + l.controle.nbVerifier;
     return n ? ` <span class="alerte-texte">⚠ ${n}</span>` : ' <span class="ok-texte">✔</span>';
   };
-  let html = `${entetePage("Outils", "Bibliothèque des semaines", "Toutes les semaines scannées, et le fichier partagé lu par le téléphone.")}<div class="carte">
-    <div class="carte-titre">Bibliothèque des semaines</div>
-    <div class="note">Chaque semaine scannée est gardée ici (lancements, pièces, bilan des contrôles). La casse s'en sert pour savoir si une pièce était déjà lancée, même plusieurs semaines avant.</div>
-    ${partage
-      ? `<div class="ligne-bibliotheque">Fichier partagé : <strong>${d ? `${echapper(d.name)} / ${NOM_FICHIER_PARTAGE}` : "aucun dossier choisi"}</strong></div>
-    <div class="note">Sentinelle y écrit toutes les semaines (lancements, résultats, problèmes, pièces). L'appli Android se branche sur ce fichier. Mettez-le dans un dossier du Drive.</div>
-    <div class="boutons-carte">
-      <button type="button" class="contour" id="btnDossierBibliotheque">${d ? "Changer de dossier" : "Choisir le dossier du fichier partagé"}</button>
-      <button type="button" id="btnSynchroniser" ${d && !bibliotheque.synchro ? "" : "disabled"}>Synchroniser</button>
-    </div>
-    <button type="button" class="contour pleine" id="btnImporterSemaines" ${bibliotheque.enCours ? "disabled" : ""}>+ Ajouter les semaines d'avant (choisir le dossier des archives)</button>`
-      : '<div class="note">Fichier partagé et ajout des semaines d\'avant : ouvrez la page dans Chrome ou Edge sur PC.</div>'}
-    ${etat ? `<div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes.map(echapper).join("<br>")}</div>` : ""}
-  </div>`;
-  html += htmlLienTelephone();
-  html += `<div class="carte"><div class="carte-titre">Semaines gardées (${semaines.length})</div>`;
+  // V6.9 : les semaines gardées en grand à gauche ; le fichier partagé et le téléphone (réglages) à droite.
+  const actions = partage ? `<button type="button" class="contour" id="btnImporterSemaines" ${bibliotheque.enCours ? "disabled" : ""} title="Choisir le dossier des archives (une année avec ses mois et ses semaines)">+ Ajouter les semaines d'avant</button>` : "";
+  let html = entetePage("Outils", "Bibliothèque des semaines", "Toutes les semaines scannées, et le fichier partagé lu par le téléphone.", actions);
+  if (etat) html += `<div class="compte-rendu ${etat.erreur ? "erreur" : ""} biblio-etat">${etat.lignes.map(echapper).join("<br>")}</div>`;
+  html += `<div class="biblio-colonnes"><div class="biblio-principale"><div class="carte"><div class="carte-titre">Semaines gardées (${semaines.length})${boutonAide("biblio-semaines")}</div>
+    ${texteAide("biblio-semaines", "Chaque semaine scannée est gardée ici (lancements, pièces, bilan des contrôles). La casse s'en sert pour savoir si une pièce était déjà lancée, même plusieurs semaines avant.")}`;
   if (!semaines.length) html += '<div class="note">Aucune semaine pour l\'instant : scannez une semaine, ou ajoutez les semaines d\'avant.</div>';
   else {
     html += `<table class="recap bibliotheque"><thead><tr><th>Semaine</th><th>Lancements</th><th class="droite">Pièces</th><th>Mise à jour</th><th></th></tr></thead><tbody>`;
     semaines.forEach((s, i) => {
       const pieces = s.lancements.reduce((t, l) => t + (l.nbPieces || 0), 0);
-      const lancements = s.lancements.map((l) => `${echapper(l.nom)}${l.casse ? " (casse)" : ""}${resumeControle(l)}`).join("<br>");
+      const lancements = s.lancements.map((l) => `<span class="biblio-lancement">${echapper(l.nom)}${l.casse ? " (casse)" : ""}${resumeControle(l)}</span>`).join("");
       html += `<tr class="${i % 2 ? "impaire" : ""}"><td><strong>Semaine ${String(s.semaine).padStart(2, "0")}</strong><br><span class="lancement">${s.annee}</span></td>
         <td class="lancements-bibliotheque">${lancements}</td><td class="droite">${fmtNombre(Math.trunc(pieces))}</td><td>${date(s.maj)}</td>
         <td class="centre"><button type="button" class="texte alerte" data-retirer="${echapper(s.id)}" title="Retirer cette semaine">✕</button></td></tr>`;
     });
     html += "</tbody></table>";
   }
-  html += "</div>";
+  html += `</div></div><div class="biblio-cote"><div class="carte"><div class="carte-titre">Fichier partagé${boutonAide("biblio-fichier")}</div>
+    ${partage
+      ? `${texteAide("biblio-fichier", "Sentinelle y écrit toutes les semaines (lancements, résultats, problèmes, pièces). L'appli Android se branche sur ce fichier. Mettez-le dans un dossier du Drive.")}
+    <div class="ligne-bibliotheque">Fichier : <strong>${d ? `${echapper(d.name)} / ${NOM_FICHIER_PARTAGE}` : "aucun dossier choisi"}</strong></div>
+    <div class="boutons-carte">
+      <button type="button" class="contour" id="btnDossierBibliotheque">${d ? "Changer de dossier" : "Choisir le dossier du fichier partagé"}</button>
+      <button type="button" id="btnSynchroniser" ${d && !bibliotheque.synchro ? "" : "disabled"}>Synchroniser</button>
+    </div>`
+      : '<div class="note">Fichier partagé et ajout des semaines d\'avant : ouvrez la page dans Chrome ou Edge sur PC.</div>'}
+  </div>`;
+  html += htmlLienTelephone();
+  html += "</div></div>";
   page.innerHTML = html;
   if (partage) {
     $("btnDossierBibliotheque").addEventListener("click", choisirDossierBibliotheque);
@@ -8321,9 +8466,10 @@ function htmlLectureTelephone(etat) {
 function htmlLienTelephone() {
   const etat = etatLienTelephone();
   const date = (iso) => (iso ? new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
-  let html = `<div class="carte" id="carteLienTelephone"><div class="carte-titre">Téléphone (envoi automatique)</div>`;
+  let html = `<div class="carte" id="carteLienTelephone"><div class="carte-titre">Téléphone (envoi automatique)${boutonAide("lien-telephone")}</div>
+    ${texteAide("lien-telephone", "Sentinelle envoie toute seule la bibliothèque au téléphone, chiffrée, à chaque changement : plus besoin du Drive. Le site de Sentinelle ne garde qu'un fichier illisible.")}`;
   if (!etat || !etat.code) {
-    html += `<div class="note">Sentinelle envoie toute seule la bibliothèque au téléphone, chiffrée, à chaque changement : plus besoin du Drive. Le site de Sentinelle ne garde qu'un fichier illisible.</div>
+    html += `
       ${htmlReprendreCode(true)}
       <div class="note">Premier téléphone seulement :</div>
       <div class="boutons-carte"><button type="button" class="contour" id="btnActiverLien">Créer un code (nouveau téléphone)</button></div>`;
@@ -10161,14 +10307,15 @@ function afficherStock() {
     brancherStock();
     return;
   }
-  html += htmlFichierStock(d) + htmlRechercheStock(d);
-  if (stock.ouvert) {
-    const m = d.materiaux.find((x) => x.mat === stock.ouvert);
-    if (m) html += htmlMateriauStock(m);
-  }
+  // V6.9 : la liste à gauche, le détail du matériau cliqué à droite (il reste visible en descendant).
+  const m = stock.ouvert ? d.materiaux.find((x) => x.mat === stock.ouvert) : null;
+  html += htmlFichierStock(d);
+  html += `<div class="stk-colonnes${m ? " avec-detail" : ""}"><div class="stk-liste">${htmlRechercheStock(d)}</div>${m ? `<div class="stk-cote">${htmlMateriauStock(m)}</div>` : ""}</div>`;
   html += htmlChutesQuiDorment(d);
   page.innerHTML = html;
   brancherStock();
+  const outils = page.querySelector(".stk-outils");
+  if (outils) page.style.setProperty("--haut-outils-stock", `${outils.offsetHeight}px`);
 }
 
 function htmlFichierStock(d) {
@@ -10179,7 +10326,7 @@ function htmlFichierStock(d) {
   const reservees = d.materiaux.reduce((t, m) => t + m.nbReservees, 0);
   const vides = d.formats.filter((f) => !f.chute && f.dispo === 0).length;
   const vieux = age !== null && age > STOCK_VIEUX_JOURS;
-  return `<div class="carte"><div class="carte-titre">Fichier de stock</div>
+  return `<div class="carte stk-carte-fichier"><div class="carte-titre">Fichier de stock${boutonAide("stock-fichier")}</div>
     ${vieux ? `<div class="bandeau attention">⚠ Ce stock date d'il y a <strong>${dureeFr(age)}</strong> : extrayez un fichier neuf avant de vous y fier.</div>` : ""}
     <div class="stk-fichier"><span><strong>${echapper(d.nom || "brdlib.bdx")}</strong></span>
       <span>données jusqu'au <strong>${jourFr(d.donneesJusquau || d.modifie)}</strong></span>
@@ -10192,7 +10339,7 @@ function htmlFichierStock(d) {
       ${reservees ? `<span class="pl-puce stk-res-puce">${nbFr(reservees)} chutes réservées</span>` : ""}
       <span class="pl-puce att">${nbFr(vides)} formats à zéro</span>
     </div>
-    <div class="note"><strong>Stock réel = stock − réservé.</strong> Chutes : celles au statut 2 de woodStore sont comptées comme réservées, à part. Panneaux entiers : ceux de la case 302 sont réservés pour un lancement, comptés à part.</div></div>`;
+    ${texteAide("stock-fichier", "<strong>Stock réel = stock − réservé.</strong> Chutes : celles au statut 2 de woodStore sont comptées comme réservées, à part. Panneaux entiers : ceux de la case 302 sont réservés pour un lancement, comptés à part.")}</div>`;
 }
 
 function materiauxFiltres(d) {
@@ -10223,9 +10370,9 @@ function htmlRechercheStock(d) {
     .join("");
   const filtres = FAMILLES_STOCK.map(([c, n]) => `<button type="button" class="stk-filtre${stock.famille === c ? " actif" : ""}" data-stk-famille="${c}">${n}</button>`).join("");
   return `<div class="carte"><div class="carte-titre">Chercher une couleur</div>
-    <div class="stk-cherche"><input type="search" id="champStock" placeholder="Code ou nom : 1114, chêne, SAG38…" value="${echapper(stock.recherche)}" autocomplete="off">
+    <div class="stk-outils"><div class="stk-cherche"><input type="search" id="champStock" placeholder="Code ou nom : 1114, chêne, SAG38…" value="${echapper(stock.recherche)}" autocomplete="off">
       <label class="stk-case"><input type="checkbox" id="caseAvecStock" ${stock.avecStock ? "checked" : ""}> avec du stock seulement</label></div>
-    <div class="stk-filtres">${filtres}</div>
+    <div class="stk-filtres">${filtres}</div></div>
     <div class="defilement"><table class="fp-table"><thead><tr>${enteteTri("liste", "mat", "Matériau")}${enteteTri("liste", "desc", "Description", "stk-col-desc")}${enteteTri("liste", "entiers", '<span class="stk-long">Panneaux entiers</span><span class="stk-court">Entiers</span>', "d")}${enteteTri("liste", "chutes", "Chutes", "d")}${enteteTri("liste", "limite", '<span class="stk-long">Limite woodStore</span><span class="stk-court">Limite</span>')}</tr></thead>
       <tbody>${lignes || '<tr><td colspan="5" class="pale">Rien ne correspond.</td></tr>'}</tbody></table></div>
     <div class="note">${nbFr(liste.length)} matériau${liste.length > 1 ? "x" : ""}, tous affichés · cliquez sur une ligne pour le détail.</div></div>`;
@@ -10322,8 +10469,9 @@ function brancherStock() {
     el.addEventListener("click", () => {
       stock.ouvert = stock.ouvert === el.dataset.stkMat ? null : el.dataset.stkMat;
       afficherStock();
+      // Écran étroit : le détail est sous la liste, on y descend ; écran large : il est à droite, déjà visible.
       const det = page.querySelector(".stk-detail");
-      if (det) det.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (det && window.innerWidth < 1100) det.scrollIntoView({ behavior: "smooth", block: "start" });
     })
   );
   page.querySelectorAll("[data-stk-tri]").forEach((th) =>
@@ -12718,29 +12866,35 @@ function construireSemaine(parite) {
   const numero = numeroSemaine(parite);
   page.innerHTML = `
     ${entetePage(
-      `Semaine ${numero} · ${anneeDeSemaine(numero)}`,
       "Contrôler la coupe",
-      "Les fichiers de la semaine sont trouvés tout seuls dans son dossier.",
-      `<button type="button" class="contour export-semaine" id="btnCompteRendu">Compte rendu de la semaine (.pdf)</button>
-       <button type="button" class="contour export-semaine" id="btnExporterSemaine">Exporter le rapport de la semaine (.xlsx)</button>
+      `Semaine ${numero} · ${anneeDeSemaine(numero)}`,
+      datesSemaine(numero),
+      `<button type="button" class="contour export-semaine" id="btnCompteRendu" title="Compte rendu de la semaine (.pdf), modèle de l'atelier">Compte rendu (.pdf)</button>
+       <button type="button" class="contour export-semaine" id="btnExporterSemaine" title="Exporter le rapport de la semaine (.xlsx) : un onglet par lancement">Rapport de la semaine (.xlsx)</button>
        <button type="button" id="btnLancerTout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>Lancer tous les contrôles</button>`
     )}
-    <div class="carte" id="carteDossier"></div>
-    <div class="colonnes-controle">
+    <div class="carte carte-dossier" id="carteDossier"></div>
+    <div class="colonnes-controle vue-${vueControle()}" id="colonnesControle">
       <div class="colonne-postes">
         <div class="carte compteur" id="texteCompteur"><span class="valeur">…</span></div>
-        <nav class="liste-postes" id="listePostes" aria-label="Les postes de la semaine"></nav>
-        <button type="button" class="contour" id="btnAjouterChantier">+ Ajouter un chantier</button>
-        ${POSTES_SUPPLEMENTS.map((poste) => `<button type="button" class="contour" data-ajouter-poste="${echapper(poste)}">+ Ajouter un lancement ${echapper(poste)}</button>`).join("")}
-        <button type="button" class="texte" id="btnReinitialiserSemaine">↺ Réinitialiser la semaine</button>
+        <div class="choix-vue" role="group" aria-label="Affichage des lancements">
+          <button type="button" data-vue="une" aria-pressed="${vueControle() === "une"}" class="${vueControle() === "une" ? "actif" : ""}">Un lancement</button>
+          <button type="button" data-vue="toutes" aria-pressed="${vueControle() === "toutes"}" class="${vueControle() === "toutes" ? "actif" : ""}">Tous</button>
+        </div>
+        <nav class="liste-postes" id="listePostes" aria-label="Les lancements de la semaine"></nav>
+        <div class="ajouts-postes">
+          <button type="button" class="contour" id="btnAjouterChantier">+ Ajouter un chantier</button>
+          ${POSTES_SUPPLEMENTS.map((poste) => `<button type="button" class="contour" data-ajouter-poste="${echapper(poste)}">+ Ajouter un lancement ${echapper(poste)}</button>`).join("")}
+          <button type="button" class="texte" id="btnReinitialiserSemaine">↺ Réinitialiser la semaine</button>
+        </div>
       </div>
       <div class="colonne-cases">
         <div id="cartesPostes"></div>
-        <h2 class="titre-poste">Chantiers</h2>
+        <h2 class="titre-poste titre-chantiers">Chantiers</h2>
         <div id="cartesChantiers"></div>
       </div>
     </div>
-    <div class="carte"><div class="carte-titre">Lancements</div><div id="zoneRecap"></div></div>
+    <div class="carte"><div class="carte-titre">Récapitulatif des lancements</div><div id="zoneRecap"></div></div>
   `;
   majCompteur();
   majRecap();
@@ -12768,10 +12922,11 @@ function construireSemaine(parite) {
   });
   $("btnReinitialiserSemaine").addEventListener("click", reinitialiserSemaine);
   const montrerNouvelle = (p) => {
+    caseChoisie[parite] = p.id;
     afficher();
-    const carte = document.querySelector(`.carte-paire[data-id="${p.id}"]`);
-    if (carte) carte.scrollIntoView({ behavior: "smooth", block: "center" });
+    montrerCase(p.id);
   };
+  page.querySelectorAll(".choix-vue [data-vue]").forEach((b) => b.addEventListener("click", () => choisirVueControle(b.dataset.vue)));
   $("btnAjouterChantier").addEventListener("click", () => montrerNouvelle(ajouterChantier(parite)));
   document.querySelectorAll("[data-ajouter-poste]").forEach((b) => b.addEventListener("click", () => montrerNouvelle(ajouterSupplement(b.dataset.ajouterPoste, parite))));
   for (const poste of POSTES_SEMAINE) {
@@ -12779,8 +12934,58 @@ function construireSemaine(parite) {
     for (const s of supplements(parite, poste)) $("cartesPostes").appendChild(carteDe(s));
   }
   for (const c of chantiers(parite)) $("cartesChantiers").appendChild(carteDe(c));
+  appliquerVueControle(parite);
   majDiakonos();
   analyserEnFond(parite);
+}
+
+// ---- V6.9 : un lancement à la fois (la liste à gauche choisit), ou tous les uns sous les autres ----
+
+const CLE_VUE_CONTROLE = "sentinelle-vue-controle";
+const caseChoisie = {}; // onglet → id de la case affichée
+function vueControle() {
+  try {
+    return localStorage.getItem(CLE_VUE_CONTROLE) === "toutes" ? "toutes" : "une";
+  } catch (e) {
+    return "une";
+  }
+}
+function choisirVueControle(vue) {
+  try {
+    localStorage.setItem(CLE_VUE_CONTROLE, vue === "toutes" ? "toutes" : "une");
+  } catch (e) {
+    // mémoire du navigateur bloquée : l'affichage change quand même pour cette fois
+  }
+  const zone = $("colonnesControle");
+  if (zone) {
+    zone.classList.toggle("vue-une", vue !== "toutes");
+    zone.classList.toggle("vue-toutes", vue === "toutes");
+  }
+  document.querySelectorAll(".choix-vue [data-vue]").forEach((b) => {
+    b.classList.toggle("actif", b.dataset.vue === vue);
+    b.setAttribute("aria-pressed", String(b.dataset.vue === vue));
+  });
+  if (estOngletSemaine()) appliquerVueControle(onglet);
+}
+// La case affichée : celle choisie dans la liste, sinon la première de la semaine.
+function idCaseAffichee(parite) {
+  const cases = pairesDeLaSemaine(parite);
+  if (!cases.some((p) => p.id === caseChoisie[parite])) caseChoisie[parite] = cases.length ? cases[0].id : null;
+  return caseChoisie[parite];
+}
+function appliquerVueControle(parite) {
+  const une = vueControle() === "une";
+  const id = idCaseAffichee(parite);
+  document.querySelectorAll("#pageSemaine .carte-paire").forEach((c) => c.classList.toggle("cachee-vue", une && Number(c.dataset.id) !== id));
+  const choisie = paires.find((p) => p.id === id);
+  const titre = document.querySelector("#pageSemaine .titre-chantiers");
+  if (titre) titre.classList.toggle("cachee-vue", une && !(choisie && estChantier(choisie)) || (!une && !chantiers(parite).length));
+  document.querySelectorAll("#listePostes .poste-item[data-case]").forEach((b) => {
+    const actif = une && Number(b.dataset.case) === id;
+    b.classList.toggle("actif", actif);
+    if (actif) b.setAttribute("aria-current", "true");
+    else b.removeAttribute("aria-current");
+  });
 }
 
 function carteDe(p) {
@@ -12825,24 +13030,30 @@ function remplirCarte(carte, p) {
         </div>`;
     })
     .join("");
+  // V6.9 : en-tête (état du lancement), fichiers sur deux colonnes, une seule barre d'actions.
+  const dis = p.enCours ? "disabled" : "";
   carte.innerHTML = `
     <div class="entete-carte">
       ${numeroCase(p) ? `<span class="pastille">${String(numeroCase(p)).padStart(2, "0")}</span>` : ""}
       <span class="titre-carte">${echapper(titreCase(p))}</span>
-      ${p.strat && !estDiakonos(p) ? '<button type="button" class="texte" data-action="semaine" title="Ranger ce lancement dans une autre semaine (dérogation)">⇄ Semaine</button>' : ""}
-      ${caseAjoutee(p) ? '<button type="button" class="texte alerte" data-action="retirer">✕ Retirer</button>' : ""}
-      <button type="button" class="texte" data-action="reinitialiser">↺ Réinitialiser</button>
+      ${estDiakonos(p) ? "" : etiquette(etatCase(p))}
+      <span class="entete-carte-outils">
+        ${p.strat && !estDiakonos(p) ? '<button type="button" class="texte" data-action="semaine" title="Ranger ce lancement dans une autre semaine (dérogation)">⇄ Semaine</button>' : ""}
+        ${caseAjoutee(p) ? '<button type="button" class="texte alerte" data-action="retirer">✕ Retirer</button>' : ""}
+        <button type="button" class="texte" data-action="reinitialiser" title="Effacer les fichiers et les résultats de cette case">↺ Réinitialiser</button>
+      </span>
     </div>
     <div class="zone-semaine"></div>
     ${zonesDiakonosHtml(p)}
-    ${lignesFichiers}
-    <div class="boutons-carte">
-      <button type="button" data-action="go" ${p.enCours ? "disabled" : ""}>GO</button>
-      <button type="button" class="contour" data-action="scies" ${p.enCours ? "disabled" : ""}>Vérifier Scies</button>
+    <div class="fichiers-case">${lignesFichiers}</div>
+    <div class="barre-actions-case">
+      <button type="button" data-action="go" ${dis} title="Contrôler le lancement contre la liste de coupe et le .bkp">GO</button>
+      <button type="button" class="contour" data-action="scies" ${dis} title="Comparer les pièces aux plans de coupe des scies">Vérifier Scies</button>
+      <span class="barre-actions-sep" aria-hidden="true"></span>
+      <button type="button" class="contour" data-action="rapport-lancement" ${dis} title="Rapport du lancement (.pdf)">📄 Rapport (.pdf)</button>
+      ${p.strat ? `<button type="button" class="contour" data-action="problemes-lancement" ${dis} title="Problèmes du lancement (.xlsx)">📊 Problèmes (.xlsx)</button>` : ""}
+      ${p.bkp ? '<button type="button" class="contour" data-action="plans-de-coupe" title="Plans de coupe du .bkp">▦ Plans de coupe</button>' : ""}
     </div>
-    <button type="button" class="contour pleine" data-action="rapport-lancement" ${p.enCours ? "disabled" : ""}>📄 Rapport du lancement (.pdf)</button>
-    ${p.strat ? `<button type="button" class="contour pleine" data-action="problemes-lancement" ${p.enCours ? "disabled" : ""}>📊 Problèmes du lancement (.xlsx)</button>` : ""}
-    ${p.bkp ? '<button type="button" class="contour pleine" data-action="plans-de-coupe">▦ Plans de coupe du .bkp</button>' : ""}
     ${p.etat ? `<div class="etat ${p.etatErreur ? "erreur" : ""}">${echapper(p.etat)}</div>` : ""}
     <div class="zone-problemes"></div>
     <div class="zone-rapport"></div>
@@ -14014,26 +14225,40 @@ function remplirCarteDossier(parite) {
   const handle = dossierPartageHandles[parite];
   const etat = etatsScan[parite];
   const racine = typeof reecriture !== "undefined" ? reecriture.racine : null;
+  // V6.9 : une seule ligne (semaine, dossier, boutons) ; le compte rendu du scan dans un cadre qui défile.
+  const deplie = carte.dataset.journal === "deplie";
   carte.innerHTML = `
-    <div class="carte-titre">Dossier de la semaine</div>
-    ${
-      typeof window.showDirectoryPicker === "function"
-        ? `<div class="ouvrir-semaine">
-      <label>Semaine<input type="number" id="champSemaineControle" min="1" max="53" value="${numeroSemaine(parite)}"></label>
-      <button type="button" id="btnOuvrirSemaine" ${scansEnCours.size ? "disabled" : ""}>Ouvrir et contrôler</button>
-      <span class="note">Cherchée dans « ${racine ? echapper(racine.name) : "le dossier des semaines"} »${racine ? "" : " (à choisir dans le menu à gauche)"}, sous-dossiers compris.</span>
-    </div>`
-        : ""
-    }
-    ${handle ? `<div class="note">Dossier ouvert : <strong>${echapper(handle.name)}</strong></div>` : ""}
-    <div class="boutons-carte">
-      <button type="button" class="contour" id="btnChoisirDossier">${handle ? "Choisir un autre dossier" : "Choisir le dossier à la main"}</button>
-      <button type="button" id="btnScanner" ${handle && !scansEnCours.has(parite) ? "" : "disabled"}>Scanner</button>
+    <div class="dossier-ligne">
+      ${
+        typeof window.showDirectoryPicker === "function"
+          ? `<div class="ouvrir-semaine">
+        <label>Semaine<input type="number" id="champSemaineControle" min="1" max="53" value="${numeroSemaine(parite)}"></label>
+        <button type="button" id="btnOuvrirSemaine" ${scansEnCours.size ? "disabled" : ""}>Ouvrir et contrôler</button>
+      </div>`
+          : ""
+      }
+      <div class="dossier-infos">
+        <div class="dossier-nom">${handle ? `Dossier ouvert : <strong>${echapper(handle.name)}</strong>` : "Aucun dossier ouvert pour cette semaine"}</div>
+        ${typeof window.showDirectoryPicker === "function" ? `<div class="note">Cherchée dans « ${racine ? echapper(racine.name) : "le dossier des semaines"} »${racine ? "" : " (à choisir dans le menu à gauche)"}, sous-dossiers compris.</div>` : ""}
+      </div>
+      <div class="dossier-boutons">
+        <button type="button" class="contour" id="btnChoisirDossier">${handle ? "Choisir un autre dossier" : "Choisir le dossier à la main"}</button>
+        <button type="button" class="contour" id="btnScanner" ${handle && !scansEnCours.has(parite) ? "" : "disabled"} title="Relire le dossier de la semaine">↻ Scanner</button>
+      </div>
     </div>
-    ${etat ? `<div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes
+    ${etat ? `<div class="journal-scan ${deplie ? "deplie" : ""}">
+      <div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes
       .map((l) => (typeof l === "string" ? echapper(l) : `${echapper(l.texte)} <button type="button" class="contour petit" data-deroger-case="${l.derogation.id}" data-semaine="${l.derogation.semaine}">Le garder en semaine ${l.derogation.semaine}</button>`))
-      .join("<br>")}</div>` : ""}
+      .join("<br>")}</div>
+      ${etat.lignes.length > 4 ? `<button type="button" class="texte" id="btnJournalScan">${deplie ? "Réduire" : `Tout voir (${etat.lignes.length} lignes)`}</button>` : ""}
+    </div>` : ""}
   `;
+  const btnJournal = $("btnJournalScan");
+  if (btnJournal)
+    btnJournal.addEventListener("click", () => {
+      carte.dataset.journal = deplie ? "" : "deplie";
+      remplirCarteDossier(parite);
+    });
   carte.querySelectorAll("[data-deroger-case]").forEach((b) =>
     b.addEventListener("click", async () => {
       const p = paires.find((x) => String(x.id) === b.dataset.derogerCase);
@@ -15974,6 +16199,36 @@ function entetePage(surtitre, titre, chapeau, actions = "") {
   </header>`;
 }
 
+// V6.9 : les explications sont cachées derrière un bouton « ? » (à côté du titre) ; ouvertes, elles le restent
+// d'un affichage à l'autre tant que la page n'est pas rechargée.
+const aidesOuvertes = new Set();
+const aideOuverte = (cle) => aidesOuvertes.has(cle);
+function boutonAide(cle) {
+  const o = aidesOuvertes.has(cle);
+  return `<button type="button" class="aide-btn" data-aide="${echapper(cle)}" aria-expanded="${o}" title="${o ? "Cacher l'explication" : "Explication"}" aria-label="Explication">?</button>`;
+}
+function texteAide(cle, html, classe = "note") {
+  return `<div class="${classe} aide-texte" data-aide-texte="${echapper(cle)}"${aidesOuvertes.has(cle) ? "" : " hidden"}>${html}</div>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target && e.target.closest ? e.target.closest(".aide-btn") : null;
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const cle = b.dataset.aide;
+  const o = !aidesOuvertes.has(cle);
+  if (o) aidesOuvertes.add(cle);
+  else aidesOuvertes.delete(cle);
+  document.querySelectorAll(".aide-btn").forEach((x) => {
+    if (x.dataset.aide !== cle) return;
+    x.setAttribute("aria-expanded", String(o));
+    x.title = o ? "Cacher l'explication" : "Explication";
+  });
+  document.querySelectorAll(".aide-texte").forEach((t) => {
+    if (t.dataset.aideTexte === cle) t.hidden = !o;
+  });
+});
+
 // Lundi de la semaine ISO « semaine » de l'année « annee ».
 function lundiSemaineIso(annee, semaine) {
   const jan4 = new Date(annee, 0, 4);
@@ -16070,28 +16325,36 @@ function majListePostes() {
   zone.innerHTML =
     pairesDeLaSemaine(onglet)
       .map(
-        (p) => `<button type="button" class="poste-item" data-case="${p.id}">
-        <span class="poste-textes"><span class="poste-nom">${echapper(titreCase(p))}</span><span class="poste-fichier">${p.strat ? echapper(p.strat.name) : "Aucun lancement"}</span></span>
-        ${etiquette(etatCase(p))}
+        (p, i) => `<button type="button" class="poste-item ${p.strat ? "" : "sans-lancement"}" data-case="${p.id}" title="${echapper(titreCase(p))}${p.strat ? ` — ${echapper(p.strat.name)}` : ""}">
+        <span class="pastille">${String(i + 1).padStart(2, "0")}</span>
+        <span class="poste-textes"><span class="poste-ligne"><span class="poste-nom">${echapper(titreCase(p))}</span>${p.strat ? etiquette(etatCase(p)) : ""}</span><span class="poste-fichier">${p.strat ? echapper(p.strat.name) : "Aucun lancement"}</span></span>
       </button>`
       )
       .join("") +
     lancementsHorsCasesDeLaSemaine(numeroSemaine(onglet), pairesDeLaSemaine(onglet))
       .map(
         (l) => `<button type="button" class="poste-item poste-cree" data-cree="1" title="${l.manuel ? "Lancement créé dans Sentinelle" : "Lancement ajouté à la bibliothèque (pas dans les dossiers de la semaine)"} : son avancement est dans le Suivi de production">
-        <span class="poste-textes"><span class="poste-nom">${echapper(l.poste)} · ${l.manuel ? "créé dans Sentinelle" : "bibliothèque"}</span><span class="poste-fichier">${echapper(l.nom)} · ${l.pieces} pièce${l.pieces > 1 ? "s" : ""}</span></span>
-        ${etiquette(l.manuel ? { texte: "Sans fichier", genre: "vide" } : { texte: "Hors dossiers", genre: "vide" })}
+        <span class="pastille cree">+</span>
+        <span class="poste-textes"><span class="poste-ligne"><span class="poste-nom">${echapper(l.poste)} · ${l.manuel ? "créé dans Sentinelle" : "bibliothèque"}</span></span><span class="poste-fichier">${echapper(l.nom)} · ${l.pieces} pièce${l.pieces > 1 ? "s" : ""}</span></span>
       </button>`
       )
       .join("");
   zone.querySelectorAll("[data-cree]").forEach((b) => b.addEventListener("click", ouvrirSuivi));
   zone.querySelectorAll(".poste-item[data-case]").forEach((b) => b.addEventListener("click", () => montrerCase(Number(b.dataset.case))));
+  appliquerVueControle(onglet);
 }
-
-// Fait défiler jusqu'à la case et la met en avant un instant.
+// V6.9 : « Un lancement » : la case choisie remplace celle affichée ; « Tous » : on descend jusqu'à elle.
 function montrerCase(id) {
+  const p = paires.find((x) => x.id === id);
+  if (p && estOngletSemaine(p.parite)) caseChoisie[p.parite] = id;
+  if (estOngletSemaine()) appliquerVueControle(onglet);
   const carte = document.querySelector(`.carte-paire[data-id="${id}"]`);
   if (!carte) return;
+  if (vueControle() === "une") {
+    const haut = carte.getBoundingClientRect().top;
+    if (haut < 0 || haut > window.innerHeight * 0.6) carte.scrollIntoView({ block: "start" });
+    return;
+  }
   document.querySelectorAll(".carte-paire.choisie").forEach((c) => c.classList.remove("choisie"));
   carte.classList.add("choisie");
   carte.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -16180,8 +16443,8 @@ function afficherAccueil() {
   const controlees = avecLancement.filter((p) => p.rapport);
   const crees = lancementsHorsCasesDeLaSemaine(numero, cases);
   const aRegarder = [];
-  for (const p of cases) for (const t of problemesDeLaCase(p)) aRegarder.push({ p, titre: `${titreCase(p)} — ${t}`, genre: "souci" });
-  for (const p of cases) if (!p.strat && !caseAjoutee(p)) aRegarder.push({ p, titre: `${titreCase(p)} — pas encore de lancement`, genre: "vide" });
+  for (const p of cases) for (const t of problemesDeLaCase(p)) aRegarder.push({ p, nom: titreCase(p), texte: t, titre: `${titreCase(p)} — ${t}`, genre: "souci" });
+  for (const p of cases) if (!p.strat && !caseAjoutee(p)) aRegarder.push({ p, nom: titreCase(p), texte: "pas encore de lancement", titre: `${titreCase(p)} — pas encore de lancement`, genre: "vide" });
   const nbProblemes = aRegarder.filter((a) => a.genre === "souci").length;
 
   const semaines = ONGLETS_SEMAINE.map((x) => ({ parite: x, numero: numeroSemaine(x) })).sort((a, b) => ordreCalendrier(a.numero) - ordreCalendrier(b.numero));
@@ -16201,6 +16464,15 @@ function afficherAccueil() {
 
   html += `<h2 class="titre-section">Les lancements de la semaine</h2><div class="grille-lancements">`;
   cases.forEach((p, i) => {
+    // V6.9 : sans lancement, une carte courte (le nom et « Préparer »), sans les lignes vides.
+    if (!p.strat) {
+      html += `<article class="carte-lancement sans-lancement">
+      <div class="carte-lancement-tete"><span class="pastille">${String(i + 1).padStart(2, "0")}</span><h3>${echapper(titreCase(p))}</h3></div>
+      <div class="carte-lancement-fichier"><span class="vide">Pas encore de lancement</span></div>
+      <button type="button" class="contour" data-preparer="${p.id}">Préparer</button>
+    </article>`;
+      return;
+    }
     html += `<article class="carte-lancement">
       <div class="carte-lancement-tete"><span class="pastille">${String(i + 1).padStart(2, "0")}</span><h3>${echapper(titreCase(p))}</h3></div>
       <div class="carte-lancement-fichier">${p.strat ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>${echapper(p.strat.name)}</span>` : '<span class="vide">Pas encore de lancement</span>'}</div>
@@ -16239,7 +16511,7 @@ function afficherAccueil() {
       <div class="carte-titre">À regarder</div>
       ${
         aRegarder.length
-          ? aRegarder.map((a) => `<button type="button" class="ligne-regarder ${a.genre}" data-voir="${a.p.id}"><span class="point"></span><span>${echapper(a.titre)}</span></button>`).join("")
+          ? aRegarder.map((a) => `<button type="button" class="ligne-regarder ${a.genre}" data-voir="${a.p.id}"><span class="point"></span><span><strong>${echapper(a.nom)}</strong> — ${echapper(a.texte)}</span></button>`).join("")
           : '<div class="note">Rien à signaler pour l\'instant.</div>'
       }
     </section>
@@ -19473,11 +19745,19 @@ const SUIVI = (() => {
     return t ? `<div class="sv-message alerte">${echapper(t)}</div>` : "";
   }
 
+  // V6.9 : les boutons (dossier, actualiser, charger) sont en haut de page ; ici, d'où vient l'avancement.
+  function boutonsExtraction() {
+    const d = etat.dossier;
+    return `${d ? `<button type="button" id="svActualiser"${etat.lecture ? " disabled" : ""}>↻ Actualiser</button>` : ""}
+      <button type="button" class="contour" id="svFichier">Charger un fichier…</button>
+      <button type="button" id="svDossier"${d ? ' class="contour"' : ""}>${d ? "Changer de dossier…" : "Choisir le dossier des extractions…"}</button>
+      <input type="file" id="svChampFichier" accept=".xlsx,.xlsm" multiple hidden>`;
+  }
   function htmlCarteExtraction(resume, local) {
     const d = etat.dossier;
     const i = etat.infoDossier || {};
     const der = etat.extractions[etat.extractions.length - 1];
-    let html = `<div class="carte" id="svCarteExtraction"><div class="carte-titre">Extraction Diakonos</div>`;
+    let html = `<div class="carte sv-carte-extraction" id="svCarteExtraction">`;
     if (der) {
       html += `<div class="sv-source">Dernière extraction : <strong>${echapper(jourLong(der.jour))}</strong> (semaine ${der.courante.semaine}) · ${der.fichiers.map((f) => `<span class="sv-fichier-lu">${echapper(f.nom)}</span>`).join(" + ")}${
         der.ordreMax ? ` · <span class="pale">semaines jusqu'à la ${der.ordreMax % 100}</span>` : ""
@@ -19490,12 +19770,9 @@ const SUIVI = (() => {
       html += `<div class="note">Choisissez une fois le dossier où arrivent les extractions « suivi_production_JJMMAAAA.xlsx » : Sentinelle y lit toute seule les nouvelles, à chaque ouverture. Ou chargez le fichier à la main. Le fichier est lu sur ce PC et n'est jamais modifié.</div>`;
     }
     if (d) html += `<div class="sv-dossier${i.alerte ? " alerte" : ""}">📁 Dossier <strong>${echapper(d.name)}</strong>${i.texte ? ` · ${echapper(i.texte)}` : i.trouves ? ` · ${pluriel(i.trouves, "extraction trouvée", "extractions trouvées")}` : ""}</div>`;
+    if (local && resume) html += htmlInclus(resume);
     if (etat.message) html += `<div class="sv-message ${etat.message.genre || ""}">${echapper(etat.message.texte)}</div>`;
-    html += `<div class="sv-boutons">
-      <button type="button" id="svDossier"${d ? ' class="contour"' : ""}>${d ? "Changer de dossier…" : "Choisir le dossier des extractions…"}</button>
-      ${d ? `<button type="button" id="svActualiser"${etat.lecture ? " disabled" : ""}>↻ Actualiser</button>` : ""}
-      <button type="button" class="contour" id="svFichier">Charger un fichier…</button>
-      <input type="file" id="svChampFichier" accept=".xlsx,.xlsm" multiple hidden></div></div>`;
+    html += `</div>`;
     return html;
   }
 
@@ -19555,10 +19832,10 @@ const SUIVI = (() => {
           <span class="sv-droite">${droiteGroupe(g[1], g[2], g[3])}</span>
         </button>${detail}</div>`;
     };
-    return `<div class="carte" id="svVues"><div class="carte-titre">Suivi par ${nomVue.toLowerCase()}</div>
+    return `<div class="carte" id="svVues"><div class="carte-titre">Suivi par ${nomVue.toLowerCase()}${boutonAide("sv-vues")}</div>
       <div class="sv-vues"><div class="choix-semaine" role="group" aria-label="Suivi par">${VUES.map(([k, n]) => `<button type="button" data-sv-vue="${k}"${k === vue ? ' class="actif" aria-pressed="true"' : ' aria-pressed="false"'}>${n}</button>`).join("")}</div>
         ${vue !== "semaine" ? `<input type="search" id="svFiltreVue" placeholder="Chercher un ${nomVue.toLowerCase()}…" aria-label="Chercher" value="${echapper(etat.filtreVue)}">` : ""}</div>
-      <div class="note">Les pièces des lancements, comptées comme les barres : faites = lancées − « Qte en cours » (CVC plus dans l'extraction = faite). Un clic sur une ligne : le détail par ${nomSous}.</div>
+      ${texteAide("sv-vues", `Les pièces des lancements, comptées comme les barres : faites = lancées − « Qte en cours » (CVC plus dans l'extraction = faite). Un clic sur une ligne : le détail par ${nomSous}.`)}
       ${vue === "transporteur" && lignes.some((g) => g[0] === TRANSPORTEUR_INCONNU) ? `<div class="sv-message">« ${TRANSPORTEUR_INCONNU} » : pièces de lancements rangés dans la bibliothèque avant la version 6.3.3, déjà faites (plus dans l'extraction). Scannez de nouveau leur semaine dans « Contrôler la coupe » : le transporteur sera pris dans le fichier de lancement.</div>` : ""}
       ${lignes.length ? lignes.map(groupe).join("") : '<div class="note">Aucune pièce suivie.</div>'}</div>`;
   }
@@ -19568,7 +19845,6 @@ const SUIVI = (() => {
     if (!t || !t.lignes.length) return "";
     const totaux = t.colonnes.map((_, i) => t.lignes.reduce((s, l) => s + (Number(l[i + 1]) || 0), 0));
     return `<div class="carte"><div class="carte-titre">Qté en cours par transporteur et par semaine (comme dans Excel)</div>
-      ${local ? htmlInclus(resume) : ""}
       <div class="defile"><table class="sv-table sv-croise"><thead><tr><th>Transporteur</th>${t.colonnes.map((c) => `<th class="nombre">${echapper(c)}</th>`).join("")}</tr></thead>
       <tbody>${t.lignes.map((l) => `<tr><td>${echapper(l[0])}</td>${l.slice(1).map((v, i) => `<td class="nombre${i === l.length - 2 ? " total" : ""}">${v ? fmt(v) : ""}</td>`).join("")}</tr>`).join("")}</tbody>
       <tfoot><tr><td>Total</td>${totaux.map((v) => `<td class="nombre total">${fmt(v)}</td>`).join("")}</tr></tfoot></table></div>
@@ -19717,8 +19993,8 @@ const SUIVI = (() => {
         <td>${echapper(x.r[10] || "")}<div class="pale">${echapper(texteBrut(x.r, "coloris"))}</div></td><td>${echapper(x.r[7])}</td><td>${echapper(x.r[8])}</td><td>${echapper(texteBrut(x.r, "groupement"))}</td></tr>`
       )
       .join("");
-    return `<div class="carte" id="svHors"><div class="carte-titre">Pas dans les lancements</div>
-      <div class="note">Les pièces de production de l'extraction du ${echapper(jourLong(resume.jour))} qui ne sont dans <strong>aucun fichier de lancement</strong> de la bibliothèque : pas encore lancées, lancement pas encore scanné, ou plus de pièces en cours dans Diakonos que dans le lancement. Toutes sont listées. Fournitures, Dibond et résine ne passent pas par les fichiers de lancement : pas listés.</div>
+    return `<div class="carte" id="svHors"><div class="carte-titre">Pas dans les lancements${boutonAide("sv-hors")}</div>
+      <div class="note aide-texte" data-aide-texte="sv-hors"${aideOuverte("sv-hors") ? "" : " hidden"}>Les pièces de production de l'extraction du ${echapper(jourLong(resume.jour))} qui ne sont dans <strong>aucun fichier de lancement</strong> de la bibliothèque : pas encore lancées, lancement pas encore scanné, ou plus de pièces en cours dans Diakonos que dans le lancement. Toutes sont listées. Fournitures, Dibond et résine ne passent pas par les fichiers de lancement : pas listés.</div>
       ${tout.length ? `<div class="sv-puces">${puces}</div>
       <div class="sv-hors-outils"><input type="search" id="svHorsRecherche" placeholder="Chercher : commande, article, coloris, transporteur…" value="${echapper(etat.horsRecherche || "")}" autocomplete="off">
         <button type="button" id="svHorsExport">Exporter en Excel (format du fichier de suivi)</button></div>
@@ -19730,7 +20006,7 @@ const SUIVI = (() => {
         </span>
         <button type="button" id="svHorsAjouter"${boutonAjouterActif() ? "" : " disabled"}>${texteBoutonAjouter()}</button></div>
       ${etat.horsMessage ? `<div class="sv-message ${etat.horsMessage.genre}">${echapper(etat.horsMessage.texte)}</div>` : ""}
-      <div class="note">Cochez des lignes, puis choisissez un lancement, ou « Nouveau lancement » en lui donnant le nom que vous voulez. Un nouveau lancement entre dans la bibliothèque et compte comme un lancement normal (suivi, vues, téléphone, recherche) ; dans un lancement existant, les pièces comptent dans son suivi. Aucun fichier de lancement n'est créé ni modifié. Une ligne « en plus du lancement » va toujours dans le lancement qui a déjà la pièce.</div>
+      <div class="note aide-texte" data-aide-texte="sv-hors"${aideOuverte("sv-hors") ? "" : " hidden"}>Cochez des lignes, puis choisissez un lancement, ou « Nouveau lancement » en lui donnant le nom que vous voulez. Un nouveau lancement entre dans la bibliothèque et compte comme un lancement normal (suivi, vues, téléphone, recherche) ; dans un lancement existant, les pièces comptent dans son suivi. Aucun fichier de lancement n'est créé ni modifié. Une ligne « en plus du lancement » va toujours dans le lancement qui a déjà la pièce.</div>
       <div class="note">${fmt(liste.length)} ligne${liste.length > 1 ? "s" : ""}, ${fmt(total)} pièce${total > 1 ? "s" : ""}${etat.horsSemaine ? ` en semaine ${echapper(etat.horsSemaine.split("-")[1])}` : ""}.</div>
       <div class="defile"><table class="sv-table sv-hors"><thead><tr><th><input type="checkbox" id="svHorsTout" title="Tout cocher" aria-label="Tout cocher"></th><th>Sem.</th><th>Commande</th><th class="nombre">Ligne</th><th>Catalogue</th><th>Article</th><th class="nombre">Pièces</th><th class="nombre">Dimensions</th><th>Coloris</th><th>Transporteur</th><th>Ville</th><th>Groupement</th></tr></thead>
       <tbody>${lignes || '<tr><td colspan="12" class="pale">Rien ne correspond.</td></tr>'}</tbody></table></div>` : `<div class="sv-message">✔ Toutes les pièces de l'extraction sont dans un lancement.</div>${etat.horsMessage ? `<div class="sv-message ${etat.horsMessage.genre}">${echapper(etat.horsMessage.texte)}</div>` : ""}`}
@@ -20101,37 +20377,74 @@ const SUIVI = (() => {
       return `<tr><td>${echapper(jourLong(e.jour))}</td><td>S${e.courante.semaine}</td><td>${e.fichiers.map((f) => echapper(f.nom)).join("<br>")}</td><td class="nombre">${fmt(e.lignes.length)}</td><td class="nombre">${fmt(cours)}</td>
         <td><button type="button" class="texte" data-sv-oublier="${echapper(e.jour)}">Oublier</button></td></tr>`;
     });
-    return `<div class="carte"><div class="carte-titre">Extractions gardées</div>
-      <div class="note">Une par jour (la plus récente du jour). Chaque ligne du fichier compte, comme dans Excel ; une ligne présente dans deux fichiers du même jour n'est comptée qu'une fois.</div>
+    return `<div class="carte"><div class="carte-titre">Extractions gardées${boutonAide("sv-extractions")}</div>
+      <div class="note aide-texte" data-aide-texte="sv-extractions"${aideOuverte("sv-extractions") ? "" : " hidden"}>Une par jour (la plus récente du jour). Chaque ligne du fichier compte, comme dans Excel ; une ligne présente dans deux fichiers du même jour n'est comptée qu'une fois.</div>
       <div class="defile"><table class="sv-table"><thead><tr><th>Jour</th><th>Semaine</th><th>Fichier(s)</th><th class="nombre">Lignes</th><th class="nombre">Qté en cours</th><th></th></tr></thead><tbody>${lignes.join("")}</tbody></table></div></div>`;
   }
 
+  // V6.9 : un onglet à la fois (avancement, vues, pas dans les lancements, tableau, extractions) au lieu d'une page sans fin.
+  const CLE_PANNEAU = "sentinelle-suivi-panneau";
+  const PANNEAUX = [
+    ["lancements", "Avancement par lancement"],
+    ["vues", "Par semaine, transporteur…"],
+    ["hors", "Pas dans les lancements"],
+    ["tableau", "Tableau Excel"],
+    ["extractions", "Extractions"],
+  ];
+  function panneau() {
+    if (!etat.panneau) etat.panneau = lireLocal(CLE_PANNEAU, "lancements");
+    if (!PANNEAUX.some(([k]) => k === etat.panneau)) etat.panneau = "lancements";
+    return etat.panneau;
+  }
+  function choisirPanneau(k) {
+    etat.panneau = k;
+    ecrireLocal(CLE_PANNEAU, k);
+    afficher();
+  }
+  function htmlAvancement(resume) {
+    return `<div class="carte" id="svAvancement"><div class="carte-titre">Avancement par lancement${boutonAide("sv-avancement")}</div>
+        ${texteAide("sv-avancement", "L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Une pièce relancée (casse, retard) compte dans le lancement le plus récent, et elle est déduite du lancement d'origine. Un clic sur un lancement : les commandes encore à faire.")}
+        <div class="sv-legende"><span><i class="sv-l-en_cours"></i>En cours</span><span><i class="sv-l-termine"></i>Terminé</span><span><i class="sv-l-retard"></i>En retard (semaine passée)</span><span><i class="sv-l-attente"></i>Pas dans cette extraction</span></div>
+        ${resume.semaines.length ? resume.semaines.map((s) => htmlSemaine(s, resume)).join("") : '<div class="note">Aucun lancement dans la bibliothèque des semaines autour de cette extraction : scannez les semaines dans « Contrôler la coupe ».</div>'}
+        ${resume.anciennes ? `<div class="note">${pluriel(resume.anciennes, "semaine plus ancienne : finie", "semaines plus anciennes : finies")}.</div>` : ""}</div>`;
+  }
+  function htmlOngletsSuivi(resume, local) {
+    const nbHors = local && etat.horsDetail ? etat.horsDetail.reduce((t, x) => t + x.n, 0) : (resume.hors || []).reduce((t, h) => t + (Number(h[1]) || 0), 0);
+    const nombres = { hors: Math.round(nbHors), extractions: etat.extractions.length };
+    const p = panneau();
+    return `<div class="onglets-page" role="tablist" aria-label="Suivi de production">${PANNEAUX.map(
+      ([k, n]) => `<button type="button" role="tab" class="onglet-page${k === p ? " actif" : ""}" data-sv-panneau="${k}" aria-selected="${k === p}">${echapper(n)}${nombres[k] ? ` <span class="onglet-nombre${k === "hors" ? " attention" : ""}">${fmt(nombres[k])}</span>` : ""}</button>`
+    ).join("")}</div>`;
+  }
   function afficher() {
     const page = $("pageSuivi");
     if (!page) return;
     const local = etat.charge ? calculer() : null;
     const resume = local || pourPartage();
-    let html = entetePage("Outils", "Suivi de production", "L'avancement de chaque lancement, d'après l'extraction « Suivi production » de Diakonos.");
+    const der = etat.extractions[etat.extractions.length - 1];
+    const chapeau = der ? `D'après l'extraction Diakonos du ${jourLong(der.jour)}.` : resume ? `D'après l'extraction Diakonos du ${jourLong(resume.jour)} (fichier partagé).` : "L'avancement de chaque lancement, d'après l'extraction « Suivi production » de Diakonos.";
+    let html = entetePage("Outils", "Suivi de production", chapeau, boutonsExtraction());
     html += htmlCarteExtraction(resume, Boolean(local));
     if (typeof htmlBandeauValidations === "function") html += htmlBandeauValidations();
     if (resume) {
       html += htmlTuiles(resume);
-      html += htmlVues(resume);
-      html += `<div class="carte"><div class="carte-titre">Avancement par lancement</div>
-        <div class="note">L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Une pièce relancée (casse, retard) compte dans le lancement le plus récent, et elle est déduite du lancement d'origine. Un clic sur un lancement : les commandes encore à faire.</div>
-        <div class="sv-legende"><span><i class="sv-l-en_cours"></i>En cours</span><span><i class="sv-l-termine"></i>Terminé</span><span><i class="sv-l-retard"></i>En retard (semaine passée)</span><span><i class="sv-l-attente"></i>Pas dans cette extraction</span></div>
-        ${resume.semaines.length ? resume.semaines.map((s) => htmlSemaine(s, resume)).join("") : '<div class="note">Aucun lancement dans la bibliothèque des semaines autour de cette extraction : scannez les semaines dans « Contrôler la coupe ».</div>'}
-        ${resume.anciennes ? `<div class="note">${pluriel(resume.anciennes, "semaine plus ancienne : finie", "semaines plus anciennes : finies")}.</div>` : ""}</div>`;
-      html += htmlHors(resume, Boolean(local));
-      html += htmlTableau(resume, Boolean(local));
-    }
-    html += htmlExtractions();
+      html += htmlOngletsSuivi(resume, Boolean(local));
+      const p = panneau();
+      let contenu = "";
+      if (p === "lancements") contenu = htmlAvancement(resume);
+      else if (p === "vues") contenu = htmlVues(resume) || '<div class="carte"><div class="note">Pas de vue pour cette extraction.</div></div>';
+      else if (p === "hors") contenu = htmlHors(resume, Boolean(local)) || '<div class="carte"><div class="sv-message">✔ Toutes les pièces de l\'extraction sont dans un lancement.</div></div>';
+      else if (p === "tableau") contenu = htmlTableau(resume, Boolean(local)) || '<div class="carte"><div class="note">Chargez l\'extraction sur ce PC pour voir le tableau.</div></div>';
+      else contenu = htmlExtractions() || '<div class="carte"><div class="note">Aucune extraction gardée sur ce PC.</div></div>';
+      html += `<div class="panneau-page" role="tabpanel">${contenu}</div>`;
+    } else html += htmlExtractions();
     page.innerHTML = html;
     brancher(page);
   }
 
   function brancher(page) {
     const q = (id) => page.querySelector(`#${id}`);
+    page.querySelectorAll("[data-sv-panneau]").forEach((b) => b.addEventListener("click", () => choisirPanneau(b.dataset.svPanneau)));
     if (q("svReinitValidations"))
       q("svReinitValidations").addEventListener("click", () => {
         if (window.confirm("Remettre à zéro le suivi en direct ? Les pièces reviendront à l'état de la dernière extraction (les nouvelles validations seront de nouveau comptées).") && typeof reinitialiserValidations === "function") reinitialiserValidations();

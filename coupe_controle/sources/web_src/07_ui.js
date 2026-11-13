@@ -738,29 +738,35 @@ function construireSemaine(parite) {
   const numero = numeroSemaine(parite);
   page.innerHTML = `
     ${entetePage(
-      `Semaine ${numero} · ${anneeDeSemaine(numero)}`,
       "Contrôler la coupe",
-      "Les fichiers de la semaine sont trouvés tout seuls dans son dossier.",
-      `<button type="button" class="contour export-semaine" id="btnCompteRendu">Compte rendu de la semaine (.pdf)</button>
-       <button type="button" class="contour export-semaine" id="btnExporterSemaine">Exporter le rapport de la semaine (.xlsx)</button>
+      `Semaine ${numero} · ${anneeDeSemaine(numero)}`,
+      datesSemaine(numero),
+      `<button type="button" class="contour export-semaine" id="btnCompteRendu" title="Compte rendu de la semaine (.pdf), modèle de l'atelier">Compte rendu (.pdf)</button>
+       <button type="button" class="contour export-semaine" id="btnExporterSemaine" title="Exporter le rapport de la semaine (.xlsx) : un onglet par lancement">Rapport de la semaine (.xlsx)</button>
        <button type="button" id="btnLancerTout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4l13 8-13 8z"/></svg>Lancer tous les contrôles</button>`
     )}
-    <div class="carte" id="carteDossier"></div>
-    <div class="colonnes-controle">
+    <div class="carte carte-dossier" id="carteDossier"></div>
+    <div class="colonnes-controle vue-${vueControle()}" id="colonnesControle">
       <div class="colonne-postes">
         <div class="carte compteur" id="texteCompteur"><span class="valeur">…</span></div>
-        <nav class="liste-postes" id="listePostes" aria-label="Les postes de la semaine"></nav>
-        <button type="button" class="contour" id="btnAjouterChantier">+ Ajouter un chantier</button>
-        ${POSTES_SUPPLEMENTS.map((poste) => `<button type="button" class="contour" data-ajouter-poste="${echapper(poste)}">+ Ajouter un lancement ${echapper(poste)}</button>`).join("")}
-        <button type="button" class="texte" id="btnReinitialiserSemaine">↺ Réinitialiser la semaine</button>
+        <div class="choix-vue" role="group" aria-label="Affichage des lancements">
+          <button type="button" data-vue="une" aria-pressed="${vueControle() === "une"}" class="${vueControle() === "une" ? "actif" : ""}">Un lancement</button>
+          <button type="button" data-vue="toutes" aria-pressed="${vueControle() === "toutes"}" class="${vueControle() === "toutes" ? "actif" : ""}">Tous</button>
+        </div>
+        <nav class="liste-postes" id="listePostes" aria-label="Les lancements de la semaine"></nav>
+        <div class="ajouts-postes">
+          <button type="button" class="contour" id="btnAjouterChantier">+ Ajouter un chantier</button>
+          ${POSTES_SUPPLEMENTS.map((poste) => `<button type="button" class="contour" data-ajouter-poste="${echapper(poste)}">+ Ajouter un lancement ${echapper(poste)}</button>`).join("")}
+          <button type="button" class="texte" id="btnReinitialiserSemaine">↺ Réinitialiser la semaine</button>
+        </div>
       </div>
       <div class="colonne-cases">
         <div id="cartesPostes"></div>
-        <h2 class="titre-poste">Chantiers</h2>
+        <h2 class="titre-poste titre-chantiers">Chantiers</h2>
         <div id="cartesChantiers"></div>
       </div>
     </div>
-    <div class="carte"><div class="carte-titre">Lancements</div><div id="zoneRecap"></div></div>
+    <div class="carte"><div class="carte-titre">Récapitulatif des lancements</div><div id="zoneRecap"></div></div>
   `;
   majCompteur();
   majRecap();
@@ -788,10 +794,11 @@ function construireSemaine(parite) {
   });
   $("btnReinitialiserSemaine").addEventListener("click", reinitialiserSemaine);
   const montrerNouvelle = (p) => {
+    caseChoisie[parite] = p.id;
     afficher();
-    const carte = document.querySelector(`.carte-paire[data-id="${p.id}"]`);
-    if (carte) carte.scrollIntoView({ behavior: "smooth", block: "center" });
+    montrerCase(p.id);
   };
+  page.querySelectorAll(".choix-vue [data-vue]").forEach((b) => b.addEventListener("click", () => choisirVueControle(b.dataset.vue)));
   $("btnAjouterChantier").addEventListener("click", () => montrerNouvelle(ajouterChantier(parite)));
   document.querySelectorAll("[data-ajouter-poste]").forEach((b) => b.addEventListener("click", () => montrerNouvelle(ajouterSupplement(b.dataset.ajouterPoste, parite))));
   for (const poste of POSTES_SEMAINE) {
@@ -799,8 +806,58 @@ function construireSemaine(parite) {
     for (const s of supplements(parite, poste)) $("cartesPostes").appendChild(carteDe(s));
   }
   for (const c of chantiers(parite)) $("cartesChantiers").appendChild(carteDe(c));
+  appliquerVueControle(parite);
   majDiakonos();
   analyserEnFond(parite);
+}
+
+// ---- V6.9 : un lancement à la fois (la liste à gauche choisit), ou tous les uns sous les autres ----
+
+const CLE_VUE_CONTROLE = "sentinelle-vue-controle";
+const caseChoisie = {}; // onglet → id de la case affichée
+function vueControle() {
+  try {
+    return localStorage.getItem(CLE_VUE_CONTROLE) === "toutes" ? "toutes" : "une";
+  } catch (e) {
+    return "une";
+  }
+}
+function choisirVueControle(vue) {
+  try {
+    localStorage.setItem(CLE_VUE_CONTROLE, vue === "toutes" ? "toutes" : "une");
+  } catch (e) {
+    // mémoire du navigateur bloquée : l'affichage change quand même pour cette fois
+  }
+  const zone = $("colonnesControle");
+  if (zone) {
+    zone.classList.toggle("vue-une", vue !== "toutes");
+    zone.classList.toggle("vue-toutes", vue === "toutes");
+  }
+  document.querySelectorAll(".choix-vue [data-vue]").forEach((b) => {
+    b.classList.toggle("actif", b.dataset.vue === vue);
+    b.setAttribute("aria-pressed", String(b.dataset.vue === vue));
+  });
+  if (estOngletSemaine()) appliquerVueControle(onglet);
+}
+// La case affichée : celle choisie dans la liste, sinon la première de la semaine.
+function idCaseAffichee(parite) {
+  const cases = pairesDeLaSemaine(parite);
+  if (!cases.some((p) => p.id === caseChoisie[parite])) caseChoisie[parite] = cases.length ? cases[0].id : null;
+  return caseChoisie[parite];
+}
+function appliquerVueControle(parite) {
+  const une = vueControle() === "une";
+  const id = idCaseAffichee(parite);
+  document.querySelectorAll("#pageSemaine .carte-paire").forEach((c) => c.classList.toggle("cachee-vue", une && Number(c.dataset.id) !== id));
+  const choisie = paires.find((p) => p.id === id);
+  const titre = document.querySelector("#pageSemaine .titre-chantiers");
+  if (titre) titre.classList.toggle("cachee-vue", une && !(choisie && estChantier(choisie)) || (!une && !chantiers(parite).length));
+  document.querySelectorAll("#listePostes .poste-item[data-case]").forEach((b) => {
+    const actif = une && Number(b.dataset.case) === id;
+    b.classList.toggle("actif", actif);
+    if (actif) b.setAttribute("aria-current", "true");
+    else b.removeAttribute("aria-current");
+  });
 }
 
 function carteDe(p) {
@@ -845,24 +902,30 @@ function remplirCarte(carte, p) {
         </div>`;
     })
     .join("");
+  // V6.9 : en-tête (état du lancement), fichiers sur deux colonnes, une seule barre d'actions.
+  const dis = p.enCours ? "disabled" : "";
   carte.innerHTML = `
     <div class="entete-carte">
       ${numeroCase(p) ? `<span class="pastille">${String(numeroCase(p)).padStart(2, "0")}</span>` : ""}
       <span class="titre-carte">${echapper(titreCase(p))}</span>
-      ${p.strat && !estDiakonos(p) ? '<button type="button" class="texte" data-action="semaine" title="Ranger ce lancement dans une autre semaine (dérogation)">⇄ Semaine</button>' : ""}
-      ${caseAjoutee(p) ? '<button type="button" class="texte alerte" data-action="retirer">✕ Retirer</button>' : ""}
-      <button type="button" class="texte" data-action="reinitialiser">↺ Réinitialiser</button>
+      ${estDiakonos(p) ? "" : etiquette(etatCase(p))}
+      <span class="entete-carte-outils">
+        ${p.strat && !estDiakonos(p) ? '<button type="button" class="texte" data-action="semaine" title="Ranger ce lancement dans une autre semaine (dérogation)">⇄ Semaine</button>' : ""}
+        ${caseAjoutee(p) ? '<button type="button" class="texte alerte" data-action="retirer">✕ Retirer</button>' : ""}
+        <button type="button" class="texte" data-action="reinitialiser" title="Effacer les fichiers et les résultats de cette case">↺ Réinitialiser</button>
+      </span>
     </div>
     <div class="zone-semaine"></div>
     ${zonesDiakonosHtml(p)}
-    ${lignesFichiers}
-    <div class="boutons-carte">
-      <button type="button" data-action="go" ${p.enCours ? "disabled" : ""}>GO</button>
-      <button type="button" class="contour" data-action="scies" ${p.enCours ? "disabled" : ""}>Vérifier Scies</button>
+    <div class="fichiers-case">${lignesFichiers}</div>
+    <div class="barre-actions-case">
+      <button type="button" data-action="go" ${dis} title="Contrôler le lancement contre la liste de coupe et le .bkp">GO</button>
+      <button type="button" class="contour" data-action="scies" ${dis} title="Comparer les pièces aux plans de coupe des scies">Vérifier Scies</button>
+      <span class="barre-actions-sep" aria-hidden="true"></span>
+      <button type="button" class="contour" data-action="rapport-lancement" ${dis} title="Rapport du lancement (.pdf)">📄 Rapport (.pdf)</button>
+      ${p.strat ? `<button type="button" class="contour" data-action="problemes-lancement" ${dis} title="Problèmes du lancement (.xlsx)">📊 Problèmes (.xlsx)</button>` : ""}
+      ${p.bkp ? '<button type="button" class="contour" data-action="plans-de-coupe" title="Plans de coupe du .bkp">▦ Plans de coupe</button>' : ""}
     </div>
-    <button type="button" class="contour pleine" data-action="rapport-lancement" ${p.enCours ? "disabled" : ""}>📄 Rapport du lancement (.pdf)</button>
-    ${p.strat ? `<button type="button" class="contour pleine" data-action="problemes-lancement" ${p.enCours ? "disabled" : ""}>📊 Problèmes du lancement (.xlsx)</button>` : ""}
-    ${p.bkp ? '<button type="button" class="contour pleine" data-action="plans-de-coupe">▦ Plans de coupe du .bkp</button>' : ""}
     ${p.etat ? `<div class="etat ${p.etatErreur ? "erreur" : ""}">${echapper(p.etat)}</div>` : ""}
     <div class="zone-problemes"></div>
     <div class="zone-rapport"></div>
@@ -2034,26 +2097,40 @@ function remplirCarteDossier(parite) {
   const handle = dossierPartageHandles[parite];
   const etat = etatsScan[parite];
   const racine = typeof reecriture !== "undefined" ? reecriture.racine : null;
+  // V6.9 : une seule ligne (semaine, dossier, boutons) ; le compte rendu du scan dans un cadre qui défile.
+  const deplie = carte.dataset.journal === "deplie";
   carte.innerHTML = `
-    <div class="carte-titre">Dossier de la semaine</div>
-    ${
-      typeof window.showDirectoryPicker === "function"
-        ? `<div class="ouvrir-semaine">
-      <label>Semaine<input type="number" id="champSemaineControle" min="1" max="53" value="${numeroSemaine(parite)}"></label>
-      <button type="button" id="btnOuvrirSemaine" ${scansEnCours.size ? "disabled" : ""}>Ouvrir et contrôler</button>
-      <span class="note">Cherchée dans « ${racine ? echapper(racine.name) : "le dossier des semaines"} »${racine ? "" : " (à choisir dans le menu à gauche)"}, sous-dossiers compris.</span>
-    </div>`
-        : ""
-    }
-    ${handle ? `<div class="note">Dossier ouvert : <strong>${echapper(handle.name)}</strong></div>` : ""}
-    <div class="boutons-carte">
-      <button type="button" class="contour" id="btnChoisirDossier">${handle ? "Choisir un autre dossier" : "Choisir le dossier à la main"}</button>
-      <button type="button" id="btnScanner" ${handle && !scansEnCours.has(parite) ? "" : "disabled"}>Scanner</button>
+    <div class="dossier-ligne">
+      ${
+        typeof window.showDirectoryPicker === "function"
+          ? `<div class="ouvrir-semaine">
+        <label>Semaine<input type="number" id="champSemaineControle" min="1" max="53" value="${numeroSemaine(parite)}"></label>
+        <button type="button" id="btnOuvrirSemaine" ${scansEnCours.size ? "disabled" : ""}>Ouvrir et contrôler</button>
+      </div>`
+          : ""
+      }
+      <div class="dossier-infos">
+        <div class="dossier-nom">${handle ? `Dossier ouvert : <strong>${echapper(handle.name)}</strong>` : "Aucun dossier ouvert pour cette semaine"}</div>
+        ${typeof window.showDirectoryPicker === "function" ? `<div class="note">Cherchée dans « ${racine ? echapper(racine.name) : "le dossier des semaines"} »${racine ? "" : " (à choisir dans le menu à gauche)"}, sous-dossiers compris.</div>` : ""}
+      </div>
+      <div class="dossier-boutons">
+        <button type="button" class="contour" id="btnChoisirDossier">${handle ? "Choisir un autre dossier" : "Choisir le dossier à la main"}</button>
+        <button type="button" class="contour" id="btnScanner" ${handle && !scansEnCours.has(parite) ? "" : "disabled"} title="Relire le dossier de la semaine">↻ Scanner</button>
+      </div>
     </div>
-    ${etat ? `<div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes
+    ${etat ? `<div class="journal-scan ${deplie ? "deplie" : ""}">
+      <div class="compte-rendu ${etat.erreur ? "erreur" : ""}">${etat.lignes
       .map((l) => (typeof l === "string" ? echapper(l) : `${echapper(l.texte)} <button type="button" class="contour petit" data-deroger-case="${l.derogation.id}" data-semaine="${l.derogation.semaine}">Le garder en semaine ${l.derogation.semaine}</button>`))
-      .join("<br>")}</div>` : ""}
+      .join("<br>")}</div>
+      ${etat.lignes.length > 4 ? `<button type="button" class="texte" id="btnJournalScan">${deplie ? "Réduire" : `Tout voir (${etat.lignes.length} lignes)`}</button>` : ""}
+    </div>` : ""}
   `;
+  const btnJournal = $("btnJournalScan");
+  if (btnJournal)
+    btnJournal.addEventListener("click", () => {
+      carte.dataset.journal = deplie ? "" : "deplie";
+      remplirCarteDossier(parite);
+    });
   carte.querySelectorAll("[data-deroger-case]").forEach((b) =>
     b.addEventListener("click", async () => {
       const p = paires.find((x) => String(x.id) === b.dataset.derogerCase);

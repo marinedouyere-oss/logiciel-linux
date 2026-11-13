@@ -12,6 +12,36 @@ function entetePage(surtitre, titre, chapeau, actions = "") {
   </header>`;
 }
 
+// V6.9 : les explications sont cachées derrière un bouton « ? » (à côté du titre) ; ouvertes, elles le restent
+// d'un affichage à l'autre tant que la page n'est pas rechargée.
+const aidesOuvertes = new Set();
+const aideOuverte = (cle) => aidesOuvertes.has(cle);
+function boutonAide(cle) {
+  const o = aidesOuvertes.has(cle);
+  return `<button type="button" class="aide-btn" data-aide="${echapper(cle)}" aria-expanded="${o}" title="${o ? "Cacher l'explication" : "Explication"}" aria-label="Explication">?</button>`;
+}
+function texteAide(cle, html, classe = "note") {
+  return `<div class="${classe} aide-texte" data-aide-texte="${echapper(cle)}"${aidesOuvertes.has(cle) ? "" : " hidden"}>${html}</div>`;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target && e.target.closest ? e.target.closest(".aide-btn") : null;
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const cle = b.dataset.aide;
+  const o = !aidesOuvertes.has(cle);
+  if (o) aidesOuvertes.add(cle);
+  else aidesOuvertes.delete(cle);
+  document.querySelectorAll(".aide-btn").forEach((x) => {
+    if (x.dataset.aide !== cle) return;
+    x.setAttribute("aria-expanded", String(o));
+    x.title = o ? "Cacher l'explication" : "Explication";
+  });
+  document.querySelectorAll(".aide-texte").forEach((t) => {
+    if (t.dataset.aideTexte === cle) t.hidden = !o;
+  });
+});
+
 // Lundi de la semaine ISO « semaine » de l'année « annee ».
 function lundiSemaineIso(annee, semaine) {
   const jan4 = new Date(annee, 0, 4);
@@ -108,28 +138,36 @@ function majListePostes() {
   zone.innerHTML =
     pairesDeLaSemaine(onglet)
       .map(
-        (p) => `<button type="button" class="poste-item" data-case="${p.id}">
-        <span class="poste-textes"><span class="poste-nom">${echapper(titreCase(p))}</span><span class="poste-fichier">${p.strat ? echapper(p.strat.name) : "Aucun lancement"}</span></span>
-        ${etiquette(etatCase(p))}
+        (p, i) => `<button type="button" class="poste-item ${p.strat ? "" : "sans-lancement"}" data-case="${p.id}" title="${echapper(titreCase(p))}${p.strat ? ` — ${echapper(p.strat.name)}` : ""}">
+        <span class="pastille">${String(i + 1).padStart(2, "0")}</span>
+        <span class="poste-textes"><span class="poste-ligne"><span class="poste-nom">${echapper(titreCase(p))}</span>${p.strat ? etiquette(etatCase(p)) : ""}</span><span class="poste-fichier">${p.strat ? echapper(p.strat.name) : "Aucun lancement"}</span></span>
       </button>`
       )
       .join("") +
     lancementsHorsCasesDeLaSemaine(numeroSemaine(onglet), pairesDeLaSemaine(onglet))
       .map(
         (l) => `<button type="button" class="poste-item poste-cree" data-cree="1" title="${l.manuel ? "Lancement créé dans Sentinelle" : "Lancement ajouté à la bibliothèque (pas dans les dossiers de la semaine)"} : son avancement est dans le Suivi de production">
-        <span class="poste-textes"><span class="poste-nom">${echapper(l.poste)} · ${l.manuel ? "créé dans Sentinelle" : "bibliothèque"}</span><span class="poste-fichier">${echapper(l.nom)} · ${l.pieces} pièce${l.pieces > 1 ? "s" : ""}</span></span>
-        ${etiquette(l.manuel ? { texte: "Sans fichier", genre: "vide" } : { texte: "Hors dossiers", genre: "vide" })}
+        <span class="pastille cree">+</span>
+        <span class="poste-textes"><span class="poste-ligne"><span class="poste-nom">${echapper(l.poste)} · ${l.manuel ? "créé dans Sentinelle" : "bibliothèque"}</span></span><span class="poste-fichier">${echapper(l.nom)} · ${l.pieces} pièce${l.pieces > 1 ? "s" : ""}</span></span>
       </button>`
       )
       .join("");
   zone.querySelectorAll("[data-cree]").forEach((b) => b.addEventListener("click", ouvrirSuivi));
   zone.querySelectorAll(".poste-item[data-case]").forEach((b) => b.addEventListener("click", () => montrerCase(Number(b.dataset.case))));
+  appliquerVueControle(onglet);
 }
-
-// Fait défiler jusqu'à la case et la met en avant un instant.
+// V6.9 : « Un lancement » : la case choisie remplace celle affichée ; « Tous » : on descend jusqu'à elle.
 function montrerCase(id) {
+  const p = paires.find((x) => x.id === id);
+  if (p && estOngletSemaine(p.parite)) caseChoisie[p.parite] = id;
+  if (estOngletSemaine()) appliquerVueControle(onglet);
   const carte = document.querySelector(`.carte-paire[data-id="${id}"]`);
   if (!carte) return;
+  if (vueControle() === "une") {
+    const haut = carte.getBoundingClientRect().top;
+    if (haut < 0 || haut > window.innerHeight * 0.6) carte.scrollIntoView({ block: "start" });
+    return;
+  }
   document.querySelectorAll(".carte-paire.choisie").forEach((c) => c.classList.remove("choisie"));
   carte.classList.add("choisie");
   carte.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -218,8 +256,8 @@ function afficherAccueil() {
   const controlees = avecLancement.filter((p) => p.rapport);
   const crees = lancementsHorsCasesDeLaSemaine(numero, cases);
   const aRegarder = [];
-  for (const p of cases) for (const t of problemesDeLaCase(p)) aRegarder.push({ p, titre: `${titreCase(p)} — ${t}`, genre: "souci" });
-  for (const p of cases) if (!p.strat && !caseAjoutee(p)) aRegarder.push({ p, titre: `${titreCase(p)} — pas encore de lancement`, genre: "vide" });
+  for (const p of cases) for (const t of problemesDeLaCase(p)) aRegarder.push({ p, nom: titreCase(p), texte: t, titre: `${titreCase(p)} — ${t}`, genre: "souci" });
+  for (const p of cases) if (!p.strat && !caseAjoutee(p)) aRegarder.push({ p, nom: titreCase(p), texte: "pas encore de lancement", titre: `${titreCase(p)} — pas encore de lancement`, genre: "vide" });
   const nbProblemes = aRegarder.filter((a) => a.genre === "souci").length;
 
   const semaines = ONGLETS_SEMAINE.map((x) => ({ parite: x, numero: numeroSemaine(x) })).sort((a, b) => ordreCalendrier(a.numero) - ordreCalendrier(b.numero));
@@ -239,6 +277,15 @@ function afficherAccueil() {
 
   html += `<h2 class="titre-section">Les lancements de la semaine</h2><div class="grille-lancements">`;
   cases.forEach((p, i) => {
+    // V6.9 : sans lancement, une carte courte (le nom et « Préparer »), sans les lignes vides.
+    if (!p.strat) {
+      html += `<article class="carte-lancement sans-lancement">
+      <div class="carte-lancement-tete"><span class="pastille">${String(i + 1).padStart(2, "0")}</span><h3>${echapper(titreCase(p))}</h3></div>
+      <div class="carte-lancement-fichier"><span class="vide">Pas encore de lancement</span></div>
+      <button type="button" class="contour" data-preparer="${p.id}">Préparer</button>
+    </article>`;
+      return;
+    }
     html += `<article class="carte-lancement">
       <div class="carte-lancement-tete"><span class="pastille">${String(i + 1).padStart(2, "0")}</span><h3>${echapper(titreCase(p))}</h3></div>
       <div class="carte-lancement-fichier">${p.strat ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg><span>${echapper(p.strat.name)}</span>` : '<span class="vide">Pas encore de lancement</span>'}</div>
@@ -277,7 +324,7 @@ function afficherAccueil() {
       <div class="carte-titre">À regarder</div>
       ${
         aRegarder.length
-          ? aRegarder.map((a) => `<button type="button" class="ligne-regarder ${a.genre}" data-voir="${a.p.id}"><span class="point"></span><span>${echapper(a.titre)}</span></button>`).join("")
+          ? aRegarder.map((a) => `<button type="button" class="ligne-regarder ${a.genre}" data-voir="${a.p.id}"><span class="point"></span><span><strong>${echapper(a.nom)}</strong> — ${echapper(a.texte)}</span></button>`).join("")
           : '<div class="note">Rien à signaler pour l\'instant.</div>'
       }
     </section>

@@ -582,9 +582,20 @@ public class PartageTest {
         assertTrue(texte, texte.contains("+101 pièces depuis le 07/11"));
         assertTrue(texte, texte.contains("Pas dans cette extraction"));
         assertTrue(texte, texte.contains("elle va jusqu'à la semaine 47"));
-        assertTrue(texte, texte.contains("Dans Diakonos, dans aucun lancement"));
-        assertTrue(texte, texte.contains("Qté en cours par transporteur et par semaine (comme dans Excel)"));
         assertTrue(texte, texte.contains("1 semaine plus ancienne : finie."));
+        // V6.9 : des onglets comme sur le PC ; « Lancements » au départ, puis hors lancement et tableau.
+        assertFalse("onglet Lancements : pas la liste hors lancement", texte.contains("Dans Diakonos, dans aucun lancement"));
+        View hors = vueAvecDescription(a.getWindow().getDecorView(), "Suivi : Hors lancement");
+        assertNotNull(hors);
+        hors.performClick();
+        ShadowLooper.idleMainLooper();
+        assertTrue(ecran(a), ecran(a).contains("Dans Diakonos, dans aucun lancement"));
+        vueAvecDescription(a.getWindow().getDecorView(), "Suivi : Tableau").performClick();
+        ShadowLooper.idleMainLooper();
+        assertTrue(ecran(a), ecran(a).contains("Qté en cours par transporteur et par semaine (comme dans Excel)"));
+        vueAvecDescription(a.getWindow().getDecorView(), "Suivi : Lancements").performClick();
+        ShadowLooper.idleMainLooper();
+        texte = ecran(a);
         assertFalse("commandes cachées avant le clic", texte.contains("CVC26119999"));
         // Un appui sur le lancement : ses commandes encore à faire.
         View bloc = vueAvecTexte(a.getWindow().getDecorView(), "LAN264702START");
@@ -597,6 +608,9 @@ public class PartageTest {
         assertTrue(texte, texte.contains("TRANSPORTEUR A · VILLE A · S47"));
         capturerSiDemande(a, "appli_suivi.png");
         // Suivi par : semaine (au départ), puis transporteur, coloris, client ; un appui sur une ligne : le détail.
+        vueAvecDescription(a.getWindow().getDecorView(), "Suivi : Par semaine…").performClick();
+        ShadowLooper.idleMainLooper();
+        texte = ecran(a);
         assertTrue(texte, texte.contains("Suivi par semaine"));
         assertTrue(texte, texte.contains("101 faites · 64 à faire"));
         vueAvecTexte(a.getWindow().getDecorView(), "Transporteur").performClick();
@@ -653,6 +667,9 @@ public class PartageTest {
         assertTrue(texte, texte.contains("LAN264702START"));
         assertTrue(texte, texte.contains("61 %"));
         assertTrue(texte, texte.contains("LAN264801START"));
+        vueAvecDescription(a.getWindow().getDecorView(), "Suivi : Par semaine…").performClick();
+        ShadowLooper.idleMainLooper();
+        texte = ecran(a);
         // Suivi par transporteur / coloris / client : les totaux sont ceux des barres.
         for (String vue : new String[] {"semaine", "transporteur", "coloris", "client"}) {
             double faites = 0;
@@ -673,6 +690,17 @@ public class PartageTest {
         if (v instanceof ViewGroup)
             for (int i = 0; i < ((ViewGroup) v).getChildCount(); i++) {
                 View t = vueAvecIndice(((ViewGroup) v).getChildAt(i), indice);
+                if (t != null) return t;
+            }
+        return null;
+    }
+
+    /** La vue dont la description commence par ce texte (ex. les onglets du suivi, « Suivi : Tableau »). */
+    private static View vueAvecDescription(View v, String debut) {
+        if (v.getContentDescription() != null && v.getContentDescription().toString().startsWith(debut)) return v;
+        if (v instanceof ViewGroup)
+            for (int i = 0; i < ((ViewGroup) v).getChildCount(); i++) {
+                View t = vueAvecDescription(((ViewGroup) v).getChildAt(i), debut);
                 if (t != null) return t;
             }
         return null;

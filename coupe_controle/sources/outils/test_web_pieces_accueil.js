@@ -6,6 +6,7 @@ const lister = (d, c = []) => fs.readdirSync(d, { withFileTypes: true }).flatMap
 let echecs = 0; const verifier = (ok, t) => { console.log(`${ok ? "OK  " : "ÉCHEC"} ${t}`); if (!ok) echecs++; };
 (async () => {
   const nav = await chromium.launch(); const page = await nav.newPage({ viewport: { width: 1300, height: 900 } });
+  await page.addInitScript(() => { try { localStorage.setItem("sentinelle-vue-controle", "toutes"); } catch (e) {} }); // V6.9 : toutes les cases affichées (tests du contrôle)
   page.on("pageerror", (e) => { console.log("ERREUR JS:", e.message); echecs++; }); page.on("dialog", (d) => d.accept());
   await page.route("https://s.test/**", (r) => r.fulfill({ status: 200, body: fs.readFileSync(path.join(site, "index.html")), headers: { "content-type": "text/html; charset=utf-8" } }));
   await page.goto("https://s.test/index.html");

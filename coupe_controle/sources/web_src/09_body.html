@@ -2,7 +2,7 @@
   <aside class="menu">
     <div class="menu-tete">
       <img class="logo" data-logo="blanc" alt="LAISNÉ INDUSTRIE">
-      <div class="menu-nom">Sentinelle <span class="badge-version">V6.8.3</span></div>
+      <div class="menu-nom">Sentinelle <span class="badge-version">V6.9.0</span></div>
       <div class="menu-sous-titre">Contrôle de coupe</div>
     </div>
     <nav class="onglets" aria-label="Menu principal">
@@ -84,32 +84,34 @@
           <div class="chapeau">Dans les lancements chargés, les listes de coupe, les .bkp et Diakonos.</div>
         </div>
       </header>
-      <div class="carte">
-        <div class="carte-titre">Recherche</div>
-        <div class="ligne-recherche">
-          <input type="text" id="champRecherche" placeholder="26090331003, 26090331 ou T9 (CVC facultatif)" autocomplete="off">
-          <button type="button" id="btnRechercher">Rechercher</button>
+      <div class="recherche-entrees">
+        <div class="carte">
+          <div class="carte-titre">Avec l'étiquette (n° de pièce)</div>
+          <div class="ligne-recherche">
+            <input type="text" id="champRecherche" placeholder="26090331003, 26090331 ou T9 (CVC facultatif)" autocomplete="off">
+            <button type="button" id="btnRechercher">Rechercher</button>
+          </div>
+          <div class="bases-recherche" id="basesRecherche">
+            <span class="note">Chercher dans :</span>
+            <label><input type="checkbox" value="Diakonos" checked> Diakonos</label>
+            <label><input type="checkbox" value="LAN" checked> LAN</label>
+            <label><input type="checkbox" value="Liste" checked> Liste</label>
+            <label><input type="checkbox" value=".bkp" checked> .bkp</label>
+          </div>
         </div>
-        <div class="bases-recherche" id="basesRecherche">
-          <span class="note">Chercher dans :</span>
-          <label><input type="checkbox" value="Diakonos" checked> Diakonos</label>
-          <label><input type="checkbox" value="LAN" checked> LAN</label>
-          <label><input type="checkbox" value="Liste" checked> Liste</label>
-          <label><input type="checkbox" value=".bkp" checked> .bkp</label>
+        <div class="carte">
+          <div class="carte-titre">Pièce sans étiquette</div>
+          <div class="note">Cote finie mesurée sur la pièce : la première mesure est le sens du fil. À 2 mm près.</div>
+          <div class="ligne-cotes">
+            <label>Longueur (sens du fil)<input type="number" id="champCoteLongueur" min="1" step="1" inputmode="numeric" placeholder="mm"></label>
+            <label>Largeur<input type="number" id="champCoteLargeur" min="1" step="1" inputmode="numeric" placeholder="mm"></label>
+            <label>Couleur<input type="text" id="champCoteCouleur" autocomplete="off" placeholder="facultatif"></label>
+            <label>Semaine<input type="number" id="champCoteSemaine" min="1" max="53" step="1" inputmode="numeric" placeholder="n°"></label>
+            <button type="button" id="btnChercherCotes">Chercher</button>
+          </div>
         </div>
       </div>
       <div id="resultatsRecherche"></div>
-      <div class="carte">
-        <div class="carte-titre">Pièce sans étiquette</div>
-        <div class="note">Cote finie mesurée sur la pièce : la première mesure est le sens du fil. À 2 mm près.</div>
-        <div class="ligne-cotes">
-          <label>Longueur (sens du fil)<input type="number" id="champCoteLongueur" min="1" step="1" inputmode="numeric" placeholder="mm"></label>
-          <label>Largeur<input type="number" id="champCoteLargeur" min="1" step="1" inputmode="numeric" placeholder="mm"></label>
-          <label>Couleur<input type="text" id="champCoteCouleur" autocomplete="off" placeholder="facultatif"></label>
-          <label>Semaine<input type="number" id="champCoteSemaine" min="1" max="53" step="1" inputmode="numeric" placeholder="n°"></label>
-          <button type="button" id="btnChercherCotes">Chercher</button>
-        </div>
-      </div>
       <div id="resultatsCotes"></div>
     </div>
     <div id="pageBibliotheque" class="inactif"></div>
@@ -124,7 +126,7 @@
   </main>
   <footer class="pied">
     <span>Document interne — LAISNÉ INDUSTRIE</span>
-    <span>Sentinelle V6.8.3 · Contrôle de coupe</span>
+    <span>Sentinelle V6.9.0 · Contrôle de coupe</span>
   </footer>
   </div>
   </div>

@@ -24,6 +24,7 @@ function lister(dossier, chemin = []) {
   for (const [nom, rel] of Object.entries(dossiers)) fs.writeFileSync(path.join(site, `liste_sem_${nom}.json`), JSON.stringify(lister(path.join(site, ...rel))));
   const navigateur = await chromium.launch();
   const page = await navigateur.newPage({ viewport: { width: 1100, height: 1000 }, acceptDownloads: true });
+  await page.addInitScript(() => { try { localStorage.setItem("sentinelle-vue-controle", "toutes"); } catch (e) {} }); // V6.9 : toutes les cases affichées (tests du contrôle)
   page.on("pageerror", (e) => {
     console.log("ERREUR JS:", e.message);
     echecs.push("erreur JS : " + e.message);

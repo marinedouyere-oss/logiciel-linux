@@ -40,6 +40,7 @@ async function attendreFin(page, maxMs = 600000) {
 (async () => {
   const navigateur = await chromium.launch();
   const page = await navigateur.newPage({ viewport: { width: 1100, height: 1000 } });
+  await page.addInitScript(() => { try { localStorage.setItem("sentinelle-vue-controle", "toutes"); } catch (e) {} }); // V6.9 : toutes les cases affichées (tests du contrôle)
   page.on("dialog", (d) => {
     console.log("ALERTE:", d.message());
     d.accept();
@@ -122,7 +123,7 @@ async function attendreFin(page, maxMs = 600000) {
   verifier(!texte.includes("LAN2644TRIGANO.xlsx → semaine 45"), "chantier TRIGANO du dossier Semaine 44 pas envoyé en 45");
   const recap44 = await page.innerText("#zoneRecap");
   verifier(/LAN2644TRIGANO\s*\t/.test(recap44), "chantier LAN2644TRIGANO dans l'onglet 44 (son dossier)");
-  verifier(texte.includes("Exporter le rapport de la semaine (.xlsx)"), "bouton d'export de la semaine en haut");
+  verifier(texte.includes("Rapport de la semaine (.xlsx)"), "bouton d'export de la semaine en haut");
   console.log("Créés tout seuls :", telecharges.join(", "));
   verifier(telecharges.includes("rapport_sentinelle_semaine_44.xlsx"), "problèmes : rapport de la semaine créé tout seul après le scan");
   verifier(!telecharges.some((n) => n.endsWith("_problemes.xlsx")), "problèmes : un seul fichier pour le scan, pas un par lancement");

@@ -441,9 +441,10 @@ function htmlLectureTelephone(etat) {
 function htmlLienTelephone() {
   const etat = etatLienTelephone();
   const date = (iso) => (iso ? new Date(iso).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
-  let html = `<div class="carte" id="carteLienTelephone"><div class="carte-titre">Téléphone (envoi automatique)</div>`;
+  let html = `<div class="carte" id="carteLienTelephone"><div class="carte-titre">Téléphone (envoi automatique)${boutonAide("lien-telephone")}</div>
+    ${texteAide("lien-telephone", "Sentinelle envoie toute seule la bibliothèque au téléphone, chiffrée, à chaque changement : plus besoin du Drive. Le site de Sentinelle ne garde qu'un fichier illisible.")}`;
   if (!etat || !etat.code) {
-    html += `<div class="note">Sentinelle envoie toute seule la bibliothèque au téléphone, chiffrée, à chaque changement : plus besoin du Drive. Le site de Sentinelle ne garde qu'un fichier illisible.</div>
+    html += `
       ${htmlReprendreCode(true)}
       <div class="note">Premier téléphone seulement :</div>
       <div class="boutons-carte"><button type="button" class="contour" id="btnActiverLien">Créer un code (nouveau téléphone)</button></div>`;

@@ -176,6 +176,50 @@ final class Ui {
         return texte(t, 12.5f, false, couleur(R.color.gris_texte));
     }
 
+    /** V6.9 : une explication cachée tant qu'on n'a pas touché le petit « ? » (comme sur le PC). */
+    TextView texteAide(CharSequence t) {
+        TextView v = texte(t, 12.5f, false, couleur(R.color.gris_texte));
+        v.setPadding(dp(10), dp(6), dp(10), dp(7));
+        v.setBackground(fondRond(SAUMON_PALE, 8));
+        v.setLineSpacing(0, 1.1f);
+        v.setVisibility(View.GONE);
+        return v;
+    }
+
+    /** Le « ? » rond qui montre ou cache l'explication. */
+    TextView boutonAide(TextView texteAide) {
+        TextView b = texte("?", 13, true, BORDEAUX);
+        b.setGravity(android.view.Gravity.CENTER);
+        GradientDrawable g = new GradientDrawable();
+        g.setShape(GradientDrawable.OVAL);
+        g.setColor(0xFFFFFFFF);
+        g.setStroke(dp(1), SAUMON);
+        b.setBackground(g);
+        b.setContentDescription("Explication");
+        b.setOnClickListener(v -> {
+            boolean ouvrir = texteAide.getVisibility() != View.VISIBLE;
+            texteAide.setVisibility(ouvrir ? View.VISIBLE : View.GONE);
+            GradientDrawable f = new GradientDrawable();
+            f.setShape(GradientDrawable.OVAL);
+            f.setColor(ouvrir ? BORDEAUX : 0xFFFFFFFF);
+            f.setStroke(dp(1), ouvrir ? BORDEAUX : SAUMON);
+            b.setBackground(f);
+            b.setTextColor(ouvrir ? 0xFFFFFFFF : BORDEAUX);
+        });
+        return b;
+    }
+
+    /** Une rangée : le titre, puis « ? » à droite. */
+    LinearLayout titreEtAide(View titre, TextView texteAide) {
+        LinearLayout r = rangee();
+        r.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        r.addView(titre, poids(1));
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(28), dp(28));
+        lp.leftMargin = dp(8);
+        r.addView(boutonAide(texteAide), lp);
+        return r;
+    }
+
     /** Fond arrondi d'une couleur. */
     GradientDrawable fondRond(int couleur, float rayonDp) {
         GradientDrawable g = new GradientDrawable();

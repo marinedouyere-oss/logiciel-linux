@@ -448,15 +448,28 @@ final class PartageVue {
         }
     }
 
-    /** En-tête de page comme sur le PC : surtitre, titre, chapeau (V6.2.1 : plus compact). */
+    /** En-tête de page comme sur le PC : surtitre, titre, une info courte (dates…). */
     private void entete(String surtitre, String titre, String chapeau) {
+        entete(surtitre, titre, chapeau, null);
+    }
+
+    /** V6.9 : l'explication de l'écran est derrière le « ? » à côté du titre (moins de texte en haut). */
+    private void entete(String surtitre, String titre, String chapeau, String aide) {
         LinearLayout e = ui.colonne();
         e.setPadding(ui.dp(2), ui.dp(2), ui.dp(2), ui.dp(6));
         TextView sur = ui.texte(surtitre.toUpperCase(Locale.FRANCE), 10.5f, true, Ui.GRIS);
         sur.setLetterSpacing(0.12f);
         e.addView(sur);
-        e.addView(ui.titre(titre, 22, Ui.BORDEAUX), ui.marges(1, 1));
-        if (chapeau != null && !chapeau.isEmpty()) e.addView(ui.texte(chapeau, 13, false, ui.couleur(R.color.gris_texte)));
+        TextView t = ui.titre(titre, 22, Ui.BORDEAUX);
+        if (aide != null && !aide.isEmpty()) {
+            TextView explication = ui.texteAide(aide);
+            e.addView(ui.titreEtAide(t, explication), ui.marges(1, 1));
+            if (chapeau != null && !chapeau.isEmpty()) e.addView(ui.texte(chapeau, 13, false, ui.couleur(R.color.gris_texte)));
+            e.addView(explication, ui.marges(4, 0));
+        } else {
+            e.addView(t, ui.marges(1, 1));
+            if (chapeau != null && !chapeau.isEmpty()) e.addView(ui.texte(chapeau, 13, false, ui.couleur(R.color.gris_texte)));
+        }
         racine.addView(e, ui.pleineLargeur());
     }
 
@@ -580,7 +593,7 @@ final class PartageVue {
 
     private void ecranSemaine() {
         if (donnees == null || donnees.semaines.isEmpty()) {
-            entete("La semaine", "Sentinelle", "Les résultats de Sentinelle sur le PC, lus dans le fichier partagé.");
+            entete("La semaine", "Sentinelle", null, "Les résultats de Sentinelle sur le PC, lus dans le fichier partagé.");
             sansDonnees();
             return;
         }
@@ -619,7 +632,6 @@ final class PartageVue {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
         corps.addView(ui.titreCarte("Les lancements de la semaine"));
-        corps.addView(ui.note("Touchez un lancement pour voir son contrôle."));
         int numero = 1;
         for (FichierPartage.Lancement l : s.lancements) {
             corps.addView(ui.filet(8, 0));
@@ -644,13 +656,13 @@ final class PartageVue {
 
     private void ecranControle() {
         if (donnees == null || donnees.semaines.isEmpty()) {
-            entete("Contrôler la coupe", "Contrôler la coupe", "Les contrôles faits par Sentinelle sur le PC.");
+            entete("Contrôler la coupe", "Contrôler la coupe", null, "Les contrôles faits par Sentinelle sur le PC.");
             sansDonnees();
             return;
         }
         FichierPartage.Semaine s = semaine();
         String quand = dateLisible(s.maj);
-        entete("Contrôler la coupe", titreSemaine(s), "Les contrôles faits par Sentinelle sur le PC" + (quand.isEmpty() ? "." : ", mis à jour le " + quand + "."));
+        entete("Contrôler la coupe", titreSemaine(s), quand.isEmpty() ? null : "Mis à jour le " + quand + ".", "Les contrôles faits par Sentinelle sur le PC. Touchez un lancement pour ouvrir son bilan et ses pièces.");
         racine.addView(choixSemaines(s), ui.marges(2, 4));
         MaterialButton compteRendu = ui.boutonContour(pdfEnCours ? "Compte rendu en cours…" : "Compte rendu de la semaine (.pdf)");
         compteRendu.setEnabled(!pdfEnCours);
@@ -659,7 +671,6 @@ final class PartageVue {
         if (lancementAMontrer != null) controlesOuverts.add(lancementAMontrer);
         racine.addView(carteTableau(s));
         racine.addView(ui.texte("Détail par lancement", 15, true, Ui.NOIR), ui.marges(8, 0));
-        racine.addView(ui.note("Touchez un lancement pour ouvrir son bilan et ses pièces."), ui.marges(0, 2));
         int numero = 1;
         View aMontrer = null;
         for (FichierPartage.Lancement l : s.lancements) {
@@ -701,7 +712,7 @@ final class PartageVue {
     // ---- Rechercher une pièce ----
 
     private void ecranRecherche() {
-        entete("Outils", "Rechercher une pièce", "Dans toutes les semaines du fichier partagé.");
+        entete("Outils", "Rechercher une pièce", null, "Dans toutes les semaines du fichier partagé.");
         if (sansDonnees()) return;
         racine.addView(carteRecherche());
         if (!requete.isEmpty()) racine.addView(carteResultats());
@@ -881,7 +892,7 @@ final class PartageVue {
     // ---- Bibliothèque des semaines ----
 
     private void ecranBibliotheque() {
-        entete("Outils", "Bibliothèque des semaines", "Les semaines gardées par Sentinelle sur le PC, dans le fichier partagé.");
+        entete("Outils", "Bibliothèque des semaines", null, "Les semaines gardées par Sentinelle sur le PC, dans le fichier partagé.");
         racine.addView(carteFichier());
         View envois = carteEnvoisPc();
         if (envois != null) racine.addView(envois);
@@ -892,7 +903,6 @@ final class PartageVue {
         MaterialCardView carte = ui.carte();
         LinearLayout corps = corpsDe(carte);
         corps.addView(ui.titreCarte(donnees.semaines.size() + " semaine(s)"));
-        corps.addView(ui.note("Touchez une semaine pour l'ouvrir dans Contrôler la coupe."));
         for (FichierPartage.Semaine s : donnees.semaines) {
             double pieces = 0;
             List<String> noms = new ArrayList<>();
@@ -1064,7 +1074,7 @@ final class PartageVue {
     // ---- V6.8 : Claustras — photo du plan, envoyée au PC ----
 
     private void ecranClaustras() {
-        entete("Préparer un lancement", "Claustras : photo du plan", "Prenez le plan du claustra en photo : il part sur le PC, dans Claustras, à côté de la commande, pour y lire la largeur de chaque lame.");
+        entete("Préparer un lancement", "Claustras : photo du plan", null, "Prenez le plan du claustra en photo : il part sur le PC, dans Claustras, à côté de la commande, pour y lire la largeur de chaque lame.");
         claustrasEcran.construire(racine);
     }
 
@@ -1113,7 +1123,7 @@ final class PartageVue {
     }
 
     private void ecranStock() {
-        entete("Outils", "Stock des panneaux", "Le stock woodStore chargé sur le PC : panneaux entiers, chutes disponibles, chutes réservées, cases.");
+        entete("Outils", "Stock des panneaux", null, "Le stock woodStore chargé sur le PC : panneaux entiers, chutes disponibles, chutes réservées, cases.");
         stockEcran.construire(racine, donnees);
     }
 
@@ -1149,7 +1159,7 @@ final class PartageVue {
     }
 
     private void ecranPlans() {
-        entete("Outils", "Plans de coupe", "Les plans de l'optimisation Cut Rite, lus par le PC dans la sauvegarde .bkp, avec les mêmes numéros « Pdc ». Un plan modifié ici part au PC.");
+        entete("Outils", "Plans de coupe", null, "Les plans de l'optimisation Cut Rite, lus par le PC dans la sauvegarde .bkp, avec les mêmes numéros « Pdc ». Un plan modifié ici part au PC.");
         if (sansDonnees()) return;
         plans.construire(racine);
     }
@@ -1159,6 +1169,54 @@ final class PartageVue {
     private final java.util.Set<String> suiviOuverts = new java.util.HashSet<>();
     /** V6.3.3 : suivi par semaine, transporteur, coloris ou client (comme sur le PC). */
     private String vueSuivi = "semaine";
+    /** V6.9 : l'onglet du suivi affiché (lancements, vues, hors, tableau). */
+    private String panneauSuivi = "lancements";
+
+    private static final String[][] PANNEAUX_SUIVI = {{"lancements", "Lancements"}, {"vues", "Par semaine…"}, {"hors", "Hors lancement"}, {"tableau", "Tableau"}};
+
+    /** Les onglets du suivi : une rangée de boutons, celui choisi en bordeaux. */
+    private View ongletsSuivi(FichierPartage.Suivi s) {
+        android.widget.HorizontalScrollView defile = new android.widget.HorizontalScrollView(activite);
+        defile.setHorizontalScrollBarEnabled(false);
+        LinearLayout r = ui.rangee();
+        for (String[] x : PANNEAUX_SUIVI) {
+            boolean actif = x[0].equals(panneauSuivi);
+            String libelle = x[1];
+            if ("hors".equals(x[0]) && !s.hors.isEmpty()) {
+                double n = 0;
+                for (String[] h : s.hors) if (h.length > 1) n += nombreSuivi(h[1]);
+                libelle += " · " + fmtSuivi(Math.round(n));
+            }
+            TextView b = ui.texte(libelle, 13, true, actif ? 0xFFFFFFFF : Ui.NOIR);
+            b.setGravity(Gravity.CENTER);
+            b.setMinHeight(ui.dp(40));
+            b.setPadding(ui.dp(14), 0, ui.dp(14), 0);
+            b.setMaxLines(1);
+            android.graphics.drawable.GradientDrawable fond = ui.fondRond(actif ? Ui.BORDEAUX : 0xFFFFFFFF, 20);
+            if (!actif) fond.setStroke(Math.max(1, ui.dp(1)), 0xFFD9D4CF);
+            b.setBackground(fond);
+            b.setContentDescription("Suivi : " + x[1] + (actif ? " (choisi)" : ""));
+            b.setSelected(actif);
+            if (!actif)
+                b.setOnClickListener(w -> {
+                    panneauSuivi = x[0];
+                    construire();
+                });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.rightMargin = ui.dp(6);
+            r.addView(b, lp);
+        }
+        defile.addView(r);
+        return defile;
+    }
+
+    private static double nombreSuivi(String t) {
+        try {
+            return Double.parseDouble(t);
+        } catch (RuntimeException e) {
+            return 0;
+        }
+    }
     private String filtreVueSuivi = "";
     private final java.util.Set<String> groupesOuverts = new java.util.HashSet<>();
     /** Vue, nom affiché, détail d'une ligne. */
@@ -1285,7 +1343,7 @@ final class PartageVue {
     }
 
     private void ecranSuivi() {
-        entete("Outils", "Suivi de production", "L'avancement de chaque lancement, d'après l'extraction « Suivi production » de Diakonos.");
+        entete("Outils", "Suivi de production", null, "L'avancement de chaque lancement, d'après l'extraction « Suivi production » de Diakonos.");
         if (donnees == null) {
             sansDonnees();
             return;
@@ -1313,32 +1371,40 @@ final class PartageVue {
         racine.addView(bandeChiffres(new String[] {fmtSuivi(s.lancements), "Lancements"}, new String[] {fmtSuivi(s.faites), "Pièces faites", null, depuis},
                 new String[] {fmtSuivi(s.restantes), "Pièces à faire"}, new String[] {fmtSuivi(s.retard), "En retard", s.retard > 0 ? "souci" : null}));
 
-        if (!s.vues.isEmpty()) racine.addView(carteVuesSuivi(s));
-
-        racine.addView(ui.texte("Avancement par lancement", 15, true, Ui.NOIR), ui.marges(8, 0));
-        racine.addView(ui.texte("L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Une pièce relancée (casse, retard) compte dans le lancement le plus récent, et elle est déduite du lancement d'origine. Touchez un lancement : les commandes encore à faire.",
-                13, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 4));
-        if (s.semaines.isEmpty())
-            racine.addView(ui.texte("Aucun lancement dans la bibliothèque des semaines autour de cette extraction.", 14, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 4));
-        for (FichierPartage.SemaineSuivi sem : s.semaines) racine.addView(carteSemaineSuivi(sem, s));
-        if (s.anciennes > 0)
-            racine.addView(ui.texte(s.anciennes + (s.anciennes > 1 ? " semaines plus anciennes : finies." : " semaine plus ancienne : finie."), 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 6));
-
-        if (!s.hors.isEmpty()) {
-            MaterialCardView ch = ui.carte();
-            LinearLayout c = corpsDe(ch);
-            c.addView(ui.titreCarte("Dans Diakonos, dans aucun lancement"));
-            c.addView(ui.texte("Pièces de l'extraction qui ne sont dans aucun lancement de la bibliothèque (pas encore lancées, ou lancement pas scanné).", 13, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 4));
-            for (String[] h : s.hors) {
-                if (h.length < 4) continue;
-                LinearLayout r = ui.rangee();
-                r.addView(ui.texte(h[0], 14, true, Ui.NOIR), ui.poids(1));
-                r.addView(ui.texte(fmtSuivi(h[1]) + " à faire · " + fmtSuivi(h[2]) + " lignes · " + fmtSuivi(h[3]) + " commandes", 13, false, Ui.NOIR));
-                c.addView(r, ui.marges(3, 3));
-            }
-            racine.addView(ch);
+        // V6.9 : des onglets comme sur le PC (un contenu à la fois) au lieu d'un écran sans fin.
+        racine.addView(ongletsSuivi(s), ui.marges(8, 4));
+        if ("vues".equals(panneauSuivi)) {
+            if (!s.vues.isEmpty()) racine.addView(carteVuesSuivi(s));
+            else racine.addView(ui.note("Pas de vue pour cette extraction."), ui.marges(4, 4));
+        } else if ("hors".equals(panneauSuivi)) {
+            if (!s.hors.isEmpty()) {
+                MaterialCardView ch = ui.carte();
+                LinearLayout c = corpsDe(ch);
+                TextView aideHors = ui.texteAide("Pièces de l'extraction qui ne sont dans aucun lancement de la bibliothèque (pas encore lancées, ou lancement pas scanné).");
+                c.addView(ui.titreEtAide(ui.titreCarte("Dans Diakonos, dans aucun lancement"), aideHors));
+                c.addView(aideHors, ui.marges(4, 4));
+                for (String[] h : s.hors) {
+                    if (h.length < 4) continue;
+                    LinearLayout r = ui.rangee();
+                    r.addView(ui.texte(h[0], 14, true, Ui.NOIR), ui.poids(1));
+                    r.addView(ui.texte(fmtSuivi(h[1]) + " à faire · " + fmtSuivi(h[2]) + " lignes · " + fmtSuivi(h[3]) + " commandes", 13, false, Ui.NOIR));
+                    c.addView(r, ui.marges(3, 3));
+                }
+                racine.addView(ch);
+            } else racine.addView(ui.bandeau("✔ Toutes les pièces de l'extraction sont dans un lancement.", ui.couleur(R.color.ok_fond), ui.couleur(R.color.ok_texte)), ui.marges(4, 4));
+        } else if ("tableau".equals(panneauSuivi)) {
+            if (!s.tableau.isEmpty()) racine.addView(carteTableauSuivi(s));
+            else racine.addView(ui.note("Pas de tableau pour cette extraction."), ui.marges(4, 4));
+        } else {
+            TextView aideAvancement = ui.texteAide("L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Une pièce relancée (casse, retard) compte dans le lancement le plus récent, et elle est déduite du lancement d'origine. Touchez un lancement : les commandes encore à faire.");
+            racine.addView(ui.titreEtAide(ui.texte("Avancement par lancement", 15, true, Ui.NOIR), aideAvancement), ui.marges(4, 0));
+            racine.addView(aideAvancement, ui.marges(4, 4));
+            if (s.semaines.isEmpty())
+                racine.addView(ui.texte("Aucun lancement dans la bibliothèque des semaines autour de cette extraction.", 14, false, ui.couleur(R.color.gris_texte)), ui.marges(4, 4));
+            for (FichierPartage.SemaineSuivi sem : s.semaines) racine.addView(carteSemaineSuivi(sem, s));
+            if (s.anciennes > 0)
+                racine.addView(ui.texte(s.anciennes + (s.anciennes > 1 ? " semaines plus anciennes : finies." : " semaine plus ancienne : finie."), 13, false, ui.couleur(R.color.gris_texte)), ui.marges(2, 6));
         }
-        if (!s.tableau.isEmpty()) racine.addView(carteTableauSuivi(s));
     }
 
     private View carteSemaineSuivi(FichierPartage.SemaineSuivi sem, FichierPartage.Suivi s) {
@@ -1457,8 +1523,9 @@ final class PartageVue {
             choix.addView(b, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
         }
         corps.addView(choix, ui.marges(4, 6));
-        corps.addView(ui.texte("Les pièces des lancements, comptées comme les barres : faites = lancées − « Qte en cours » (CVC plus dans l'extraction = faite). Touchez une ligne : le détail par " + v[2] + ".",
-                12, false, ui.couleur(R.color.gris_texte)), ui.marges(0, 4));
+        TextView aideVues = ui.texteAide("Les pièces des lancements, comptées comme les barres : faites = lancées − « Qte en cours » (CVC plus dans l'extraction = faite). Touchez une ligne : le détail par " + v[2] + ".");
+        corps.addView(ui.titreEtAide(ui.note("Comment c'est compté"), aideVues), ui.marges(0, 2));
+        corps.addView(aideVues, ui.marges(0, 4));
         if ("transporteur".equals(vue))
             for (FichierPartage.GroupeSuivi g : lignes)
                 if (TRANSPORTEUR_INCONNU.equals(g.nom)) {

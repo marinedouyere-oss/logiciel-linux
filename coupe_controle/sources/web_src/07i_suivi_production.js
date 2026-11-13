@@ -1195,11 +1195,19 @@ const SUIVI = (() => {
     return t ? `<div class="sv-message alerte">${echapper(t)}</div>` : "";
   }
 
+  // V6.9 : les boutons (dossier, actualiser, charger) sont en haut de page ; ici, d'où vient l'avancement.
+  function boutonsExtraction() {
+    const d = etat.dossier;
+    return `${d ? `<button type="button" id="svActualiser"${etat.lecture ? " disabled" : ""}>↻ Actualiser</button>` : ""}
+      <button type="button" class="contour" id="svFichier">Charger un fichier…</button>
+      <button type="button" id="svDossier"${d ? ' class="contour"' : ""}>${d ? "Changer de dossier…" : "Choisir le dossier des extractions…"}</button>
+      <input type="file" id="svChampFichier" accept=".xlsx,.xlsm" multiple hidden>`;
+  }
   function htmlCarteExtraction(resume, local) {
     const d = etat.dossier;
     const i = etat.infoDossier || {};
     const der = etat.extractions[etat.extractions.length - 1];
-    let html = `<div class="carte" id="svCarteExtraction"><div class="carte-titre">Extraction Diakonos</div>`;
+    let html = `<div class="carte sv-carte-extraction" id="svCarteExtraction">`;
     if (der) {
       html += `<div class="sv-source">Dernière extraction : <strong>${echapper(jourLong(der.jour))}</strong> (semaine ${der.courante.semaine}) · ${der.fichiers.map((f) => `<span class="sv-fichier-lu">${echapper(f.nom)}</span>`).join(" + ")}${
         der.ordreMax ? ` · <span class="pale">semaines jusqu'à la ${der.ordreMax % 100}</span>` : ""
@@ -1212,12 +1220,9 @@ const SUIVI = (() => {
       html += `<div class="note">Choisissez une fois le dossier où arrivent les extractions « suivi_production_JJMMAAAA.xlsx » : Sentinelle y lit toute seule les nouvelles, à chaque ouverture. Ou chargez le fichier à la main. Le fichier est lu sur ce PC et n'est jamais modifié.</div>`;
     }
     if (d) html += `<div class="sv-dossier${i.alerte ? " alerte" : ""}">📁 Dossier <strong>${echapper(d.name)}</strong>${i.texte ? ` · ${echapper(i.texte)}` : i.trouves ? ` · ${pluriel(i.trouves, "extraction trouvée", "extractions trouvées")}` : ""}</div>`;
+    if (local && resume) html += htmlInclus(resume);
     if (etat.message) html += `<div class="sv-message ${etat.message.genre || ""}">${echapper(etat.message.texte)}</div>`;
-    html += `<div class="sv-boutons">
-      <button type="button" id="svDossier"${d ? ' class="contour"' : ""}>${d ? "Changer de dossier…" : "Choisir le dossier des extractions…"}</button>
-      ${d ? `<button type="button" id="svActualiser"${etat.lecture ? " disabled" : ""}>↻ Actualiser</button>` : ""}
-      <button type="button" class="contour" id="svFichier">Charger un fichier…</button>
-      <input type="file" id="svChampFichier" accept=".xlsx,.xlsm" multiple hidden></div></div>`;
+    html += `</div>`;
     return html;
   }
 
@@ -1277,10 +1282,10 @@ const SUIVI = (() => {
           <span class="sv-droite">${droiteGroupe(g[1], g[2], g[3])}</span>
         </button>${detail}</div>`;
     };
-    return `<div class="carte" id="svVues"><div class="carte-titre">Suivi par ${nomVue.toLowerCase()}</div>
+    return `<div class="carte" id="svVues"><div class="carte-titre">Suivi par ${nomVue.toLowerCase()}${boutonAide("sv-vues")}</div>
       <div class="sv-vues"><div class="choix-semaine" role="group" aria-label="Suivi par">${VUES.map(([k, n]) => `<button type="button" data-sv-vue="${k}"${k === vue ? ' class="actif" aria-pressed="true"' : ' aria-pressed="false"'}>${n}</button>`).join("")}</div>
         ${vue !== "semaine" ? `<input type="search" id="svFiltreVue" placeholder="Chercher un ${nomVue.toLowerCase()}…" aria-label="Chercher" value="${echapper(etat.filtreVue)}">` : ""}</div>
-      <div class="note">Les pièces des lancements, comptées comme les barres : faites = lancées − « Qte en cours » (CVC plus dans l'extraction = faite). Un clic sur une ligne : le détail par ${nomSous}.</div>
+      ${texteAide("sv-vues", `Les pièces des lancements, comptées comme les barres : faites = lancées − « Qte en cours » (CVC plus dans l'extraction = faite). Un clic sur une ligne : le détail par ${nomSous}.`)}
       ${vue === "transporteur" && lignes.some((g) => g[0] === TRANSPORTEUR_INCONNU) ? `<div class="sv-message">« ${TRANSPORTEUR_INCONNU} » : pièces de lancements rangés dans la bibliothèque avant la version 6.3.3, déjà faites (plus dans l'extraction). Scannez de nouveau leur semaine dans « Contrôler la coupe » : le transporteur sera pris dans le fichier de lancement.</div>` : ""}
       ${lignes.length ? lignes.map(groupe).join("") : '<div class="note">Aucune pièce suivie.</div>'}</div>`;
   }
@@ -1290,7 +1295,6 @@ const SUIVI = (() => {
     if (!t || !t.lignes.length) return "";
     const totaux = t.colonnes.map((_, i) => t.lignes.reduce((s, l) => s + (Number(l[i + 1]) || 0), 0));
     return `<div class="carte"><div class="carte-titre">Qté en cours par transporteur et par semaine (comme dans Excel)</div>
-      ${local ? htmlInclus(resume) : ""}
       <div class="defile"><table class="sv-table sv-croise"><thead><tr><th>Transporteur</th>${t.colonnes.map((c) => `<th class="nombre">${echapper(c)}</th>`).join("")}</tr></thead>
       <tbody>${t.lignes.map((l) => `<tr><td>${echapper(l[0])}</td>${l.slice(1).map((v, i) => `<td class="nombre${i === l.length - 2 ? " total" : ""}">${v ? fmt(v) : ""}</td>`).join("")}</tr>`).join("")}</tbody>
       <tfoot><tr><td>Total</td>${totaux.map((v) => `<td class="nombre total">${fmt(v)}</td>`).join("")}</tr></tfoot></table></div>
@@ -1439,8 +1443,8 @@ const SUIVI = (() => {
         <td>${echapper(x.r[10] || "")}<div class="pale">${echapper(texteBrut(x.r, "coloris"))}</div></td><td>${echapper(x.r[7])}</td><td>${echapper(x.r[8])}</td><td>${echapper(texteBrut(x.r, "groupement"))}</td></tr>`
       )
       .join("");
-    return `<div class="carte" id="svHors"><div class="carte-titre">Pas dans les lancements</div>
-      <div class="note">Les pièces de production de l'extraction du ${echapper(jourLong(resume.jour))} qui ne sont dans <strong>aucun fichier de lancement</strong> de la bibliothèque : pas encore lancées, lancement pas encore scanné, ou plus de pièces en cours dans Diakonos que dans le lancement. Toutes sont listées. Fournitures, Dibond et résine ne passent pas par les fichiers de lancement : pas listés.</div>
+    return `<div class="carte" id="svHors"><div class="carte-titre">Pas dans les lancements${boutonAide("sv-hors")}</div>
+      <div class="note aide-texte" data-aide-texte="sv-hors"${aideOuverte("sv-hors") ? "" : " hidden"}>Les pièces de production de l'extraction du ${echapper(jourLong(resume.jour))} qui ne sont dans <strong>aucun fichier de lancement</strong> de la bibliothèque : pas encore lancées, lancement pas encore scanné, ou plus de pièces en cours dans Diakonos que dans le lancement. Toutes sont listées. Fournitures, Dibond et résine ne passent pas par les fichiers de lancement : pas listés.</div>
       ${tout.length ? `<div class="sv-puces">${puces}</div>
       <div class="sv-hors-outils"><input type="search" id="svHorsRecherche" placeholder="Chercher : commande, article, coloris, transporteur…" value="${echapper(etat.horsRecherche || "")}" autocomplete="off">
         <button type="button" id="svHorsExport">Exporter en Excel (format du fichier de suivi)</button></div>
@@ -1452,7 +1456,7 @@ const SUIVI = (() => {
         </span>
         <button type="button" id="svHorsAjouter"${boutonAjouterActif() ? "" : " disabled"}>${texteBoutonAjouter()}</button></div>
       ${etat.horsMessage ? `<div class="sv-message ${etat.horsMessage.genre}">${echapper(etat.horsMessage.texte)}</div>` : ""}
-      <div class="note">Cochez des lignes, puis choisissez un lancement, ou « Nouveau lancement » en lui donnant le nom que vous voulez. Un nouveau lancement entre dans la bibliothèque et compte comme un lancement normal (suivi, vues, téléphone, recherche) ; dans un lancement existant, les pièces comptent dans son suivi. Aucun fichier de lancement n'est créé ni modifié. Une ligne « en plus du lancement » va toujours dans le lancement qui a déjà la pièce.</div>
+      <div class="note aide-texte" data-aide-texte="sv-hors"${aideOuverte("sv-hors") ? "" : " hidden"}>Cochez des lignes, puis choisissez un lancement, ou « Nouveau lancement » en lui donnant le nom que vous voulez. Un nouveau lancement entre dans la bibliothèque et compte comme un lancement normal (suivi, vues, téléphone, recherche) ; dans un lancement existant, les pièces comptent dans son suivi. Aucun fichier de lancement n'est créé ni modifié. Une ligne « en plus du lancement » va toujours dans le lancement qui a déjà la pièce.</div>
       <div class="note">${fmt(liste.length)} ligne${liste.length > 1 ? "s" : ""}, ${fmt(total)} pièce${total > 1 ? "s" : ""}${etat.horsSemaine ? ` en semaine ${echapper(etat.horsSemaine.split("-")[1])}` : ""}.</div>
       <div class="defile"><table class="sv-table sv-hors"><thead><tr><th><input type="checkbox" id="svHorsTout" title="Tout cocher" aria-label="Tout cocher"></th><th>Sem.</th><th>Commande</th><th class="nombre">Ligne</th><th>Catalogue</th><th>Article</th><th class="nombre">Pièces</th><th class="nombre">Dimensions</th><th>Coloris</th><th>Transporteur</th><th>Ville</th><th>Groupement</th></tr></thead>
       <tbody>${lignes || '<tr><td colspan="12" class="pale">Rien ne correspond.</td></tr>'}</tbody></table></div>` : `<div class="sv-message">✔ Toutes les pièces de l'extraction sont dans un lancement.</div>${etat.horsMessage ? `<div class="sv-message ${etat.horsMessage.genre}">${echapper(etat.horsMessage.texte)}</div>` : ""}`}
@@ -1823,37 +1827,74 @@ const SUIVI = (() => {
       return `<tr><td>${echapper(jourLong(e.jour))}</td><td>S${e.courante.semaine}</td><td>${e.fichiers.map((f) => echapper(f.nom)).join("<br>")}</td><td class="nombre">${fmt(e.lignes.length)}</td><td class="nombre">${fmt(cours)}</td>
         <td><button type="button" class="texte" data-sv-oublier="${echapper(e.jour)}">Oublier</button></td></tr>`;
     });
-    return `<div class="carte"><div class="carte-titre">Extractions gardées</div>
-      <div class="note">Une par jour (la plus récente du jour). Chaque ligne du fichier compte, comme dans Excel ; une ligne présente dans deux fichiers du même jour n'est comptée qu'une fois.</div>
+    return `<div class="carte"><div class="carte-titre">Extractions gardées${boutonAide("sv-extractions")}</div>
+      <div class="note aide-texte" data-aide-texte="sv-extractions"${aideOuverte("sv-extractions") ? "" : " hidden"}>Une par jour (la plus récente du jour). Chaque ligne du fichier compte, comme dans Excel ; une ligne présente dans deux fichiers du même jour n'est comptée qu'une fois.</div>
       <div class="defile"><table class="sv-table"><thead><tr><th>Jour</th><th>Semaine</th><th>Fichier(s)</th><th class="nombre">Lignes</th><th class="nombre">Qté en cours</th><th></th></tr></thead><tbody>${lignes.join("")}</tbody></table></div></div>`;
   }
 
+  // V6.9 : un onglet à la fois (avancement, vues, pas dans les lancements, tableau, extractions) au lieu d'une page sans fin.
+  const CLE_PANNEAU = "sentinelle-suivi-panneau";
+  const PANNEAUX = [
+    ["lancements", "Avancement par lancement"],
+    ["vues", "Par semaine, transporteur…"],
+    ["hors", "Pas dans les lancements"],
+    ["tableau", "Tableau Excel"],
+    ["extractions", "Extractions"],
+  ];
+  function panneau() {
+    if (!etat.panneau) etat.panneau = lireLocal(CLE_PANNEAU, "lancements");
+    if (!PANNEAUX.some(([k]) => k === etat.panneau)) etat.panneau = "lancements";
+    return etat.panneau;
+  }
+  function choisirPanneau(k) {
+    etat.panneau = k;
+    ecrireLocal(CLE_PANNEAU, k);
+    afficher();
+  }
+  function htmlAvancement(resume) {
+    return `<div class="carte" id="svAvancement"><div class="carte-titre">Avancement par lancement${boutonAide("sv-avancement")}</div>
+        ${texteAide("sv-avancement", "L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Une pièce relancée (casse, retard) compte dans le lancement le plus récent, et elle est déduite du lancement d'origine. Un clic sur un lancement : les commandes encore à faire.")}
+        <div class="sv-legende"><span><i class="sv-l-en_cours"></i>En cours</span><span><i class="sv-l-termine"></i>Terminé</span><span><i class="sv-l-retard"></i>En retard (semaine passée)</span><span><i class="sv-l-attente"></i>Pas dans cette extraction</span></div>
+        ${resume.semaines.length ? resume.semaines.map((s) => htmlSemaine(s, resume)).join("") : '<div class="note">Aucun lancement dans la bibliothèque des semaines autour de cette extraction : scannez les semaines dans « Contrôler la coupe ».</div>'}
+        ${resume.anciennes ? `<div class="note">${pluriel(resume.anciennes, "semaine plus ancienne : finie", "semaines plus anciennes : finies")}.</div>` : ""}</div>`;
+  }
+  function htmlOngletsSuivi(resume, local) {
+    const nbHors = local && etat.horsDetail ? etat.horsDetail.reduce((t, x) => t + x.n, 0) : (resume.hors || []).reduce((t, h) => t + (Number(h[1]) || 0), 0);
+    const nombres = { hors: Math.round(nbHors), extractions: etat.extractions.length };
+    const p = panneau();
+    return `<div class="onglets-page" role="tablist" aria-label="Suivi de production">${PANNEAUX.map(
+      ([k, n]) => `<button type="button" role="tab" class="onglet-page${k === p ? " actif" : ""}" data-sv-panneau="${k}" aria-selected="${k === p}">${echapper(n)}${nombres[k] ? ` <span class="onglet-nombre${k === "hors" ? " attention" : ""}">${fmt(nombres[k])}</span>` : ""}</button>`
+    ).join("")}</div>`;
+  }
   function afficher() {
     const page = $("pageSuivi");
     if (!page) return;
     const local = etat.charge ? calculer() : null;
     const resume = local || pourPartage();
-    let html = entetePage("Outils", "Suivi de production", "L'avancement de chaque lancement, d'après l'extraction « Suivi production » de Diakonos.");
+    const der = etat.extractions[etat.extractions.length - 1];
+    const chapeau = der ? `D'après l'extraction Diakonos du ${jourLong(der.jour)}.` : resume ? `D'après l'extraction Diakonos du ${jourLong(resume.jour)} (fichier partagé).` : "L'avancement de chaque lancement, d'après l'extraction « Suivi production » de Diakonos.";
+    let html = entetePage("Outils", "Suivi de production", chapeau, boutonsExtraction());
     html += htmlCarteExtraction(resume, Boolean(local));
     if (typeof htmlBandeauValidations === "function") html += htmlBandeauValidations();
     if (resume) {
       html += htmlTuiles(resume);
-      html += htmlVues(resume);
-      html += `<div class="carte"><div class="carte-titre">Avancement par lancement</div>
-        <div class="note">L'extraction donne les pièces qui restent à valider. Comparée au lancement : un CVC qui n'y est plus = pièce faite ; un CVC encore là = « Qte en cours » à faire, le reste est fait (lancée 10, en cours 8 : 8 à faire, 2 faites). Une pièce relancée (casse, retard) compte dans le lancement le plus récent, et elle est déduite du lancement d'origine. Un clic sur un lancement : les commandes encore à faire.</div>
-        <div class="sv-legende"><span><i class="sv-l-en_cours"></i>En cours</span><span><i class="sv-l-termine"></i>Terminé</span><span><i class="sv-l-retard"></i>En retard (semaine passée)</span><span><i class="sv-l-attente"></i>Pas dans cette extraction</span></div>
-        ${resume.semaines.length ? resume.semaines.map((s) => htmlSemaine(s, resume)).join("") : '<div class="note">Aucun lancement dans la bibliothèque des semaines autour de cette extraction : scannez les semaines dans « Contrôler la coupe ».</div>'}
-        ${resume.anciennes ? `<div class="note">${pluriel(resume.anciennes, "semaine plus ancienne : finie", "semaines plus anciennes : finies")}.</div>` : ""}</div>`;
-      html += htmlHors(resume, Boolean(local));
-      html += htmlTableau(resume, Boolean(local));
-    }
-    html += htmlExtractions();
+      html += htmlOngletsSuivi(resume, Boolean(local));
+      const p = panneau();
+      let contenu = "";
+      if (p === "lancements") contenu = htmlAvancement(resume);
+      else if (p === "vues") contenu = htmlVues(resume) || '<div class="carte"><div class="note">Pas de vue pour cette extraction.</div></div>';
+      else if (p === "hors") contenu = htmlHors(resume, Boolean(local)) || '<div class="carte"><div class="sv-message">✔ Toutes les pièces de l\'extraction sont dans un lancement.</div></div>';
+      else if (p === "tableau") contenu = htmlTableau(resume, Boolean(local)) || '<div class="carte"><div class="note">Chargez l\'extraction sur ce PC pour voir le tableau.</div></div>';
+      else contenu = htmlExtractions() || '<div class="carte"><div class="note">Aucune extraction gardée sur ce PC.</div></div>';
+      html += `<div class="panneau-page" role="tabpanel">${contenu}</div>`;
+    } else html += htmlExtractions();
     page.innerHTML = html;
     brancher(page);
   }
 
   function brancher(page) {
     const q = (id) => page.querySelector(`#${id}`);
+    page.querySelectorAll("[data-sv-panneau]").forEach((b) => b.addEventListener("click", () => choisirPanneau(b.dataset.svPanneau)));
     if (q("svReinitValidations"))
       q("svReinitValidations").addEventListener("click", () => {
         if (window.confirm("Remettre à zéro le suivi en direct ? Les pièces reviendront à l'état de la dernière extraction (les nouvelles validations seront de nouveau comptées).") && typeof reinitialiserValidations === "function") reinitialiserValidations();

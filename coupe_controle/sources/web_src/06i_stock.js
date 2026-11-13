@@ -332,14 +332,15 @@ function afficherStock() {
     brancherStock();
     return;
   }
-  html += htmlFichierStock(d) + htmlRechercheStock(d);
-  if (stock.ouvert) {
-    const m = d.materiaux.find((x) => x.mat === stock.ouvert);
-    if (m) html += htmlMateriauStock(m);
-  }
+  // V6.9 : la liste à gauche, le détail du matériau cliqué à droite (il reste visible en descendant).
+  const m = stock.ouvert ? d.materiaux.find((x) => x.mat === stock.ouvert) : null;
+  html += htmlFichierStock(d);
+  html += `<div class="stk-colonnes${m ? " avec-detail" : ""}"><div class="stk-liste">${htmlRechercheStock(d)}</div>${m ? `<div class="stk-cote">${htmlMateriauStock(m)}</div>` : ""}</div>`;
   html += htmlChutesQuiDorment(d);
   page.innerHTML = html;
   brancherStock();
+  const outils = page.querySelector(".stk-outils");
+  if (outils) page.style.setProperty("--haut-outils-stock", `${outils.offsetHeight}px`);
 }
 
 function htmlFichierStock(d) {
@@ -350,7 +351,7 @@ function htmlFichierStock(d) {
   const reservees = d.materiaux.reduce((t, m) => t + m.nbReservees, 0);
   const vides = d.formats.filter((f) => !f.chute && f.dispo === 0).length;
   const vieux = age !== null && age > STOCK_VIEUX_JOURS;
-  return `<div class="carte"><div class="carte-titre">Fichier de stock</div>
+  return `<div class="carte stk-carte-fichier"><div class="carte-titre">Fichier de stock${boutonAide("stock-fichier")}</div>
     ${vieux ? `<div class="bandeau attention">⚠ Ce stock date d'il y a <strong>${dureeFr(age)}</strong> : extrayez un fichier neuf avant de vous y fier.</div>` : ""}
     <div class="stk-fichier"><span><strong>${echapper(d.nom || "brdlib.bdx")}</strong></span>
       <span>données jusqu'au <strong>${jourFr(d.donneesJusquau || d.modifie)}</strong></span>
@@ -363,7 +364,7 @@ function htmlFichierStock(d) {
       ${reservees ? `<span class="pl-puce stk-res-puce">${nbFr(reservees)} chutes réservées</span>` : ""}
       <span class="pl-puce att">${nbFr(vides)} formats à zéro</span>
     </div>
-    <div class="note"><strong>Stock réel = stock − réservé.</strong> Chutes : celles au statut 2 de woodStore sont comptées comme réservées, à part. Panneaux entiers : ceux de la case 302 sont réservés pour un lancement, comptés à part.</div></div>`;
+    ${texteAide("stock-fichier", "<strong>Stock réel = stock − réservé.</strong> Chutes : celles au statut 2 de woodStore sont comptées comme réservées, à part. Panneaux entiers : ceux de la case 302 sont réservés pour un lancement, comptés à part.")}</div>`;
 }
 
 function materiauxFiltres(d) {
@@ -394,9 +395,9 @@ function htmlRechercheStock(d) {
     .join("");
   const filtres = FAMILLES_STOCK.map(([c, n]) => `<button type="button" class="stk-filtre${stock.famille === c ? " actif" : ""}" data-stk-famille="${c}">${n}</button>`).join("");
   return `<div class="carte"><div class="carte-titre">Chercher une couleur</div>
-    <div class="stk-cherche"><input type="search" id="champStock" placeholder="Code ou nom : 1114, chêne, SAG38…" value="${echapper(stock.recherche)}" autocomplete="off">
+    <div class="stk-outils"><div class="stk-cherche"><input type="search" id="champStock" placeholder="Code ou nom : 1114, chêne, SAG38…" value="${echapper(stock.recherche)}" autocomplete="off">
       <label class="stk-case"><input type="checkbox" id="caseAvecStock" ${stock.avecStock ? "checked" : ""}> avec du stock seulement</label></div>
-    <div class="stk-filtres">${filtres}</div>
+    <div class="stk-filtres">${filtres}</div></div>
     <div class="defilement"><table class="fp-table"><thead><tr>${enteteTri("liste", "mat", "Matériau")}${enteteTri("liste", "desc", "Description", "stk-col-desc")}${enteteTri("liste", "entiers", '<span class="stk-long">Panneaux entiers</span><span class="stk-court">Entiers</span>', "d")}${enteteTri("liste", "chutes", "Chutes", "d")}${enteteTri("liste", "limite", '<span class="stk-long">Limite woodStore</span><span class="stk-court">Limite</span>')}</tr></thead>
       <tbody>${lignes || '<tr><td colspan="5" class="pale">Rien ne correspond.</td></tr>'}</tbody></table></div>
     <div class="note">${nbFr(liste.length)} matériau${liste.length > 1 ? "x" : ""}, tous affichés · cliquez sur une ligne pour le détail.</div></div>`;
@@ -493,8 +494,9 @@ function brancherStock() {
     el.addEventListener("click", () => {
       stock.ouvert = stock.ouvert === el.dataset.stkMat ? null : el.dataset.stkMat;
       afficherStock();
+      // Écran étroit : le détail est sous la liste, on y descend ; écran large : il est à droite, déjà visible.
       const det = page.querySelector(".stk-detail");
-      if (det) det.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (det && window.innerWidth < 1100) det.scrollIntoView({ behavior: "smooth", block: "start" });
     })
   );
   page.querySelectorAll("[data-stk-tri]").forEach((th) =>
